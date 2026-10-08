@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>정치쌤 챗봇</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🏛️%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/vendor/marked-12.0.2.min.js"></script>
+  <script src="/static/vendor/purify-3.1.6.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>정치쌤 챗봇</h1>
+    <p>고등학교 정치 과목, 궁금한 건 무엇이든 물어보세요.</p>
+    <button id="reset" type="button" title="대화를 처음부터 다시 시작해요">새 대화</button>
+  </header>
+
+  <main id="log" aria-live="polite">
+    <div class="msg assistant">
+      <div class="bubble">
+        <p>안녕하세요! 정치 과목 공부를 도와드릴게요. 개념이 헷갈리면 물어보시고, 연습 문제가 필요하면 "문제 내 줘"라고 말해 주세요.</p>
+      </div>
+    </div>
+    <div id="suggestions">
+      <button type="button">대통령제와 의원 내각제의 차이가 뭐예요?</button>
+      <button type="button">비례 대표제가 왜 필요한가요?</button>
+      <button type="button">기본권 제한의 요건을 알려 주세요.</button>
+      <button type="button">국제 관계 단원에서 5지선다 문제 하나 내 줘.</button>
+    </div>
+  </main>
+
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="질문을 입력하세요" maxlength="4000" required></textarea>
+    <button id="send" type="submit">보내기</button>
+  </form>
+  <p class="notice">AI가 만든 답변이라 틀릴 수 있어요. 중요한 내용은 교과서와 선생님께 꼭 확인하세요.</p>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
