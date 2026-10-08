@@ -17,6 +17,18 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 브라우저에서 http://localhost:8000 을 열면 됩니다. 같은 네트워크의 학생들은 `http://<이 컴퓨터 IP>:8000` 으로 접속할 수 있습니다.
 
+## 인터넷에 배포하기 (Render)
+
+이 저장소에는 [Render](https://render.com) 배포 설정(`render.yaml`)이 들어 있습니다.
+
+1. Render에 GitHub 계정으로 가입·로그인합니다.
+2. **New → Blueprint** 를 누르고 `jabin55/ariana` 저장소를 선택합니다.
+3. `ANTHROPIC_API_KEY` 입력란에 API 키를 넣고 **Apply** 를 누릅니다.
+4. 몇 분 뒤 `https://politics-chatbot-xxxx.onrender.com` 같은 주소가 생깁니다. 이 주소를 학생들에게 알려 주면 됩니다.
+
+이후 GitHub 저장소에 코드를 올리면 Render가 자동으로 다시 배포합니다.
+무료 요금제는 한동안 접속이 없으면 잠들었다가, 다음 접속 때 깨어나느라 첫 화면이 30초~1분 정도 늦게 뜰 수 있습니다.
+
 ## 구성
 
 | 파일 | 역할 |
