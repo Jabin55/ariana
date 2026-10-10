@@ -63,6 +63,14 @@
     .finder { background: var(--card); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px;
       box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     .finder .row input { max-width: 260px; }
+    /* 넓은 화면: 질문 칸과 이름 찾기를 나란히 */
+    @media (min-width: 800px) {
+      .top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px;
+        align-items: stretch; margin-bottom: 18px; }
+      .top .composer, .top .finder { margin-bottom: 0; }
+      .top .finder .row input { max-width: none; }
+      .top .finder .names { max-height: 70px; }
+    }
     .names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 92px; overflow-y: auto; }
     .name { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #f3ece0; color: #4a3b2c; }
     .name b { font-weight: 700; color: var(--accent); margin-left: 3px; }
@@ -144,6 +152,7 @@
   </header>
 
   <main>
+    <div class="top">
     <form class="composer" id="composer">
       <textarea id="qText" maxlength="1000" placeholder="궁금한 것을 적어 주세요" required></textarea>
       <div class="row">
@@ -158,6 +167,7 @@
       </div>
       <div class="names" id="names"></div>
       <div class="filter-note" id="filterNote" style="display:none"></div>
+    </div>
     </div>
 
     <div id="grid"></div>
