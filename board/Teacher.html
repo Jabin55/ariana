@@ -58,7 +58,11 @@
     .brow .track { height: 14px; background: #f5f0e8; border-radius: 0 4px 4px 0; }
     .brow .bar { height: 100%; border-radius: 0 4px 4px 0; transition: opacity .15s; }
     .brow .n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .units { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+    .stack { display: grid; gap: 16px; }
+    .stack .panel { margin-bottom: 0; }
+    .grid { margin-bottom: 16px; }
+    .grid > .panel { margin-bottom: 0; }
+    .units { display: grid; grid-template-columns: 1fr; gap: 18px; }
     .units h3 { margin: 0 0 6px; font-size: 14px; }
     .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
     #tip { position: fixed; pointer-events: none; background: #2b2b2b; color: #fff; font-size: 12px;
@@ -121,27 +125,27 @@
         <div class="stats" id="stats"></div>
       </section>
 
+      <!-- 왼쪽: 역량 · 과목 · 인지적 수준 / 오른쪽: 대단원별 비중 (세로로 길게) -->
       <div class="grid">
+        <div class="stack">
+          <section class="panel">
+            <h2>사회과 교과 역량</h2>
+            <div id="cComp"></div>
+          </section>
+          <section class="panel">
+            <h2>질문 과목</h2>
+            <div id="cCategory"></div>
+          </section>
+          <section class="panel">
+            <h2>인지적 수준</h2>
+            <div id="cLevel"></div>
+          </section>
+        </div>
         <section class="panel">
-          <h2>사회과 교과 역량 (질문·댓글)</h2>
-          <div id="cComp"></div>
-        </section>
-        <section class="panel">
-          <h2>질문 과목</h2>
-          <div id="cCategory"></div>
+          <h2>대단원별 비중</h2>
+          <div class="units" id="cUnits"></div>
         </section>
       </div>
-
-      <section class="panel">
-        <h2>대단원별 비중</h2>
-        <div class="units" id="cUnits"></div>
-      </section>
-
-      <section class="panel">
-        <h2>인지적 수준</h2>
-        <p class="hint">질문이 요구하는 사고의 수준이에요. 지식 → 이해 → 적용 → 분석 → 종합 → 평가 순으로 높아져요. 막대를 누르면 해당 질문만 보이고, 빈 곳을 누르면 다시 전체가 보여요.</p>
-        <div id="cLevel"></div>
-      </section>
 
       <section class="panel" id="studentsPanel">
         <h2>학생별 현황</h2>
@@ -151,8 +155,7 @@
 
       <section class="panel">
         <h2>질문·댓글 목록</h2>
-        <p class="hint">그래프의 막대를 누르면 해당 질문만 보여요. 미분류 칸은 드롭다운에서 골라 직접 분류할 수 있어요. 분류는 AI가 한 것이라 틀릴 수 있어요.
-          시트 Posts 탭의 category · unit · competencies 칸에서 고칠 수 있어요.</p>
+        <p class="hint">그래프의 막대를 누르면 해당 질문만 보여요. 미분류 칸은 드롭다운에서 골라 직접 분류할 수 있어요. 분류는 AI가 한 것이라 틀릴 수 있어요.</p>
         <div class="pick-note" id="pickNote"></div>
         <div class="table-wrap"><table id="questions"></table></div>
       </section>
