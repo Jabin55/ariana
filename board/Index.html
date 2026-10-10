@@ -175,6 +175,7 @@
     var grid = document.getElementById('grid');
     var openReplies = {};   // 댓글 입력창을 열어 둔 글 (새로고침해도 유지)
     var drafts = {};        // 작성 중인 댓글 내용
+    var draftNames = {};    // 작성 중인 댓글의 작성자 이름
     var localPending = [];  // 서버 저장 전, 화면에 먼저 보여 주는 내 질문
     var lastPosts = [];
     var nameFilter = '';    // 이름 색인에서 고른 사람 (정확히 일치)
@@ -225,6 +226,7 @@
     function render(posts) {
       // 다시 그리기 전에 작성 중인 댓글을 보관
       grid.querySelectorAll('.reply textarea').forEach(function (ta) { drafts[ta.dataset.id] = ta.value; });
+      grid.querySelectorAll('.reply input').forEach(function (inp) { draftNames[inp.dataset.id] = inp.value; });
 
       lastPosts = posts;
       // 서버에 이미 저장된 내 질문은 임시 카드 대신 서버 카드로 보여 줌
@@ -345,6 +347,8 @@
         var replyBox = p.local ? '' :
           '<button class="link" data-toggle="' + esc(p.id) + '">댓글 달기</button>' +
           '<div class="reply' + (openReplies[p.id] ? ' open' : '') + '">' +
+          '<input data-id="' + esc(p.id) + '" maxlength="30" placeholder="이름 (비우면 익명)" value="' +
+          esc(p.id in draftNames ? draftNames[p.id] : nameInput.value) + '">' +
           '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
           esc(drafts[p.id] || '') + '</textarea>' +
           '<button data-send="' + esc(p.id) + '">댓글 등록</button></div>';
@@ -483,6 +487,7 @@
       } else if (t.dataset.send) {
         var pid = t.dataset.send;
         var ta = t.parentNode.querySelector('textarea');
+        var author = t.parentNode.querySelector('input').value.trim();
         var text = ta.value.trim();
         if (!text) return;
         t.disabled = true;
@@ -495,7 +500,7 @@
             }
           })
           .withFailureHandler(function (e) { t.disabled = false; toast('댓글을 올리지 못했어요: ' + errMsg(e)); })
-          .addComment(pid, nameInput.value.trim(), text);
+          .addComment(pid, author, text);
       } else if (t.dataset.retry) {
         t.disabled = true;
         t.textContent = '요청 중…';
