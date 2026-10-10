@@ -12,6 +12,8 @@
  *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 튜터"
  *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
  *   NOTIFY_EMAIL    (선택) 새 질문 알림 메일을 받을 주소. 비우면 스크립트 주인 계정, off면 알림 끔
+ *   CHAT_WEBHOOK_URL (선택) 구글 챗 스페이스의 웹훅 주소. 넣으면 알림이 구글 챗으로 갑니다.
+ *                   이때 메일은 NOTIFY_EMAIL 에 주소를 직접 넣었을 때만 함께 보냅니다.
  *   REFERENCE_ONLY  (선택) true면 '자료' 탭 밖의 내용은 아예 답하지 않습니다. 기본값 false:
  *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답하고, 필요할 때만 선생님 안내를 덧붙입니다.
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
@@ -124,26 +126,80 @@ function addPost(author, text) {
   return id;
 }
 
-/** 새 질문이 올라오면 선생님께 메일로 알립니다 (AI 답변과 분류가 끝난 뒤). */
+/**
+ * 새 질문이 올라오면 선생님께 알립니다 (AI 답변과 분류가 끝난 뒤).
+ * CHAT_WEBHOOK_URL 이 있으면 구글 챗으로 보내고, 메일은 NOTIFY_EMAIL 에 주소를 직접 넣었을 때만 함께 보냅니다.
+ * 알림이 안 가도 질문 올리기는 그대로 성공합니다.
+ */
 function notifyNewPost_(postId) {
+  var thread;
   try {
-    var to = getProp_('NOTIFY_EMAIL', '') || Session.getEffectiveUser().getEmail();
-    if (!to || to === 'off') return;
-    var thread = loadThread_(postId);
-    if (!thread) return;
-    var post = thread.post;
-    var answer = thread.contents.length > 1 ? thread.contents[1].parts[0].text : '(AI 답변을 받지 못했어요)';
-    var title = getProp_('BOARD_TITLE', DEFAULT_TITLE);
-    MailApp.sendEmail({
-      to: to,
-      subject: '[' + title + '] 새 질문' + (post.category ? ' · ' + post.category : '') + ' - ' + post.author,
-      body: post.author + ' 학생의 질문\n' + post.text + '\n\n' + aiName_() + ' 답변\n' + answer +
-        '\n\n게시판 열기: ' + ScriptApp.getService().getUrl() +
-        '\n시트 열기: ' + SpreadsheetApp.getActiveSpreadsheet().getUrl() +
-        '\n\n(알림을 끄려면 스크립트 속성 NOTIFY_EMAIL 을 off 로 바꾸세요.)'
-    });
+    thread = loadThread_(postId);
   } catch (e) {
-    console.error('알림 메일 실패: ' + e); // 메일이 안 가도 질문 올리기는 그대로 성공
+    console.error('알림 준비 실패: ' + e);
+    return;
+  }
+  if (!thread) return;
+  var post = thread.post;
+  var note = {
+    title: getProp_('BOARD_TITLE', DEFAULT_TITLE),
+    category: post.category,
+    author: post.author,
+    text: post.text,
+    answer: thread.contents.length > 1 ? thread.contents[1].parts[0].text : '(AI 답변을 받지 못했어요)',
+    boardUrl: ScriptApp.getService().getUrl(),
+    sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl()
+  };
+
+  var webhook = getProp_('CHAT_WEBHOOK_URL', '').trim();
+  var email = getProp_('NOTIFY_EMAIL', '');
+  if (webhook) {
+    try {
+      sendChat_(webhook, note);
+    } catch (e) {
+      console.error('구글 챗 알림 실패: ' + e);
+    }
+  } else if (!email) {
+    email = Session.getEffectiveUser().getEmail();
+  }
+  if (email && email !== 'off') {
+    try {
+      sendMail_(email, note);
+    } catch (e) {
+      console.error('알림 메일 실패: ' + e);
+    }
+  }
+}
+
+function sendMail_(to, note) {
+  MailApp.sendEmail({
+    to: to,
+    subject: '[' + note.title + '] 새 질문' + (note.category ? ' · ' + note.category : '') + ' - ' + note.author,
+    body: note.author + ' 학생의 질문\n' + note.text + '\n\n' + aiName_() + ' 답변\n' + note.answer +
+      '\n\n게시판 열기: ' + note.boardUrl +
+      '\n시트 열기: ' + note.sheetUrl +
+      '\n\n(알림을 끄려면 스크립트 속성 NOTIFY_EMAIL 을 off 로 바꾸세요.)'
+  });
+}
+
+/** 구글 챗 스페이스의 웹훅으로 메시지를 보냅니다. */
+function sendChat_(webhook, note) {
+  if (webhook.indexOf('https://chat.googleapis.com/') !== 0) {
+    throw new Error('CHAT_WEBHOOK_URL 은 https://chat.googleapis.com/ 으로 시작해야 합니다.');
+  }
+  // 구글 챗 서식: *굵게*, <주소|글자> 링크
+  var text = '📌 *새 질문' + (note.category ? ' · ' + note.category : '') + '* — ' + note.author + '\n' +
+    note.text + '\n\n' +
+    '🦉 *' + aiName_() + ' 답변*\n' + note.answer + '\n\n' +
+    '<' + note.boardUrl + '|게시판 열기> · <' + note.sheetUrl + '|시트 열기>';
+  var res = UrlFetchApp.fetch(webhook, {
+    method: 'post',
+    contentType: 'application/json; charset=UTF-8',
+    payload: JSON.stringify({ text: text }),
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    throw new Error(res.getResponseCode() + ' ' + res.getContentText().slice(0, 300));
   }
 }
 
@@ -233,6 +289,22 @@ function installRetryTrigger() {
     if (t.getHandlerFunction() === 'answerUnanswered') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('answerUnanswered').timeBased().everyMinutes(10).create();
+}
+
+/** 구글 챗 알림이 잘 가는지 시험 메시지를 보냅니다. CHAT_WEBHOOK_URL 을 넣은 뒤 편집기에서 실행하세요. */
+function testChatNotify() {
+  var webhook = getProp_('CHAT_WEBHOOK_URL', '').trim();
+  if (!webhook) throw new Error('스크립트 속성 CHAT_WEBHOOK_URL 이 비어 있습니다.');
+  sendChat_(webhook, {
+    title: getProp_('BOARD_TITLE', DEFAULT_TITLE),
+    category: '정치',
+    author: '테스트',
+    text: '알림 시험용 질문입니다. 이 메시지가 보이면 설정 완료!',
+    answer: '구글 챗 알림이 잘 연결됐어요.',
+    boardUrl: ScriptApp.getService().getUrl() || 'https://script.google.com',
+    sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl()
+  });
+  Logger.log('구글 챗으로 시험 메시지를 보냈습니다.');
 }
 
 /**
