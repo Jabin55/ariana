@@ -18,6 +18,7 @@
  *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답하고, 필요할 때만 선생님 안내를 덧붙입니다.
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  *   TEACHER_NAMES   (선택) 선생님이 댓글에 쓰는 이름(쉼표로 여러 개). 이 이름의 댓글은 학생 분석에서 뺍니다. 기본값 "선생님"
+ *   LOGIN_URL       (선택) '학교 내 사용자'로 따로 배포한 웹 앱 주소. 넣으면 익명 게시판에 '학교 계정으로 쓰기' 안내가 나옵니다.
  *   TEACHER_PASSWORD (선택) 선생님 전용 '학생 분석' 화면(게시판 주소 뒤에 ?teacher)의 비밀번호.
  *                   비워 두면 분석 화면이 열리지 않습니다.
  */
@@ -26,7 +27,8 @@ var POSTS_SHEET = 'Posts';
 var COMMENTS_SHEET = 'Comments';
 // unit: 대단원, competencies: 질문에 드러난 사회과 교과 역량 (쉼표로 구분, 최대 2개. 드러난 역량이 없으면 '없음')
 // level: 질문의 인지적 수준 (블룸의 교육 목표 분류: 지식~평가)
-var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category', 'unit', 'competencies', 'level'];
+// email: 학교 계정으로 로그인한 주소로 쓴 경우 그 계정 (익명 주소로 쓰면 비어 있음). 학생 화면에는 보이지 않습니다.
+var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category', 'unit', 'competencies', 'level', 'email'];
 
 // 게시판 맨 위에 보이는 분류. 질문이 올라오면 AI가 이 중 하나로 나눕니다.
 // 시트 Posts 탭의 category 칸을 직접 고쳐서 분류를 바꿀 수도 있습니다.
@@ -40,7 +42,7 @@ var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한
 var NOT_IN_REF_MARK = '[자료없음]';
 
 // competencies: 학생 댓글에 드러난 사회과 교과 역량 (글의 competencies 칸과 같은 형식). AI 댓글은 비워 둡니다.
-var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies'];
+var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies', 'email'];
 
 // 학생 분석 기준. 처음 실행할 때 시트에 '단원', '역량' 탭을 아래 기본값으로 만듭니다.
 // 학교 교과서·교육과정에 맞게 시트에서 고치면 다음 분류부터 바로 반영됩니다.
@@ -137,6 +139,10 @@ function doGet(e) {
   // 분석 화면 비밀번호를 정해 둔 경우에만 '교사용' 버튼을 보여 줍니다.
   var url = ScriptApp.getService().getUrl();
   tpl.teacherUrl = getProp_('TEACHER_PASSWORD', '') && url ? url + '?teacher' : '';
+  // 학교 계정 주소로 들어오면 그 계정이 보이고, 익명 주소에서는 학교 계정 주소로 가는 안내가 보입니다.
+  tpl.userEmail = currentEmail_();
+  var loginUrl = getProp_('LOGIN_URL', '');
+  tpl.loginUrl = /^https:\/\//.test(loginUrl) ? loginUrl : '';
   return tpl.evaluate()
     .setTitle(tpl.boardTitle)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -188,10 +194,12 @@ function addPost(author, text) {
   text = clean_(text, MAX_TEXT_LENGTH);
   if (!text) throw new Error('질문 내용을 입력해 주세요.');
   author = clean_(author, MAX_NAME_LENGTH) || '익명';
+  var email = currentEmail_();
 
   var id = Utilities.getUuid();
   withLock_(function () {
-    getSheet_(POSTS_SHEET, POST_HEADERS).appendRow([id, new Date(), author, text, 'pending', '']);
+    getSheet_(POSTS_SHEET, POST_HEADERS).appendRow(row_(POST_HEADERS,
+      { id: id, createdAt: new Date(), author: author, text: text, status: 'pending', email: email }));
   });
 
   answerPost_(id);
@@ -285,12 +293,14 @@ function addComment(postId, author, text) {
   if (!text) throw new Error('댓글 내용을 입력해 주세요.');
   author = clean_(author, MAX_NAME_LENGTH) || '익명';
   var aiReplies = getProp_('AI_REPLY_TO_COMMENTS', 'true') !== 'false';
+  var email = currentEmail_();
 
   withLock_(function () {
     var found = findPostRow_(postId);
     if (!found) throw new Error('게시글을 찾을 수 없습니다.');
     getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
-      .appendRow([Utilities.getUuid(), postId, new Date(), author, text, false, '']);
+      .appendRow(row_(COMMENT_HEADERS, { id: Utilities.getUuid(), postId: postId, createdAt: new Date(),
+        author: author, text: text, isAI: false, email: email }));
     if (aiReplies) setStatus_(found, 'pending');
   });
   return aiReplies;
@@ -353,6 +363,7 @@ function getAnalysis(password) {
       var category = validCategory_(p.category);
       return {
         id: String(p.id),
+        email: String(p.email || ''),
         createdAt: toIso_(p.createdAt),
         author: String(p.author).trim(),
         text: String(p.text),
@@ -369,6 +380,7 @@ function getAnalysis(password) {
       .map(function (c) {
         return {
           postId: String(c.postId),
+          email: String(c.email || ''),
           createdAt: toIso_(c.createdAt),
           author: String(c.author).trim(),
           text: String(c.text),
@@ -1037,6 +1049,23 @@ function findPostRow_(postId) {
     }
   }
   return null;
+}
+
+/** 헤더 이름 순서에 맞춰 시트 한 줄을 만듭니다. 없는 칸은 비워 둡니다. */
+function row_(headers, values) {
+  return headers.map(function (h) { return values[h] === undefined ? '' : values[h]; });
+}
+
+/**
+ * 학교 계정 주소('학교 내 사용자' 배포)로 들어온 사용자의 계정. 익명 주소이거나 알 수 없으면 ''.
+ * 스크립트 주인과 같은 학교(도메인) 계정일 때만 구글이 알려 줍니다.
+ */
+function currentEmail_() {
+  try {
+    return String(Session.getActiveUser().getEmail() || '');
+  } catch (e) {
+    return '';
+  }
 }
 
 function withLock_(fn) {
