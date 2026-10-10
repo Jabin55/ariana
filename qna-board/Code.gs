@@ -29,11 +29,13 @@ var DEFAULT_TITLE = '질문 게시판';
 var MAX_TEXT_LENGTH = 1000;
 var MAX_NAME_LENGTH = 30;
 var DEFAULT_AI_NAME = 'AI 선생님';
+// 게시판 칸 너비에서 AI 답변이 10줄을 넘지 않는 길이 (한 줄에 약 19자)
+var MAX_ANSWER_CHARS = 180;
 
 var DEFAULT_SYSTEM_PROMPT = [
   '너는 고등학교 사회와 문화, 정치, 경제, 법과 사회를 가르치는 AI 선생님이야.',
   '학생 질문에 한국어로 학생 눈높이에 맞게 정확하고 친절하게 답변하되, 질문에 따라 단답형으로 한 문장으로 답을 하거나 서술식으로 답변해.',
-  '최대 10문장을 넘기지 말고 답해.',
+  '답변은 반드시 공백 포함 ' + MAX_ANSWER_CHARS + '자 이내로, 줄바꿈이나 목록 없이 한 문단으로 써.',
   '정치·사회 쟁점은 여러 입장을 균형 있게 소개해.',
   '표나 제목(#)은 쓰지 마. 강조가 필요하면 **굵게**만 써.',
   '댓글로 이어지는 대화에서는 앞의 맥락을 이어서 답하고, 고맙다는 인사처럼 질문이 아닌 말에는 한두 문장으로만 답해.',
@@ -207,6 +209,7 @@ function answerPost_(postId) {
     if (!now) return; // 그 사이 시트에서 글이 지워진 경우
     if (now.answered[target]) return;
     if (status === 'answered') {
+      answer = trimAnswer_(answer);
       getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
         .appendRow([Utilities.getUuid(), postId, new Date(), aiName_(), answer, true, target]);
     }
@@ -248,6 +251,18 @@ function loadThread_(postId) {
   });
 
   return { post: post, contents: contents, answered: answered, lastHumanId: lastHumanId };
+}
+
+/** 지침을 어기고 길게 오면, 한 문단으로 합치고 글자 수 안에서 문장이 끝나는 곳까지만 남깁니다. */
+function trimAnswer_(text) {
+  text = String(text).replace(/\s*\n+\s*/g, ' ').trim();
+  var limit = MAX_ANSWER_CHARS + 10; // 살짝 넘는 정도는 그대로 둡니다
+  if (text.length <= limit) return text;
+  var cut = text.slice(0, limit);
+  var end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '),
+    cut.lastIndexOf('다.'), cut.lastIndexOf('요.'));
+  if (end >= MAX_ANSWER_CHARS / 2) return cut.slice(0, end + 2).trim();
+  return cut.slice(0, MAX_ANSWER_CHARS - 1).trim() + '…';
 }
 
 function setStatus_(found, status) {
