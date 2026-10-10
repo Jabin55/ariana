@@ -142,7 +142,13 @@ function setup() {
   getSheet_(POSTS_SHEET, POST_HEADERS);
   getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
   var reply = callGemini_([{ role: 'user', parts: [{ text: '설치 확인용 질문입니다. "준비 완료"라고만 답해 주세요.' }] }]);
-  Logger.log('Gemini 응답: ' + reply);
+  Logger.log('1) Gemini 답변: ' + reply);
+  try {
+    var r = callGeminiJson_([{ role: 'user', parts: [{ text: '수요와 공급이 뭐예요?' }] }], answerSchema_());
+    Logger.log('2) 과목 분류: ' + r.category + ' / 답변 ' + String(r.answer || '').length + '자');
+  } catch (e) {
+    Logger.log('2) 과목 분류 실패: ' + e);
+  }
 }
 
 /** 답변이 안 달린(pending/error) 글에 다시 답변합니다. 시간 기반 트리거로 걸어 두면 자동 재시도됩니다. */
@@ -191,10 +197,16 @@ function answerPost_(postId) {
   var answer, category, status;
   try {
     if (needCategory) {
-      var r = callGeminiJson_(thread.contents, answerSchema_());
-      answer = String(r.answer || '').trim();
-      category = validCategory_(r.category);
-      if (!answer) throw new Error('답변이 비어 있습니다.');
+      try {
+        var r = callGeminiJson_(thread.contents, answerSchema_());
+        answer = String(r.answer || '').trim();
+        category = validCategory_(r.category);
+      } catch (e) {
+        // 분류 방식(JSON 응답)이 거절되면 분류 없이 답변만 받습니다. 분류는 classifyExisting으로 나중에.
+        if (!/Gemini API 400/.test(String(e))) throw e;
+        console.error('분류 요청 거절, 답변만 받습니다: ' + e);
+      }
+      if (!answer) answer = callGemini_(thread.contents);
     } else {
       answer = callGemini_(thread.contents);
     }
