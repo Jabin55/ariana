@@ -6,7 +6,7 @@
  *
  * 스크립트 속성 (프로젝트 설정 → 스크립트 속성)
  *   GEMINI_API_KEY  (필수) Google AI Studio에서 발급한 키
- *   GEMINI_MODEL    (선택) 기본값 gemini-2.5-flash
+ *   GEMINI_MODEL    (선택) 기본값 gemini-3.8-flash
  *   BOARD_TITLE     (선택) 게시판 제목. 기본값 "질문 게시판"
  *   SYSTEM_PROMPT   (선택) AI 답변 지침. 비우면 아래 DEFAULT_SYSTEM_PROMPT 사용
  */
@@ -16,7 +16,7 @@ var COMMENTS_SHEET = 'Comments';
 var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status'];
 var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI'];
 
-var DEFAULT_MODEL = 'gemini-2.5-flash';
+var DEFAULT_MODEL = 'gemini-3.8-flash';
 var DEFAULT_TITLE = '질문 게시판';
 var MAX_TEXT_LENGTH = 1000;
 var MAX_NAME_LENGTH = 30;
