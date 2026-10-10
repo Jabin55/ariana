@@ -168,7 +168,7 @@ function callGemini_(question) {
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
     encodeURIComponent(model) + ':generateContent';
 
-  var res = UrlFetchApp.fetch(url, {
+  var options = {
     method: 'post',
     contentType: 'application/json',
     headers: { 'x-goog-api-key': apiKey },
@@ -177,10 +177,17 @@ function callGemini_(question) {
       systemInstruction: { parts: [{ text: getProp_('SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT) }] },
       contents: [{ role: 'user', parts: [{ text: question }] }]
     })
-  });
+  };
 
-  var code = res.getResponseCode();
-  var body = res.getContentText();
+  // 503(서버 혼잡)·429(호출 한도)·500은 잠깐 기다렸다가 두 번 더 시도합니다.
+  var code, body;
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) Utilities.sleep(attempt * 3000);
+    var res = UrlFetchApp.fetch(url, options);
+    code = res.getResponseCode();
+    body = res.getContentText();
+    if ([429, 500, 503].indexOf(code) === -1) break;
+  }
   if (code !== 200) throw new Error('Gemini API ' + code + ': ' + body.slice(0, 300));
 
   var data = JSON.parse(body);
