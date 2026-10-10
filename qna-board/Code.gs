@@ -213,12 +213,12 @@ function classifyExisting() {
   });
 }
 
-/** 1분마다 answerUnanswered를 실행하는 트리거를 만듭니다. (선택) */
+/** 10분마다 answerUnanswered를 실행하는 트리거를 만듭니다. (선택) */
 function installRetryTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'answerUnanswered') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('answerUnanswered').timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger('answerUnanswered').timeBased().everyMinutes(10).create();
 }
 
 /**
@@ -416,14 +416,15 @@ function callGemini_(contents, generationConfig) {
     })
   };
 
-  // 503(서버 혼잡)·429(호출 한도)·500은 잠깐 기다렸다가 두 번 더 시도합니다.
+  // 503(서버 혼잡)·500은 잠깐 기다렸다가 두 번 더 시도합니다.
+  // 429(무료 한도 초과)는 다시 해도 한도만 더 쓰므로 바로 멈춥니다.
   var code, body;
   for (var attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) Utilities.sleep(attempt * 3000);
     var res = UrlFetchApp.fetch(url, options);
     code = res.getResponseCode();
     body = res.getContentText();
-    if ([429, 500, 503].indexOf(code) === -1) break;
+    if ([500, 503].indexOf(code) === -1) break;
   }
   if (code !== 200) throw new Error('Gemini API ' + code + ': ' + body.slice(0, 300));
 
