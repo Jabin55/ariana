@@ -23,6 +23,7 @@
       padding: 8px 12px; font-size: 14px; color: #5a3d2b; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
     .bubble::before { content: ''; position: absolute; left: -7px; top: 12px; border: 7px solid transparent;
       border-left: 0; border-right-color: #fff; }
+    .credit { font-size: 12px; font-weight: 400; color: rgba(58,36,20,.45); margin-left: 6px; vertical-align: middle; }
     .howto { margin-top: 10px; font-size: 13px; color: #4a2e1c; line-height: 1.5; }
     @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; } }
     main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
@@ -131,7 +132,7 @@
         <svg class="mascot" role="img" aria-label="AI 튜터 캐릭터"><use href="#owl"/></svg>
       <? } ?>
       <div>
-        <h1><?= boardTitle ?></h1>
+        <h1><?= boardTitle ?> <span class="credit">made by JB</span></h1>
         <div class="bubble">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
         <div class="howto">🦉 질문을 올리면 AI 튜터가 먼저 답변을 달아요. 학교의 교과 담당 선생님도 질문을 확인하고 직접 댓글을 달아 줄 거예요.</div>
       </div>
