@@ -134,7 +134,7 @@
 
       <section class="panel">
         <h2>인지적 수준</h2>
-        <p class="hint">질문이 요구하는 사고의 수준이에요. 지식 → 이해 → 적용 → 분석 → 종합 → 평가 순으로 높아져요. 막대를 누르면 해당 질문만 보여요.</p>
+        <p class="hint">질문이 요구하는 사고의 수준이에요. 지식 → 이해 → 적용 → 분석 → 종합 → 평가 순으로 높아져요. 막대를 누르면 해당 질문만 보이고, 빈 곳을 누르면 다시 전체가 보여요.</p>
         <div id="cLevel"></div>
       </section>
 
@@ -272,6 +272,14 @@
       state.pick = same ? null : pick;
       render();
     }
+
+    // 막대가 아닌 빈 곳(그래프 칸의 여백, 제목, 화면 배경)을 누르면 선택을 풀고 전체 질문을 보여 줍니다.
+    // 질문 목록·학생 표·필터 같은 곳을 누를 때는 그대로 둡니다.
+    document.addEventListener('click', function (e) {
+      if (!state.pick || !data) return;
+      if (e.target.closest('.brow.pickable, button, select, input, a, label, #questions, #students')) return;
+      setPick(null);
+    });
 
     /* ── 그리기 ── */
     function render() {
