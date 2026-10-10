@@ -15,9 +15,13 @@
     body { margin: 0; color: var(--ink); background: var(--bg);
       font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
     header { max-width: 1200px; margin: 0 auto; padding: 20px 16px 8px; }
-    .hero { border-radius: 18px; padding: 16px 20px;
+    .hero { position: relative; border-radius: 18px; padding: 16px 20px;
       background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%); }
     h1 { margin: 0; font-size: 22px; color: #3a2414; }
+    .back { position: absolute; top: 12px; right: 14px; font-size: 13px; text-decoration: none; color: #5a3d2b;
+      background: rgba(255,255,255,.7); border-radius: 999px; padding: 5px 12px; }
+    .back:hover { background: #fff; }
+    @media (max-width: 520px) { .hero { padding-top: 40px; } }
     .sub { margin-top: 4px; font-size: 13px; color: #4a2e1c; }
     main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 48px; }
     .panel { background: var(--card); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;
@@ -76,6 +80,7 @@
 <body>
   <header>
     <div class="hero">
+      <? if (boardUrl) { ?><a class="back" href="<?= boardUrl ?>">← 질문 게시판</a><? } ?>
       <h1>학생 분석</h1>
       <div class="sub"><?= boardTitle ?> · 선생님 전용 화면</div>
     </div>

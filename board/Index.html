@@ -16,6 +16,10 @@
     .hero { display: flex; align-items: center; gap: 16px; border-radius: 20px; padding: 18px 22px;
       background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%);
       box-shadow: 0 4px 14px rgba(255,122,89,.25); }
+    .hero { position: relative; }
+    .teacher-link { position: absolute; top: 10px; right: 12px; font-size: 12px; text-decoration: none;
+      color: #5a3d2b; background: rgba(255,255,255,.7); border-radius: 999px; padding: 4px 10px; }
+    .teacher-link:hover { background: #fff; }
     .hero .mascot { width: 96px; height: 96px; flex: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,.18)); }
     .hero img.mascot { object-fit: contain; }
     h1 { margin: 0 0 8px; font-size: 26px; color: #3a2414; }
@@ -25,7 +29,8 @@
       border-left: 0; border-right-color: #fff; }
     .credit { font-size: 12px; font-weight: 400; color: rgba(58,36,20,.45); margin-left: 6px; vertical-align: middle; }
     .howto { margin-top: 10px; font-size: 13px; color: #4a2e1c; line-height: 1.5; }
-    @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; } }
+    @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; }
+      .hero { padding-top: 34px; } }
     main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
 
     .composer { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 18px;
@@ -138,6 +143,9 @@
 
   <header>
     <div class="hero">
+      <? if (teacherUrl) { ?>
+        <a class="teacher-link" href="<?= teacherUrl ?>">🔒 교사용</a>
+      <? } ?>
       <? if (characterUrl) { ?>
         <img class="mascot" src="<?= characterUrl ?>" alt="">
       <? } else { ?>

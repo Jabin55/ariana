@@ -100,6 +100,7 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.teacher !== undefined) {
     var t = HtmlService.createTemplateFromFile('Teacher');
     t.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
+    t.boardUrl = ScriptApp.getService().getUrl() || '';
     return t.evaluate()
       .setTitle('학생 분석 · ' + t.boardTitle)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -109,6 +110,9 @@ function doGet(e) {
   tpl.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
   var img = getProp_('CHARACTER_IMAGE_URL', '');
   tpl.characterUrl = /^https:\/\//.test(img) ? img : '';
+  // 분석 화면 비밀번호를 정해 둔 경우에만 '교사용' 버튼을 보여 줍니다.
+  var url = ScriptApp.getService().getUrl();
+  tpl.teacherUrl = getProp_('TEACHER_PASSWORD', '') && url ? url + '?teacher' : '';
   return tpl.evaluate()
     .setTitle(tpl.boardTitle)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
