@@ -45,7 +45,7 @@
     .stat { background: #faf5ec; border-radius: 10px; padding: 8px 14px; font-size: 13px; color: var(--muted); }
     .stat b { display: block; font-size: 20px; color: var(--ink); }
 
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
     @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
     /* 가로 막대그래프: 이름 | 막대(전체 질문 대비 비율) | 개수·비율 */
     .bars { --l1: #86b6ef; --l2: #5598e7; --l3: #2a78d6; --l4: #1c5cab; --l5: #184f95; --l6: #0d366b; }
@@ -58,7 +58,7 @@
     .brow .track { height: 14px; background: #f5f0e8; border-radius: 0 4px 4px 0; }
     .brow .bar { height: 100%; border-radius: 0 4px 4px 0; transition: opacity .15s; }
     .brow .n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .units { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+    .units { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
     .units h3 { margin: 0 0 6px; font-size: 14px; }
     .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
     #tip { position: fixed; pointer-events: none; background: #2b2b2b; color: #fff; font-size: 12px;
@@ -122,21 +122,22 @@
           <div id="cCategory"></div>
         </section>
         <section class="panel">
-          <h2>사회과 교과 역량</h2>
-          <div id="cComp"></div>
+          <h2>대단원별 비중</h2>
+          <div class="units" id="cUnits"></div>
         </section>
       </div>
 
-      <section class="panel">
-        <h2>인지적 수준</h2>
-        <p class="hint">질문이 요구하는 사고의 수준이에요. 지식 → 이해 → 적용 → 분석 → 종합 → 평가 순으로 높아져요. 막대를 누르면 해당 질문만 보여요.</p>
-        <div id="cLevel"></div>
-      </section>
-
-      <section class="panel">
-        <h2>대단원별 비중</h2>
-        <div class="units" id="cUnits"></div>
-      </section>
+      <div class="grid">
+        <section class="panel">
+          <h2>사회과 교과 역량</h2>
+          <div id="cComp"></div>
+        </section>
+        <section class="panel">
+          <h2>인지적 수준</h2>
+          <p class="hint">질문이 요구하는 사고의 수준이에요. 지식 → 이해 → 적용 → 분석 → 종합 → 평가 순으로 높아져요. 막대를 누르면 해당 질문만 보여요.</p>
+          <div id="cLevel"></div>
+        </section>
+      </div>
 
       <section class="panel" id="studentsPanel">
         <h2>학생별 현황</h2>
