@@ -394,6 +394,12 @@ function answerUnanswered() {
   posts.forEach(function (p) {
     if (p.id !== '' && p.status !== 'answered') answerPost_(String(p.id));
   });
+  // 분류(과목·대단원·역량·인지적 수준)가 빠진 글도 몇 개씩 채웁니다. 무료 한도를 아끼려고 한 번에 5개까지.
+  try {
+    analyzeExisting(5);
+  } catch (e) {
+    console.error('자동 분류 실패: ' + e);
+  }
 }
 
 /**
@@ -401,14 +407,15 @@ function answerUnanswered() {
  * 편집기에서 실행하세요. 무료 한도를 넘지 않게 천천히(한 번에 최대 40개) 처리하므로,
  * 실행 로그에 '남은 글'이 있으면 몇 분 뒤 한 번 더 실행하면 됩니다.
  */
-function analyzeExisting() {
+function analyzeExisting(limit) {
+  limit = typeof limit === 'number' ? limit : 40; // 편집기·트리거에서 실행하면 40개
   var started = Date.now();
   var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).filter(function (p) {
     return p.id !== '' && p.status === 'answered' &&
       (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !competencyCell_(p.competencies) || !validLevel_(p.level));
   });
   var done = 0;
-  for (var i = 0; i < posts.length && done < 40; i++) {
+  for (var i = 0; i < posts.length && done < limit; i++) {
     if (Date.now() - started > 4.5 * 60 * 1000) break; // Apps Script 실행 시간(6분) 제한 보호
     var p = posts[i];
     if (done > 0) Utilities.sleep(4000); // 무료 한도(분당 요청 수) 보호
@@ -447,7 +454,7 @@ function classifyExisting() {
   analyzeExisting();
 }
 
-/** 10분마다 answerUnanswered를 실행하는 트리거를 만듭니다. (선택) */
+/** 10분마다 answerUnanswered를 실행하는 트리거를 만듭니다. 답변 실패한 글을 다시 답하고, 분류가 빠진 글도 채웁니다. */
 function installRetryTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'answerUnanswered') ScriptApp.deleteTrigger(t);
