@@ -324,11 +324,11 @@
     }
 
     function card(p, toneIdx) {
-        // 첫 AI 답변 뒤로 대화가 이어지면, 참여하지 않은 사람에게는 접어서 보여 줍니다.
+        // 첫 AI 답변 뒤로 이어진 댓글은 누구에게나 접어서 보여 줍니다.
         var extra = p.comments.length - 1;
-        var folded = extra >= 2 && !mine[p.id] && !openTalks[p.id];
+        var folded = extra >= 1 && !openTalks[p.id];
         var shown = folded ? p.comments.slice(0, 1) : p.comments;
-        var talkBtn = extra >= 2 && !mine[p.id]
+        var talkBtn = extra >= 1
           ? '<button class="link" data-talk="' + esc(p.id) + '">' +
             (folded ? '💬 이어진 대화 ' + extra + '개 보기' : '대화 접기') + '</button>'
           : '';
@@ -488,7 +488,7 @@
         t.disabled = true;
         google.script.run
           .withSuccessHandler(function (aiReplies) {
-            markMine(pid);
+            markMine(pid); openTalks[pid] = true;
             drafts[pid] = ''; ta.value = ''; openReplies[pid] = false; refresh();
             if (aiReplies) {
               google.script.run.withSuccessHandler(refresh).withFailureHandler(refresh).retryAnswer(pid);
