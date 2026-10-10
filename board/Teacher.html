@@ -499,9 +499,13 @@
       });
     }
 
-    /** 과목 · 대단원 칸. 질문은 드롭다운으로 고르거나 바꿉니다. 댓글은 질문의 분류를 따릅니다. */
-    function subjectCell(p) {
-      if (p.kind === 'comment') return el('td', { text: [p.category || NONE, p.unit].filter(String).join(' · ') });
+    /**
+     * 과목 · 대단원 칸. 드롭다운으로 고르거나 바꿉니다.
+     * 댓글은 원래 질문의 분류를 따르므로, 댓글 줄에서 바꾸면 원래 질문(과 그 질문의 모든 댓글)이 바뀝니다.
+     */
+    function subjectCell(item) {
+      var p = item.kind === 'comment' ? postById(item.postId) : item;
+      if (!p) return el('td', { text: [item.category || NONE, item.unit].filter(String).join(' · ') });
       var cat = fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }), p.category);
       var units = data.units[p.category] || [];
       if (!p.category || !units.length) return el('td', {}, [cat]);
@@ -597,6 +601,11 @@
         data.comments.forEach(function (c) { if (c.postId === item.id) { c.category = item.category; c.unit = item.unit; } });
       }
       if (field === 'unit') data.comments.forEach(function (c) { if (c.postId === item.id) c.unit = saved; });
+    }
+
+    function postById(id) {
+      for (var i = 0; i < data.posts.length; i++) if (data.posts[i].id === id) return data.posts[i];
+      return null;
     }
 
     function snippet(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, n) + '…' : t; }
