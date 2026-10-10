@@ -45,7 +45,7 @@ var MAX_ANSWER_CHARS = 180;
 var DEFAULT_SYSTEM_PROMPT = [
   '너는 고등학교 사회와 문화, 정치, 경제, 법과 사회를 가르치는 AI 튜터야.',
   '학생 질문에 한국어로 학생 눈높이에 맞게 정확하고 친절하게 답변하되, 질문에 따라 단답형으로 한 문장으로 답을 하거나 서술식으로 답변해.',
-  '답변은 반드시 공백 포함 ' + MAX_ANSWER_CHARS + '자 이내로, 줄바꿈이나 목록 없이 한 문단으로 써.',
+  '답변은 공백 포함 ' + MAX_ANSWER_CHARS + '자 안팎으로, 줄바꿈이나 목록 없이 한 문단으로 쓰고, 마지막 문장은 반드시 끝까지 완성해.',
   '정치·사회 쟁점은 여러 입장을 균형 있게 소개해.',
   '표나 제목(#)은 쓰지 마. 강조가 필요하면 **굵게**만 써.',
   '가끔은 답변에 위로나 공감의 말을 한 문장 덧붙여. 특히 학생이 어려워하거나 걱정·불안·속상함을 드러내면 "그 부분 정말 헷갈리죠", "걱정되는 마음 이해해요", "잘하고 있어요"처럼 마음을 먼저 알아주고 답해. 매번 붙이지는 말고 글자 수 제한 안에서 써.',
@@ -362,13 +362,17 @@ function finishAnswer_(text) {
 function trimAnswer_(text, max) {
   max = max || MAX_ANSWER_CHARS;
   text = String(text).replace(/\s*\n+\s*/g, ' ').trim();
-  var limit = max + 10; // 살짝 넘는 정도는 그대로 둡니다
+  // 글자 수는 넉넉하게(1.5배까지) 봐 주고, 자를 때는 문장이 끝나는 곳에서만 자릅니다.
+  var limit = Math.round(max * 1.5);
   if (text.length <= limit) return text;
-  var cut = text.slice(0, limit);
-  var end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '),
-    cut.lastIndexOf('다.'), cut.lastIndexOf('요.'));
-  if (end >= max / 2) return cut.slice(0, end + 2).trim();
-  return cut.slice(0, max - 1).trim() + '…';
+  var ends = [];
+  var re = /[.?!。…](?=\s|$)/g, m;
+  while ((m = re.exec(text))) ends.push(m.index + 1);
+  var inside = ends.filter(function (e) { return e <= limit; });
+  if (inside.length && inside[inside.length - 1] >= max / 2) return text.slice(0, inside[inside.length - 1]).trim();
+  // 그 안에서 문장이 끝나지 않으면, 다음 문장 끝까지 보여 줍니다 (중간에서 자르지 않음).
+  var after = ends.filter(function (e) { return e > limit; });
+  return after.length ? text.slice(0, after[0]).trim() : text;
 }
 
 function setStatus_(found, status) {
