@@ -13,7 +13,7 @@
  *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
  *   NOTIFY_EMAIL    (선택) 새 질문 알림 메일을 받을 주소. 비우면 스크립트 주인 계정, off면 알림 끔
  *   REFERENCE_ONLY  (선택) true면 '자료' 탭 밖의 내용은 아예 답하지 않습니다. 기본값 false:
- *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답한 뒤 안내 문구를 붙입니다.
+ *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답하고, 필요할 때만 선생님 안내를 덧붙입니다.
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
@@ -29,8 +29,8 @@ var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
 var REF_SHEET = '자료';
 var REF_HEADERS = ['과목', '제목', '내용'];
 var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한 (무료 한도 보호)
-var NOT_IN_REF_MARK = '[자료없음]'; // AI가 자료 밖 내용으로 답할 때 붙이는 표시 (코드가 지우고 안내 문구로 바꿈)
-var NOT_IN_REF_NOTICE = '참고 자료에 없는 내용이니 학교의 교과 담당 선생님의 추가적인 답변을 받아 보세요.';
+// 예전 지침에서 AI가 붙이던 표시. 혹시 나오면 지웁니다.
+var NOT_IN_REF_MARK = '[자료없음]';
 
 var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
 
@@ -353,10 +353,7 @@ function loadThread_(postId) {
 /** 지침을 어기고 길게 오면, 한 문단으로 합치고 글자 수 안에서 문장이 끝나는 곳까지만 남깁니다. */
 /** 자료 밖 답변 표시를 안내 문구로 바꾸고, 안내 문구까지 합쳐 10줄 안에 들어가게 자릅니다. */
 function finishAnswer_(text) {
-  text = String(text);
-  if (text.indexOf(NOT_IN_REF_MARK) === -1) return trimAnswer_(text);
-  text = text.split(NOT_IN_REF_MARK).join('').trim();
-  return trimAnswer_(text, MAX_ANSWER_CHARS - NOT_IN_REF_NOTICE.length - 1) + ' ' + NOT_IN_REF_NOTICE;
+  return trimAnswer_(String(text).split(NOT_IN_REF_MARK).join('').trim());
 }
 
 function trimAnswer_(text, max) {
@@ -433,8 +430,10 @@ function systemPrompt_(category) {
     ? '아래 [참고 자료]에 있는 내용만 근거로 답해. 자료에 없는 내용은 지어내거나 네가 아는 지식으로 채우지 말고, ' +
       '"참고 자료에 없는 내용이에요. 학교의 교과 담당 선생님께 물어보세요."라고 답해.'
     : '아래 [참고 자료]에 질문의 답이 있으면 자료에 있는 내용으로만 답해. ' +
-      '자료에 답이 없으면 네가 정확히 아는 내용으로 공백 포함 ' + (MAX_ANSWER_CHARS - NOT_IN_REF_NOTICE.length - 10) +
-      '자 이내로 답하되, 답변 맨 앞에 ' + NOT_IN_REF_MARK + ' 를 붙여.';
+      '자료에 답이 없으면 네가 정확히 아는 내용으로 답해. 교과서에 나오는 기본 개념이나 널리 알려진 일반 지식이면 따로 안내하지 마. ' +
+      '다만 자료에 없으면서 수업 범위를 벗어나거나, 최신 정보·학교 사정·시험 범위처럼 선생님 확인이 필요한 내용일 때만 ' +
+      '"이 부분은 학교의 교과 담당 선생님께 한 번 더 여쭤봐도 좋아요"처럼 문맥에 맞는 표현으로 자연스럽게 한 문장 덧붙여. ' +
+      '매번 같은 문장을 쓰지 말고, 같은 대화에서 이미 선생님 안내를 했다면 다시 하지 마.';
   return base + '\n\n' + rule + '\n\n[참고 자료]\n' + ref;
 }
 
