@@ -45,6 +45,12 @@
       background: var(--tone); color: #2b2b2b; font-weight: 700; font-size: 17px; border-radius: 14px;
       padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
     .col-head .count { font-size: 13px; background: rgba(255,255,255,.7); border-radius: 999px; padding: 2px 9px; }
+    .month { margin-bottom: 12px; }
+    .month-head { width: 100%; display: flex; justify-content: space-between; align-items: center;
+      background: rgba(255,255,255,.75); color: #4a3b2c; border: 1px dashed var(--tone); border-radius: 12px;
+      padding: 9px 12px; font-size: 14px; font-weight: 600; }
+    .month-head .count { font-size: 12px; background: var(--tone); border-radius: 999px; padding: 1px 8px; }
+    .month.open .month-head { margin-bottom: 10px; border-style: solid; }
     .col-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
     .sorting { margin-top: 24px; }
     .finder { background: var(--card); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px;
@@ -161,6 +167,7 @@
     var lastPosts = [];
     var nameFilter = '';    // 이름 색인에서 고른 사람 (정확히 일치)
     var nameQuery = '';     // 검색칸에 입력한 글자 (부분 일치)
+    var openMonths = {};    // 펼쳐 둔 지난 달 묶음 (과목|연-월)
 
     // 이름은 이 브라우저에 기억해 둡니다.
     var nameInput = document.getElementById('qName');
@@ -227,11 +234,45 @@
       html += '<div class="board">' + CATEGORIES.map(function (name, i) {
         return '<section class="tone-' + i + '">' +
           '<div class="col-head">' + esc(name) + '<span class="count">' + cols[i].length + '</span></div>' +
-          (cols[i].length ? cols[i].map(function (p) { return card(p, i); }).join('')
+          (cols[i].length ? columnBody(cols[i], i, name)
                           : '<div class="col-empty">아직 질문이 없어요</div>') +
           '</section>';
       }).join('') + '</div>';
       grid.innerHTML = html + sortingHtml;
+    }
+
+    // 이번 달 질문은 그대로 보여 주고, 지난 달 질문은 "2026년 10월" 묶음으로 접어 둡니다.
+    function monthKey(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+    function columnBody(posts, toneIdx, catName) {
+      var now = new Date();
+      var thisMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      var current = [], months = {}, order = [];
+      posts.forEach(function (p) {
+        var k = monthKey(p.createdAt);
+        if (!k || k >= thisMonth) { current.push(p); return; }
+        if (!months[k]) { months[k] = []; order.push(k); }
+        months[k].push(p);
+      });
+      order.sort().reverse(); // 최근 달이 위로
+      var filtering = !!(nameFilter || nameQuery); // 이름으로 찾을 때는 지난 달도 펼쳐서 한눈에
+      var html = current.map(function (p) { return card(p, toneIdx); }).join('');
+      if (!current.length && order.length) html += '<div class="col-empty">이번 달 질문은 아직 없어요</div>';
+      order.forEach(function (k) {
+        var id = catName + '|' + k;
+        var open = filtering || openMonths[id];
+        var parts = k.split('-');
+        html += '<div class="month' + (open ? ' open' : '') + '">' +
+          '<button type="button" class="month-head" data-month="' + esc(id) + '">' +
+          '<span>' + (open ? '▾' : '▸') + ' ' + parts[0] + '년 ' + Number(parts[1]) + '월</span>' +
+          '<span class="count">' + months[k].length + '</span></button>' +
+          (open ? '<div class="month-body">' + months[k].map(function (p) { return card(p, toneIdx); }).join('') + '</div>' : '') +
+          '</div>';
+      });
+      return html;
     }
 
     function matchesName(p) {
@@ -328,6 +369,12 @@
     });
 
     grid.addEventListener('click', function (ev) {
+      var mh = ev.target.closest('.month-head');
+      if (mh) {
+        openMonths[mh.dataset.month] = !openMonths[mh.dataset.month];
+        render(lastPosts);
+        return;
+      }
       var t = ev.target;
       if (t.dataset.toggle) {
         var id = t.dataset.toggle;
