@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg: #fdf6e9; --card: #fff; --ink: #2b2b2b; --muted: #7a7266; --line: #ece3d3;
+      --accent: #ff7a59; --ai-bg: #eaf4ff; --ai-ink: #2560b5; --err: #c0392b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink);
+      background: var(--bg) radial-gradient(#e9dcc4 1.2px, transparent 1.2px) 0 0 / 22px 22px;
+      font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+    header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
+    .hero { display: flex; align-items: center; gap: 16px; border-radius: 20px; padding: 18px 22px;
+      background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%);
+      box-shadow: 0 4px 14px rgba(255,122,89,.25); }
+    .hero .mascot { width: 96px; height: 96px; flex: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,.18)); }
+    .hero img.mascot { object-fit: contain; }
+    h1 { margin: 0 0 8px; font-size: 26px; color: #3a2414; }
+    .bubble { position: relative; display: inline-block; background: #fff; border-radius: 14px;
+      padding: 8px 12px; font-size: 14px; color: #5a3d2b; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    .bubble::before { content: ''; position: absolute; left: -7px; top: 12px; border: 7px solid transparent;
+      border-left: 0; border-right-color: #fff; }
+    .credit { font-size: 12px; font-weight: 400; color: rgba(58,36,20,.45); margin-left: 6px; vertical-align: middle; }
+    .howto { margin-top: 10px; font-size: 13px; color: #4a2e1c; line-height: 1.5; }
+    @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; } }
+    main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
+
+    .composer { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08); display: grid; gap: 8px; }
+    input, textarea { width: 100%; font: inherit; padding: 9px 10px; border: 1px solid var(--line);
+      border-radius: 8px; background: #fff; }
+    textarea { resize: vertical; min-height: 70px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row input { flex: 1; }
+    button { font: inherit; border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+      background: var(--accent); color: #fff; white-space: nowrap; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.link { background: none; color: var(--accent); padding: 4px 0; justify-self: start; }
+
+    .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+    @media (max-width: 1000px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .board { grid-template-columns: 1fr; } }
+    .col-head { width: 100%; font: inherit; cursor: pointer; position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center;
+      background: var(--tone); color: #2b2b2b; font-weight: 700; font-size: 17px; border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    .col-head .count { font-size: 13px; background: rgba(255,255,255,.7); border-radius: 999px; padding: 2px 9px; }
+    .month { margin-bottom: 12px; }
+    .month-head { width: 100%; display: flex; justify-content: space-between; align-items: center;
+      background: rgba(255,255,255,.75); color: #4a3b2c; border: 1px dashed var(--tone); border-radius: 12px;
+      padding: 9px 12px; font-size: 14px; font-weight: 600; }
+    .month-head .count { font-size: 12px; background: var(--tone); border-radius: 999px; padding: 1px 8px; }
+    .month.open .month-head { margin-bottom: 10px; border-style: solid; }
+    .card.movable { cursor: grab; }
+    .card.dragging { opacity: .4; }
+    .pick { float: right; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line);
+      border-radius: 8px; background: #fff; margin: -2px 0 4px 8px; }
+    section.drop-on .col-head { outline: 3px dashed var(--accent); outline-offset: 3px; }
+    .col-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
+    .sorting { margin-top: 24px; }
+    .finder { background: var(--card); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .finder .row input { max-width: 260px; }
+    /* 넓은 화면: 질문 칸과 이름 찾기를 나란히 */
+    @media (min-width: 800px) {
+      .top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px;
+        align-items: stretch; margin-bottom: 18px; }
+      .top .composer, .top .finder { margin-bottom: 0; }
+      .top .finder .row input { max-width: none; }
+      .top .finder .names { max-height: 70px; }
+    }
+    .names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 92px; overflow-y: auto; }
+    .name { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #f3ece0; color: #4a3b2c; }
+    .name b { font-weight: 700; color: var(--accent); margin-left: 3px; }
+    .name.on { background: var(--accent); color: #fff; }
+    .name.on b { color: #fff; }
+    .filter-note { margin-top: 10px; font-size: 14px; }
+    .filter-note button { margin-left: 6px; }
+    .sorting .label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .sorting .cards { columns: 280px; column-gap: 14px; }
+    /* 과목 색: --tone(칸 제목·띠), --soft(댓글 상자), --soft-ink(AI 이름 글씨) */
+    .tone-0 { --tone: #8fd3a8; --soft: #e8f7ec; --soft-ink: #2f7a48; }  /* 사회와 문화: 연두 */
+    .tone-1 { --tone: #8cc4ff; --soft: #eaf4ff; --soft-ink: #2560b5; }  /* 정치: 하늘 */
+    .tone-2 { --tone: #ffd56b; --soft: #fff6d6; --soft-ink: #8a6200; }  /* 경제: 연노랑 */
+    .tone-3 { --tone: #c3a6ff; --soft: #f1eaff; --soft-ink: #6a43c2; }  /* 법과 사회: 연보라 */
+    .tone-x { --tone: #e2d6c2; --soft: #f5f0e8; --soft-ink: #6b5a45; }  /* 분류 전 */
+    .card { break-inside: avoid; background: var(--card); border-radius: 14px; padding: 14px;
+      margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,.07); border-top: 6px solid var(--tone, #ffd56b); }
+
+    .meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .q { white-space: pre-wrap; word-break: break-word; font-size: 16px; line-height: 1.5; }
+    .comments { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
+    .c { font-size: 14px; line-height: 1.55; word-break: break-word;
+      background: var(--soft, var(--ai-bg)); border-radius: 8px; padding: 8px 10px; }
+    .c .who { font-weight: 600; font-size: 12px; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+    .c .av { width: 26px; height: 26px; flex: none; border-radius: 50%; background: #fff; object-fit: contain; }
+    .c.ai .who { color: var(--soft-ink, var(--ai-ink)); }
+    .c .body { white-space: pre-wrap; }
+    .pending { font-size: 13px; color: var(--ai-ink); }
+    .error { font-size: 13px; color: var(--err); }
+    .reply { margin-top: 8px; display: none; gap: 6px; }
+    .reply.open { display: grid; }
+    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #333;
+      color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; }
+  </style>
+</head>
+<body>
+  <!-- AI 튜터 캐릭터 (부엉이). 스크립트 속성 CHARACTER_IMAGE_URL 을 넣으면 그 이미지로 바뀝니다. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="owl" viewBox="0 0 120 120">
+      <polygon points="28,34 36,10 50,28" fill="#7a4e2d"/>
+      <polygon points="92,34 84,10 70,28" fill="#7a4e2d"/>
+      <ellipse cx="60" cy="70" rx="40" ry="44" fill="#9a6640"/>
+      <ellipse cx="22" cy="78" rx="10" ry="22" fill="#7a4e2d" transform="rotate(15 22 78)"/>
+      <ellipse cx="98" cy="78" rx="10" ry="22" fill="#7a4e2d" transform="rotate(-15 98 78)"/>
+      <ellipse cx="60" cy="86" rx="24" ry="26" fill="#f6dcb4"/>
+      <path d="M48 80 q4 4 8 0 M58 88 q4 4 8 0 M50 96 q4 4 8 0 M62 78 q4 4 8 0" stroke="#d9b98c" stroke-width="2" fill="none"/>
+      <circle cx="43" cy="52" r="15" fill="#fff"/>
+      <circle cx="77" cy="52" r="15" fill="#fff"/>
+      <circle cx="45" cy="54" r="7" fill="#2b2b2b"/>
+      <circle cx="75" cy="54" r="7" fill="#2b2b2b"/>
+      <circle cx="47" cy="51" r="2.4" fill="#fff"/>
+      <circle cx="77" cy="51" r="2.4" fill="#fff"/>
+      <circle cx="43" cy="52" r="16" fill="none" stroke="#2b2b2b" stroke-width="3"/>
+      <circle cx="77" cy="52" r="16" fill="none" stroke="#2b2b2b" stroke-width="3"/>
+      <line x1="59" y1="52" x2="61" y2="52" stroke="#2b2b2b" stroke-width="3"/>
+      <polygon points="54,64 66,64 60,74" fill="#ff9f1c"/>
+      <ellipse cx="44" cy="113" rx="8" ry="4" fill="#ff9f1c"/>
+      <ellipse cx="76" cy="113" rx="8" ry="4" fill="#ff9f1c"/>
+      <polygon points="60,2 98,16 60,30 22,16" fill="#33334d"/>
+      <rect x="44" y="20" width="32" height="12" rx="3" fill="#33334d"/>
+      <path d="M90 19 v14" stroke="#ffd23f" stroke-width="3"/>
+      <circle cx="90" cy="35" r="4" fill="#ffd23f"/>
+    </symbol>
+  </svg>
+
+  <header>
+    <div class="hero">
+      <? if (characterUrl) { ?>
+        <img class="mascot" src="<?= characterUrl ?>" alt="">
+      <? } else { ?>
+        <svg class="mascot" role="img" aria-label="AI 튜터 캐릭터"><use href="#owl"/></svg>
+      <? } ?>
+      <div>
+        <h1><?= boardTitle ?> <span class="credit">made by JB</span></h1>
+        <div class="bubble">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
+        <div class="howto">🦉 질문을 올리면 AI 튜터가 먼저 답변을 달아요. 학교의 교과 담당 선생님도 질문을 확인하고 직접 댓글을 달아 줄 거예요.</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="top">
+    <form class="composer" id="composer">
+      <textarea id="qText" maxlength="1000" placeholder="궁금한 것을 적어 주세요" required></textarea>
+      <div class="row">
+        <input id="qName" maxlength="30" placeholder="이름 (비우면 익명)">
+        <button id="qSubmit" type="submit">질문 올리기</button>
+      </div>
+    </form>
+
+    <div class="finder">
+      <div class="row">
+        <input id="nameSearch" placeholder="🔍 이름으로 질문 찾기">
+      </div>
+      <div class="names" id="names"></div>
+      <div class="filter-note" id="filterNote" style="display:none"></div>
+    </div>
+    </div>
+
+    <div id="grid"></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var REFRESH_MS = 10000;
+    var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
+    var CHARACTER_URL = <?!= JSON.stringify(characterUrl) ?>;
+    var AVATAR = CHARACTER_URL
+      ? '<img class="av" src="' + CHARACTER_URL.replace(/"/g, '&quot;') + '" alt="">'
+      : '<svg class="av" viewBox="0 0 120 120"><use href="#owl"/></svg>';
+    var grid = document.getElementById('grid');
+    var openReplies = {};   // 댓글 입력창을 열어 둔 글 (새로고침해도 유지)
+    var drafts = {};        // 작성 중인 댓글 내용
+    var draftNames = {};    // 작성 중인 댓글의 작성자 이름
+    var localPending = [];  // 서버 저장 전, 화면에 먼저 보여 주는 내 질문
+    var lastPosts = [];
+    var nameFilter = '';    // 이름 색인에서 고른 사람 (정확히 일치)
+    var nameQuery = '';     // 검색칸에 입력한 글자 (부분 일치)
+    var openMonths = {};    // 펼쳐 둔 지난 달 묶음 (과목|연-월)
+    var openTalks = {};     // 펼쳐 둔 댓글 대화
+    var openCols = {};      // 펼쳐 둔 과목 칸 (이 브라우저에 기억)
+    var justPosted = {};    // 방금 올린 내 질문: 분류되면 그 과목 칸을 자동으로 펼쳐 답변이 보이게
+    try { openCols = JSON.parse(localStorage.getItem('qna-open-cols') || '{}') || {}; } catch (e) {}
+    // 이 브라우저에서 질문하거나 댓글을 단 글은 대화를 늘 펼쳐서 보여 줍니다.
+    var mine = {};
+    try { mine = JSON.parse(localStorage.getItem('qna-mine') || '{}') || {}; } catch (e) {}
+    function markMine(id) {
+      mine[id] = 1;
+      try { localStorage.setItem('qna-mine', JSON.stringify(mine)); } catch (e) {}
+    }
+
+    // 이름은 이 브라우저에 기억해 둡니다.
+    var nameInput = document.getElementById('qName');
+    try { nameInput.value = localStorage.getItem('qna-name') || ''; } catch (e) {}
+    nameInput.addEventListener('change', function () {
+      try { localStorage.setItem('qna-name', nameInput.value); } catch (e) {}
+    });
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (ch) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+      });
+    }
+    // AI 답변의 **굵게** 정도만 살립니다. (그 외 HTML은 모두 이스케이프)
+    function fmt(s) {
+      return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[*-] /gm, '• ');
+    }
+    function when(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+        d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    function toast(msg) {
+      var t = document.getElementById('toast');
+      t.textContent = msg; t.style.display = 'block';
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(function () { t.style.display = 'none'; }, 3500);
+    }
+    function errMsg(e) { return (e && e.message) ? e.message : String(e); }
+
+    function render(posts) {
+      // 다시 그리기 전에 작성 중인 댓글을 보관
+      grid.querySelectorAll('.reply textarea').forEach(function (ta) { drafts[ta.dataset.id] = ta.value; });
+      grid.querySelectorAll('.reply input').forEach(function (inp) { draftNames[inp.dataset.id] = inp.value; });
+
+      lastPosts = posts;
+      // 서버에 이미 저장된 내 질문은 임시 카드 대신 서버 카드로 보여 줌
+      var mine = localPending.filter(function (lp) {
+        return !posts.some(function (p) { return p.text === lp.text && p.author === lp.author; });
+      });
+      renderNames(posts);
+      var all = mine.concat(posts).filter(matchesName);
+      var note = document.getElementById('filterNote');
+      if (nameFilter || nameQuery) {
+        note.style.display = 'block';
+        note.innerHTML = '<b>' + esc(nameFilter || nameQuery) + '</b>' + (nameFilter ? '' : ' (이)가 들어간 이름') +
+          '의 질문 ' + all.length + '개' + '<button class="link" id="clearFilter">전체 보기</button>';
+      } else {
+        note.style.display = 'none';
+      }
+      posts.forEach(function (p) {
+        if (justPosted[p.id] && p.category) { openCols[p.category] = true; delete justPosted[p.id]; }
+      });
+      var cols = CATEGORIES.map(function () { return []; });
+      var sorting = [];
+      all.forEach(function (p) {
+        var i = CATEGORIES.indexOf(p.category);
+        (i === -1 ? sorting : cols[i]).push(p);
+      });
+
+      var html = '';
+      var sortingHtml = '';
+      if (sorting.length) {
+        sortingHtml = '<div class="sorting"><div class="label">아직 분류되지 않은 질문 · 쪽지를 과목 칸으로 끌어다 놓거나 과목을 골라 주세요</div>' +
+          '<div class="cards">' + sorting.map(function (p) { return card(p, 'x'); }).join('') + '</div></div>';
+      }
+      html += '<div class="board">' + CATEGORIES.map(function (name, i) {
+        // 과목 칸은 처음엔 접혀 있고, 제목을 누르면 펼쳐집니다. 이름으로 찾을 때는 자동으로 펼칩니다.
+        var open = openCols[name] || nameFilter || nameQuery;
+        return '<section class="tone-' + i + '" data-cat="' + esc(name) + '">' +
+          '<button type="button" class="col-head" data-col="' + esc(name) + '">' +
+          '<span>' + (open ? '▾ ' : '▸ ') + esc(name) + '</span><span class="count">' + cols[i].length + '</span></button>' +
+          (!open ? '' : cols[i].length ? columnBody(cols[i], i, name)
+                          : '<div class="col-empty">아직 질문이 없어요</div>') +
+          '</section>';
+      }).join('') + '</div>';
+      grid.innerHTML = html + sortingHtml;
+    }
+
+    // 이번 달 질문은 그대로 보여 주고, 지난 달 질문은 "2026년 10월" 묶음으로 접어 둡니다.
+    function monthKey(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+    function columnBody(posts, toneIdx, catName) {
+      var now = new Date();
+      var thisMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      var current = [], months = {}, order = [];
+      posts.forEach(function (p) {
+        var k = monthKey(p.createdAt);
+        if (!k || k >= thisMonth) { current.push(p); return; }
+        if (!months[k]) { months[k] = []; order.push(k); }
+        months[k].push(p);
+      });
+      order.sort().reverse(); // 최근 달이 위로
+      var filtering = !!(nameFilter || nameQuery); // 이름으로 찾을 때는 지난 달도 펼쳐서 한눈에
+      var html = current.map(function (p) { return card(p, toneIdx); }).join('');
+      if (!current.length && order.length) html += '<div class="col-empty">이번 달 질문은 아직 없어요</div>';
+      order.forEach(function (k) {
+        var id = catName + '|' + k;
+        var open = filtering || openMonths[id];
+        var parts = k.split('-');
+        html += '<div class="month' + (open ? ' open' : '') + '">' +
+          '<button type="button" class="month-head" data-month="' + esc(id) + '">' +
+          '<span>' + (open ? '▾' : '▸') + ' ' + parts[0] + '년 ' + Number(parts[1]) + '월</span>' +
+          '<span class="count">' + months[k].length + '</span></button>' +
+          (open ? '<div class="month-body">' + months[k].map(function (p) { return card(p, toneIdx); }).join('') + '</div>' : '') +
+          '</div>';
+      });
+      return html;
+    }
+
+    function matchesName(p) {
+      if (nameFilter) return p.author === nameFilter;
+      if (nameQuery) return p.author.toLowerCase().indexOf(nameQuery.toLowerCase()) !== -1;
+      return true;
+    }
+
+    // 질문한 사람 이름 색인 (질문 많은 순, 같으면 가나다순)
+    function renderNames(posts) {
+      var counts = {};
+      posts.forEach(function (p) { counts[p.author] = (counts[p.author] || 0) + 1; });
+      var names = Object.keys(counts).filter(function (n) {
+        return !nameQuery || n.toLowerCase().indexOf(nameQuery.toLowerCase()) !== -1;
+      }).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b, 'ko'); });
+      document.getElementById('names').innerHTML = names.map(function (n) {
+        return '<button type="button" class="name' + (n === nameFilter ? ' on' : '') + '" data-name="' + esc(n) + '">' +
+          esc(n) + '<b>' + counts[n] + '</b></button>';
+      }).join('') || '<span class="meta">아직 질문한 사람이 없어요</span>';
+    }
+
+    function card(p, toneIdx) {
+        // 첫 AI 답변 뒤로 이어진 댓글은 누구에게나 접어서 보여 줍니다.
+        var extra = p.comments.length - 1;
+        var folded = extra >= 1 && !openTalks[p.id];
+        var shown = folded ? p.comments.slice(0, 1) : p.comments;
+        var talkBtn = extra >= 1
+          ? '<button class="link" data-talk="' + esc(p.id) + '">' +
+            (folded ? '💬 이어진 대화 ' + extra + '개 보기' : '대화 접기') + '</button>'
+          : '';
+        var comments = shown.map(function (c) {
+          return '<div class="c' + (c.isAI ? ' ai' : '') + '">' +
+            '<div class="who">' + (c.isAI ? AVATAR : '') + esc(c.author) +
+            ' <span class="meta">' + when(c.createdAt) + '</span></div>' +
+            '<div class="body">' + (c.isAI ? fmt(c.text) : esc(c.text)) + '</div></div>';
+        }).join('') + talkBtn;
+        var state = '';
+        if (p.status === 'pending') state = '<div class="pending">✏️ AI 튜터가 답변을 쓰고 있어요…</div>';
+        if (p.status === 'error') state = '<div class="error">AI 답변을 받지 못했어요. ' +
+          '<button class="link" data-retry="' + esc(p.id) + '">다시 받기</button></div>';
+        var replyBox = p.local ? '' :
+          '<button class="link" data-toggle="' + esc(p.id) + '">댓글 달기</button>' +
+          '<div class="reply' + (openReplies[p.id] ? ' open' : '') + '">' +
+          '<input data-id="' + esc(p.id) + '" maxlength="30" placeholder="이름 (비우면 익명)" value="' +
+          esc(p.id in draftNames ? draftNames[p.id] : nameInput.value) + '">' +
+          '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
+          esc(drafts[p.id] || '') + '</textarea>' +
+          '<button data-send="' + esc(p.id) + '">댓글 등록</button></div>';
+        var movable = toneIdx === 'x' && !p.local;
+        var picker = movable
+          ? '<select class="pick" data-pick="' + esc(p.id) + '"><option value="">📂 과목 정하기</option>' +
+            CATEGORIES.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select>'
+          : '';
+        return '<div class="card tone-' + toneIdx + (movable ? ' movable" draggable="true" data-drag="' + esc(p.id) : '') + '">' +
+          picker +
+          '<div class="meta">' + esc(p.author) + ' · ' + when(p.createdAt) + '</div>' +
+          '<div class="q">' + esc(p.text) + '</div>' +
+          '<div class="comments">' + comments + state + replyBox + '</div></div>';
+    }
+
+    // 분류 안 된 쪽지를 과목 칸으로 옮기기 (끌어다 놓기 또는 과목 고르기)
+    var dragging = false;
+    function moveTo(postId, cat) {
+      var post = lastPosts.filter(function (p) { return p.id === postId; })[0];
+      if (!post || !cat) return;
+      post.category = cat; // 화면에 먼저 반영
+      render(lastPosts);
+      google.script.run
+        .withSuccessHandler(refresh)
+        .withFailureHandler(function (e) { toast('옮기지 못했어요: ' + errMsg(e)); refresh(); })
+        .setCategory(postId, cat);
+    }
+    grid.addEventListener('dragstart', function (ev) {
+      var c = ev.target.closest && ev.target.closest('[data-drag]');
+      if (!c) return;
+      dragging = true;
+      c.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain', c.dataset.drag);
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    grid.addEventListener('dragend', function (ev) {
+      dragging = false;
+      if (ev.target.classList) ev.target.classList.remove('dragging');
+      grid.querySelectorAll('.drop-on').forEach(function (el) { el.classList.remove('drop-on'); });
+    });
+    grid.addEventListener('dragover', function (ev) {
+      var sec = ev.target.closest && ev.target.closest('section[data-cat]');
+      if (!sec || !dragging) return;
+      ev.preventDefault();
+      grid.querySelectorAll('.drop-on').forEach(function (el) { if (el !== sec) el.classList.remove('drop-on'); });
+      sec.classList.add('drop-on');
+    });
+    grid.addEventListener('drop', function (ev) {
+      var sec = ev.target.closest && ev.target.closest('section[data-cat]');
+      if (!sec) return;
+      ev.preventDefault();
+      dragging = false;
+      moveTo(ev.dataTransfer.getData('text/plain'), sec.dataset.cat);
+    });
+    grid.addEventListener('change', function (ev) {
+      if (ev.target.dataset && ev.target.dataset.pick) moveTo(ev.target.dataset.pick, ev.target.value);
+    });
+
+    function refresh() {
+      if (dragging) return; // 끄는 도중에는 화면을 다시 그리지 않음
+      google.script.run
+        .withSuccessHandler(render)
+        .withFailureHandler(function (e) { console.error(e); })
+        .getBoard();
+    }
+
+    document.getElementById('composer').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var textEl = document.getElementById('qText');
+      var text = textEl.value.trim();
+      if (!text) return;
+      var name = nameInput.value.trim();
+      var btn = document.getElementById('qSubmit');
+      btn.disabled = true;
+
+      var temp = { id: 'local-' + Date.now(), local: true, author: name || '익명',
+        text: text, createdAt: new Date().toISOString(), status: 'pending', comments: [] };
+      localPending.unshift(temp);
+      textEl.value = '';
+      render(lastPosts); // 서버 응답 전에 내 질문을 바로 보여 줌
+      btn.disabled = false;
+
+      google.script.run
+        .withSuccessHandler(function (id) { markMine(id); justPosted[id] = 1; localPending.splice(localPending.indexOf(temp), 1); refresh(); })
+        .withFailureHandler(function (e) {
+          localPending.splice(localPending.indexOf(temp), 1);
+          textEl.value = text;
+          toast('질문을 올리지 못했어요: ' + errMsg(e));
+          refresh();
+        })
+        .addPost(name, text);
+    });
+
+    document.getElementById('nameSearch').addEventListener('input', function (ev) {
+      nameQuery = ev.target.value.trim();
+      nameFilter = '';
+      render(lastPosts);
+    });
+    document.querySelector('.finder').addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button');
+      if (!btn) return;
+      if (btn.id === 'clearFilter') {
+        nameFilter = ''; nameQuery = '';
+        document.getElementById('nameSearch').value = '';
+      } else if (btn.dataset.name != null) {
+        nameFilter = nameFilter === btn.dataset.name ? '' : btn.dataset.name;
+      }
+      render(lastPosts);
+    });
+
+    grid.addEventListener('click', function (ev) {
+      var ch = ev.target.closest('.col-head');
+      if (ch) {
+        openCols[ch.dataset.col] = !openCols[ch.dataset.col];
+        try { localStorage.setItem('qna-open-cols', JSON.stringify(openCols)); } catch (e) {}
+        render(lastPosts);
+        return;
+      }
+      var mh = ev.target.closest('.month-head');
+      if (mh) {
+        openMonths[mh.dataset.month] = !openMonths[mh.dataset.month];
+        render(lastPosts);
+        return;
+      }
+      var t = ev.target;
+      if (t.dataset.talk) {
+        openTalks[t.dataset.talk] = !openTalks[t.dataset.talk];
+        render(lastPosts);
+        return;
+      }
+      if (t.dataset.toggle) {
+        var id = t.dataset.toggle;
+        openReplies[id] = !openReplies[id];
+        t.nextElementSibling.classList.toggle('open', openReplies[id]);
+        if (openReplies[id]) t.nextElementSibling.querySelector('textarea').focus();
+      } else if (t.dataset.send) {
+        var pid = t.dataset.send;
+        var ta = t.parentNode.querySelector('textarea');
+        var author = t.parentNode.querySelector('input').value.trim();
+        var text = ta.value.trim();
+        if (!text) return;
+        t.disabled = true;
+        google.script.run
+          .withSuccessHandler(function (aiReplies) {
+            markMine(pid); openTalks[pid] = true;
+            drafts[pid] = ''; ta.value = ''; openReplies[pid] = false; refresh();
+            if (aiReplies) {
+              google.script.run.withSuccessHandler(refresh).withFailureHandler(refresh).retryAnswer(pid);
+            }
+          })
+          .withFailureHandler(function (e) { t.disabled = false; toast('댓글을 올리지 못했어요: ' + errMsg(e)); })
+          .addComment(pid, author, text);
+      } else if (t.dataset.retry) {
+        t.disabled = true;
+        t.textContent = '요청 중…';
+        google.script.run
+          .withSuccessHandler(refresh)
+          .withFailureHandler(function (e) { toast('다시 받기 실패: ' + errMsg(e)); refresh(); })
+          .retryAnswer(t.dataset.retry);
+      }
+    });
+
+    refresh();
+    setInterval(function () { if (!document.hidden) refresh(); }, REFRESH_MS);
+  </script>
+</body>
+</html>
