@@ -23,8 +23,6 @@
       padding: 8px 12px; font-size: 14px; color: #5a3d2b; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
     .bubble::before { content: ''; position: absolute; left: -7px; top: 12px; border: 7px solid transparent;
       border-left: 0; border-right-color: #fff; }
-    .chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-    .chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.7); color: #5a3d2b; }
     @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; } }
     main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
 
@@ -40,11 +38,22 @@
     button:disabled { opacity: .5; cursor: default; }
     button.link { background: none; color: var(--accent); padding: 4px 0; justify-self: start; }
 
-    .grid { columns: 300px; column-gap: 16px; }
+    .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+    @media (max-width: 1000px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .board { grid-template-columns: 1fr; } }
+    .col-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center;
+      background: var(--tone); color: #2b2b2b; font-weight: 700; font-size: 17px; border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    .col-head .count { font-size: 13px; background: rgba(255,255,255,.7); border-radius: 999px; padding: 2px 9px; }
+    .col-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
+    .sorting { margin-top: 24px; }
+    .sorting .label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .sorting .cards { columns: 280px; column-gap: 14px; }
+    .tone-0 { --tone: #8fd3a8; } .tone-1 { --tone: #8cc4ff; } .tone-2 { --tone: #ffd56b; } .tone-3 { --tone: #c3a6ff; }
+    .tone-x { --tone: #e2d6c2; }
     .card { break-inside: avoid; background: var(--card); border-radius: 14px; padding: 14px;
       margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,.07); border-top: 6px solid var(--tone, #ffd56b); }
-    .card.t0 { --tone: #ffd56b; } .card.t1 { --tone: #8fd3a8; } .card.t2 { --tone: #8cc4ff; }
-    .card.t3 { --tone: #ffa3c4; } .card.t4 { --tone: #c3a6ff; } .card.t5 { --tone: #ffb37a; }
+
     .meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     .q { white-space: pre-wrap; word-break: break-word; font-size: 16px; line-height: 1.5; }
     .comments { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
@@ -58,7 +67,6 @@
     .error { font-size: 13px; color: var(--err); }
     .reply { margin-top: 8px; display: none; gap: 6px; }
     .reply.open { display: grid; }
-    .empty { color: var(--muted); text-align: center; padding: 40px 0; }
     .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #333;
       color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; }
   </style>
@@ -103,7 +111,6 @@
       <div>
         <h1><?= boardTitle ?></h1>
         <div class="bubble">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
-        <div class="chips"><span class="chip">사회와 문화</span><span class="chip">정치</span><span class="chip">경제</span><span class="chip">법과 사회</span></div>
       </div>
     </div>
   </header>
@@ -117,14 +124,14 @@
       </div>
     </form>
 
-    <div class="grid" id="grid"></div>
-    <div class="empty" id="empty" style="display:none">아직 질문이 없어요. 첫 질문을 올려 보세요!</div>
+    <div id="grid"></div>
   </main>
 
   <div class="toast" id="toast"></div>
 
   <script>
     var REFRESH_MS = 10000;
+    var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
     var CHARACTER_URL = <?!= JSON.stringify(characterUrl) ?>;
     var AVATAR = CHARACTER_URL
       ? '<img class="av" src="' + CHARACTER_URL.replace(/"/g, '&quot;') + '" alt="">'
@@ -163,12 +170,6 @@
       clearTimeout(toast.timer);
       toast.timer = setTimeout(function () { t.style.display = 'none'; }, 3500);
     }
-    // 글마다 고정된 색을 줍니다 (새 글이 와도 색이 바뀌지 않도록 id로 계산)
-    function tone(id) {
-      var h = 0;
-      for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
-      return h % 6;
-    }
     function errMsg(e) { return (e && e.message) ? e.message : String(e); }
 
     function render(posts) {
@@ -181,8 +182,30 @@
         return !posts.some(function (p) { return p.text === lp.text && p.author === lp.author; });
       });
       var all = mine.concat(posts);
-      document.getElementById('empty').style.display = all.length ? 'none' : 'block';
-      grid.innerHTML = all.map(function (p) {
+      var cols = CATEGORIES.map(function () { return []; });
+      var sorting = [];
+      all.forEach(function (p) {
+        var i = CATEGORIES.indexOf(p.category);
+        (i === -1 ? sorting : cols[i]).push(p);
+      });
+
+      var html = '';
+      var sortingHtml = '';
+      if (sorting.length) {
+        sortingHtml = '<div class="sorting"><div class="label">아직 분류되지 않은 질문</div>' +
+          '<div class="cards">' + sorting.map(function (p) { return card(p, 'x'); }).join('') + '</div></div>';
+      }
+      html += '<div class="board">' + CATEGORIES.map(function (name, i) {
+        return '<section class="tone-' + i + '">' +
+          '<div class="col-head">' + esc(name) + '<span class="count">' + cols[i].length + '</span></div>' +
+          (cols[i].length ? cols[i].map(function (p) { return card(p, i); }).join('')
+                          : '<div class="col-empty">아직 질문이 없어요</div>') +
+          '</section>';
+      }).join('') + '</div>';
+      grid.innerHTML = html + sortingHtml;
+    }
+
+    function card(p, toneIdx) {
         var comments = p.comments.map(function (c) {
           return '<div class="c' + (c.isAI ? ' ai' : '') + '">' +
             '<div class="who">' + (c.isAI ? AVATAR : '') + esc(c.author) +
@@ -199,11 +222,10 @@
           '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
           esc(drafts[p.id] || '') + '</textarea>' +
           '<button data-send="' + esc(p.id) + '">댓글 등록</button></div>';
-        return '<div class="card t' + tone(p.id) + '">' +
+        return '<div class="card tone-' + toneIdx + '">' +
           '<div class="meta">' + esc(p.author) + ' · ' + when(p.createdAt) + '</div>' +
           '<div class="q">' + esc(p.text) + '</div>' +
           '<div class="comments">' + comments + state + replyBox + '</div></div>';
-      }).join('');
     }
 
     function refresh() {

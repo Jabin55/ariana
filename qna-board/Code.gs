@@ -16,7 +16,11 @@
 
 var POSTS_SHEET = 'Posts';
 var COMMENTS_SHEET = 'Comments';
-var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status'];
+var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category'];
+
+// 게시판 맨 위에 보이는 분류. 질문이 올라오면 AI가 이 중 하나로 나눕니다.
+// 시트 Posts 탭의 category 칸을 직접 고쳐서 분류를 바꿀 수도 있습니다.
+var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
 // replyTo: AI 댓글이 답한 대상 (질문이면 글 id, 댓글이면 댓글 id)
 var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
 
@@ -79,6 +83,7 @@ function getBoard() {
         author: String(p.author),
         text: String(p.text),
         status: String(p.status),
+        category: CATEGORIES.indexOf(String(p.category)) === -1 ? '' : String(p.category),
         comments: byPost[p.id] || []
       };
     })
@@ -93,7 +98,7 @@ function addPost(author, text) {
 
   var id = Utilities.getUuid();
   withLock_(function () {
-    getSheet_(POSTS_SHEET, POST_HEADERS).appendRow([id, new Date(), author, text, 'pending']);
+    getSheet_(POSTS_SHEET, POST_HEADERS).appendRow([id, new Date(), author, text, 'pending', '']);
   });
 
   answerPost_(id);
@@ -146,6 +151,19 @@ function answerUnanswered() {
   });
 }
 
+/** 분류가 비어 있는 글(이 기능 전에 올라온 글 등)을 AI로 분류합니다. 편집기에서 한 번 실행하세요. */
+function classifyExisting() {
+  var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS);
+  posts.forEach(function (p) {
+    if (p.id === '' || p.status !== 'answered' || validCategory_(p.category)) return;
+    try {
+      classifyPost_({ id: String(p.id), text: String(p.text) });
+    } catch (e) {
+      console.error('분류 실패 (' + p.id + '): ' + e);
+    }
+  });
+}
+
 /** 1분마다 answerUnanswered를 실행하는 트리거를 만듭니다. (선택) */
 function installRetryTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
@@ -166,9 +184,18 @@ function answerPost_(postId) {
   var target = thread.lastHumanId;
   if (thread.answered[target]) return;
 
-  var answer, status;
+  // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
+  var needCategory = target === String(postId) && !thread.post.category;
+  var answer, category, status;
   try {
-    answer = callGemini_(thread.contents);
+    if (needCategory) {
+      var r = callGeminiJson_(thread.contents, answerSchema_());
+      answer = String(r.answer || '').trim();
+      category = validCategory_(r.category);
+      if (!answer) throw new Error('답변이 비어 있습니다.');
+    } else {
+      answer = callGemini_(thread.contents);
+    }
     status = 'answered';
   } catch (e) {
     console.error('Gemini 호출 실패 (' + postId + '): ' + e);
@@ -183,6 +210,7 @@ function answerPost_(postId) {
       getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
         .appendRow([Utilities.getUuid(), postId, new Date(), aiName_(), answer, true, target]);
     }
+    if (category && !now.post.category) setCell_(now.post, 'category', category);
     // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
     if (now.lastHumanId === target) setStatus_(now.post, status);
   });
@@ -223,10 +251,55 @@ function loadThread_(postId) {
 }
 
 function setStatus_(found, status) {
-  found.sheet.getRange(found.row, POST_HEADERS.indexOf('status') + 1).setValue(status);
+  setCell_(found, 'status', status);
 }
 
-function callGemini_(contents) {
+function setCell_(found, header, value) {
+  found.sheet.getRange(found.row, POST_HEADERS.indexOf(header) + 1).setValue(value);
+}
+
+function validCategory_(c) {
+  return CATEGORIES.indexOf(String(c)) === -1 ? '' : String(c);
+}
+
+function answerSchema_() {
+  return {
+    type: 'OBJECT',
+    properties: {
+      category: { type: 'STRING', enum: CATEGORIES, description: '질문이 가장 가까운 과목' },
+      answer: { type: 'STRING', description: '학생에게 보여 줄 답변' }
+    },
+    required: ['category', 'answer']
+  };
+}
+
+/** 이미 답이 달렸지만 분류가 없는 글(예전 글)을 분류만 따로 합니다. */
+function classifyPost_(found) {
+  var r = callGeminiJson_(
+    [{ role: 'user', parts: [{ text: '다음 학생 질문이 어느 과목에 가장 가까운지 분류해.\n\n' + found.text }] }],
+    { type: 'OBJECT', properties: { category: { type: 'STRING', enum: CATEGORIES } }, required: ['category'] });
+  var category = validCategory_(r.category);
+  if (!category) return;
+  withLock_(function () {
+    var now = findPostRow_(found.id);
+    if (now && !now.category) setCell_(now, 'category', category);
+  });
+}
+
+function callGeminiJson_(contents, schema) {
+  var text = callGemini_(contents, {
+    responseMimeType: 'application/json',
+    responseSchema: schema
+  });
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // JSON이 아니게 오면 전체를 답변으로 씁니다 (분류는 나중에 다시 시도).
+    return { answer: text };
+  }
+}
+
+function callGemini_(contents, generationConfig) {
   var apiKey = getProp_('GEMINI_API_KEY', '');
   if (!apiKey) throw new Error('스크립트 속성에 GEMINI_API_KEY가 없습니다.');
   var model = getProp_('GEMINI_MODEL', DEFAULT_MODEL);
@@ -240,7 +313,8 @@ function callGemini_(contents) {
     muteHttpExceptions: true,
     payload: JSON.stringify({
       systemInstruction: { parts: [{ text: getProp_('SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT) }] },
-      contents: contents
+      contents: contents,
+      generationConfig: generationConfig || {}
     })
   };
 
@@ -291,8 +365,9 @@ function findPostRow_(postId) {
   var rows = readRows_(sheet, POST_HEADERS);
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].id) === String(postId)) {
-      return { sheet: sheet, row: i + 2, author: String(rows[i].author),
-        text: String(rows[i].text), status: String(rows[i].status) };
+      return { sheet: sheet, row: i + 2, id: String(rows[i].id), author: String(rows[i].author),
+        text: String(rows[i].text), status: String(rows[i].status),
+        category: validCategory_(rows[i].category) };
     }
   }
   return null;
