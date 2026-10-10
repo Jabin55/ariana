@@ -17,6 +17,7 @@
  *   REFERENCE_ONLY  (선택) true면 '자료' 탭 밖의 내용은 아예 답하지 않습니다. 기본값 false:
  *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답하고, 필요할 때만 선생님 안내를 덧붙입니다.
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
+ *   TEACHER_NAMES   (선택) 선생님이 댓글에 쓰는 이름(쉼표로 여러 개). 이 이름의 댓글은 학생 분석에서 뺍니다. 기본값 "선생님"
  *   TEACHER_PASSWORD (선택) 선생님 전용 '학생 분석' 화면(게시판 주소 뒤에 ?teacher)의 비밀번호.
  *                   비워 두면 분석 화면이 열리지 않습니다.
  */
@@ -38,7 +39,8 @@ var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한
 // 예전 지침에서 AI가 붙이던 표시. 혹시 나오면 지웁니다.
 var NOT_IN_REF_MARK = '[자료없음]';
 
-var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
+// competencies: 학생 댓글에 드러난 사회과 교과 역량 (글의 competencies 칸과 같은 형식). AI 댓글은 비워 둡니다.
+var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies'];
 
 // 학생 분석 기준. 처음 실행할 때 시트에 '단원', '역량' 탭을 아래 기본값으로 만듭니다.
 // 학교 교과서·교육과정에 맞게 시트에서 고치면 다음 분류부터 바로 반영됩니다.
@@ -339,8 +341,7 @@ function getAnalysis(password) {
   var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).filter(function (p) { return p.id !== ''; });
   posts.forEach(function (p) { authorOf[p.id] = String(p.author).trim(); });
   comments.forEach(function (c) {
-    var isAI = c.isAI === true || c.isAI === 'TRUE';
-    if (!isAI && String(c.author).trim() === authorOf[c.postId]) followUps[c.postId] = (followUps[c.postId] || 0) + 1;
+    if (isStudentComment_(c) && String(c.author).trim() === authorOf[c.postId]) followUps[c.postId] = (followUps[c.postId] || 0) + 1;
   });
 
   return {
@@ -351,6 +352,7 @@ function getAnalysis(password) {
     posts: posts.map(function (p) {
       var category = validCategory_(p.category);
       return {
+        id: String(p.id),
         createdAt: toIso_(p.createdAt),
         author: String(p.author).trim(),
         text: String(p.text),
@@ -361,7 +363,19 @@ function getAnalysis(password) {
         level: validLevel_(p.level),
         followUps: followUps[p.id] || 0
       };
-    })
+    }),
+    // 학생 댓글 (AI·선생님 댓글 제외). 과목·대단원은 댓글이 달린 글을 따릅니다.
+    comments: comments.filter(function (c) { return isStudentComment_(c) && authorOf[c.postId] !== undefined; })
+      .map(function (c) {
+        return {
+          postId: String(c.postId),
+          createdAt: toIso_(c.createdAt),
+          author: String(c.author).trim(),
+          text: String(c.text),
+          competencies: validCompetencies_(c.competencies).split(', ').filter(String),
+          noCompetency: competencyCell_(c.competencies) === NO_COMPETENCY
+        };
+      })
   };
 }
 
@@ -415,6 +429,7 @@ function analyzeExisting(limit) {
       (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !competencyCell_(p.competencies) || !validLevel_(p.level));
   });
   var done = 0;
+  var limited = false; // 무료 한도(429)에 걸리면 댓글까지 멈춤
   for (var i = 0; i < posts.length && done < limit; i++) {
     if (Date.now() - started > 4.5 * 60 * 1000) break; // Apps Script 실행 시간(6분) 제한 보호
     var p = posts[i];
@@ -425,14 +440,36 @@ function analyzeExisting(limit) {
       done++;
     } catch (e) {
       console.error('분류 실패 (' + p.id + '): ' + e);
+      if (/Gemini API 429/.test(String(e))) { Logger.log('Gemini 무료 한도에 걸렸습니다. 잠시 뒤 다시 실행하세요.'); limited = true; break; }
+    }
+  }
+  var leftPosts = posts.length - done;
+
+  // 학생 댓글의 역량 (남은 개수 한도 안에서)
+  var postText = {};
+  readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).forEach(function (p) { postText[p.id] = String(p.text); });
+  var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS).filter(function (c) {
+    return isStudentComment_(c) && postText[c.postId] !== undefined && !competencyCell_(c.competencies);
+  });
+  var doneComments = 0;
+  for (var j = 0; j < comments.length && done < limit && !limited; j++) {
+    if (Date.now() - started > 4.5 * 60 * 1000) break;
+    if (done > 0) Utilities.sleep(4000);
+    try {
+      analyzeComment_({ id: String(comments[j].id), text: String(comments[j].text) }, postText[comments[j].postId]);
+      done++;
+      doneComments++;
+    } catch (e) {
+      console.error('댓글 분류 실패 (' + comments[j].id + '): ' + e);
       if (/Gemini API 429/.test(String(e))) { Logger.log('Gemini 무료 한도에 걸렸습니다. 잠시 뒤 다시 실행하세요.'); break; }
     }
   }
-  Logger.log('분류한 글: ' + done + '개 / 남은 글: ' + (posts.length - done) + '개');
+  Logger.log('분류한 글: ' + (done - doneComments) + '개 / 남은 글: ' + leftPosts + '개 · ' +
+    '분류한 댓글: ' + doneComments + '개 / 남은 댓글: ' + (comments.length - doneComments) + '개');
 }
 
 /**
- * 모든 글의 역량 분류를 지우고 새 기준으로 다시 분류합니다. (역량 기준을 바꿨을 때 편집기에서 실행)
+ * 모든 글과 학생 댓글의 역량 분류를 지우고 새 기준으로 다시 분류합니다. (역량 기준을 바꿨을 때 편집기에서 실행)
  * 한 번에 40개씩 처리하므로, 실행 로그에 '남은 글'이 있으면 몇 분 뒤 analyzeExisting을 실행하세요.
  */
 function reanalyzeCompetencies() {
@@ -444,6 +481,13 @@ function reanalyzeCompetencies() {
       var blank = [];
       for (var i = 2; i <= last; i++) blank.push(['']);
       sheet.getRange(2, col, last - 1, 1).setValues(blank);
+    }
+    var csheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
+    var clast = csheet.getLastRow();
+    if (clast >= 2) {
+      var cblank = [];
+      for (var k = 2; k <= clast; k++) cblank.push(['']);
+      csheet.getRange(2, COMMENT_HEADERS.indexOf('competencies') + 1, clast - 1, 1).setValues(cblank);
     }
   });
   analyzeExisting();
@@ -523,7 +567,7 @@ function answerPost_(postId) {
   // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
   var needCategory = target === String(postId) && !thread.post.category;
   var system = systemPrompt_(thread.post.category);
-  var answer, category, unit, competencies, level, status;
+  var answer, category, unit, competencies, level, status, commentCompetencies;
   try {
     if (needCategory) {
       try {
@@ -537,6 +581,18 @@ function answerPost_(postId) {
         // 분류 방식(JSON 응답)이 거절되면 분류 없이 답변만 받습니다. 분류는 analyzeExisting으로 나중에.
         if (!/Gemini API 400/.test(String(e))) throw e;
         console.error('분류 요청 거절, 답변만 받습니다: ' + e);
+      }
+      if (!answer) answer = callGemini_(thread.contents, null, system);
+    } else if (thread.lastHumanComment && !competencyCell_(thread.lastHumanComment.competencies) &&
+        !isTeacherName_(thread.lastHumanComment.author) && analysisConfig_().competencies.length) {
+      // 학생 댓글에 답할 때는 그 댓글의 역량도 같이 받습니다 (Gemini 호출 수는 그대로).
+      try {
+        var rc = callGeminiJson_(thread.contents, commentAnswerSchema_(), system);
+        answer = String(rc.answer || '').trim();
+        if (answer) commentCompetencies = competencyCell_(rc.competencies);
+      } catch (e) {
+        if (!/Gemini API 400/.test(String(e))) throw e;
+        console.error('댓글 역량 분류 요청 거절, 답변만 받습니다: ' + e);
       }
       if (!answer) answer = callGemini_(thread.contents, null, system);
     } else {
@@ -563,6 +619,7 @@ function answerPost_(postId) {
     }
     if (competencies && !competencyCell_(now.post.competencies)) setCell_(now.post, 'competencies', competencies);
     if (level && !validLevel_(now.post.level)) setCell_(now.post, 'level', level);
+    if (commentCompetencies) setCommentCompetencies_(target, commentCompetencies);
     // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
     if (now.lastHumanId === target) setStatus_(now.post, status);
   });
@@ -577,6 +634,7 @@ function loadThread_(postId) {
 
   var answered = {};
   var lastHumanId = String(postId);
+  var lastHumanComment = null;
   var turns = [{ role: 'user', text: post.author + '의 질문: ' + post.text }];
   comments.forEach(function (c) {
     var isAI = c.isAI === true || c.isAI === 'TRUE';
@@ -585,6 +643,7 @@ function loadThread_(postId) {
       turns.push({ role: 'model', text: String(c.text) });
     } else {
       lastHumanId = String(c.id);
+      lastHumanComment = c;
       turns.push({ role: 'user', text: c.author + '의 댓글: ' + c.text, id: lastHumanId });
     }
   });
@@ -599,7 +658,8 @@ function loadThread_(postId) {
     else contents.push({ role: t.role, parts: [{ text: t.text }] });
   });
 
-  return { post: post, contents: contents, answered: answered, lastHumanId: lastHumanId };
+  return { post: post, contents: contents, answered: answered, lastHumanId: lastHumanId,
+    lastHumanComment: lastHumanComment };
 }
 
 /** 지침을 어기고 길게 오면, 한 문단으로 합치고 글자 수 안에서 문장이 끝나는 곳까지만 남깁니다. */
@@ -673,18 +733,77 @@ function addAnalysisFields_(schema, category) {
       LEVELS.map(function (l) { return l[0] + '(' + l[1] + ')'; }).join('; ')
   };
   schema.required.push('level');
+  addCompetencyField_(schema, '학생의 질문에');
+  return schema;
+}
+
+/** 학생 질문·댓글에 드러난 역량 칸. '역량' 탭이 비어 있으면 넣지 않습니다. */
+function addCompetencyField_(schema, subject) {
+  var cfg = analysisConfig_();
   if (cfg.competencies.length) {
     schema.properties.competencies = {
       type: 'ARRAY', minItems: 0, maxItems: MAX_COMPETENCIES,
       items: { type: 'STRING', enum: cfg.competencies.map(function (c) { return c.name; }) },
-      description: '학생의 질문에 분명하게 드러난 사회과 교과 역량. 엄격하게 판단해서 0~' + MAX_COMPETENCIES + '개 (가장 뚜렷한 것부터). ' +
-        '용어 뜻 묻기, 사실·내용 확인, 교과서 내용 그대로 설명해 달라는 질문, 시험 범위·과제 안내, 인사·잡담처럼 ' +
+      description: subject + ' 분명하게 드러난 사회과 교과 역량. 엄격하게 판단해서 0~' + MAX_COMPETENCIES + '개 (가장 뚜렷한 것부터). ' +
+        '용어 뜻 묻기, 사실·내용 확인, 교과서 내용 그대로 설명해 달라는 질문, 시험 범위·과제 안내, 고맙다는 인사·잡담처럼 ' +
         '학생의 사고 과정이 드러나지 않는 질문은 빈 배열 []로 둘 것. 애매하면 고르지 말 것. 기준: ' +
         cfg.competencies.map(function (c) { return c.name + (c.desc ? '(' + c.desc + ')' : ''); }).join('; ')
     };
     schema.required.push('competencies');
   }
   return schema;
+}
+
+/** 학생 댓글에 AI가 답할 때 쓰는 스키마: 답변 + 그 댓글의 역량. */
+function commentAnswerSchema_() {
+  var schema = {
+    type: 'OBJECT',
+    properties: { answer: { type: 'STRING', description: '학생에게 보여 줄 답변' } },
+    required: ['answer']
+  };
+  return addCompetencyField_(schema, '학생의 마지막 댓글에');
+}
+
+/** 선생님 이름(TEACHER_NAMES)으로 쓴 댓글은 학생 분석에서 뺍니다. */
+function isTeacherName_(name) {
+  var names = getProp_('TEACHER_NAMES', '선생님').split(',')
+    .map(function (n) { return n.trim(); }).filter(String);
+  return names.indexOf(String(name || '').trim()) !== -1;
+}
+
+function isAIComment_(c) {
+  return c.isAI === true || c.isAI === 'TRUE';
+}
+
+/** 역량을 분류할 학생 댓글인지 (AI·선생님 댓글 제외) */
+function isStudentComment_(c) {
+  return c.id !== '' && !isAIComment_(c) && !isTeacherName_(c.author) && String(c.text).trim() !== '';
+}
+
+function setCommentCompetencies_(commentId, value) {
+  var sheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
+  var rows = readRows_(sheet, COMMENT_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].id) === String(commentId)) {
+      if (!competencyCell_(rows[i].competencies)) {
+        sheet.getRange(i + 2, COMMENT_HEADERS.indexOf('competencies') + 1).setValue(value);
+      }
+      return;
+    }
+  }
+}
+
+/** AI가 답하지 않은 학생 댓글의 역량을 따로 분류합니다. 원래 질문을 함께 보여 줍니다. */
+function analyzeComment_(comment, postText) {
+  var schema = addCompetencyField_({ type: 'OBJECT', properties: {}, required: [] }, '학생 댓글에');
+  if (!schema.required.length) return;
+  var r = callGeminiJson_(
+    [{ role: 'user', parts: [{ text: '다음은 게시판의 질문에 학생이 단 댓글이야. 댓글에 드러난 역량을 분류해.\n\n' +
+      '원래 질문: ' + postText + '\n\n학생 댓글: ' + comment.text }] }],
+    schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 댓글 하나를 정해진 기준으로 분류해.');
+  var value = competencyCell_(r.competencies);
+  if (!value) return;
+  withLock_(function () { setCommentCompetencies_(comment.id, value); });
 }
 
 /** 이미 답이 달린 글의 과목·대단원·역량·인지적 수준 중 빈 칸을 AI로 채웁니다. */
