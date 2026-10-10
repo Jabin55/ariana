@@ -12,6 +12,7 @@
  *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 튜터"
  *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
  *   NOTIFY_EMAIL    (선택) 새 질문 알림 메일을 받을 주소. 비우면 스크립트 주인 계정, off면 알림 끔
+ *   REFERENCE_ONLY  (선택) 기본값 true: '자료' 탭에 내용이 있으면 그 내용으로만 답합니다. false면 자료를 우선 참고만 함
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
@@ -23,6 +24,11 @@ var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category'];
 // 시트 Posts 탭의 category 칸을 직접 고쳐서 분류를 바꿀 수도 있습니다.
 var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
 // replyTo: AI 댓글이 답한 대상 (질문이면 글 id, 댓글이면 댓글 id)
+// 선생님이 붙여 넣는 참고 자료. AI 튜터는 여기 있는 내용으로만 답합니다.
+var REF_SHEET = '자료';
+var REF_HEADERS = ['과목', '제목', '내용'];
+var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한 (무료 한도 보호)
+
 var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
 
 var DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -182,10 +188,13 @@ function setCategory(postId, category) {
 function setup() {
   getSheet_(POSTS_SHEET, POST_HEADERS);
   getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
+  getSheet_(REF_SHEET, REF_HEADERS);
+  var ref = referenceText_('');
+  Logger.log('0) 참고 자료: ' + (ref ? ref.length + '자 (' + (referenceOnly_() ? '자료 안에서만 답변' : '자료 우선 참고') + ')' : '없음 (AI가 아는 내용으로 답변)'));
   var reply = callGemini_([{ role: 'user', parts: [{ text: '설치 확인용 질문입니다. "준비 완료"라고만 답해 주세요.' }] }]);
   Logger.log('1) Gemini 답변: ' + reply);
   try {
-    var r = callGeminiJson_([{ role: 'user', parts: [{ text: '수요와 공급이 뭐예요?' }] }], answerSchema_());
+    var r = callGeminiJson_([{ role: 'user', parts: [{ text: '수요와 공급이 뭐예요?' }] }], answerSchema_(), systemPrompt_(''));
     Logger.log('2) 과목 분류: ' + r.category + ' / 답변 ' + String(r.answer || '').length + '자');
   } catch (e) {
     Logger.log('2) 과목 분류 실패: ' + e);
@@ -265,11 +274,12 @@ function answerPost_(postId) {
 
   // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
   var needCategory = target === String(postId) && !thread.post.category;
+  var system = systemPrompt_(thread.post.category);
   var answer, category, status;
   try {
     if (needCategory) {
       try {
-        var r = callGeminiJson_(thread.contents, answerSchema_());
+        var r = callGeminiJson_(thread.contents, answerSchema_(), system);
         answer = String(r.answer || '').trim();
         category = validCategory_(r.category);
       } catch (e) {
@@ -277,9 +287,9 @@ function answerPost_(postId) {
         if (!/Gemini API 400/.test(String(e))) throw e;
         console.error('분류 요청 거절, 답변만 받습니다: ' + e);
       }
-      if (!answer) answer = callGemini_(thread.contents);
+      if (!answer) answer = callGemini_(thread.contents, null, system);
     } else {
-      answer = callGemini_(thread.contents);
+      answer = callGemini_(thread.contents, null, system);
     }
     status = 'answered';
   } catch (e) {
@@ -384,11 +394,11 @@ function classifyPost_(found) {
   });
 }
 
-function callGeminiJson_(contents, schema) {
+function callGeminiJson_(contents, schema, systemText) {
   var text = callGemini_(contents, {
     responseMimeType: 'application/json',
     responseSchema: schema
-  });
+  }, systemText);
   try {
     return JSON.parse(text);
   } catch (e) {
@@ -397,7 +407,43 @@ function callGeminiJson_(contents, schema) {
   }
 }
 
-function callGemini_(contents, generationConfig) {
+/** AI 지침 + (있으면) '자료' 탭의 참고 자료. 과목을 알면 그 과목 자료와 과목 칸이 빈 자료만 보냅니다. */
+function systemPrompt_(category) {
+  var base = getProp_('SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT);
+  var ref = referenceText_(category || '');
+  if (!ref) return base;
+  var rule = referenceOnly_()
+    ? '아래 [참고 자료]에 있는 내용만 근거로 답해. 자료에 없는 내용은 지어내거나 네가 아는 지식으로 채우지 말고, ' +
+      '"참고 자료에 없는 내용이에요. 학교의 교과 담당 선생님께 물어보세요."라고 답해.'
+    : '아래 [참고 자료]를 우선 근거로 답하고, 자료에 없으면 정확히 아는 내용만 보충해.';
+  return base + '\n\n' + rule + '\n\n[참고 자료]\n' + ref;
+}
+
+function referenceOnly_() {
+  return getProp_('REFERENCE_ONLY', 'true') !== 'false';
+}
+
+function referenceText_(category) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(REF_SHEET)) return '';
+  var rows = readRows_(getSheet_(REF_SHEET, REF_HEADERS), REF_HEADERS);
+  var text = '';
+  rows.forEach(function (r) {
+    var body = String(r['내용'] || '').trim();
+    var cat = String(r['과목'] || '').trim();
+    if (!body) return;
+    if (category && cat && cat !== category) return;
+    var block = '■ ' + [cat, String(r['제목'] || '').trim()].filter(String).join(' · ') + '\n' + body + '\n\n';
+    if (text.length + block.length > MAX_REF_CHARS) {
+      console.warn('참고 자료가 너무 길어 일부만 보냅니다 (' + MAX_REF_CHARS + '자 제한).');
+      return;
+    }
+    text += block;
+  });
+  return text.trim();
+}
+
+function callGemini_(contents, generationConfig, systemText) {
   var apiKey = getProp_('GEMINI_API_KEY', '');
   if (!apiKey) throw new Error('스크립트 속성에 GEMINI_API_KEY가 없습니다.');
   var model = getProp_('GEMINI_MODEL', DEFAULT_MODEL);
@@ -410,7 +456,7 @@ function callGemini_(contents, generationConfig) {
     headers: { 'x-goog-api-key': apiKey },
     muteHttpExceptions: true,
     payload: JSON.stringify({
-      systemInstruction: { parts: [{ text: getProp_('SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT) }] },
+      systemInstruction: { parts: [{ text: systemText || getProp_('SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT) }] },
       contents: contents,
       generationConfig: generationConfig || {}
     })
