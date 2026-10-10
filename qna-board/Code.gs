@@ -139,6 +139,18 @@ function retryAnswer(postId) {
   answerPost_(postId);
 }
 
+/** 분류되지 않은 글을 과목 칸으로 옮깁니다 (끌어다 놓기). 이미 분류된 글은 바꾸지 않습니다. */
+function setCategory(postId, category) {
+  category = validCategory_(category);
+  if (!category) throw new Error('알 수 없는 과목입니다.');
+  withLock_(function () {
+    var found = findPostRow_(postId);
+    if (!found) throw new Error('게시글을 찾을 수 없습니다.');
+    if (found.category) throw new Error('이미 분류된 질문입니다. 시트에서 바꿀 수 있어요.');
+    setCell_(found, 'category', category);
+  });
+}
+
 /* ───────────── 관리용 (편집기에서 직접 실행) ───────────── */
 
 /** 처음 한 번 실행: 시트를 만들고, API 키가 제대로 동작하는지 확인합니다. */

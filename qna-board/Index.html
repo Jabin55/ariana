@@ -52,6 +52,11 @@
       padding: 9px 12px; font-size: 14px; font-weight: 600; }
     .month-head .count { font-size: 12px; background: var(--tone); border-radius: 999px; padding: 1px 8px; }
     .month.open .month-head { margin-bottom: 10px; border-style: solid; }
+    .card.movable { cursor: grab; }
+    .card.dragging { opacity: .4; }
+    .pick { float: right; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line);
+      border-radius: 8px; background: #fff; margin: -2px 0 4px 8px; }
+    section.drop-on .col-head { outline: 3px dashed var(--accent); outline-offset: 3px; }
     .col-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
     .sorting { margin-top: 24px; }
     .finder { background: var(--card); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px;
@@ -238,11 +243,11 @@
       var html = '';
       var sortingHtml = '';
       if (sorting.length) {
-        sortingHtml = '<div class="sorting"><div class="label">아직 분류되지 않은 질문</div>' +
+        sortingHtml = '<div class="sorting"><div class="label">아직 분류되지 않은 질문 · 쪽지를 과목 칸으로 끌어다 놓거나 과목을 골라 주세요</div>' +
           '<div class="cards">' + sorting.map(function (p) { return card(p, 'x'); }).join('') + '</div></div>';
       }
       html += '<div class="board">' + CATEGORIES.map(function (name, i) {
-        return '<section class="tone-' + i + '">' +
+        return '<section class="tone-' + i + '" data-cat="' + esc(name) + '">' +
           '<div class="col-head">' + esc(name) + '<span class="count">' + cols[i].length + '</span></div>' +
           (cols[i].length ? columnBody(cols[i], i, name)
                           : '<div class="col-empty">아직 질문이 없어요</div>') +
@@ -329,13 +334,63 @@
           '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
           esc(drafts[p.id] || '') + '</textarea>' +
           '<button data-send="' + esc(p.id) + '">댓글 등록</button></div>';
-        return '<div class="card tone-' + toneIdx + '">' +
+        var movable = toneIdx === 'x' && !p.local;
+        var picker = movable
+          ? '<select class="pick" data-pick="' + esc(p.id) + '"><option value="">📂 과목 정하기</option>' +
+            CATEGORIES.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select>'
+          : '';
+        return '<div class="card tone-' + toneIdx + (movable ? ' movable" draggable="true" data-drag="' + esc(p.id) : '') + '">' +
+          picker +
           '<div class="meta">' + esc(p.author) + ' · ' + when(p.createdAt) + '</div>' +
           '<div class="q">' + esc(p.text) + '</div>' +
           '<div class="comments">' + comments + state + replyBox + '</div></div>';
     }
 
+    // 분류 안 된 쪽지를 과목 칸으로 옮기기 (끌어다 놓기 또는 과목 고르기)
+    var dragging = false;
+    function moveTo(postId, cat) {
+      var post = lastPosts.filter(function (p) { return p.id === postId; })[0];
+      if (!post || !cat) return;
+      post.category = cat; // 화면에 먼저 반영
+      render(lastPosts);
+      google.script.run
+        .withSuccessHandler(refresh)
+        .withFailureHandler(function (e) { toast('옮기지 못했어요: ' + errMsg(e)); refresh(); })
+        .setCategory(postId, cat);
+    }
+    grid.addEventListener('dragstart', function (ev) {
+      var c = ev.target.closest && ev.target.closest('[data-drag]');
+      if (!c) return;
+      dragging = true;
+      c.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain', c.dataset.drag);
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    grid.addEventListener('dragend', function (ev) {
+      dragging = false;
+      if (ev.target.classList) ev.target.classList.remove('dragging');
+      grid.querySelectorAll('.drop-on').forEach(function (el) { el.classList.remove('drop-on'); });
+    });
+    grid.addEventListener('dragover', function (ev) {
+      var sec = ev.target.closest && ev.target.closest('section[data-cat]');
+      if (!sec || !dragging) return;
+      ev.preventDefault();
+      grid.querySelectorAll('.drop-on').forEach(function (el) { if (el !== sec) el.classList.remove('drop-on'); });
+      sec.classList.add('drop-on');
+    });
+    grid.addEventListener('drop', function (ev) {
+      var sec = ev.target.closest && ev.target.closest('section[data-cat]');
+      if (!sec) return;
+      ev.preventDefault();
+      dragging = false;
+      moveTo(ev.dataTransfer.getData('text/plain'), sec.dataset.cat);
+    });
+    grid.addEventListener('change', function (ev) {
+      if (ev.target.dataset && ev.target.dataset.pick) moveTo(ev.target.dataset.pick, ev.target.value);
+    });
+
     function refresh() {
+      if (dragging) return; // 끄는 도중에는 화면을 다시 그리지 않음
       google.script.run
         .withSuccessHandler(render)
         .withFailureHandler(function (e) { console.error(e); })
