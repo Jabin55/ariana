@@ -62,6 +62,10 @@ function doGet() {
 function getBoard() {
   var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS);
   var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
+  if (duplicateAnswerRows_(comments).length) {
+    removeDuplicateAnswers();
+    comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
+  }
 
   var byPost = {};
   var aiName = aiName_();
@@ -180,7 +184,37 @@ function installRetryTrigger() {
   ScriptApp.newTrigger('answerUnanswered').timeBased().everyMinutes(1).create();
 }
 
+/**
+ * 한 글에서 AI 답변이 사람 댓글 없이 연달아 달린 경우, 마지막 것만 남기고 시트에서 지웁니다.
+ * 게시판을 열 때마다 자동으로 확인하므로 직접 실행할 필요는 없습니다.
+ */
+function removeDuplicateAnswers() {
+  withLock_(function () {
+    var sheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
+    var rows = duplicateAnswerRows_(readRows_(sheet, COMMENT_HEADERS));
+    rows.sort(function (a, b) { return b - a; }).forEach(function (r) { sheet.deleteRow(r); });
+  });
+}
+
 /* ───────────── 내부 함수 ───────────── */
+
+/** 지울 중복 AI 답변의 시트 행 번호 목록. */
+function duplicateAnswerRows_(comments) {
+  var lastAiRow = {}; // 글마다 "바로 앞이 AI 답변이었다면 그 행"
+  var dup = [];
+  comments.forEach(function (c, i) {
+    var key = String(c.postId);
+    var isAI = c.isAI === true || c.isAI === 'TRUE';
+    if (isAI) {
+      if (lastAiRow[key]) dup.push(lastAiRow[key]);
+      lastAiRow[key] = i + 2;
+    } else {
+      lastAiRow[key] = 0;
+    }
+  });
+  return dup;
+}
+
 
 /**
  * 글의 질문과 댓글 대화를 Gemini에 보내고, 마지막 사람 메시지에 대한 AI 댓글을 답니다.

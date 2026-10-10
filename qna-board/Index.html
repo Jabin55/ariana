@@ -168,6 +168,14 @@
     var nameFilter = '';    // 이름 색인에서 고른 사람 (정확히 일치)
     var nameQuery = '';     // 검색칸에 입력한 글자 (부분 일치)
     var openMonths = {};    // 펼쳐 둔 지난 달 묶음 (과목|연-월)
+    var openTalks = {};     // 펼쳐 둔 댓글 대화
+    // 이 브라우저에서 질문하거나 댓글을 단 글은 대화를 늘 펼쳐서 보여 줍니다.
+    var mine = {};
+    try { mine = JSON.parse(localStorage.getItem('qna-mine') || '{}') || {}; } catch (e) {}
+    function markMine(id) {
+      mine[id] = 1;
+      try { localStorage.setItem('qna-mine', JSON.stringify(mine)); } catch (e) {}
+    }
 
     // 이름은 이 브라우저에 기억해 둡니다.
     var nameInput = document.getElementById('qName');
@@ -295,12 +303,20 @@
     }
 
     function card(p, toneIdx) {
-        var comments = p.comments.map(function (c) {
+        // 첫 AI 답변 뒤로 대화가 이어지면, 참여하지 않은 사람에게는 접어서 보여 줍니다.
+        var extra = p.comments.length - 1;
+        var folded = extra >= 2 && !mine[p.id] && !openTalks[p.id];
+        var shown = folded ? p.comments.slice(0, 1) : p.comments;
+        var talkBtn = extra >= 2 && !mine[p.id]
+          ? '<button class="link" data-talk="' + esc(p.id) + '">' +
+            (folded ? '💬 이어진 대화 ' + extra + '개 보기' : '대화 접기') + '</button>'
+          : '';
+        var comments = shown.map(function (c) {
           return '<div class="c' + (c.isAI ? ' ai' : '') + '">' +
             '<div class="who">' + (c.isAI ? AVATAR : '') + esc(c.author) +
             ' <span class="meta">' + when(c.createdAt) + '</span></div>' +
             '<div class="body">' + (c.isAI ? fmt(c.text) : esc(c.text)) + '</div></div>';
-        }).join('');
+        }).join('') + talkBtn;
         var state = '';
         if (p.status === 'pending') state = '<div class="pending">✏️ AI 선생님이 답변을 쓰고 있어요…</div>';
         if (p.status === 'error') state = '<div class="error">AI 답변을 받지 못했어요. ' +
@@ -341,7 +357,7 @@
       btn.disabled = false;
 
       google.script.run
-        .withSuccessHandler(function () { localPending.splice(localPending.indexOf(temp), 1); refresh(); })
+        .withSuccessHandler(function (id) { markMine(id); localPending.splice(localPending.indexOf(temp), 1); refresh(); })
         .withFailureHandler(function (e) {
           localPending.splice(localPending.indexOf(temp), 1);
           textEl.value = text;
@@ -376,6 +392,11 @@
         return;
       }
       var t = ev.target;
+      if (t.dataset.talk) {
+        openTalks[t.dataset.talk] = !openTalks[t.dataset.talk];
+        render(lastPosts);
+        return;
+      }
       if (t.dataset.toggle) {
         var id = t.dataset.toggle;
         openReplies[id] = !openReplies[id];
@@ -389,6 +410,7 @@
         t.disabled = true;
         google.script.run
           .withSuccessHandler(function (aiReplies) {
+            markMine(pid);
             drafts[pid] = ''; ta.value = ''; openReplies[pid] = false; refresh();
             if (aiReplies) {
               google.script.run.withSuccessHandler(refresh).withFailureHandler(refresh).retryAnswer(pid);
