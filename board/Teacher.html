@@ -73,13 +73,13 @@
     th { color: var(--muted); font-weight: 600; white-space: nowrap; }
     td.num { font-variant-numeric: tabular-nums; }
     td.nw { white-space: nowrap; }
+    td.muted-cell { color: var(--muted); font-size: 12px; }
     tr.click { cursor: pointer; }
     tr.click:hover { background: #faf5ec; }
     .table-wrap { overflow-x: auto; }
     .chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #f3ece0;
       color: #4a3b2c; margin: 1px 2px 1px 0; white-space: nowrap; }
     .q { line-height: 1.5; word-break: break-word; }
-    .q .ctx { font-size: 12px; color: var(--muted); margin-top: 2px; }
     /* 미분류 칸: 선생님이 직접 고르는 드롭다운 */
     select.fix { font-size: 12px; padding: 3px 6px; border: 1px dashed var(--accent); background: #fff8f4; max-width: 160px; }
     select.fix:disabled { opacity: .5; }
@@ -508,16 +508,18 @@
     }
 
     /**
-     * 과목 · 대단원 칸. 드롭다운으로 고르거나 바꿉니다.
+     * 과목 칸과 대단원 칸 (두 칸). 드롭다운으로 고르거나 바꿉니다.
      * 댓글은 원래 질문의 분류를 따르므로, 댓글 줄에서 바꾸면 원래 질문(과 그 질문의 모든 댓글)이 바뀝니다.
      */
-    function subjectCell(item) {
+    function subjectCells(item) {
       var p = item.kind === 'comment' ? postById(item.postId) : item;
-      if (!p) return el('td', { text: [item.category || NONE, item.unit].filter(String).join(' · ') });
-      var cat = fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }), p.category);
+      if (!p) return [el('td', { cls: 'nw', text: item.category || NONE }), el('td', { cls: 'nw', text: item.unit || '-' })];
+      var cat = el('td', { cls: 'nw' }, [fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }), p.category)]);
       var units = data.units[p.category] || [];
-      if (!p.category || !units.length) return el('td', {}, [cat]);
-      return el('td', {}, [cat, ' · ', fixSelect(p, 'unit', '대단원 고르기', units.map(function (u) { return [u, u]; }), p.unit)]);
+      var unit = p.category && units.length
+        ? el('td', { cls: 'nw' }, [fixSelect(p, 'unit', '대단원 고르기', units.map(function (u) { return [u, u]; }), p.unit)])
+        : el('td', { cls: 'muted-cell', text: p.category ? '-' : '과목을 먼저 골라 주세요' });
+      return [cat, unit];
     }
 
     /**
@@ -616,7 +618,6 @@
       return null;
     }
 
-    function snippet(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, n) + '…' : t; }
     function student(by, name) {
       return by[name] = by[name] || { name: name, n: 0, nc: 0, cat: {}, comp: {}, lv: {}, high: 0, leveled: 0 };
     }
@@ -643,11 +644,12 @@
     function renderQuestions(posts) {
       if (state.pick && state.pick.type === 'comp') $('pickNote').innerHTML = ''; // 역량 선택은 댓글 목록에만 적용
       else pickNote($('pickNote'), '질문');
-      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목 · 대단원', '인지적 수준', '질문']);
+      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목', '대단원', '인지적 수준', '질문']);
       table($('questions'), heads, newestFirst(posts).map(function (p) {
         var cells = [dateCell(p)];
         if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
-        cells.push(subjectCell(p), levelCell(p));
+        cells = cells.concat(subjectCells(p));
+        cells.push(levelCell(p));
         cells.push(el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
         return cells;
       }), '해당하는 질문이 없어요.');
@@ -656,12 +658,13 @@
     /** 댓글 목록: 원래 질문의 과목 · 대단원, 인지적 수준, 사회과 교과 역량 */
     function renderComments(comments) {
       pickNote($('pickNoteC'), '댓글');
-      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목 · 대단원', '인지적 수준', '사회과 교과 역량', '댓글']);
+      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목', '대단원', '인지적 수준', '사회과 교과 역량', '댓글']);
       table($('comments'), heads, newestFirst(comments).map(function (c) {
         var cells = [dateCell(c)];
         if (!state.student) cells.push(el('td', { cls: 'nw', text: c.author }));
-        cells.push(subjectCell(c), levelCell(c), el('td', {}, [compPicker(c)]));
-        cells.push(el('td', { cls: 'q' }, [c.text, el('div', { cls: 'ctx', text: '↳ 질문: ' + snippet(c.postText, 60) })]));
+        cells = cells.concat(subjectCells(c));
+        cells.push(levelCell(c), el('td', {}, [compPicker(c)]));
+        cells.push(el('td', { cls: 'q', text: c.text }));
         return cells;
       }), '해당하는 댓글이 없어요.');
     }
