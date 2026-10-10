@@ -366,13 +366,13 @@
     }
 
     function card(p, toneIdx) {
-        // 첫 AI 답변 뒤로 이어진 댓글은 누구에게나 접어서 보여 줍니다.
-        var extra = p.comments.length - 1;
-        var folded = extra >= 1 && !openTalks[p.id];
-        var shown = folded ? p.comments.slice(0, 1) : p.comments;
-        var talkBtn = extra >= 1
+        // 댓글(AI 튜터 답변 포함)은 기본으로 모두 접어 두고, 누르면 펼칩니다. 내가 방금 쓴 질문·댓글은 펼쳐 둡니다.
+        var count = p.comments.length;
+        var folded = count >= 1 && !openTalks[p.id];
+        var shown = folded ? [] : p.comments;
+        var talkBtn = count >= 1
           ? '<button class="link" data-talk="' + esc(p.id) + '">' +
-            (folded ? '💬 이어진 대화 ' + extra + '개 보기' : '대화 접기') + '</button>'
+            (folded ? '💬 댓글 ' + count + '개 보기' : '댓글 접기') + '</button>'
           : '';
         var comments = shown.map(function (c) {
           return '<div class="c' + (c.isAI ? ' ai' : '') + '">' +
@@ -472,7 +472,7 @@
       btn.disabled = false;
 
       google.script.run
-        .withSuccessHandler(function (id) { markMine(id); justPosted[id] = 1; localPending.splice(localPending.indexOf(temp), 1); refresh(); })
+        .withSuccessHandler(function (id) { markMine(id); justPosted[id] = 1; openTalks[id] = true; localPending.splice(localPending.indexOf(temp), 1); refresh(); })
         .withFailureHandler(function (e) {
           localPending.splice(localPending.indexOf(temp), 1);
           textEl.value = text;

@@ -495,7 +495,7 @@
         .sort(function (a, b) { return b.n - a.n || b.nc - a.nc || a.name.localeCompare(b.name, 'ko'); });
       var t = $('students');
       t.innerHTML = '';
-      t.appendChild(el('tr', {}, ['이름', '질문', '댓글', '많이 물은 과목', '주로 드러난 역량', '주된 인지적 수준', '높은 수준 비율'].map(function (h) { return el('th', { text: h }); })));
+      t.appendChild(el('tr', {}, ['이름', '질문', '댓글', '많이 물은 과목', '주로 드러난 역량', '주된 인지적 수준', '높은 수준 질문 비중'].map(function (h) { return el('th', { text: h }); })));
       if (!rows.length) { t.appendChild(el('tr', {}, [el('td', { colspan: 7, cls: 'empty', text: '질문이 없어요.' })])); return; }
       rows.forEach(function (s) {
         t.appendChild(el('tr', { cls: 'click', onclick: function () { state.student = s.name; state.pick = null; render(); window.scrollTo(0, 0); } }, [
