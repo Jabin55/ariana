@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg: #fdf6e9; --card: #fff; --ink: #2b2b2b; --muted: #6f675b; --line: #ece3d3;
+      --accent: #ff7a59; --err: #c0392b; --surface: #fcfcfb;
+      /* 그래프 색: 항목마다 고정된 순서로 씁니다 (색맹 구분 검증된 순서) */
+      --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+      --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --none: #c9c4ba;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--bg);
+      font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+    header { max-width: 1200px; margin: 0 auto; padding: 20px 16px 8px; }
+    .hero { border-radius: 18px; padding: 16px 20px;
+      background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%); }
+    h1 { margin: 0; font-size: 22px; color: #3a2414; }
+    .sub { margin-top: 4px; font-size: 13px; color: #4a2e1c; }
+    main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 48px; }
+    .panel { background: var(--card); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    .hint { font-size: 12px; color: var(--muted); margin: -4px 0 10px; line-height: 1.5; }
+    input, select, button { font: inherit; }
+    input, select { padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; max-width: 100%; }
+    button { border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; background: var(--accent); color: #fff; }
+    button.ghost { background: #f3ece0; color: #4a3b2c; }
+    .err { color: var(--err); font-size: 14px; margin-top: 8px; }
+
+    #gate { max-width: 380px; margin: 40px auto; }
+    #gate .row { display: flex; gap: 8px; }
+    #gate input { flex: 1; }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+    .controls label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+    .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .stat { background: #faf5ec; border-radius: 10px; padding: 8px 14px; font-size: 13px; color: var(--muted); }
+    .stat b { display: block; font-size: 20px; color: var(--ink); }
+
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    .chart { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .chart svg { flex: none; overflow: visible; }
+    .chart svg path { cursor: pointer; transition: opacity .15s; }
+    .chart.has-pick svg path:not(.on) { opacity: .3; }
+    .legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 180px; font-size: 13px; }
+    .legend li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+    .legend li:hover, .legend li.on { background: #f6efe3; }
+    .legend .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .legend .lb { flex: 1; color: var(--ink); }
+    .legend .n { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .units { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+    .units h3 { margin: 0 0 6px; font-size: 14px; }
+    .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+    #tip { position: fixed; pointer-events: none; background: #2b2b2b; color: #fff; font-size: 12px;
+      padding: 6px 9px; border-radius: 6px; display: none; z-index: 10; max-width: 260px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    td.num { font-variant-numeric: tabular-nums; }
+    td.nw { white-space: nowrap; }
+    tr.click { cursor: pointer; }
+    tr.click:hover { background: #faf5ec; }
+    .table-wrap { overflow-x: auto; }
+    .chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #f3ece0;
+      color: #4a3b2c; margin: 1px 2px 1px 0; white-space: nowrap; }
+    .q { line-height: 1.5; word-break: break-word; }
+    .pick-note { font-size: 13px; margin-bottom: 8px; }
+    .pick-note button { padding: 3px 10px; margin-left: 6px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <h1>학생 분석</h1>
+      <div class="sub"><?= boardTitle ?> · 선생님 전용 화면</div>
+    </div>
+  </header>
+  <main>
+    <section id="gate" class="panel">
+      <h2>비밀번호</h2>
+      <p class="hint">스크립트 속성 TEACHER_PASSWORD 에 넣은 비밀번호를 입력하세요.</p>
+      <form class="row" id="gateForm">
+        <input id="pw" type="password" autocomplete="current-password" required>
+        <button id="pwBtn">열기</button>
+      </form>
+      <div class="err" id="gateErr"></div>
+    </section>
+
+    <div id="app" hidden>
+      <section class="panel">
+        <div class="controls">
+          <label>보기
+            <select id="fStudent"><option value="">반 전체</option></select>
+          </label>
+          <label>과목
+            <select id="fSubject"><option value="">전체</option></select>
+          </label>
+          <label>기간 <input type="date" id="fFrom"> ~ <input type="date" id="fTo"></label>
+          <button class="ghost" id="reload">새로고침</button>
+        </div>
+        <div class="stats" id="stats"></div>
+      </section>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>질문 분야 (과목)</h2>
+          <div id="cCategory"></div>
+        </section>
+        <section class="panel">
+          <h2>사회과 교과 역량</h2>
+          <p class="hint">질문 하나에 역량이 최대 2개까지 잡혀서, 합계가 질문 수보다 많을 수 있어요.</p>
+          <div id="cComp"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>대단원별 비중</h2>
+        <div class="units" id="cUnits"></div>
+      </section>
+
+      <section class="panel" id="studentsPanel">
+        <h2>학생별 현황</h2>
+        <p class="hint">이름을 누르면 그 학생의 분석을 볼 수 있어요.</p>
+        <div class="table-wrap"><table id="students"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>질문 목록</h2>
+        <p class="hint">그래프 조각이나 범례를 누르면 해당 질문만 보여요. 분류는 AI가 한 것이라 틀릴 수 있어요.
+          시트 Posts 탭의 category · unit · competencies 칸에서 고칠 수 있어요.</p>
+        <div class="pick-note" id="pickNote"></div>
+        <div class="table-wrap"><table id="questions"></table></div>
+      </section>
+    </div>
+  </main>
+  <div id="tip"></div>
+
+  <script>
+    var SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--s7)', 'var(--s8)'];
+    var NONE = '미분류';
+    var data = null;
+    var state = { student: '', subject: '', from: '', to: '', pick: null };
+
+    function $(id) { return document.getElementById(id); }
+    function el(tag, attrs, kids) {
+      var n = document.createElement(tag);
+      Object.keys(attrs || {}).forEach(function (k) {
+        if (k === 'text') n.textContent = attrs[k];
+        else if (k === 'cls') n.className = attrs[k];
+        else if (k.indexOf('on') === 0) n.addEventListener(k.slice(2), attrs[k]);
+        else n.setAttribute(k, attrs[k]);
+      });
+      (kids || []).forEach(function (c) { if (c) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+      return n;
+    }
+    function store(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) {} }
+    function load(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+    function localDate(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    }
+
+    /* ── 비밀번호 ── */
+    function openAnalysis(pw) {
+      $('pwBtn').disabled = true;
+      $('gateErr').textContent = '';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          $('pwBtn').disabled = false;
+          store('teacherPw', pw);
+          data = res;
+          $('gate').hidden = true;
+          $('app').hidden = false;
+          setupControls();
+          render();
+        })
+        .withFailureHandler(function (err) {
+          $('pwBtn').disabled = false;
+          store('teacherPw', null);
+          $('gate').hidden = false;
+          $('app').hidden = true;
+          $('gateErr').textContent = (err && err.message || String(err)).replace(/^Error:\s*/, '');
+        })
+        .getAnalysis(pw);
+    }
+    $('gateForm').addEventListener('submit', function (e) { e.preventDefault(); openAnalysis($('pw').value); });
+    $('reload').addEventListener('click', function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); });
+    (function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); })();
+
+    /* ── 필터 ── */
+    function setupControls() {
+      var names = {};
+      data.posts.forEach(function (p) { names[p.author] = (names[p.author] || 0) + 1; });
+      var sel = $('fStudent');
+      var keep = state.student;
+      sel.innerHTML = '';
+      sel.appendChild(el('option', { value: '', text: '반 전체' }));
+      Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'ko'); }).forEach(function (n) {
+        sel.appendChild(el('option', { value: n, text: n + ' (' + names[n] + ')' }));
+      });
+      sel.value = names[keep] ? keep : '';
+      state.student = sel.value;
+
+      var sub = $('fSubject');
+      if (sub.options.length === 1) data.categories.forEach(function (c) { sub.appendChild(el('option', { value: c, text: c })); });
+    }
+    $('fStudent').addEventListener('change', function () { state.student = this.value; state.pick = null; render(); });
+    $('fSubject').addEventListener('change', function () { state.subject = this.value; state.pick = null; render(); });
+    $('fFrom').addEventListener('change', function () { state.from = this.value; render(); });
+    $('fTo').addEventListener('change', function () { state.to = this.value; render(); });
+
+    function basePosts() {
+      return data.posts.filter(function (p) {
+        if (state.student && p.author !== state.student) return false;
+        if (state.subject && p.category !== state.subject) return false;
+        var d = localDate(p.createdAt);
+        if (state.from && d < state.from) return false;
+        if (state.to && d > state.to) return false;
+        return true;
+      });
+    }
+    function matchesPick(p) {
+      var k = state.pick;
+      if (!k) return true;
+      if (k.type === 'category') return (p.category || NONE) === k.value;
+      if (k.type === 'unit') return p.category === k.subject && (p.unit || NONE) === k.value;
+      if (k.type === 'comp') return p.competencies.length ? p.competencies.indexOf(k.value) !== -1 : k.value === NONE;
+      return true;
+    }
+    function setPick(pick) {
+      var same = state.pick && pick && state.pick.type === pick.type && state.pick.value === pick.value &&
+        state.pick.subject === pick.subject;
+      state.pick = same ? null : pick;
+      render();
+    }
+
+    /* ── 그리기 ── */
+    function render() {
+      var posts = basePosts();
+      $('fStudent').value = state.student;
+      renderStats(posts);
+      renderCategory(posts);
+      renderComp(posts);
+      renderUnits(posts);
+      renderStudents(posts);
+      renderQuestions(posts.filter(matchesPick));
+    }
+
+    function renderStats(posts) {
+      var authors = {}, follow = 0;
+      posts.forEach(function (p) { authors[p.author] = 1; follow += p.followUps; });
+      var box = $('stats');
+      box.innerHTML = '';
+      [['질문', posts.length + '개'], state.student ? null : ['질문한 학생', Object.keys(authors).length + '명'],
+        ['후속 댓글', follow + '개']].forEach(function (s) {
+        if (s) box.appendChild(el('div', { cls: 'stat' }, [el('b', { text: s[1] }), s[0]]));
+      });
+    }
+
+    /** keys 순서대로 고정 색을 줍니다. 8개를 넘는 항목과 미분류는 회색 '기타'로 묶습니다. */
+    function slicesFor(keys, counts) {
+      var slices = [], other = 0;
+      keys.forEach(function (k, i) {
+        if (!counts[k]) return;
+        if (i < SLOTS.length) slices.push({ key: k, label: k, count: counts[k], color: SLOTS[i] });
+        else other += counts[k];
+      });
+      if (other) slices.push({ key: '기타', label: '기타', count: other, color: 'var(--none)', noPick: true });
+      if (counts[NONE]) slices.push({ key: NONE, label: NONE, count: counts[NONE], color: 'var(--none)' });
+      return slices;
+    }
+
+    function renderCategory(posts) {
+      var counts = {};
+      posts.forEach(function (p) { var k = p.category || NONE; counts[k] = (counts[k] || 0) + 1; });
+      donut($('cCategory'), slicesFor(data.categories, counts), '질문', 'category');
+    }
+
+    function renderComp(posts) {
+      var counts = {};
+      posts.forEach(function (p) {
+        if (!p.competencies.length) counts[NONE] = (counts[NONE] || 0) + 1;
+        p.competencies.forEach(function (c) { counts[c] = (counts[c] || 0) + 1; });
+      });
+      donut($('cComp'), slicesFor(data.competencies.map(function (c) { return c.name; }), counts), '역량', 'comp');
+    }
+
+    function renderUnits(posts) {
+      var box = $('cUnits');
+      box.innerHTML = '';
+      var shown = 0;
+      data.categories.forEach(function (cat) {
+        if (state.subject && state.subject !== cat) return;
+        var mine = posts.filter(function (p) { return p.category === cat; });
+        if (!mine.length) return;
+        var counts = {};
+        mine.forEach(function (p) { var k = p.unit || NONE; counts[k] = (counts[k] || 0) + 1; });
+        var wrap = el('div', {}, [el('h3', { text: cat + ' · ' + mine.length + '개' })]);
+        var holder = el('div');
+        wrap.appendChild(holder);
+        box.appendChild(wrap);
+        donut(holder, slicesFor(data.units[cat] || [], counts), '질문', 'unit', cat);
+        shown++;
+      });
+      if (!shown) box.appendChild(el('div', { cls: 'empty', text: '과목이 분류된 질문이 아직 없어요.' }));
+    }
+
+    var NS = 'http://www.w3.org/2000/svg';
+    function svg(tag, attrs) {
+      var n = document.createElementNS(NS, tag);
+      Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+      return n;
+    }
+
+    /** 도넛(원)그래프 + 범례. 조각이나 범례를 누르면 질문 목록이 그 항목으로 걸러집니다. */
+    function donut(box, slices, unitWord, type, subject) {
+      box.innerHTML = '';
+      var total = slices.reduce(function (a, s) { return a + s.count; }, 0);
+      if (!total) { box.appendChild(el('div', { cls: 'empty', text: '표시할 질문이 없어요.' })); return; }
+
+      var pick = state.pick && state.pick.type === type && (state.pick.subject || '') === (subject || '') ? state.pick.value : null;
+      var wrap = el('div', { cls: 'chart' + (pick ? ' has-pick' : '') });
+      var size = 168, cx = size / 2, R = 78, r = 50;
+      var g = svg('svg', { width: size, height: size, viewBox: '0 0 ' + size + ' ' + size, role: 'img',
+        'aria-label': slices.map(function (s) { return s.label + ' ' + s.count; }).join(', ') });
+      var a0 = -Math.PI / 2;
+      slices.forEach(function (s) {
+        var a1 = a0 + s.count / total * Math.PI * 2;
+        var path;
+        if (slices.length === 1) {
+          path = svg('path', { d: ring(cx, R, r), 'fill-rule': 'evenodd' });
+        } else {
+          path = svg('path', { d: arc(cx, R, r, a0, a1) });
+        }
+        path.setAttribute('fill', s.color);
+        path.setAttribute('stroke', 'var(--card)');
+        path.setAttribute('stroke-width', '2');
+        if (pick === s.key) path.setAttribute('class', 'on');
+        hover(path, s, total, unitWord);
+        if (!s.noPick) path.addEventListener('click', function () { setPick({ type: type, value: s.key, subject: subject }); });
+        g.appendChild(path);
+        a0 = a1;
+      });
+      var t1 = svg('text', { x: cx, y: cx - 2, 'text-anchor': 'middle', 'font-size': 22, 'font-weight': 700, fill: 'var(--ink)' });
+      t1.textContent = total;
+      var t2 = svg('text', { x: cx, y: cx + 16, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--muted)' });
+      t2.textContent = unitWord;
+      g.appendChild(t1); g.appendChild(t2);
+
+      var ul = el('ul', { cls: 'legend' });
+      slices.forEach(function (s) {
+        var li = el('li', { cls: pick === s.key ? 'on' : '' }, [
+          el('span', { cls: 'sw', style: 'background:' + s.color }),
+          el('span', { cls: 'lb', text: s.label }),
+          el('span', { cls: 'n', text: s.count + '개 · ' + pct(s.count, total) })
+        ]);
+        if (!s.noPick) li.addEventListener('click', function () { setPick({ type: type, value: s.key, subject: subject }); });
+        ul.appendChild(li);
+      });
+      wrap.appendChild(g);
+      wrap.appendChild(ul);
+      box.appendChild(wrap);
+    }
+    function pct(n, total) { return Math.round(n / total * 100) + '%'; }
+    function pt(cx, rad, a) { return (cx + rad * Math.cos(a)).toFixed(2) + ' ' + (cx + rad * Math.sin(a)).toFixed(2); }
+    function arc(cx, R, r, a0, a1) {
+      var large = a1 - a0 > Math.PI ? 1 : 0;
+      return 'M' + pt(cx, R, a0) + 'A' + R + ' ' + R + ' 0 ' + large + ' 1 ' + pt(cx, R, a1) +
+        'L' + pt(cx, r, a1) + 'A' + r + ' ' + r + ' 0 ' + large + ' 0 ' + pt(cx, r, a0) + 'Z';
+    }
+    function ring(cx, R, r) {
+      return 'M' + (cx - R) + ' ' + cx + 'a' + R + ' ' + R + ' 0 1 0 ' + 2 * R + ' 0a' + R + ' ' + R + ' 0 1 0 ' + -2 * R + ' 0Z' +
+        'M' + (cx - r) + ' ' + cx + 'a' + r + ' ' + r + ' 0 1 0 ' + 2 * r + ' 0a' + r + ' ' + r + ' 0 1 0 ' + -2 * r + ' 0Z';
+    }
+    function hover(node, s, total, unitWord) {
+      var tip = $('tip');
+      node.addEventListener('mousemove', function (e) {
+        tip.textContent = s.label + ' · ' + s.count + '개 (' + pct(s.count, total) + ')';
+        tip.style.display = 'block';
+        tip.style.left = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8) + 'px';
+        tip.style.top = (e.clientY + 12) + 'px';
+      });
+      node.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+    }
+
+    function topKey(counts) {
+      var best = '', n = 0;
+      Object.keys(counts).forEach(function (k) { if (counts[k] > n) { best = k; n = counts[k]; } });
+      return best;
+    }
+
+    function renderStudents(posts) {
+      $('studentsPanel').hidden = !!state.student;
+      if (state.student) return;
+      var by = {};
+      posts.forEach(function (p) {
+        var s = by[p.author] = by[p.author] || { name: p.author, n: 0, follow: 0, cat: {}, comp: {} };
+        s.n++; s.follow += p.followUps;
+        if (p.category) s.cat[p.category] = (s.cat[p.category] || 0) + 1;
+        p.competencies.forEach(function (c) { s.comp[c] = (s.comp[c] || 0) + 1; });
+      });
+      var rows = Object.keys(by).map(function (k) { return by[k]; })
+        .sort(function (a, b) { return b.n - a.n || a.name.localeCompare(b.name, 'ko'); });
+      var t = $('students');
+      t.innerHTML = '';
+      t.appendChild(el('tr', {}, ['이름', '질문', '후속 댓글', '많이 물은 과목', '주로 드러난 역량'].map(function (h) { return el('th', { text: h }); })));
+      if (!rows.length) { t.appendChild(el('tr', {}, [el('td', { colspan: 5, cls: 'empty', text: '질문이 없어요.' })])); return; }
+      rows.forEach(function (s) {
+        t.appendChild(el('tr', { cls: 'click', onclick: function () { state.student = s.name; state.pick = null; render(); window.scrollTo(0, 0); } }, [
+          el('td', { cls: 'nw', text: s.name }), el('td', { cls: 'num', text: String(s.n) }), el('td', { cls: 'num', text: String(s.follow) }),
+          el('td', { text: topKey(s.cat) || '-' }), el('td', { text: topKey(s.comp) || '-' })
+        ]));
+      });
+    }
+
+    function renderQuestions(posts) {
+      var note = $('pickNote');
+      note.innerHTML = '';
+      if (state.pick) {
+        note.appendChild(document.createTextNode('"' + (state.pick.subject ? state.pick.subject + ' · ' : '') + state.pick.value + '" 질문만 보는 중'));
+        note.appendChild(el('button', { cls: 'ghost', text: '전체 보기', onclick: function () { setPick(null); } }));
+      }
+      var t = $('questions');
+      t.innerHTML = '';
+      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목 · 대단원', '역량', '질문']);
+      t.appendChild(el('tr', {}, heads.map(function (h) { return el('th', { text: h }); })));
+      if (!posts.length) { t.appendChild(el('tr', {}, [el('td', { colspan: heads.length, cls: 'empty', text: '질문이 없어요.' })])); return; }
+      posts.slice().sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; }).forEach(function (p) {
+        var cells = [el('td', { cls: 'nw', text: localDate(p.createdAt).slice(5).replace('-', '/') })];
+        if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
+        cells.push(el('td', { text: [p.category || NONE, p.unit].filter(String).join(' · ') }));
+        cells.push(el('td', {}, p.competencies.length ? p.competencies.map(function (c) { return el('span', { cls: 'chip', text: c }); }) : ['-']));
+        cells.push(el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
+        t.appendChild(el('tr', {}, cells));
+      });
+    }
+  </script>
+</body>
+</html>

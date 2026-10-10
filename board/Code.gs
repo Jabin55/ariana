@@ -17,11 +17,14 @@
  *   REFERENCE_ONLY  (선택) true면 '자료' 탭 밖의 내용은 아예 답하지 않습니다. 기본값 false:
  *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답하고, 필요할 때만 선생님 안내를 덧붙입니다.
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
+ *   TEACHER_PASSWORD (선택) 선생님 전용 '학생 분석' 화면(게시판 주소 뒤에 ?teacher)의 비밀번호.
+ *                   비워 두면 분석 화면이 열리지 않습니다.
  */
 
 var POSTS_SHEET = 'Posts';
 var COMMENTS_SHEET = 'Comments';
-var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category'];
+// unit: 대단원, competencies: 질문에 드러난 사회과 교과 역량 (쉼표로 구분, 최대 2개)
+var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category', 'unit', 'competencies'];
 
 // 게시판 맨 위에 보이는 분류. 질문이 올라오면 AI가 이 중 하나로 나눕니다.
 // 시트 Posts 탭의 category 칸을 직접 고쳐서 분류를 바꿀 수도 있습니다.
@@ -35,6 +38,40 @@ var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한
 var NOT_IN_REF_MARK = '[자료없음]';
 
 var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
+
+// 학생 분석 기준. 처음 실행할 때 시트에 '단원', '역량' 탭을 아래 기본값으로 만듭니다.
+// 학교 교과서·교육과정에 맞게 시트에서 고치면 다음 분류부터 바로 반영됩니다.
+var UNITS_SHEET = '단원';
+var UNIT_HEADERS = ['과목', '대단원'];
+var DEFAULT_UNITS = [
+  ['사회와 문화', '사회·문화 현상의 탐구'],
+  ['사회와 문화', '개인과 사회 구조'],
+  ['사회와 문화', '문화와 일상생활'],
+  ['사회와 문화', '사회 계층과 불평등'],
+  ['사회와 문화', '현대의 사회 변동'],
+  ['정치', '정치와 민주주의'],
+  ['정치', '민주 국가와 정부'],
+  ['정치', '정치 과정과 참여'],
+  ['정치', '국제 정치'],
+  ['경제', '경제생활과 경제 문제'],
+  ['경제', '시장과 경제 활동'],
+  ['경제', '국가와 경제 활동'],
+  ['경제', '세계 시장과 교역'],
+  ['법과 사회', '민주주의와 헌법'],
+  ['법과 사회', '개인 생활과 법'],
+  ['법과 사회', '사회생활과 법'],
+  ['법과 사회', '국가와 국제 관계와 법']
+];
+var COMP_SHEET = '역량';
+var COMP_HEADERS = ['역량', '설명'];
+var DEFAULT_COMPETENCIES = [
+  ['창의적 사고력', '새로운 관점이나 독창적인 생각, 기존 개념을 다른 상황에 연결하는 질문'],
+  ['비판적 사고력', '주장·제도·자료의 타당성, 근거, 한계, 장단점을 따져 보는 질문'],
+  ['문제 해결력 및 의사 결정력', '사회 문제의 원인과 해결 방안을 찾거나, 대안을 비교해 합리적으로 선택하려는 질문'],
+  ['의사소통 및 협업 능력', '다른 사람의 의견·입장을 이해하고 조율하거나, 토론·협력에 관한 질문'],
+  ['정보 활용 능력', '자료·통계·뉴스 등 정보를 찾고 해석하고 활용하는 방법에 관한 질문']
+];
+var MAX_COMPETENCIES = 2;
 
 var DEFAULT_MODEL = 'gemini-3.8-flash';
 var DEFAULT_TITLE = '질문 게시판';
@@ -59,7 +96,15 @@ var DEFAULT_SYSTEM_PROMPT = [
 
 /* ───────────── 웹 앱 진입점 ───────────── */
 
-function doGet() {
+function doGet(e) {
+  if (e && e.parameter && e.parameter.teacher !== undefined) {
+    var t = HtmlService.createTemplateFromFile('Teacher');
+    t.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
+    return t.evaluate()
+      .setTitle('학생 분석 · ' + t.boardTitle)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
   var tpl = HtmlService.createTemplateFromFile('Index');
   tpl.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
   var img = getProp_('CHARACTER_IMAGE_URL', '');
@@ -243,6 +288,54 @@ function setCategory(postId, category) {
   });
 }
 
+/* ───────────── 선생님 전용 학생 분석 ───────────── */
+
+/**
+ * 학생 분석 화면에 필요한 글 목록과 분석 기준을 돌려줍니다. 비밀번호가 맞아야 합니다.
+ * 비밀번호를 10번 틀리면 10분 동안 막습니다.
+ */
+function getAnalysis(password) {
+  var expected = getProp_('TEACHER_PASSWORD', '');
+  if (!expected) throw new Error('스크립트 속성에 TEACHER_PASSWORD 를 먼저 넣어 주세요.');
+  var cache = CacheService.getScriptCache();
+  var fails = Number(cache.get('teacher_fails') || 0);
+  if (fails >= 10) throw new Error('비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도하세요.');
+  if (String(password || '') !== expected) {
+    cache.put('teacher_fails', String(fails + 1), 600);
+    Utilities.sleep(1000);
+    throw new Error('비밀번호가 맞지 않아요.');
+  }
+
+  var cfg = analysisConfig_();
+  var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
+  var followUps = {}; // 글쓴이가 자기 질문에 단 후속 댓글 수
+  var authorOf = {};
+  var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).filter(function (p) { return p.id !== ''; });
+  posts.forEach(function (p) { authorOf[p.id] = String(p.author).trim(); });
+  comments.forEach(function (c) {
+    var isAI = c.isAI === true || c.isAI === 'TRUE';
+    if (!isAI && String(c.author).trim() === authorOf[c.postId]) followUps[c.postId] = (followUps[c.postId] || 0) + 1;
+  });
+
+  return {
+    categories: CATEGORIES,
+    units: cfg.units,
+    competencies: cfg.competencies,
+    posts: posts.map(function (p) {
+      var category = validCategory_(p.category);
+      return {
+        createdAt: toIso_(p.createdAt),
+        author: String(p.author).trim(),
+        text: String(p.text),
+        category: category,
+        unit: validUnit_(category, p.unit),
+        competencies: validCompetencies_(p.competencies).split(', ').filter(String),
+        followUps: followUps[p.id] || 0
+      };
+    })
+  };
+}
+
 /* ───────────── 관리용 (편집기에서 직접 실행) ───────────── */
 
 /** 처음 한 번 실행: 시트를 만들고, API 키가 제대로 동작하는지 확인합니다. */
@@ -250,13 +343,17 @@ function setup() {
   getSheet_(POSTS_SHEET, POST_HEADERS);
   getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
   getSheet_(REF_SHEET, REF_HEADERS);
+  var cfg = analysisConfig_();
+  Logger.log('0) 분석 기준: 대단원 ' + CATEGORIES.map(function (c) { return c + ' ' + (cfg.units[c] || []).length + '개'; }).join(', ') +
+    ' / 역량 ' + cfg.competencies.length + '개');
   var ref = referenceText_('');
   Logger.log('0) 참고 자료: ' + (ref ? ref.length + '자 (' + (referenceOnly_() ? '자료 안에서만 답변' : '자료 우선 참고') + ')' : '없음 (AI가 아는 내용으로 답변)'));
   var reply = callGemini_([{ role: 'user', parts: [{ text: '설치 확인용 질문입니다. "준비 완료"라고만 답해 주세요.' }] }]);
   Logger.log('1) Gemini 답변: ' + reply);
   try {
     var r = callGeminiJson_([{ role: 'user', parts: [{ text: '수요와 공급이 뭐예요?' }] }], answerSchema_(), systemPrompt_(''));
-    Logger.log('2) 과목 분류: ' + r.category + ' / 답변 ' + String(r.answer || '').length + '자');
+    Logger.log('2) 과목 분류: ' + r.category + ' · ' + (r.unit || '-') + ' · 역량 ' + (r.competencies || []).join(', ') +
+      ' / 답변 ' + String(r.answer || '').length + '자');
   } catch (e) {
     Logger.log('2) 과목 분류 실패: ' + e);
   }
@@ -270,17 +367,37 @@ function answerUnanswered() {
   });
 }
 
-/** 분류가 비어 있는 글(이 기능 전에 올라온 글 등)을 AI로 분류합니다. 편집기에서 한 번 실행하세요. */
-function classifyExisting() {
-  var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS);
-  posts.forEach(function (p) {
-    if (p.id === '' || p.status !== 'answered' || validCategory_(p.category)) return;
+/**
+ * 과목·대단원·역량 분류가 비어 있는 글(이 기능 전에 올라온 글 등)을 AI로 분류합니다.
+ * 편집기에서 실행하세요. 무료 한도를 넘지 않게 천천히(한 번에 최대 40개) 처리하므로,
+ * 실행 로그에 '남은 글'이 있으면 몇 분 뒤 한 번 더 실행하면 됩니다.
+ */
+function analyzeExisting() {
+  var started = Date.now();
+  var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).filter(function (p) {
+    return p.id !== '' && p.status === 'answered' &&
+      (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !validCompetencies_(p.competencies));
+  });
+  var done = 0;
+  for (var i = 0; i < posts.length && done < 40; i++) {
+    if (Date.now() - started > 4.5 * 60 * 1000) break; // Apps Script 실행 시간(6분) 제한 보호
+    var p = posts[i];
+    if (done > 0) Utilities.sleep(4000); // 무료 한도(분당 요청 수) 보호
     try {
-      classifyPost_({ id: String(p.id), text: String(p.text) });
+      analyzePost_({ id: String(p.id), text: String(p.text), category: validCategory_(p.category),
+        unit: validUnit_(validCategory_(p.category), p.unit) });
+      done++;
     } catch (e) {
       console.error('분류 실패 (' + p.id + '): ' + e);
+      if (/Gemini API 429/.test(String(e))) { Logger.log('Gemini 무료 한도에 걸렸습니다. 잠시 뒤 다시 실행하세요.'); break; }
     }
-  });
+  }
+  Logger.log('분류한 글: ' + done + '개 / 남은 글: ' + (posts.length - done) + '개');
+}
+
+/** 예전 이름. analyzeExisting과 같습니다. */
+function classifyExisting() {
+  analyzeExisting();
 }
 
 /** 10분마다 answerUnanswered를 실행하는 트리거를 만듭니다. (선택) */
@@ -352,15 +469,17 @@ function answerPost_(postId) {
   // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
   var needCategory = target === String(postId) && !thread.post.category;
   var system = systemPrompt_(thread.post.category);
-  var answer, category, status;
+  var answer, category, unit, competencies, status;
   try {
     if (needCategory) {
       try {
         var r = callGeminiJson_(thread.contents, answerSchema_(), system);
         answer = String(r.answer || '').trim();
         category = validCategory_(r.category);
+        unit = validUnit_(category, r.unit);
+        competencies = validCompetencies_(r.competencies);
       } catch (e) {
-        // 분류 방식(JSON 응답)이 거절되면 분류 없이 답변만 받습니다. 분류는 classifyExisting으로 나중에.
+        // 분류 방식(JSON 응답)이 거절되면 분류 없이 답변만 받습니다. 분류는 analyzeExisting으로 나중에.
         if (!/Gemini API 400/.test(String(e))) throw e;
         console.error('분류 요청 거절, 답변만 받습니다: ' + e);
       }
@@ -383,7 +502,11 @@ function answerPost_(postId) {
       getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
         .appendRow([Utilities.getUuid(), postId, new Date(), aiName_(), answer, true, target]);
     }
-    if (category && !now.post.category) setCell_(now.post, 'category', category);
+    if (category && !now.post.category) {
+      setCell_(now.post, 'category', category);
+      if (unit && !validUnit_(category, now.post.unit)) setCell_(now.post, 'unit', unit);
+    }
+    if (competencies && !validCompetencies_(now.post.competencies)) setCell_(now.post, 'competencies', competencies);
     // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
     if (now.lastHumanId === target) setStatus_(now.post, status);
   });
@@ -458,7 +581,7 @@ function validCategory_(c) {
 }
 
 function answerSchema_() {
-  return {
+  var schema = {
     type: 'OBJECT',
     properties: {
       category: { type: 'STRING', enum: CATEGORIES, description: '질문이 가장 가까운 과목' },
@@ -466,19 +589,117 @@ function answerSchema_() {
     },
     required: ['category', 'answer']
   };
+  addAnalysisFields_(schema, '');
+  return schema;
 }
 
-/** 이미 답이 달렸지만 분류가 없는 글(예전 글)을 분류만 따로 합니다. */
-function classifyPost_(found) {
+/**
+ * 분류 스키마에 대단원·역량 칸을 붙입니다. category를 알면 그 과목의 단원만 고르게 합니다.
+ * '단원'·'역량' 탭이 비어 있으면 그 칸은 빼고 분류하지 않습니다.
+ */
+function addAnalysisFields_(schema, category) {
+  var cfg = analysisConfig_();
+  var units = [];
+  CATEGORIES.forEach(function (c) {
+    if (!category || c === category) units = units.concat(cfg.units[c] || []);
+  });
+  units = units.filter(function (u, i) { return units.indexOf(u) === i; });
+  if (units.length) {
+    var guide = CATEGORIES.filter(function (c) { return (!category || c === category) && (cfg.units[c] || []).length; })
+      .map(function (c) { return c + ': ' + cfg.units[c].join(', '); }).join(' / ');
+    schema.properties.unit = { type: 'STRING', enum: units,
+      description: '질문이 속하는 대단원. 반드시 고른 과목의 단원 중에서 고를 것 (' + guide + ')' };
+    schema.required.push('unit');
+  }
+  if (cfg.competencies.length) {
+    schema.properties.competencies = {
+      type: 'ARRAY', minItems: 1, maxItems: MAX_COMPETENCIES,
+      items: { type: 'STRING', enum: cfg.competencies.map(function (c) { return c.name; }) },
+      description: '학생의 질문에 드러난 사회과 교과 역량 1~' + MAX_COMPETENCIES + '개 (가장 뚜렷한 것부터). 기준: ' +
+        cfg.competencies.map(function (c) { return c.name + (c.desc ? '(' + c.desc + ')' : ''); }).join('; ')
+    };
+    schema.required.push('competencies');
+  }
+  return schema;
+}
+
+/** 이미 답이 달린 글의 과목·대단원·역량 중 빈 칸을 AI로 채웁니다. */
+function analyzePost_(found) {
+  var schema = { type: 'OBJECT', properties: {}, required: [] };
+  if (!found.category) {
+    schema.properties.category = { type: 'STRING', enum: CATEGORIES, description: '질문이 가장 가까운 과목' };
+    schema.required.push('category');
+  }
+  addAnalysisFields_(schema, found.category);
+  if (!schema.required.length) return;
   var r = callGeminiJson_(
-    [{ role: 'user', parts: [{ text: '다음 학생 질문이 어느 과목에 가장 가까운지 분류해.\n\n' + found.text }] }],
-    { type: 'OBJECT', properties: { category: { type: 'STRING', enum: CATEGORIES } }, required: ['category'] });
-  var category = validCategory_(r.category);
-  if (!category) return;
+    [{ role: 'user', parts: [{ text: '다음 학생 질문을 분류해.' +
+      (found.category ? '\n과목: ' + found.category : '') + '\n\n질문: ' + found.text }] }],
+    schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 질문 하나를 정해진 기준으로 분류해.');
+  var category = found.category || validCategory_(r.category);
+  var unit = validUnit_(category, r.unit);
+  var competencies = validCompetencies_(r.competencies);
   withLock_(function () {
     var now = findPostRow_(found.id);
-    if (now && !now.category) setCell_(now, 'category', category);
+    if (!now) return;
+    if (!now.category && category) setCell_(now, 'category', category);
+    if (unit && (now.category || category) === category && !validUnit_(category, now.unit)) setCell_(now, 'unit', unit);
+    if (competencies && !validCompetencies_(now.competencies)) setCell_(now, 'competencies', competencies);
   });
+}
+
+function validUnit_(category, unit) {
+  var list = analysisConfig_().units[category] || [];
+  return list.indexOf(String(unit || '')) === -1 ? '' : String(unit);
+}
+
+function validCompetencies_(list) {
+  var names = analysisConfig_().competencies.map(function (c) { return c.name; });
+  var picked = [];
+  (Array.isArray(list) ? list : String(list || '').split(',')).forEach(function (c) {
+    c = String(c).trim();
+    if (names.indexOf(c) !== -1 && picked.indexOf(c) === -1) picked.push(c);
+  });
+  return picked.slice(0, MAX_COMPETENCIES).join(', ');
+}
+
+var analysisConfigCache_ = null;
+
+/** '단원'·'역량' 탭을 읽습니다. 탭이 없으면 기본값으로 만듭니다. */
+function analysisConfig_() {
+  if (analysisConfigCache_) return analysisConfigCache_;
+  var units = {};
+  readRows_(getConfigSheet_(UNITS_SHEET, UNIT_HEADERS, DEFAULT_UNITS), UNIT_HEADERS).forEach(function (r) {
+    var c = String(r['과목'] || '').trim(), u = String(r['대단원'] || '').trim();
+    if (CATEGORIES.indexOf(c) === -1 || !u) return;
+    units[c] = units[c] || [];
+    if (units[c].indexOf(u) === -1) units[c].push(u);
+  });
+  var competencies = [];
+  readRows_(getConfigSheet_(COMP_SHEET, COMP_HEADERS, DEFAULT_COMPETENCIES), COMP_HEADERS).forEach(function (r) {
+    var name = String(r['역량'] || '').trim();
+    if (name && !competencies.some(function (c) { return c.name === name; })) {
+      competencies.push({ name: name, desc: String(r['설명'] || '').trim() });
+    }
+  });
+  analysisConfigCache_ = { units: units, competencies: competencies };
+  return analysisConfigCache_;
+}
+
+function getConfigSheet_(name, headers, defaults) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (sheet) return sheet;
+  try {
+    sheet = getSheet_(name, headers);
+    sheet.getRange(2, 1, defaults.length, headers.length).setValues(defaults);
+    sheet.autoResizeColumns(1, headers.length);
+  } catch (e) {
+    // 다른 실행이 같은 탭을 먼저 만든 경우
+    sheet = ss.getSheetByName(name);
+    if (!sheet) throw e;
+  }
+  return sheet;
 }
 
 function callGeminiJson_(contents, schema, systemText) {
@@ -602,7 +823,8 @@ function findPostRow_(postId) {
     if (String(rows[i].id) === String(postId)) {
       return { sheet: sheet, row: i + 2, id: String(rows[i].id), author: String(rows[i].author),
         text: String(rows[i].text), status: String(rows[i].status),
-        category: validCategory_(rows[i].category) };
+        category: validCategory_(rows[i].category),
+        unit: String(rows[i].unit || ''), competencies: String(rows[i].competencies || '') };
     }
   }
   return null;
