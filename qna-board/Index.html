@@ -42,7 +42,7 @@
     .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
     @media (max-width: 1000px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 560px) { .board { grid-template-columns: 1fr; } }
-    .col-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center;
+    .col-head { width: 100%; font: inherit; cursor: pointer; position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center;
       background: var(--tone); color: #2b2b2b; font-weight: 700; font-size: 17px; border-radius: 14px;
       padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
     .col-head .count { font-size: 13px; background: rgba(255,255,255,.7); border-radius: 999px; padding: 2px 9px; }
@@ -176,6 +176,9 @@
     var nameQuery = '';     // 검색칸에 입력한 글자 (부분 일치)
     var openMonths = {};    // 펼쳐 둔 지난 달 묶음 (과목|연-월)
     var openTalks = {};     // 펼쳐 둔 댓글 대화
+    var openCols = {};      // 펼쳐 둔 과목 칸 (이 브라우저에 기억)
+    var justPosted = {};    // 방금 올린 내 질문: 분류되면 그 과목 칸을 자동으로 펼쳐 답변이 보이게
+    try { openCols = JSON.parse(localStorage.getItem('qna-open-cols') || '{}') || {}; } catch (e) {}
     // 이 브라우저에서 질문하거나 댓글을 단 글은 대화를 늘 펼쳐서 보여 줍니다.
     var mine = {};
     try { mine = JSON.parse(localStorage.getItem('qna-mine') || '{}') || {}; } catch (e) {}
@@ -233,6 +236,9 @@
       } else {
         note.style.display = 'none';
       }
+      posts.forEach(function (p) {
+        if (justPosted[p.id] && p.category) { openCols[p.category] = true; delete justPosted[p.id]; }
+      });
       var cols = CATEGORIES.map(function () { return []; });
       var sorting = [];
       all.forEach(function (p) {
@@ -247,9 +253,12 @@
           '<div class="cards">' + sorting.map(function (p) { return card(p, 'x'); }).join('') + '</div></div>';
       }
       html += '<div class="board">' + CATEGORIES.map(function (name, i) {
+        // 과목 칸은 처음엔 접혀 있고, 제목을 누르면 펼쳐집니다. 이름으로 찾을 때는 자동으로 펼칩니다.
+        var open = openCols[name] || nameFilter || nameQuery;
         return '<section class="tone-' + i + '" data-cat="' + esc(name) + '">' +
-          '<div class="col-head">' + esc(name) + '<span class="count">' + cols[i].length + '</span></div>' +
-          (cols[i].length ? columnBody(cols[i], i, name)
+          '<button type="button" class="col-head" data-col="' + esc(name) + '">' +
+          '<span>' + (open ? '▾ ' : '▸ ') + esc(name) + '</span><span class="count">' + cols[i].length + '</span></button>' +
+          (!open ? '' : cols[i].length ? columnBody(cols[i], i, name)
                           : '<div class="col-empty">아직 질문이 없어요</div>') +
           '</section>';
       }).join('') + '</div>';
@@ -414,7 +423,7 @@
       btn.disabled = false;
 
       google.script.run
-        .withSuccessHandler(function (id) { markMine(id); localPending.splice(localPending.indexOf(temp), 1); refresh(); })
+        .withSuccessHandler(function (id) { markMine(id); justPosted[id] = 1; localPending.splice(localPending.indexOf(temp), 1); refresh(); })
         .withFailureHandler(function (e) {
           localPending.splice(localPending.indexOf(temp), 1);
           textEl.value = text;
@@ -442,6 +451,13 @@
     });
 
     grid.addEventListener('click', function (ev) {
+      var ch = ev.target.closest('.col-head');
+      if (ch) {
+        openCols[ch.dataset.col] = !openCols[ch.dataset.col];
+        try { localStorage.setItem('qna-open-cols', JSON.stringify(openCols)); } catch (e) {}
+        render(lastPosts);
+        return;
+      }
       var mh = ev.target.closest('.month-head');
       if (mh) {
         openMonths[mh.dataset.month] = !openMonths[mh.dataset.month];
