@@ -23,8 +23,9 @@
 
 var POSTS_SHEET = 'Posts';
 var COMMENTS_SHEET = 'Comments';
-// unit: 대단원, competencies: 질문에 드러난 사회과 교과 역량 (쉼표로 구분, 최대 2개)
-var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category', 'unit', 'competencies'];
+// unit: 대단원, competencies: 질문에 드러난 사회과 교과 역량 (쉼표로 구분, 최대 2개. 드러난 역량이 없으면 '없음')
+// level: 질문의 인지적 수준 (블룸의 교육 목표 분류: 지식~평가)
+var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status', 'category', 'unit', 'competencies', 'level'];
 
 // 게시판 맨 위에 보이는 분류. 질문이 올라오면 AI가 이 중 하나로 나눕니다.
 // 시트 Posts 탭의 category 칸을 직접 고쳐서 분류를 바꿀 수도 있습니다.
@@ -65,13 +66,34 @@ var DEFAULT_UNITS = [
 var COMP_SHEET = '역량';
 var COMP_HEADERS = ['역량', '설명'];
 var DEFAULT_COMPETENCIES = [
-  ['창의적 사고력', '새로운 관점이나 독창적인 생각, 기존 개념을 다른 상황에 연결하는 질문'],
-  ['비판적 사고력', '주장·제도·자료의 타당성, 근거, 한계, 장단점을 따져 보는 질문'],
-  ['문제 해결력 및 의사 결정력', '사회 문제의 원인과 해결 방안을 찾거나, 대안을 비교해 합리적으로 선택하려는 질문'],
-  ['의사소통 및 협업 능력', '다른 사람의 의견·입장을 이해하고 조율하거나, 토론·협력에 관한 질문'],
-  ['정보 활용 능력', '자료·통계·뉴스 등 정보를 찾고 해석하고 활용하는 방법에 관한 질문']
+  ['창의적 사고력', '배운 개념을 새로운 상황에 연결하거나, 기존과 다른 관점·가정을 스스로 제시하는 질문. 예: "만약 ~라면 어떻게 될까요?", "이 개념을 학교생활에 적용하면?"'],
+  ['비판적 사고력', '주장·제도·자료의 근거, 한계, 장단점, 타당성을 따지거나 서로 다른 입장을 비교·평가하는 질문. 예: "이 제도는 정말 공정한가요?", "왜 이런 반대 의견이 있나요?"'],
+  ['문제 해결력 및 의사 결정력', '사회 문제의 원인과 해결 방안을 찾거나, 여러 대안 중 무엇이 나은지 판단하려는 질문. 예: "저출생 문제를 줄이려면 어떤 정책이 좋을까요?"'],
+  ['의사소통 및 협업 능력', '다른 사람이나 집단의 입장을 이해·조율하거나 토론·협력·갈등 해결 방법을 묻는 질문. 예: "의견이 다른 사람과 어떻게 합의할 수 있나요?"'],
+  ['정보 활용 능력', '자료·통계·그래프·뉴스를 찾고 해석하거나 정보의 신뢰성을 판단하려는 질문. 예: "이 통계는 어떻게 읽어야 하나요?", "가짜 뉴스는 어떻게 구별하나요?"']
 ];
+// 이전 버전의 기본 설명. 시트에 이 설명이 그대로 있으면 위의 새 설명으로 바꿔 줍니다 (선생님이 고친 설명은 그대로 둠).
+var OLD_COMPETENCY_DESCS = [
+  '새로운 관점이나 독창적인 생각, 기존 개념을 다른 상황에 연결하는 질문',
+  '주장·제도·자료의 타당성, 근거, 한계, 장단점을 따져 보는 질문',
+  '사회 문제의 원인과 해결 방안을 찾거나, 대안을 비교해 합리적으로 선택하려는 질문',
+  '다른 사람의 의견·입장을 이해하고 조율하거나, 토론·협력에 관한 질문',
+  '자료·통계·뉴스 등 정보를 찾고 해석하고 활용하는 방법에 관한 질문'
+];
+// 단순한 질문(용어 뜻, 사실 확인, 시험 범위·과제 안내, 인사)은 역량을 붙이지 않고 '없음'으로 둡니다.
+var NO_COMPETENCY = '없음';
 var MAX_COMPETENCIES = 2;
+
+// 질문의 인지적 수준. 낮은 단계부터 순서대로이며, 질문 하나에 하나만 고릅니다.
+var LEVELS = [
+  ['지식', '용어·사실·정의를 그대로 묻는 질문. 예: "○○의 뜻이 뭐예요?", "헌법재판소는 언제 생겼어요?"'],
+  ['이해', '개념의 의미·이유·차이를 자기 말로 이해하려는 질문. 예: "왜 삼권 분립이 필요한가요?", "A와 B는 뭐가 달라요?"'],
+  ['적용', '배운 개념을 구체적인 사례·생활·새 상황에 적용해 보는 질문. 예: "우리 학교 회장 선거에 비례 대표제를 쓰면?"'],
+  ['분석', '현상을 요소로 나누어 원인·관계·구조·영향을 따지는 질문. 예: "환율이 오르면 수출 기업과 소비자에게 각각 어떤 영향이 있나요?"'],
+  ['종합', '여러 개념·자료를 엮어 새로운 해결책·대안·주장을 만들어 보려는 질문. 예: "저출생과 지방 소멸을 함께 해결하는 정책을 만든다면?"'],
+  ['평가', '기준을 세워 제도·주장·정책의 가치·타당성을 판단하는 질문. 예: "사형제는 정당한가요?", "이 정책은 효과적이었나요?"']
+];
+var LEVEL_NAMES = LEVELS.map(function (l) { return l[0]; });
 
 var DEFAULT_MODEL = 'gemini-3.8-flash';
 var DEFAULT_TITLE = '질문 게시판';
@@ -325,6 +347,7 @@ function getAnalysis(password) {
     categories: CATEGORIES,
     units: cfg.units,
     competencies: cfg.competencies,
+    levels: LEVELS.map(function (l) { return { name: l[0], desc: l[1] }; }),
     posts: posts.map(function (p) {
       var category = validCategory_(p.category);
       return {
@@ -334,6 +357,8 @@ function getAnalysis(password) {
         category: category,
         unit: validUnit_(category, p.unit),
         competencies: validCompetencies_(p.competencies).split(', ').filter(String),
+        noCompetency: competencyCell_(p.competencies) === NO_COMPETENCY,
+        level: validLevel_(p.level),
         followUps: followUps[p.id] || 0
       };
     })
@@ -356,7 +381,7 @@ function setup() {
   Logger.log('1) Gemini 답변: ' + reply);
   try {
     var r = callGeminiJson_([{ role: 'user', parts: [{ text: '수요와 공급이 뭐예요?' }] }], answerSchema_(), systemPrompt_(''));
-    Logger.log('2) 과목 분류: ' + r.category + ' · ' + (r.unit || '-') + ' · 역량 ' + (r.competencies || []).join(', ') +
+    Logger.log('2) 과목 분류: ' + r.category + ' · ' + (r.unit || '-') + ' · 역량 ' + ((r.competencies || []).join(', ') || NO_COMPETENCY) + ' · 수준 ' + (r.level || '-') +
       ' / 답변 ' + String(r.answer || '').length + '자');
   } catch (e) {
     Logger.log('2) 과목 분류 실패: ' + e);
@@ -372,7 +397,7 @@ function answerUnanswered() {
 }
 
 /**
- * 과목·대단원·역량 분류가 비어 있는 글(이 기능 전에 올라온 글 등)을 AI로 분류합니다.
+ * 과목·대단원·역량·인지적 수준 분류가 비어 있는 글(이 기능 전에 올라온 글 등)을 AI로 분류합니다.
  * 편집기에서 실행하세요. 무료 한도를 넘지 않게 천천히(한 번에 최대 40개) 처리하므로,
  * 실행 로그에 '남은 글'이 있으면 몇 분 뒤 한 번 더 실행하면 됩니다.
  */
@@ -380,7 +405,7 @@ function analyzeExisting() {
   var started = Date.now();
   var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).filter(function (p) {
     return p.id !== '' && p.status === 'answered' &&
-      (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !validCompetencies_(p.competencies));
+      (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !competencyCell_(p.competencies) || !validLevel_(p.level));
   });
   var done = 0;
   for (var i = 0; i < posts.length && done < 40; i++) {
@@ -397,6 +422,24 @@ function analyzeExisting() {
     }
   }
   Logger.log('분류한 글: ' + done + '개 / 남은 글: ' + (posts.length - done) + '개');
+}
+
+/**
+ * 모든 글의 역량 분류를 지우고 새 기준으로 다시 분류합니다. (역량 기준을 바꿨을 때 편집기에서 실행)
+ * 한 번에 40개씩 처리하므로, 실행 로그에 '남은 글'이 있으면 몇 분 뒤 analyzeExisting을 실행하세요.
+ */
+function reanalyzeCompetencies() {
+  withLock_(function () {
+    var sheet = getSheet_(POSTS_SHEET, POST_HEADERS);
+    var last = sheet.getLastRow();
+    if (last >= 2) {
+      var col = POST_HEADERS.indexOf('competencies') + 1;
+      var blank = [];
+      for (var i = 2; i <= last; i++) blank.push(['']);
+      sheet.getRange(2, col, last - 1, 1).setValues(blank);
+    }
+  });
+  analyzeExisting();
 }
 
 /** 예전 이름. analyzeExisting과 같습니다. */
@@ -473,7 +516,7 @@ function answerPost_(postId) {
   // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
   var needCategory = target === String(postId) && !thread.post.category;
   var system = systemPrompt_(thread.post.category);
-  var answer, category, unit, competencies, status;
+  var answer, category, unit, competencies, level, status;
   try {
     if (needCategory) {
       try {
@@ -481,7 +524,8 @@ function answerPost_(postId) {
         answer = String(r.answer || '').trim();
         category = validCategory_(r.category);
         unit = validUnit_(category, r.unit);
-        competencies = validCompetencies_(r.competencies);
+        competencies = competencyCell_(r.competencies);
+        level = validLevel_(r.level);
       } catch (e) {
         // 분류 방식(JSON 응답)이 거절되면 분류 없이 답변만 받습니다. 분류는 analyzeExisting으로 나중에.
         if (!/Gemini API 400/.test(String(e))) throw e;
@@ -510,7 +554,8 @@ function answerPost_(postId) {
       setCell_(now.post, 'category', category);
       if (unit && !validUnit_(category, now.post.unit)) setCell_(now.post, 'unit', unit);
     }
-    if (competencies && !validCompetencies_(now.post.competencies)) setCell_(now.post, 'competencies', competencies);
+    if (competencies && !competencyCell_(now.post.competencies)) setCell_(now.post, 'competencies', competencies);
+    if (level && !validLevel_(now.post.level)) setCell_(now.post, 'level', level);
     // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
     if (now.lastHumanId === target) setStatus_(now.post, status);
   });
@@ -615,11 +660,19 @@ function addAnalysisFields_(schema, category) {
       description: '질문이 속하는 대단원. 반드시 고른 과목의 단원 중에서 고를 것 (' + guide + ')' };
     schema.required.push('unit');
   }
+  schema.properties.level = {
+    type: 'STRING', enum: LEVEL_NAMES,
+    description: '학생 질문의 인지적 수준(블룸의 분류) 하나. 질문이 학생에게 요구하는 사고를 기준으로 고르고, 애매하면 더 낮은 단계를 고를 것. 기준: ' +
+      LEVELS.map(function (l) { return l[0] + '(' + l[1] + ')'; }).join('; ')
+  };
+  schema.required.push('level');
   if (cfg.competencies.length) {
     schema.properties.competencies = {
-      type: 'ARRAY', minItems: 1, maxItems: MAX_COMPETENCIES,
+      type: 'ARRAY', minItems: 0, maxItems: MAX_COMPETENCIES,
       items: { type: 'STRING', enum: cfg.competencies.map(function (c) { return c.name; }) },
-      description: '학생의 질문에 드러난 사회과 교과 역량 1~' + MAX_COMPETENCIES + '개 (가장 뚜렷한 것부터). 기준: ' +
+      description: '학생의 질문에 분명하게 드러난 사회과 교과 역량. 엄격하게 판단해서 0~' + MAX_COMPETENCIES + '개 (가장 뚜렷한 것부터). ' +
+        '용어 뜻 묻기, 사실·내용 확인, 교과서 내용 그대로 설명해 달라는 질문, 시험 범위·과제 안내, 인사·잡담처럼 ' +
+        '학생의 사고 과정이 드러나지 않는 질문은 빈 배열 []로 둘 것. 애매하면 고르지 말 것. 기준: ' +
         cfg.competencies.map(function (c) { return c.name + (c.desc ? '(' + c.desc + ')' : ''); }).join('; ')
     };
     schema.required.push('competencies');
@@ -627,7 +680,7 @@ function addAnalysisFields_(schema, category) {
   return schema;
 }
 
-/** 이미 답이 달린 글의 과목·대단원·역량 중 빈 칸을 AI로 채웁니다. */
+/** 이미 답이 달린 글의 과목·대단원·역량·인지적 수준 중 빈 칸을 AI로 채웁니다. */
 function analyzePost_(found) {
   var schema = { type: 'OBJECT', properties: {}, required: [] };
   if (!found.category) {
@@ -642,14 +695,20 @@ function analyzePost_(found) {
     schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 질문 하나를 정해진 기준으로 분류해.');
   var category = found.category || validCategory_(r.category);
   var unit = validUnit_(category, r.unit);
-  var competencies = validCompetencies_(r.competencies);
+  var competencies = competencyCell_(r.competencies);
+  var level = validLevel_(r.level);
   withLock_(function () {
     var now = findPostRow_(found.id);
     if (!now) return;
     if (!now.category && category) setCell_(now, 'category', category);
     if (unit && (now.category || category) === category && !validUnit_(category, now.unit)) setCell_(now, 'unit', unit);
-    if (competencies && !validCompetencies_(now.competencies)) setCell_(now, 'competencies', competencies);
+    if (competencies && !competencyCell_(now.competencies)) setCell_(now, 'competencies', competencies);
+    if (level && !validLevel_(now.level)) setCell_(now, 'level', level);
   });
+}
+
+function validLevel_(level) {
+  return LEVEL_NAMES.indexOf(String(level || '').trim()) === -1 ? '' : String(level).trim();
 }
 
 function validUnit_(category, unit) {
@@ -657,10 +716,22 @@ function validUnit_(category, unit) {
   return list.indexOf(String(unit || '')) === -1 ? '' : String(unit);
 }
 
+/**
+ * 시트에 적을 역량 값. 맞는 역량 이름들, 드러난 역량이 없으면 '없음', 아직 분류 전이면 ''.
+ * AI가 빈 배열을 주면 '없음'입니다.
+ */
+function competencyCell_(raw) {
+  var valid = validCompetencies_(raw);
+  if (valid) return valid;
+  if (String(raw).trim() === NO_COMPETENCY) return NO_COMPETENCY;
+  if (Array.isArray(raw) && !raw.length) return NO_COMPETENCY;
+  return '';
+}
+
 function validCompetencies_(list) {
   var names = analysisConfig_().competencies.map(function (c) { return c.name; });
   var picked = [];
-  (Array.isArray(list) ? list : String(list || '').split(',')).forEach(function (c) {
+  (Array.isArray(list) ? list : String(list == null ? '' : list).split(',')).forEach(function (c) {
     c = String(c).trim();
     if (names.indexOf(c) !== -1 && picked.indexOf(c) === -1) picked.push(c);
   });
@@ -680,10 +751,17 @@ function analysisConfig_() {
     if (units[c].indexOf(u) === -1) units[c].push(u);
   });
   var competencies = [];
-  readRows_(getConfigSheet_(COMP_SHEET, COMP_HEADERS, DEFAULT_COMPETENCIES), COMP_HEADERS).forEach(function (r) {
+  var compSheet = getConfigSheet_(COMP_SHEET, COMP_HEADERS, DEFAULT_COMPETENCIES);
+  readRows_(compSheet, COMP_HEADERS).forEach(function (r, i) {
     var name = String(r['역량'] || '').trim();
+    var desc = String(r['설명'] || '').trim();
+    var oldIdx = OLD_COMPETENCY_DESCS.indexOf(desc);
+    if (oldIdx !== -1 && DEFAULT_COMPETENCIES[oldIdx][0] === name) {
+      desc = DEFAULT_COMPETENCIES[oldIdx][1];
+      compSheet.getRange(i + 2, 2).setValue(desc);
+    }
     if (name && !competencies.some(function (c) { return c.name === name; })) {
-      competencies.push({ name: name, desc: String(r['설명'] || '').trim() });
+      competencies.push({ name: name, desc: desc });
     }
   });
   analysisConfigCache_ = { units: units, competencies: competencies };
@@ -828,7 +906,8 @@ function findPostRow_(postId) {
       return { sheet: sheet, row: i + 2, id: String(rows[i].id), author: String(rows[i].author),
         text: String(rows[i].text), status: String(rows[i].status),
         category: validCategory_(rows[i].category),
-        unit: String(rows[i].unit || ''), competencies: String(rows[i].competencies || '') };
+        unit: String(rows[i].unit || ''), competencies: String(rows[i].competencies || ''),
+        level: String(rows[i].level || '') };
     }
   }
   return null;
