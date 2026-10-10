@@ -333,16 +333,7 @@ function setCategory(postId, category) {
  * 비밀번호를 10번 틀리면 10분 동안 막습니다.
  */
 function getAnalysis(password) {
-  var expected = getProp_('TEACHER_PASSWORD', '');
-  if (!expected) throw new Error('스크립트 속성에 TEACHER_PASSWORD 를 먼저 넣어 주세요.');
-  var cache = CacheService.getScriptCache();
-  var fails = Number(cache.get('teacher_fails') || 0);
-  if (fails >= 10) throw new Error('비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도하세요.');
-  if (String(password || '') !== expected) {
-    cache.put('teacher_fails', String(fails + 1), 600);
-    Utilities.sleep(1000);
-    throw new Error('비밀번호가 맞지 않아요.');
-  }
+  checkTeacher_(password);
 
   var cfg = analysisConfig_();
   var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
@@ -379,6 +370,7 @@ function getAnalysis(password) {
     comments: comments.filter(function (c) { return isStudentComment_(c) && authorOf[c.postId] !== undefined; })
       .map(function (c) {
         return {
+          id: String(c.id),
           postId: String(c.postId),
           email: String(c.email || ''),
           createdAt: toIso_(c.createdAt),
@@ -389,6 +381,71 @@ function getAnalysis(password) {
         };
       })
   };
+}
+
+/** 선생님 비밀번호 확인. 10번 틀리면 10분 동안 막습니다. */
+function checkTeacher_(password) {
+  var expected = getProp_('TEACHER_PASSWORD', '');
+  if (!expected) throw new Error('스크립트 속성에 TEACHER_PASSWORD 를 먼저 넣어 주세요.');
+  var cache = CacheService.getScriptCache();
+  var fails = Number(cache.get('teacher_fails') || 0);
+  if (fails >= 10) throw new Error('비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도하세요.');
+  if (String(password || '') !== expected) {
+    cache.put('teacher_fails', String(fails + 1), 600);
+    Utilities.sleep(1000);
+    throw new Error('비밀번호가 맞지 않아요.');
+  }
+}
+
+/**
+ * 분석 화면에서 선생님이 미분류 항목을 직접 분류합니다.
+ * kind: 'post' | 'comment', field: 'category' | 'unit' | 'level' | 'competencies'
+ * 댓글은 competencies만 고칠 수 있습니다. 저장한 값을 돌려줍니다.
+ */
+function setClassification(password, kind, id, field, value) {
+  checkTeacher_(password);
+  value = String(value == null ? '' : value).trim();
+  return withLock_(function () {
+    if (kind === 'comment') {
+      if (field !== 'competencies') throw new Error('댓글은 역량만 분류할 수 있어요.');
+      var v = competencyCell_(value);
+      if (!v) throw new Error('알 수 없는 역량이에요.');
+      var sheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
+      var rows = readRows_(sheet, COMMENT_HEADERS);
+      for (var i = 0; i < rows.length; i++) {
+        if (String(rows[i].id) === String(id)) {
+          sheet.getRange(i + 2, COMMENT_HEADERS.indexOf('competencies') + 1).setValue(v);
+          return v;
+        }
+      }
+      throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+    }
+    var found = findPostRow_(id);
+    if (!found) throw new Error('질문을 찾을 수 없어요. 새로고침해 주세요.');
+    var saved;
+    if (field === 'category') {
+      saved = validCategory_(value);
+      if (!saved) throw new Error('알 수 없는 과목이에요.');
+      setCell_(found, 'category', saved);
+      // 과목이 바뀌면 그 과목에 없는 대단원은 지웁니다.
+      if (!validUnit_(saved, found.unit)) setCell_(found, 'unit', '');
+    } else if (field === 'unit') {
+      saved = validUnit_(found.category, value);
+      if (!saved) throw new Error(found.category ? '이 과목에 없는 대단원이에요.' : '과목을 먼저 분류해 주세요.');
+      setCell_(found, 'unit', saved);
+    } else if (field === 'level') {
+      saved = validLevel_(value);
+      if (!saved) throw new Error('알 수 없는 인지적 수준이에요.');
+      setCell_(found, 'level', saved);
+    } else if (field === 'competencies') {
+      saved = competencyCell_(value);
+      if (!saved) throw new Error('알 수 없는 역량이에요.');
+      setCell_(found, 'competencies', saved);
+    } else {
+      throw new Error('알 수 없는 항목이에요.');
+    }
+    return saved;
+  });
 }
 
 /* ───────────── 관리용 (편집기에서 직접 실행) ───────────── */

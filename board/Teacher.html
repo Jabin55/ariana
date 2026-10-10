@@ -76,6 +76,10 @@
       color: #4a3b2c; margin: 1px 2px 1px 0; white-space: nowrap; }
     .q { line-height: 1.5; word-break: break-word; }
     .q .ctx { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    /* 미분류 칸: 선생님이 직접 고르는 드롭다운 */
+    select.fix { font-size: 12px; padding: 3px 6px; border: 1px dashed var(--accent); background: #fff8f4; max-width: 160px; }
+    select.fix:disabled { opacity: .5; }
+    .fix-err { display: block; color: var(--err); font-size: 11px; margin-top: 2px; }
     .pick-note { font-size: 13px; margin-bottom: 8px; }
     .pick-note button { padding: 3px 10px; margin-left: 6px; font-size: 12px; }
   </style>
@@ -147,7 +151,7 @@
 
       <section class="panel">
         <h2>질문·댓글 목록</h2>
-        <p class="hint">그래프의 막대를 누르면 해당 질문만 보여요. 분류는 AI가 한 것이라 틀릴 수 있어요.
+        <p class="hint">그래프의 막대를 누르면 해당 질문만 보여요. 미분류 칸은 드롭다운에서 골라 직접 분류할 수 있어요. 분류는 AI가 한 것이라 틀릴 수 있어요.
           시트 Posts 탭의 category · unit · competencies 칸에서 고칠 수 있어요.</p>
         <div class="pick-note" id="pickNote"></div>
         <div class="table-wrap"><table id="questions"></table></div>
@@ -330,11 +334,11 @@
     }
 
     /** keys 순서대로 고정 색을 줍니다. 8개를 넘는 항목은 회색 '기타'로 묶고, 미분류는 맨 뒤에 회색으로 둡니다. */
-    function slicesFor(keys, counts) {
+    function slicesFor(keys, counts, keepEmpty) {
       var slices = [], other = 0;
       keys.forEach(function (k, i) {
-        if (!counts[k]) return;
-        if (i < SLOTS.length) slices.push({ key: k, label: k, count: counts[k], color: SLOTS[i] });
+        if (!counts[k] && !keepEmpty) return;
+        if (i < SLOTS.length) slices.push({ key: k, label: k, count: counts[k] || 0, color: SLOTS[i] });
         else other += counts[k];
       });
       if (other) slices.push({ key: '기타', label: '기타', count: other, color: 'var(--none)', noPick: true });
@@ -375,24 +379,21 @@
       bars($('cLevel'), rows, posts.length, 'level', '', true);
     }
 
+    /** 과목마다 대단원을 모두 보여 줍니다. 질문이 없는 대단원·과목도 0개 · 0%로 나옵니다. */
     function renderUnits(posts) {
       var box = $('cUnits');
       box.innerHTML = '';
-      var shown = 0;
       data.categories.forEach(function (cat) {
         if (state.subject && state.subject !== cat) return;
         var mine = posts.filter(function (p) { return p.category === cat; });
-        if (!mine.length) return;
         var counts = {};
         mine.forEach(function (p) { var k = p.unit || NONE; counts[k] = (counts[k] || 0) + 1; });
         var wrap = el('div', {}, [el('h3', { text: cat + ' · ' + mine.length + '개' })]);
         var holder = el('div');
         wrap.appendChild(holder);
         box.appendChild(wrap);
-        bars(holder, slicesFor(data.units[cat] || [], counts), mine.length, 'unit', cat);
-        shown++;
+        bars(holder, slicesFor(data.units[cat] || [], counts, true), mine.length, 'unit', cat, true);
       });
-      if (!shown) box.appendChild(el('div', { cls: 'empty', text: '과목이 분류된 질문이 아직 없어요.' }));
     }
 
     /**
@@ -402,13 +403,13 @@
     function bars(box, rows, total, type, subject, keepEmpty) {
       box.innerHTML = '';
       if (!keepEmpty) rows = rows.filter(function (r) { return r.count; });
-      if (!total || !rows.length) { box.appendChild(el('div', { cls: 'empty', text: '표시할 질문이 없어요.' })); return; }
+      if (!rows.length || (!total && !keepEmpty)) { box.appendChild(el('div', { cls: 'empty', text: '표시할 질문이 없어요.' })); return; }
       var pick = state.pick && state.pick.type === type && (state.pick.subject || '') === (subject || '') ? state.pick.value : null;
       var wrap = el('div', { cls: 'bars' + (pick ? ' has-pick' : ''), role: 'list' });
       rows.forEach(function (r) {
         var row = el('div', { cls: 'brow' + (r.noPick ? '' : ' pickable') + (pick === r.key ? ' on' : ''), role: 'listitem' }, [
           el('span', { cls: 'name', text: r.label }),
-          el('div', { cls: 'track' }, [el('div', { cls: 'bar', style: 'width:' + Math.min(100, r.count / total * 100) + '%;background:' + r.color })]),
+          el('div', { cls: 'track' }, [el('div', { cls: 'bar', style: 'width:' + (total ? Math.min(100, r.count / total * 100) : 0) + '%;background:' + r.color })]),
           el('span', { cls: 'n', text: r.count + '개 · ' + pct(r.count, total) })
         ]);
         if (!r.noPick) row.addEventListener('click', function () { setPick({ type: type, value: r.key, subject: subject }); });
@@ -417,7 +418,7 @@
       });
       box.appendChild(wrap);
     }
-    function pct(n, total) { return Math.round(n / total * 100) + '%'; }
+    function pct(n, total) { return (total ? Math.round(n / total * 100) : 0) + '%'; }
     function hover(node, s, total) {
       var tip = $('tip');
       node.addEventListener('mousemove', function (e) {
@@ -471,6 +472,56 @@
       });
     }
 
+    /** 과목 · 대단원 칸. 질문의 미분류 과목·대단원은 드롭다운으로 고릅니다. 댓글은 질문의 분류를 따릅니다. */
+    function subjectCell(p) {
+      if (p.kind === 'comment') return el('td', { text: [p.category || NONE, p.unit].filter(String).join(' · ') });
+      if (!p.category) {
+        return el('td', {}, [fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }))]);
+      }
+      var units = data.units[p.category] || [];
+      if (p.unit || !units.length) return el('td', { text: [p.category, p.unit].filter(String).join(' · ') });
+      return el('td', {}, [p.category + ' · ', fixSelect(p, 'unit', '대단원 고르기', units.map(function (u) { return [u, u]; }))]);
+    }
+
+    /** 미분류 항목을 선생님이 직접 분류하는 드롭다운. 고르면 바로 시트에 저장합니다. */
+    function fixSelect(item, field, placeholder, options) {
+      var sel = el('select', { cls: 'fix', 'aria-label': placeholder });
+      sel.appendChild(el('option', { value: '', text: placeholder + ' ▾' }));
+      options.forEach(function (o) { sel.appendChild(el('option', { value: o[0], text: o[1] })); });
+      var wrap = el('span', {}, [sel]);
+      sel.addEventListener('change', function () {
+        if (!sel.value) return;
+        var value = sel.value;
+        sel.disabled = true;
+        google.script.run
+          .withSuccessHandler(function (saved) { applyFix(item, field, saved); render(); })
+          .withFailureHandler(function (err) {
+            sel.disabled = false;
+            sel.value = '';
+            var old = wrap.querySelector('.fix-err');
+            if (old) old.remove();
+            wrap.appendChild(el('span', { cls: 'fix-err', text: (err && err.message || String(err)).replace(/^Error:\s*/, '') }));
+          })
+          .setClassification(load('teacherPw'), item.kind, item.id, field, value);
+      });
+      return wrap;
+    }
+
+    /** 저장된 분류를 화면 데이터에도 반영합니다 (다시 불러오지 않고 바로 그래프에 반영). */
+    function applyFix(item, field, saved) {
+      if (field === 'competencies') {
+        item.noCompetency = saved === '없음';
+        item.competencies = item.noCompetency ? [] : saved.split(', ');
+        return;
+      }
+      item[field] = saved;
+      if (field === 'category') {
+        if ((data.units[saved] || []).indexOf(item.unit) === -1) item.unit = '';
+        data.comments.forEach(function (c) { if (c.postId === item.id) { c.category = item.category; c.unit = item.unit; } });
+      }
+      if (field === 'unit') data.comments.forEach(function (c) { if (c.postId === item.id) c.unit = saved; });
+    }
+
     function snippet(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, n) + '…' : t; }
     function student(by, name) {
       return by[name] = by[name] || { name: name, n: 0, nc: 0, cat: {}, comp: {}, lv: {}, high: 0, leveled: 0 };
@@ -493,10 +544,13 @@
         var isComment = p.kind === 'comment';
         if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
         cells.push(el('td', { cls: 'nw', text: isComment ? '댓글' : '질문' }));
-        cells.push(el('td', { text: [p.category || NONE, p.unit].filter(String).join(' · ') }));
-        cells.push(el('td', { cls: 'nw', text: isComment ? '' : (p.level || '-') }));
-        cells.push(el('td', {}, p.competencies.length ? p.competencies.map(function (c) { return el('span', { cls: 'chip', text: c }); })
-          : [p.noCompetency ? '없음' : '-']));
+        cells.push(subjectCell(p));
+        cells.push(isComment ? el('td', { cls: 'nw' }) : p.level ? el('td', { cls: 'nw', text: p.level })
+          : el('td', {}, [fixSelect(p, 'level', '수준 고르기', data.levels.map(function (l) { return [l.name, l.name]; }))]));
+        cells.push(p.competencies.length ? el('td', {}, p.competencies.map(function (c) { return el('span', { cls: 'chip', text: c }); }))
+          : p.noCompetency ? el('td', { text: '없음' })
+          : el('td', {}, [fixSelect(p, 'competencies', '역량 고르기',
+              data.competencies.map(function (c) { return [c.name, c.name]; }).concat([['없음', NOCOMP]]))]));
         cells.push(isComment
           ? el('td', { cls: 'q' }, [p.text, el('div', { cls: 'ctx', text: '↳ 질문: ' + snippet(p.postText, 60) })])
           : el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
