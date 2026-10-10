@@ -47,6 +47,16 @@
     .col-head .count { font-size: 13px; background: rgba(255,255,255,.7); border-radius: 999px; padding: 2px 9px; }
     .col-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 0; }
     .sorting { margin-top: 24px; }
+    .finder { background: var(--card); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .finder .row input { max-width: 260px; }
+    .names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; max-height: 92px; overflow-y: auto; }
+    .name { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #f3ece0; color: #4a3b2c; }
+    .name b { font-weight: 700; color: var(--accent); margin-left: 3px; }
+    .name.on { background: var(--accent); color: #fff; }
+    .name.on b { color: #fff; }
+    .filter-note { margin-top: 10px; font-size: 14px; }
+    .filter-note button { margin-left: 6px; }
     .sorting .label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
     .sorting .cards { columns: 280px; column-gap: 14px; }
     .tone-0 { --tone: #8fd3a8; } .tone-1 { --tone: #8cc4ff; } .tone-2 { --tone: #ffd56b; } .tone-3 { --tone: #c3a6ff; }
@@ -124,6 +134,14 @@
       </div>
     </form>
 
+    <div class="finder">
+      <div class="row">
+        <input id="nameSearch" placeholder="🔍 이름으로 질문 찾기">
+      </div>
+      <div class="names" id="names"></div>
+      <div class="filter-note" id="filterNote" style="display:none"></div>
+    </div>
+
     <div id="grid"></div>
   </main>
 
@@ -141,6 +159,8 @@
     var drafts = {};        // 작성 중인 댓글 내용
     var localPending = [];  // 서버 저장 전, 화면에 먼저 보여 주는 내 질문
     var lastPosts = [];
+    var nameFilter = '';    // 이름 색인에서 고른 사람 (정확히 일치)
+    var nameQuery = '';     // 검색칸에 입력한 글자 (부분 일치)
 
     // 이름은 이 브라우저에 기억해 둡니다.
     var nameInput = document.getElementById('qName');
@@ -181,7 +201,16 @@
       var mine = localPending.filter(function (lp) {
         return !posts.some(function (p) { return p.text === lp.text && p.author === lp.author; });
       });
-      var all = mine.concat(posts);
+      renderNames(posts);
+      var all = mine.concat(posts).filter(matchesName);
+      var note = document.getElementById('filterNote');
+      if (nameFilter || nameQuery) {
+        note.style.display = 'block';
+        note.innerHTML = '<b>' + esc(nameFilter || nameQuery) + '</b>' + (nameFilter ? '' : ' (이)가 들어간 이름') +
+          '의 질문 ' + all.length + '개' + '<button class="link" id="clearFilter">전체 보기</button>';
+      } else {
+        note.style.display = 'none';
+      }
       var cols = CATEGORIES.map(function () { return []; });
       var sorting = [];
       all.forEach(function (p) {
@@ -203,6 +232,25 @@
           '</section>';
       }).join('') + '</div>';
       grid.innerHTML = html + sortingHtml;
+    }
+
+    function matchesName(p) {
+      if (nameFilter) return p.author === nameFilter;
+      if (nameQuery) return p.author.toLowerCase().indexOf(nameQuery.toLowerCase()) !== -1;
+      return true;
+    }
+
+    // 질문한 사람 이름 색인 (질문 많은 순, 같으면 가나다순)
+    function renderNames(posts) {
+      var counts = {};
+      posts.forEach(function (p) { counts[p.author] = (counts[p.author] || 0) + 1; });
+      var names = Object.keys(counts).filter(function (n) {
+        return !nameQuery || n.toLowerCase().indexOf(nameQuery.toLowerCase()) !== -1;
+      }).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b, 'ko'); });
+      document.getElementById('names').innerHTML = names.map(function (n) {
+        return '<button type="button" class="name' + (n === nameFilter ? ' on' : '') + '" data-name="' + esc(n) + '">' +
+          esc(n) + '<b>' + counts[n] + '</b></button>';
+      }).join('') || '<span class="meta">아직 질문한 사람이 없어요</span>';
     }
 
     function card(p, toneIdx) {
@@ -260,6 +308,23 @@
           refresh();
         })
         .addPost(name, text);
+    });
+
+    document.getElementById('nameSearch').addEventListener('input', function (ev) {
+      nameQuery = ev.target.value.trim();
+      nameFilter = '';
+      render(lastPosts);
+    });
+    document.querySelector('.finder').addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button');
+      if (!btn) return;
+      if (btn.id === 'clearFilter') {
+        nameFilter = ''; nameQuery = '';
+        document.getElementById('nameSearch').value = '';
+      } else if (btn.dataset.name != null) {
+        nameFilter = nameFilter === btn.dataset.name ? '' : btn.dataset.name;
+      }
+      render(lastPosts);
     });
 
     grid.addEventListener('click', function (ev) {
