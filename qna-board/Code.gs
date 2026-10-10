@@ -9,6 +9,7 @@
  *   GEMINI_MODEL    (선택) 기본값 gemini-3.8-flash
  *   BOARD_TITLE     (선택) 게시판 제목. 기본값 "질문 게시판"
  *   SYSTEM_PROMPT   (선택) AI 답변 지침. 비우면 아래 DEFAULT_SYSTEM_PROMPT 사용
+ *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 선생님"
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
@@ -22,10 +23,10 @@ var DEFAULT_MODEL = 'gemini-3.8-flash';
 var DEFAULT_TITLE = '질문 게시판';
 var MAX_TEXT_LENGTH = 1000;
 var MAX_NAME_LENGTH = 30;
-var AI_NAME = 'AI 도우미';
+var DEFAULT_AI_NAME = 'AI 선생님';
 
 var DEFAULT_SYSTEM_PROMPT = [
-  '너는 학교 질문 게시판의 AI 도우미야.',
+  '너는 학교 질문 게시판의 AI 선생님이야.',
   '학생이 올린 질문에 한국어로, 학생 눈높이에 맞게 정확하고 친절하게 답해.',
   '답변은 5~10문장 정도로 핵심부터 말하고, 필요하면 짧은 예시를 들어.',
   '마크다운 표나 제목(#)은 쓰지 말고, 강조가 필요하면 **굵게**만 써.',
@@ -53,13 +54,15 @@ function getBoard() {
   var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
 
   var byPost = {};
+  var aiName = aiName_();
   comments.forEach(function (c) {
+    var isAI = c.isAI === true || c.isAI === 'TRUE';
     (byPost[c.postId] = byPost[c.postId] || []).push({
       id: String(c.id),
       createdAt: toIso_(c.createdAt),
-      author: String(c.author),
+      author: isAI ? aiName : String(c.author), // 이름을 바꾸면 예전 AI 답글에도 새 이름이 보입니다
       text: String(c.text),
-      isAI: c.isAI === true || c.isAI === 'TRUE'
+      isAI: isAI
     });
   });
 
@@ -174,7 +177,7 @@ function answerPost_(postId) {
     if (now.answered[target]) return;
     if (status === 'answered') {
       getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
-        .appendRow([Utilities.getUuid(), postId, new Date(), AI_NAME, answer, true, target]);
+        .appendRow([Utilities.getUuid(), postId, new Date(), aiName_(), answer, true, target]);
     }
     // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
     if (now.lastHumanId === target) setStatus_(now.post, status);
@@ -310,6 +313,10 @@ function clean_(s, max) {
 
 function toIso_(v) {
   return v instanceof Date ? v.toISOString() : String(v);
+}
+
+function aiName_() {
+  return getProp_('AI_NAME', DEFAULT_AI_NAME);
 }
 
 function getProp_(key, fallback) {
