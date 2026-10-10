@@ -9,12 +9,14 @@
  *   GEMINI_MODEL    (선택) 기본값 gemini-3.8-flash
  *   BOARD_TITLE     (선택) 게시판 제목. 기본값 "질문 게시판"
  *   SYSTEM_PROMPT   (선택) AI 답변 지침. 비우면 아래 DEFAULT_SYSTEM_PROMPT 사용
+ *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
 var POSTS_SHEET = 'Posts';
 var COMMENTS_SHEET = 'Comments';
 var POST_HEADERS = ['id', 'createdAt', 'author', 'text', 'status'];
-var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI'];
+// replyTo: AI 댓글이 답한 대상 (질문이면 글 id, 댓글이면 댓글 id)
+var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
 
 var DEFAULT_MODEL = 'gemini-3.8-flash';
 var DEFAULT_TITLE = '질문 게시판';
@@ -27,6 +29,7 @@ var DEFAULT_SYSTEM_PROMPT = [
   '학생이 올린 질문에 한국어로, 학생 눈높이에 맞게 정확하고 친절하게 답해.',
   '답변은 5~10문장 정도로 핵심부터 말하고, 필요하면 짧은 예시를 들어.',
   '마크다운 표나 제목(#)은 쓰지 말고, 강조가 필요하면 **굵게**만 써.',
+  '댓글로 이어지는 대화에서는 앞의 맥락을 이어서 짧게 답하고, 고맙다는 인사처럼 질문이 아닌 말에는 한두 문장으로만 답해.',
   '확실하지 않은 내용은 추측하지 말고 선생님께 확인해 보라고 안내해.',
   '개인정보를 묻거나 부적절한 질문에는 정중하게 답변을 사양해.'
 ].join('\n');
@@ -86,29 +89,36 @@ function addPost(author, text) {
     getSheet_(POSTS_SHEET, POST_HEADERS).appendRow([id, new Date(), author, text, 'pending']);
   });
 
-  answerPost_(id, text);
+  answerPost_(id);
   return id;
 }
 
-/** 사람이 다는 댓글. */
+/**
+ * 사람이 다는 댓글. 저장만 하고 바로 돌아옵니다.
+ * AI가 이어서 답해야 하면 true를 돌려주고, 화면이 곧바로 retryAnswer를 부릅니다.
+ */
 function addComment(postId, author, text) {
   text = clean_(text, MAX_TEXT_LENGTH);
   if (!text) throw new Error('댓글 내용을 입력해 주세요.');
   author = clean_(author, MAX_NAME_LENGTH) || '익명';
-  if (!findPostRow_(postId)) throw new Error('게시글을 찾을 수 없습니다.');
+  var aiReplies = getProp_('AI_REPLY_TO_COMMENTS', 'true') !== 'false';
 
   withLock_(function () {
+    var found = findPostRow_(postId);
+    if (!found) throw new Error('게시글을 찾을 수 없습니다.');
     getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
-      .appendRow([Utilities.getUuid(), postId, new Date(), author, text, false]);
+      .appendRow([Utilities.getUuid(), postId, new Date(), author, text, false, '']);
+    if (aiReplies) setStatus_(found, 'pending');
   });
+  return aiReplies;
 }
 
-/** "AI 답변 다시 받기" 버튼. 답변에 실패한 글만 다시 시도합니다. */
+/** 아직 AI가 답하지 않은 글(또는 마지막 댓글)에 답합니다. "다시 받기" 버튼도 이걸 씁니다. */
 function retryAnswer(postId) {
   var found = findPostRow_(postId);
   if (!found) throw new Error('게시글을 찾을 수 없습니다.');
   if (found.status === 'answered') return;
-  answerPost_(postId, found.text);
+  answerPost_(postId);
 }
 
 /* ───────────── 관리용 (편집기에서 직접 실행) ───────────── */
@@ -117,7 +127,7 @@ function retryAnswer(postId) {
 function setup() {
   getSheet_(POSTS_SHEET, POST_HEADERS);
   getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
-  var reply = callGemini_('설치 확인용 질문입니다. "준비 완료"라고만 답해 주세요.');
+  var reply = callGemini_([{ role: 'user', parts: [{ text: '설치 확인용 질문입니다. "준비 완료"라고만 답해 주세요.' }] }]);
   Logger.log('Gemini 응답: ' + reply);
 }
 
@@ -125,7 +135,7 @@ function setup() {
 function answerUnanswered() {
   var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS);
   posts.forEach(function (p) {
-    if (p.id !== '' && p.status !== 'answered') answerPost_(String(p.id), String(p.text));
+    if (p.id !== '' && p.status !== 'answered') answerPost_(String(p.id));
   });
 }
 
@@ -139,10 +149,19 @@ function installRetryTrigger() {
 
 /* ───────────── 내부 함수 ───────────── */
 
-function answerPost_(postId, question) {
+/**
+ * 글의 질문과 댓글 대화를 Gemini에 보내고, 마지막 사람 메시지에 대한 AI 댓글을 답니다.
+ * 같은 메시지에 이미 AI 답이 있으면(동시에 다른 실행이 답한 경우) 다시 달지 않습니다.
+ */
+function answerPost_(postId) {
+  var thread = loadThread_(postId);
+  if (!thread) return;
+  var target = thread.lastHumanId;
+  if (thread.answered[target]) return;
+
   var answer, status;
   try {
-    answer = callGemini_(question);
+    answer = callGemini_(thread.contents);
     status = 'answered';
   } catch (e) {
     console.error('Gemini 호출 실패 (' + postId + '): ' + e);
@@ -150,18 +169,57 @@ function answerPost_(postId, question) {
   }
 
   withLock_(function () {
-    var found = findPostRow_(postId);
-    if (!found) return; // 그 사이 시트에서 글이 지워진 경우
-    if (found.status === 'answered') return; // 동시에 다른 실행이 이미 답한 경우
+    var now = loadThread_(postId);
+    if (!now) return; // 그 사이 시트에서 글이 지워진 경우
+    if (now.answered[target]) return;
     if (status === 'answered') {
       getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
-        .appendRow([Utilities.getUuid(), postId, new Date(), AI_NAME, answer, true]);
+        .appendRow([Utilities.getUuid(), postId, new Date(), AI_NAME, answer, true, target]);
     }
-    found.sheet.getRange(found.row, POST_HEADERS.indexOf('status') + 1).setValue(status);
+    // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
+    if (now.lastHumanId === target) setStatus_(now.post, status);
   });
 }
 
-function callGemini_(question) {
+/** 글과 댓글을 읽어 Gemini에 보낼 대화(contents)와 답변 현황을 만듭니다. */
+function loadThread_(postId) {
+  var post = findPostRow_(postId);
+  if (!post) return null;
+  var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS)
+    .filter(function (c) { return String(c.postId) === String(postId); });
+
+  var answered = {};
+  var lastHumanId = String(postId);
+  var turns = [{ role: 'user', text: post.author + '의 질문: ' + post.text }];
+  comments.forEach(function (c) {
+    var isAI = c.isAI === true || c.isAI === 'TRUE';
+    if (isAI) {
+      answered[String(c.replyTo) || String(postId)] = true; // replyTo가 없는 예전 답변은 질문에 대한 답
+      turns.push({ role: 'model', text: String(c.text) });
+    } else {
+      lastHumanId = String(c.id);
+      turns.push({ role: 'user', text: c.author + '의 댓글: ' + c.text, id: lastHumanId });
+    }
+  });
+
+  // 마지막 사람 메시지까지만 보내고, 같은 역할이 연달아 나오면 하나로 합칩니다.
+  var cut = 0;
+  turns.forEach(function (t, i) { if (t.role === 'user') cut = i; });
+  var contents = [];
+  turns.slice(0, cut + 1).forEach(function (t) {
+    var prev = contents[contents.length - 1];
+    if (prev && prev.role === t.role) prev.parts[0].text += '\n\n' + t.text;
+    else contents.push({ role: t.role, parts: [{ text: t.text }] });
+  });
+
+  return { post: post, contents: contents, answered: answered, lastHumanId: lastHumanId };
+}
+
+function setStatus_(found, status) {
+  found.sheet.getRange(found.row, POST_HEADERS.indexOf('status') + 1).setValue(status);
+}
+
+function callGemini_(contents) {
   var apiKey = getProp_('GEMINI_API_KEY', '');
   if (!apiKey) throw new Error('스크립트 속성에 GEMINI_API_KEY가 없습니다.');
   var model = getProp_('GEMINI_MODEL', DEFAULT_MODEL);
@@ -175,7 +233,7 @@ function callGemini_(question) {
     muteHttpExceptions: true,
     payload: JSON.stringify({
       systemInstruction: { parts: [{ text: getProp_('SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT) }] },
-      contents: [{ role: 'user', parts: [{ text: question }] }]
+      contents: contents
     })
   };
 
@@ -204,6 +262,9 @@ function getSheet_(name, headers) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
+  } else if (sheet.getLastColumn() < headers.length) {
+    // 예전 버전으로 만든 시트에 새 열 제목을 채워 넣습니다.
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
 }
@@ -223,7 +284,8 @@ function findPostRow_(postId) {
   var rows = readRows_(sheet, POST_HEADERS);
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].id) === String(postId)) {
-      return { sheet: sheet, row: i + 2, text: String(rows[i].text), status: String(rows[i].status) };
+      return { sheet: sheet, row: i + 2, author: String(rows[i].author),
+        text: String(rows[i].text), status: String(rows[i].status) };
     }
   }
   return null;

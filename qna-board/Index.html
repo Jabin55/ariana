@@ -190,7 +190,12 @@
         if (!text) return;
         t.disabled = true;
         google.script.run
-          .withSuccessHandler(function () { drafts[pid] = ''; ta.value = ''; openReplies[pid] = false; refresh(); })
+          .withSuccessHandler(function (aiReplies) {
+            drafts[pid] = ''; ta.value = ''; openReplies[pid] = false; refresh();
+            if (aiReplies) {
+              google.script.run.withSuccessHandler(refresh).withFailureHandler(refresh).retryAnswer(pid);
+            }
+          })
           .withFailureHandler(function (e) { t.disabled = false; toast('댓글을 올리지 못했어요: ' + errMsg(e)); })
           .addComment(pid, nameInput.value.trim(), text);
       } else if (t.dataset.retry) {

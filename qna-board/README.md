@@ -5,6 +5,7 @@
 
 - 질문 카드가 Padlet처럼 벽에 붙고, 10초마다 새 글이 자동으로 보입니다.
 - 질문마다 AI 답변이 댓글로 달리고, 다른 학생도 댓글을 달 수 있습니다.
+- 댓글을 달면 AI가 질문과 앞의 대화를 읽고 이어서 답합니다 (끄려면 스크립트 속성 `AI_REPLY_TO_COMMENTS` 를 `false` 로).
 - 모든 글과 댓글은 구글 시트(`Posts`, `Comments` 탭)에 쌓입니다. 부적절한 글은 시트에서 그 줄을 지우면 사라집니다.
 
 ## 파일
@@ -45,6 +46,7 @@
 |---|---|---|
 | `BOARD_TITLE` | 게시판 제목 | 질문 게시판 |
 | `GEMINI_MODEL` | 사용할 Gemini 모델 | gemini-3.8-flash |
+| `AI_REPLY_TO_COMMENTS` | `false` 면 댓글에는 AI가 답하지 않음 | true |
 | `SYSTEM_PROMPT` | AI 답변 지침 (예: "너는 고등학교 정치 선생님이야…") | `Code.gs`의 `DEFAULT_SYSTEM_PROMPT` |
 
 ### 4. 처음 한 번 실행해서 권한 허용하기
