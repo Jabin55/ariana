@@ -18,9 +18,10 @@
     .hero { position: relative; border-radius: 18px; padding: 16px 20px;
       background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%); }
     h1 { margin: 0; font-size: 22px; color: #3a2414; }
-    .back { position: absolute; top: 12px; right: 14px; font-size: 13px; text-decoration: none; color: #5a3d2b;
-      background: rgba(255,255,255,.7); border-radius: 999px; padding: 5px 12px; }
-    .back:hover { background: #fff; }
+    .top-actions { position: absolute; top: 12px; right: 14px; display: flex; gap: 6px; }
+    .back, #logout { font: inherit; font-size: 13px; text-decoration: none; color: #5a3d2b; cursor: pointer;
+      background: rgba(255,255,255,.7); border: 0; border-radius: 999px; padding: 5px 12px; }
+    .back:hover, #logout:hover { background: #fff; }
     @media (max-width: 520px) { .hero { padding-top: 40px; } }
     .sub { margin-top: 4px; font-size: 13px; color: #4a2e1c; }
     main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 48px; }
@@ -30,7 +31,7 @@
     .hint { font-size: 12px; color: var(--muted); margin: -4px 0 10px; line-height: 1.5; }
     input, select, button { font: inherit; }
     input, select { padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; max-width: 100%; }
-    button { border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; background: var(--accent); color: #fff; }
+    button { border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; background: var(--accent); color: #fff; white-space: nowrap; }
     button.ghost { background: #f3ece0; color: #4a3b2c; }
     .err { color: var(--err); font-size: 14px; margin-top: 8px; }
 
@@ -39,7 +40,7 @@
     #gate input { flex: 1; }
 
     .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
-    .controls label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+    .controls label { word-break: keep-all; font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
     .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
     .stat { background: #faf5ec; border-radius: 10px; padding: 8px 14px; font-size: 13px; color: var(--muted); }
     .stat b { display: block; font-size: 20px; color: var(--ink); }
@@ -80,18 +81,21 @@
 <body>
   <header>
     <div class="hero">
-      <? if (boardUrl) { ?><a class="back" href="<?= boardUrl ?>">← 질문 게시판</a><? } ?>
+      <div class="top-actions">
+        <? if (boardUrl) { ?><a class="back" href="<?= boardUrl ?>">← 질문 게시판</a><? } ?>
+        <button type="button" id="logout" hidden>로그아웃</button>
+      </div>
       <h1>학생 분석</h1>
       <div class="sub"><?= boardTitle ?> · 선생님 전용 화면</div>
     </div>
   </header>
   <main>
     <section id="gate" class="panel">
-      <h2>비밀번호</h2>
-      <p class="hint">스크립트 속성 TEACHER_PASSWORD 에 넣은 비밀번호를 입력하세요.</p>
+      <h2>교사 로그인</h2>
+      <p class="hint">스크립트 속성 TEACHER_PASSWORD 에 넣은 비밀번호를 입력하세요. 로그인하면 이 브라우저 창을 닫을 때까지 유지돼요.</p>
       <form class="row" id="gateForm">
         <input id="pw" type="password" autocomplete="current-password" required>
-        <button id="pwBtn">열기</button>
+        <button id="pwBtn">로그인</button>
       </form>
       <div class="err" id="gateErr"></div>
     </section>
@@ -182,6 +186,7 @@
           data = res;
           $('gate').hidden = true;
           $('app').hidden = false;
+          $('logout').hidden = false;
           setupControls();
           render();
         })
@@ -190,13 +195,23 @@
           store('teacherPw', null);
           $('gate').hidden = false;
           $('app').hidden = true;
+          $('logout').hidden = true;
           $('gateErr').textContent = (err && err.message || String(err)).replace(/^Error:\s*/, '');
         })
         .getAnalysis(pw);
     }
+    $('logout').addEventListener('click', function () {
+      store('teacherPw', null);
+      data = null;
+      $('app').hidden = true;
+      $('logout').hidden = true;
+      $('gate').hidden = false;
+      $('pw').value = '';
+      $('pw').focus();
+    });
     $('gateForm').addEventListener('submit', function (e) { e.preventDefault(); openAnalysis($('pw').value); });
     $('reload').addEventListener('click', function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); });
-    (function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); })();
+    (function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); else $('pw').focus(); })();
 
     /* ── 필터 ── */
     function setupControls() {
