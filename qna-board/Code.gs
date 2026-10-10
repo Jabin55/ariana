@@ -11,6 +11,7 @@
  *   SYSTEM_PROMPT   (선택) AI 답변 지침. 비우면 아래 DEFAULT_SYSTEM_PROMPT 사용
  *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 선생님"
  *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
+ *   NOTIFY_EMAIL    (선택) 새 질문 알림 메일을 받을 주소. 비우면 스크립트 주인 계정, off면 알림 끔
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
@@ -108,7 +109,31 @@ function addPost(author, text) {
   });
 
   answerPost_(id);
+  notifyNewPost_(id);
   return id;
+}
+
+/** 새 질문이 올라오면 선생님께 메일로 알립니다 (AI 답변과 분류가 끝난 뒤). */
+function notifyNewPost_(postId) {
+  try {
+    var to = getProp_('NOTIFY_EMAIL', '') || Session.getEffectiveUser().getEmail();
+    if (!to || to === 'off') return;
+    var thread = loadThread_(postId);
+    if (!thread) return;
+    var post = thread.post;
+    var answer = thread.contents.length > 1 ? thread.contents[1].parts[0].text : '(AI 답변을 받지 못했어요)';
+    var title = getProp_('BOARD_TITLE', DEFAULT_TITLE);
+    MailApp.sendEmail({
+      to: to,
+      subject: '[' + title + '] 새 질문' + (post.category ? ' · ' + post.category : '') + ' - ' + post.author,
+      body: post.author + ' 학생의 질문\n' + post.text + '\n\n' + aiName_() + ' 답변\n' + answer +
+        '\n\n게시판 열기: ' + ScriptApp.getService().getUrl() +
+        '\n시트 열기: ' + SpreadsheetApp.getActiveSpreadsheet().getUrl() +
+        '\n\n(알림을 끄려면 스크립트 속성 NOTIFY_EMAIL 을 off 로 바꾸세요.)'
+    });
+  } catch (e) {
+    console.error('알림 메일 실패: ' + e); // 메일이 안 가도 질문 올리기는 그대로 성공
+  }
 }
 
 /**
