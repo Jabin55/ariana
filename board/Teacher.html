@@ -169,10 +169,16 @@
       </section>
 
       <section class="panel">
-        <h2>질문·댓글 목록</h2>
+        <h2>질문 목록</h2>
         <p class="hint">그래프의 막대를 누르면 해당 질문만 보여요. 미분류 칸은 드롭다운에서 골라 직접 분류할 수 있어요. 분류는 AI가 한 것이라 틀릴 수 있어요.</p>
         <div class="pick-note" id="pickNote"></div>
         <div class="table-wrap"><table id="questions"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>댓글 목록</h2>
+        <div class="pick-note" id="pickNoteC"></div>
+        <div class="table-wrap"><table id="comments"></table></div>
       </section>
     </div>
   </main>
@@ -320,7 +326,7 @@
       // 역량 체크박스 목록은 바깥을 누르면 닫습니다.
       if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick .menu').forEach(function (m) { m.remove(); });
       if (!state.pick || !data) return;
-      if (e.target.closest('.brow.pickable, button, select, input, a, label, #questions, #students')) return;
+      if (e.target.closest('.brow.pickable, button, select, input, a, label, #questions, #comments, #students')) return;
       setPick(null);
     });
     window.addEventListener('scroll', function () {
@@ -334,11 +340,14 @@
       $('fStudent').value = state.student;
       renderStats(posts, comments);
       renderCategory(posts);
-      renderComp(posts.concat(comments));
+      renderComp(comments); // 역량은 학생 댓글로만 봅니다
       renderLevels(posts.concat(comments));
       renderUnits(posts);
       renderStudents(posts, comments);
-      renderQuestions(posts.concat(comments).filter(matchesPick));
+      // 역량 막대를 고르면 질문 목록은 그대로 두고 댓글 목록만 거릅니다 (질문은 역량을 보지 않음).
+      var commentOnly = state.pick && state.pick.type === 'comp';
+      renderQuestions(commentOnly ? posts : posts.filter(matchesPick));
+      renderComments(comments.filter(matchesPick));
     }
 
     function renderStats(posts, comments) {
@@ -375,7 +384,7 @@
       bars($('cCategory'), slicesFor(data.categories, counts, true), posts.length, 'category', '', true);
     }
 
-    /** 질문과 학생 댓글을 함께 셉니다. 막대 길이는 전체 질문·댓글 중 비율입니다. */
+    /** 학생 댓글만 셉니다. 막대 길이는 전체 학생 댓글 중 비율입니다. */
     function renderComp(posts) {
       var counts = {};
       posts.forEach(function (p) {
@@ -466,7 +475,6 @@
         var s = student(by, p.author);
         s.n++;
         if (p.category) s.cat[p.category] = (s.cat[p.category] || 0) + 1;
-        p.competencies.forEach(function (c) { s.comp[c] = (s.comp[c] || 0) + 1; });
         if (p.level) {
           s.lv[p.level] = (s.lv[p.level] || 0) + 1;
           s.leveled++;
@@ -613,31 +621,49 @@
       return by[name] = by[name] || { name: name, n: 0, nc: 0, cat: {}, comp: {}, lv: {}, high: 0, leveled: 0 };
     }
 
-    function renderQuestions(posts) {
-      var note = $('pickNote');
-      note.innerHTML = '';
-      if (state.pick) {
-        note.appendChild(document.createTextNode('"' + (state.pick.subject ? state.pick.subject + ' · ' : '') + state.pick.value + '" 질문·댓글만 보는 중'));
-        note.appendChild(el('button', { cls: 'ghost', text: '전체 보기', onclick: function () { setPick(null); } }));
-      }
-      var t = $('questions');
+    function pickNote(box, what) {
+      box.innerHTML = '';
+      if (!state.pick) return;
+      box.appendChild(document.createTextNode('"' + (state.pick.subject ? state.pick.subject + ' · ' : '') + state.pick.value + '" ' + what + '만 보는 중'));
+      box.appendChild(el('button', { cls: 'ghost', text: '전체 보기', onclick: function () { setPick(null); } }));
+    }
+    function dateCell(p) { return el('td', { cls: 'nw', text: localDate(p.createdAt).slice(5).replace('-', '/') }); }
+    function levelCell(p) {
+      return el('td', {}, [fixSelect(p, 'level', '수준 고르기', data.levels.map(function (l) { return [l.name, l.name]; }), p.level)]);
+    }
+    function newestFirst(list) { return list.slice().sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; }); }
+    function table(t, heads, rows, emptyText) {
       t.innerHTML = '';
-      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['구분', '과목 · 대단원', '인지적 수준', '역량', '내용']);
       t.appendChild(el('tr', {}, heads.map(function (h) { return el('th', { text: h }); })));
-      if (!posts.length) { t.appendChild(el('tr', {}, [el('td', { colspan: heads.length, cls: 'empty', text: '해당하는 질문·댓글이 없어요.' })])); return; }
-      posts.slice().sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; }).forEach(function (p) {
-        var cells = [el('td', { cls: 'nw', text: localDate(p.createdAt).slice(5).replace('-', '/') })];
-        var isComment = p.kind === 'comment';
+      if (!rows.length) { t.appendChild(el('tr', {}, [el('td', { colspan: heads.length, cls: 'empty', text: emptyText })])); return; }
+      rows.forEach(function (cells) { t.appendChild(el('tr', {}, cells)); });
+    }
+
+    /** 질문 목록: 과목 · 대단원 · 인지적 수준 */
+    function renderQuestions(posts) {
+      if (state.pick && state.pick.type === 'comp') $('pickNote').innerHTML = ''; // 역량 선택은 댓글 목록에만 적용
+      else pickNote($('pickNote'), '질문');
+      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목 · 대단원', '인지적 수준', '질문']);
+      table($('questions'), heads, newestFirst(posts).map(function (p) {
+        var cells = [dateCell(p)];
         if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
-        cells.push(el('td', { cls: 'nw', text: isComment ? '댓글' : '질문' }));
-        cells.push(subjectCell(p));
-        cells.push(el('td', {}, [fixSelect(p, 'level', '수준 고르기', data.levels.map(function (l) { return [l.name, l.name]; }), p.level)]));
-        cells.push(el('td', {}, [compPicker(p)]));
-        cells.push(isComment
-          ? el('td', { cls: 'q' }, [p.text, el('div', { cls: 'ctx', text: '↳ 질문: ' + snippet(p.postText, 60) })])
-          : el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
-        t.appendChild(el('tr', {}, cells));
-      });
+        cells.push(subjectCell(p), levelCell(p));
+        cells.push(el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
+        return cells;
+      }), '해당하는 질문이 없어요.');
+    }
+
+    /** 댓글 목록: 원래 질문의 과목 · 대단원, 인지적 수준, 사회과 교과 역량 */
+    function renderComments(comments) {
+      pickNote($('pickNoteC'), '댓글');
+      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목 · 대단원', '인지적 수준', '사회과 교과 역량', '댓글']);
+      table($('comments'), heads, newestFirst(comments).map(function (c) {
+        var cells = [dateCell(c)];
+        if (!state.student) cells.push(el('td', { cls: 'nw', text: c.author }));
+        cells.push(subjectCell(c), levelCell(c), el('td', {}, [compPicker(c)]));
+        cells.push(el('td', { cls: 'q' }, [c.text, el('div', { cls: 'ctx', text: '↳ 질문: ' + snippet(c.postText, 60) })]));
+        return cells;
+      }), '해당하는 댓글이 없어요.');
     }
   </script>
 </body>

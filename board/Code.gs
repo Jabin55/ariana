@@ -360,8 +360,8 @@ function getAnalysis(password) {
         text: String(p.text),
         category: category,
         unit: validUnit_(category, p.unit),
-        competencies: validCompetencies_(p.competencies).split(', ').filter(String),
-        noCompetency: competencyCell_(p.competencies) === NO_COMPETENCY,
+        competencies: [], // 질문은 역량을 평가하지 않습니다
+        noCompetency: false,
         level: validLevel_(p.level),
         followUps: followUps[p.id] || 0
       };
@@ -435,9 +435,7 @@ function setClassification(password, kind, id, field, value) {
       if (!saved) throw new Error('알 수 없는 인지적 수준이에요.');
       setCell_(found, 'level', saved);
     } else if (field === 'competencies') {
-      saved = competencyCell_(value);
-      if (!saved) throw new Error('알 수 없는 역량이에요.');
-      setCell_(found, 'competencies', saved);
+      throw new Error('역량은 댓글에서만 분류해요.');
     } else {
       throw new Error('알 수 없는 항목이에요.');
     }
@@ -492,7 +490,7 @@ function analyzeExisting(limit) {
   var started = Date.now();
   var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).filter(function (p) {
     return p.id !== '' && p.status === 'answered' &&
-      (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !competencyCell_(p.competencies) || !validLevel_(p.level));
+      (!validCategory_(p.category) || !validUnit_(validCategory_(p.category), p.unit) || !validLevel_(p.level));
   });
   var done = 0;
   var limited = false; // 무료 한도(429)에 걸리면 댓글까지 멈춤
@@ -633,7 +631,7 @@ function answerPost_(postId) {
   // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
   var needCategory = target === String(postId) && !thread.post.category;
   var system = systemPrompt_(thread.post.category);
-  var answer, category, unit, competencies, level, status, commentCompetencies, commentLevel;
+  var answer, category, unit, level, status, commentCompetencies, commentLevel;
   try {
     if (needCategory) {
       try {
@@ -641,7 +639,6 @@ function answerPost_(postId) {
         answer = String(r.answer || '').trim();
         category = validCategory_(r.category);
         unit = validUnit_(category, r.unit);
-        competencies = competencyCell_(r.competencies);
         level = validLevel_(r.level);
       } catch (e) {
         // 분류 방식(JSON 응답)이 거절되면 분류 없이 답변만 받습니다. 분류는 analyzeExisting으로 나중에.
@@ -686,7 +683,6 @@ function answerPost_(postId) {
       setCell_(now.post, 'category', category);
       if (unit && !validUnit_(category, now.post.unit)) setCell_(now.post, 'unit', unit);
     }
-    if (competencies && !competencyCell_(now.post.competencies)) setCell_(now.post, 'competencies', competencies);
     if (level && !validLevel_(now.post.level)) setCell_(now.post, 'level', level);
     if (commentCompetencies) setCommentField_(target, 'competencies', commentCompetencies, false);
     if (commentLevel) setCommentField_(target, 'level', commentLevel, false);
@@ -797,8 +793,8 @@ function addAnalysisFields_(schema, category) {
       description: '질문이 속하는 대단원. 반드시 고른 과목의 단원 중에서 고를 것 (' + guide + ')' };
     schema.required.push('unit');
   }
+  // 사회과 교과 역량은 질문이 아니라 학생 댓글에서만 봅니다 (질문은 궁금함이지 역량의 증거가 아니므로).
   addLevelField_(schema, '학생 질문');
-  addCompetencyField_(schema, '학생의 질문에');
   return schema;
 }
 
@@ -905,14 +901,12 @@ function analyzePost_(found) {
     schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 질문 하나를 정해진 기준으로 분류해.');
   var category = found.category || validCategory_(r.category);
   var unit = validUnit_(category, r.unit);
-  var competencies = competencyCell_(r.competencies);
   var level = validLevel_(r.level);
   withLock_(function () {
     var now = findPostRow_(found.id);
     if (!now) return;
     if (!now.category && category) setCell_(now, 'category', category);
     if (unit && (now.category || category) === category && !validUnit_(category, now.unit)) setCell_(now, 'unit', unit);
-    if (competencies && !competencyCell_(now.competencies)) setCell_(now, 'competencies', competencies);
     if (level && !validLevel_(now.level)) setCell_(now, 'level', level);
   });
 }
