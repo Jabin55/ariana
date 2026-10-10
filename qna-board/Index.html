@@ -94,7 +94,7 @@
   </style>
 </head>
 <body>
-  <!-- AI 선생님 캐릭터 (부엉이). 스크립트 속성 CHARACTER_IMAGE_URL 을 넣으면 그 이미지로 바뀝니다. -->
+  <!-- AI 튜터 캐릭터 (부엉이). 스크립트 속성 CHARACTER_IMAGE_URL 을 넣으면 그 이미지로 바뀝니다. -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="owl" viewBox="0 0 120 120">
       <polygon points="28,34 36,10 50,28" fill="#7a4e2d"/>
@@ -128,12 +128,12 @@
       <? if (characterUrl) { ?>
         <img class="mascot" src="<?= characterUrl ?>" alt="">
       <? } else { ?>
-        <svg class="mascot" role="img" aria-label="AI 선생님 캐릭터"><use href="#owl"/></svg>
+        <svg class="mascot" role="img" aria-label="AI 튜터 캐릭터"><use href="#owl"/></svg>
       <? } ?>
       <div>
         <h1><?= boardTitle ?></h1>
         <div class="bubble">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
-        <div class="howto">🦉 질문을 올리면 AI 선생님이 먼저 답변을 달아요. 교과 선생님도 질문을 확인하고 직접 댓글을 달아 줄 거예요.</div>
+        <div class="howto">🦉 질문을 올리면 AI 튜터가 먼저 답변을 달아요. 학교의 교과 담당 선생님도 질문을 확인하고 직접 댓글을 달아 줄 거예요.</div>
       </div>
     </div>
   </header>
@@ -334,7 +334,7 @@
             '<div class="body">' + (c.isAI ? fmt(c.text) : esc(c.text)) + '</div></div>';
         }).join('') + talkBtn;
         var state = '';
-        if (p.status === 'pending') state = '<div class="pending">✏️ AI 선생님이 답변을 쓰고 있어요…</div>';
+        if (p.status === 'pending') state = '<div class="pending">✏️ AI 튜터가 답변을 쓰고 있어요…</div>';
         if (p.status === 'error') state = '<div class="error">AI 답변을 받지 못했어요. ' +
           '<button class="link" data-retry="' + esc(p.id) + '">다시 받기</button></div>';
         var replyBox = p.local ? '' :

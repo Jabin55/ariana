@@ -46,7 +46,7 @@
 |---|---|---|
 | `BOARD_TITLE` | 게시판 제목 | 질문 게시판 |
 | `GEMINI_MODEL` | 사용할 Gemini 모델 | gemini-3.8-flash |
-| `AI_NAME` | AI 답글에 표시할 이름 | AI 선생님 |
+| `AI_NAME` | AI 답글에 표시할 이름 | AI 튜터 |
 | `CHARACTER_IMAGE_URL` | 캐릭터를 내 그림으로 바꿀 때 이미지 주소 (`https://`로 시작, 누구나 볼 수 있는 주소) | 부엉이 선생님 |
 | `NOTIFY_EMAIL` | 새 질문 알림 메일 받을 주소. `off` 면 알림 끔 | 스크립트 주인 계정 |
 | `AI_REPLY_TO_COMMENTS` | `false` 면 댓글에는 AI가 답하지 않음 | true |

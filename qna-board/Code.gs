@@ -9,7 +9,7 @@
  *   GEMINI_MODEL    (선택) 기본값 gemini-3.8-flash
  *   BOARD_TITLE     (선택) 게시판 제목. 기본값 "질문 게시판"
  *   SYSTEM_PROMPT   (선택) AI 답변 지침. 비우면 아래 DEFAULT_SYSTEM_PROMPT 사용
- *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 선생님"
+ *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 튜터"
  *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
  *   NOTIFY_EMAIL    (선택) 새 질문 알림 메일을 받을 주소. 비우면 스크립트 주인 계정, off면 알림 끔
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
@@ -29,18 +29,18 @@ var DEFAULT_MODEL = 'gemini-3.8-flash';
 var DEFAULT_TITLE = '질문 게시판';
 var MAX_TEXT_LENGTH = 1000;
 var MAX_NAME_LENGTH = 30;
-var DEFAULT_AI_NAME = 'AI 선생님';
+var DEFAULT_AI_NAME = 'AI 튜터';
 // 게시판 칸 너비에서 AI 답변이 10줄을 넘지 않는 길이 (한 줄에 약 19자)
 var MAX_ANSWER_CHARS = 180;
 
 var DEFAULT_SYSTEM_PROMPT = [
-  '너는 고등학교 사회와 문화, 정치, 경제, 법과 사회를 가르치는 AI 선생님이야.',
+  '너는 고등학교 사회와 문화, 정치, 경제, 법과 사회를 가르치는 AI 튜터야.',
   '학생 질문에 한국어로 학생 눈높이에 맞게 정확하고 친절하게 답변하되, 질문에 따라 단답형으로 한 문장으로 답을 하거나 서술식으로 답변해.',
   '답변은 반드시 공백 포함 ' + MAX_ANSWER_CHARS + '자 이내로, 줄바꿈이나 목록 없이 한 문단으로 써.',
   '정치·사회 쟁점은 여러 입장을 균형 있게 소개해.',
   '표나 제목(#)은 쓰지 마. 강조가 필요하면 **굵게**만 써.',
   '댓글로 이어지는 대화에서는 앞의 맥락을 이어서 답하고, 고맙다는 인사처럼 질문이 아닌 말에는 한두 문장으로만 답해.',
-  '확실하지 않은 내용은 추측하지 말고 선생님께 확인해 보라고 안내해.',
+  '확실하지 않은 내용은 추측하지 말고 학교의 교과 담당 선생님께 확인해 보라고 안내해.',
   '개인정보를 묻거나 부적절한 질문에는 정중하게 답변을 사양해.'
 ].join('\n');
 
