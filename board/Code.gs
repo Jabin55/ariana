@@ -88,6 +88,13 @@ var OLD_COMPETENCY_DESCS = [
 var NO_COMPETENCY = '없음';
 var MAX_COMPETENCIES = 2;
 
+// 선생님이 분석 화면에서 직접 고른 분류. AI가 자동 분류할 때 참고 예시로 보여 줍니다.
+// 잘못 저장된 예시는 시트의 이 탭에서 그 줄을 지우면 됩니다.
+var EXAMPLES_SHEET = '분류 예시';
+var EXAMPLE_HEADERS = ['종류', 'id', '내용', '원래 질문', '과목', '대단원', '인지적 수준', '역량', '저장 시각'];
+var MAX_EXAMPLES = 30;          // 종류(질문/댓글)마다 AI에게 보여 줄 최근 예시 수
+var MAX_EXAMPLE_CHARS = 6000;   // 예시 전체 길이 상한 (무료 한도 보호)
+
 // 질문의 인지적 수준. 낮은 단계부터 순서대로이며, 질문 하나에 하나만 고릅니다.
 var LEVELS = [
   ['지식', '용어·사실·정의를 그대로 묻는 질문. 예: "○○의 뜻이 뭐예요?", "헌법재판소는 언제 생겼어요?"'],
@@ -415,6 +422,7 @@ function setClassification(password, kind, id, field, value) {
       else throw new Error('댓글의 과목·대단원은 질문 줄에서 바꿔 주세요.');
       if (!v) throw new Error(field === 'level' ? '알 수 없는 인지적 수준이에요.' : '알 수 없는 역량이에요.');
       if (!setCommentField_(id, field, v, true)) throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+      recordExample_('comment', id);
       return v;
     }
     var found = findPostRow_(id);
@@ -439,8 +447,81 @@ function setClassification(password, kind, id, field, value) {
     } else {
       throw new Error('알 수 없는 항목이에요.');
     }
+    recordExample_('post', id);
     return saved;
   });
+}
+
+/* ───────────── 선생님 분류 예시 ───────────── */
+
+/** 선생님이 고른 분류를 '분류 예시' 탭에 저장합니다. 같은 질문·댓글은 한 줄로 덮어씁니다. (잠금 안에서 호출) */
+function recordExample_(kind, id) {
+  try {
+    var row;
+    if (kind === 'post') {
+      var p = findPostRow_(id);
+      if (!p) return;
+      row = { 종류: '질문', id: p.id, 내용: p.text, 과목: p.category, 대단원: validUnit_(p.category, p.unit),
+        '인지적 수준': validLevel_(p.level) };
+    } else {
+      var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
+      var c = comments.filter(function (x) { return String(x.id) === String(id); })[0];
+      if (!c) return;
+      var post = findPostRow_(c.postId);
+      row = { 종류: '댓글', id: String(c.id), 내용: String(c.text), '원래 질문': post ? post.text : '',
+        '인지적 수준': validLevel_(c.level), 역량: competencyCell_(c.competencies) };
+    }
+    row['저장 시각'] = new Date();
+    var sheet = getSheet_(EXAMPLES_SHEET, EXAMPLE_HEADERS);
+    var values = row_(EXAMPLE_HEADERS, row);
+    var rows = readRows_(sheet, EXAMPLE_HEADERS);
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i].id) === String(row.id) && rows[i]['종류'] === row['종류']) {
+        sheet.getRange(i + 2, 1, 1, EXAMPLE_HEADERS.length).setValues([values]);
+        return;
+      }
+    }
+    sheet.appendRow(values);
+  } catch (e) {
+    console.error('분류 예시 저장 실패: ' + e); // 예시 저장이 실패해도 분류 저장은 그대로
+  }
+}
+
+/**
+ * AI에게 보여 줄 선생님 분류 예시 (최근 것부터). kind: 'post' | 'comment'. 예시가 없으면 ''.
+ */
+function examplesBlock_(kind) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss.getSheetByName(EXAMPLES_SHEET)) return '';
+    var label = kind === 'post' ? '질문' : '댓글';
+    var rows = readRows_(getSheet_(EXAMPLES_SHEET, EXAMPLE_HEADERS), EXAMPLE_HEADERS)
+      .filter(function (r) { return r['종류'] === label && String(r['내용']).trim(); })
+      .reverse()
+      .slice(0, MAX_EXAMPLES);
+    var text = '';
+    rows.forEach(function (r) {
+      var parts = [];
+      if (kind === 'post') {
+        if (r['과목']) parts.push('과목: ' + r['과목']);
+        if (r['대단원']) parts.push('대단원: ' + r['대단원']);
+      }
+      if (r['인지적 수준']) parts.push('인지적 수준: ' + r['인지적 수준']);
+      if (kind === 'comment' && r['역량']) parts.push('역량: ' + (r['역량'] === NO_COMPETENCY ? '없음(빈 배열)' : r['역량']));
+      if (!parts.length) return;
+      var line = '- ' + label + ': "' + String(r['내용']).slice(0, 200) + '"' +
+        (kind === 'comment' && r['원래 질문'] ? ' (원래 질문: "' + String(r['원래 질문']).slice(0, 100) + '")' : '') +
+        ' → ' + parts.join(', ') + '\n';
+      if (text.length + line.length > MAX_EXAMPLE_CHARS) return;
+      text += line;
+    });
+    if (!text) return '';
+    return '\n\n[선생님이 직접 분류한 예시]\n아래는 선생님이 직접 정한 분류야. 분류할 때는 이 예시의 기준을 가장 먼저 따르고, ' +
+      '비슷한 ' + label + '은 같은 방식으로 분류해.\n' + text;
+  } catch (e) {
+    console.error('분류 예시 읽기 실패: ' + e);
+    return '';
+  }
 }
 
 /* ───────────── 관리용 (편집기에서 직접 실행) ───────────── */
@@ -635,7 +716,7 @@ function answerPost_(postId) {
   try {
     if (needCategory) {
       try {
-        var r = callGeminiJson_(thread.contents, answerSchema_(), system);
+        var r = callGeminiJson_(thread.contents, answerSchema_(), system + examplesBlock_('post'));
         answer = String(r.answer || '').trim();
         category = validCategory_(r.category);
         unit = validUnit_(category, r.unit);
@@ -650,7 +731,7 @@ function answerPost_(postId) {
         (!competencyCell_(thread.lastHumanComment.competencies) || !validLevel_(thread.lastHumanComment.level))) {
       // 학생 댓글에 답할 때는 그 댓글의 역량·인지적 수준도 같이 받습니다 (Gemini 호출 수는 그대로).
       try {
-        var rc = callGeminiJson_(thread.contents, commentAnswerSchema_(), system);
+        var rc = callGeminiJson_(thread.contents, commentAnswerSchema_(), system + examplesBlock_('comment'));
         answer = String(rc.answer || '').trim();
         if (answer) {
           commentCompetencies = competencyCell_(rc.competencies);
@@ -877,7 +958,7 @@ function analyzeComment_(comment, postText) {
   var r = callGeminiJson_(
     [{ role: 'user', parts: [{ text: '다음은 게시판의 질문에 학생이 단 댓글이야. 댓글에 드러난 역량과 인지적 수준을 분류해.\n\n' +
       '원래 질문: ' + postText + '\n\n학생 댓글: ' + comment.text }] }],
-    schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 댓글 하나를 정해진 기준으로 분류해.');
+    schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 댓글 하나를 정해진 기준으로 분류해.' + examplesBlock_('comment'));
   var comp = competencyCell_(r.competencies);
   var level = validLevel_(r.level);
   withLock_(function () {
@@ -898,7 +979,7 @@ function analyzePost_(found) {
   var r = callGeminiJson_(
     [{ role: 'user', parts: [{ text: '다음 학생 질문을 분류해.' +
       (found.category ? '\n과목: ' + found.category : '') + '\n\n질문: ' + found.text }] }],
-    schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 질문 하나를 정해진 기준으로 분류해.');
+    schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 질문 하나를 정해진 기준으로 분류해.' + examplesBlock_('post'));
   var category = found.category || validCategory_(r.category);
   var unit = validUnit_(category, r.unit);
   var level = validLevel_(r.level);
