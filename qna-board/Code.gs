@@ -12,7 +12,8 @@
  *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 튜터"
  *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
  *   NOTIFY_EMAIL    (선택) 새 질문 알림 메일을 받을 주소. 비우면 스크립트 주인 계정, off면 알림 끔
- *   REFERENCE_ONLY  (선택) 기본값 true: '자료' 탭에 내용이 있으면 그 내용으로만 답합니다. false면 자료를 우선 참고만 함
+ *   REFERENCE_ONLY  (선택) true면 '자료' 탭 밖의 내용은 아예 답하지 않습니다. 기본값 false:
+ *                   자료에 있으면 자료로만 답하고, 없으면 AI가 아는 내용으로 답한 뒤 안내 문구를 붙입니다.
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
@@ -28,6 +29,8 @@ var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
 var REF_SHEET = '자료';
 var REF_HEADERS = ['과목', '제목', '내용'];
 var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한 (무료 한도 보호)
+var NOT_IN_REF_MARK = '[자료없음]'; // AI가 자료 밖 내용으로 답할 때 붙이는 표시 (코드가 지우고 안내 문구로 바꿈)
+var NOT_IN_REF_NOTICE = '참고 자료에 없는 내용이니 학교의 교과 담당 선생님의 추가적인 답변을 받아 보세요.';
 
 var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo'];
 
@@ -302,7 +305,7 @@ function answerPost_(postId) {
     if (!now) return; // 그 사이 시트에서 글이 지워진 경우
     if (now.answered[target]) return;
     if (status === 'answered') {
-      answer = trimAnswer_(answer);
+      answer = finishAnswer_(answer);
       getSheet_(COMMENTS_SHEET, COMMENT_HEADERS)
         .appendRow([Utilities.getUuid(), postId, new Date(), aiName_(), answer, true, target]);
     }
@@ -347,15 +350,24 @@ function loadThread_(postId) {
 }
 
 /** 지침을 어기고 길게 오면, 한 문단으로 합치고 글자 수 안에서 문장이 끝나는 곳까지만 남깁니다. */
-function trimAnswer_(text) {
+/** 자료 밖 답변 표시를 안내 문구로 바꾸고, 안내 문구까지 합쳐 10줄 안에 들어가게 자릅니다. */
+function finishAnswer_(text) {
+  text = String(text);
+  if (text.indexOf(NOT_IN_REF_MARK) === -1) return trimAnswer_(text);
+  text = text.split(NOT_IN_REF_MARK).join('').trim();
+  return trimAnswer_(text, MAX_ANSWER_CHARS - NOT_IN_REF_NOTICE.length - 1) + ' ' + NOT_IN_REF_NOTICE;
+}
+
+function trimAnswer_(text, max) {
+  max = max || MAX_ANSWER_CHARS;
   text = String(text).replace(/\s*\n+\s*/g, ' ').trim();
-  var limit = MAX_ANSWER_CHARS + 10; // 살짝 넘는 정도는 그대로 둡니다
+  var limit = max + 10; // 살짝 넘는 정도는 그대로 둡니다
   if (text.length <= limit) return text;
   var cut = text.slice(0, limit);
   var end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '),
     cut.lastIndexOf('다.'), cut.lastIndexOf('요.'));
-  if (end >= MAX_ANSWER_CHARS / 2) return cut.slice(0, end + 2).trim();
-  return cut.slice(0, MAX_ANSWER_CHARS - 1).trim() + '…';
+  if (end >= max / 2) return cut.slice(0, end + 2).trim();
+  return cut.slice(0, max - 1).trim() + '…';
 }
 
 function setStatus_(found, status) {
@@ -415,12 +427,14 @@ function systemPrompt_(category) {
   var rule = referenceOnly_()
     ? '아래 [참고 자료]에 있는 내용만 근거로 답해. 자료에 없는 내용은 지어내거나 네가 아는 지식으로 채우지 말고, ' +
       '"참고 자료에 없는 내용이에요. 학교의 교과 담당 선생님께 물어보세요."라고 답해.'
-    : '아래 [참고 자료]를 우선 근거로 답하고, 자료에 없으면 정확히 아는 내용만 보충해.';
+    : '아래 [참고 자료]에 질문의 답이 있으면 자료에 있는 내용으로만 답해. ' +
+      '자료에 답이 없으면 네가 정확히 아는 내용으로 공백 포함 ' + (MAX_ANSWER_CHARS - NOT_IN_REF_NOTICE.length - 10) +
+      '자 이내로 답하되, 답변 맨 앞에 ' + NOT_IN_REF_MARK + ' 를 붙여.';
   return base + '\n\n' + rule + '\n\n[참고 자료]\n' + ref;
 }
 
 function referenceOnly_() {
-  return getProp_('REFERENCE_ONLY', 'true') !== 'false';
+  return getProp_('REFERENCE_ONLY', 'false') === 'true';
 }
 
 function referenceText_(category) {
