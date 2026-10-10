@@ -83,6 +83,21 @@
     /* 미분류 칸: 선생님이 직접 고르는 드롭다운 */
     select.fix { font-size: 12px; padding: 3px 6px; border: 1px dashed var(--accent); background: #fff8f4; max-width: 160px; }
     select.fix:disabled { opacity: .5; }
+    /* 이미 분류된 칸: 눈에 덜 띄는 드롭다운으로 바꿀 수 있음 */
+    select.fix.done { border: 1px solid transparent; background: transparent; padding: 3px 4px; color: var(--ink); cursor: pointer; }
+    select.fix.done:hover, select.fix.done:focus { border-color: var(--line); background: #fff; }
+    /* 역량: 체크박스로 여러 개 고르기 */
+    .cpick { position: relative; display: inline-block; }
+    .cpick > button { font: inherit; font-size: 12px; text-align: left; padding: 3px 6px; border-radius: 8px; cursor: pointer;
+      background: transparent; color: var(--ink); border: 1px solid transparent; max-width: 220px; }
+    .cpick > button:hover { border-color: var(--line); background: #fff; }
+    .cpick.empty > button { border: 1px dashed var(--accent); background: #fff8f4; }
+    .cpick .menu { position: fixed; z-index: 20; width: 230px; padding: 8px 10px;
+      background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+    .cpick .menu label { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; padding: 3px 0; cursor: pointer; }
+    .cpick .menu label.none { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 7px; }
+    .cpick .menu .row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+    .cpick .menu button { font-size: 12px; padding: 4px 10px; }
     .fix-err { display: block; color: var(--err); font-size: 11px; margin-top: 2px; }
     .pick-note { font-size: 13px; margin-bottom: 8px; }
     .pick-note button { padding: 3px 10px; margin-left: 6px; font-size: 12px; }
@@ -283,7 +298,7 @@
       var k = state.pick;
       if (!k) return true;
       if (k.type === 'category') return (p.category || NONE) === k.value;
-      if (k.type === 'level') return p.kind === 'post' && (p.level || NONE) === k.value; // 댓글은 인지적 수준을 나누지 않음
+      if (k.type === 'level') return (p.level || NONE) === k.value;
       if (k.type === 'unit') return p.category === k.subject && (p.unit || NONE) === k.value;
       if (k.type === 'comp') {
         if (k.value === NOCOMP) return p.noCompetency;
@@ -302,10 +317,15 @@
     // 막대가 아닌 빈 곳(그래프 칸의 여백, 제목, 화면 배경)을 누르면 선택을 풀고 전체 질문을 보여 줍니다.
     // 질문 목록·학생 표·필터 같은 곳을 누를 때는 그대로 둡니다.
     document.addEventListener('click', function (e) {
+      // 역량 체크박스 목록은 바깥을 누르면 닫습니다.
+      if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick .menu').forEach(function (m) { m.remove(); });
       if (!state.pick || !data) return;
       if (e.target.closest('.brow.pickable, button, select, input, a, label, #questions, #students')) return;
       setPick(null);
     });
+    window.addEventListener('scroll', function () {
+      document.querySelectorAll('.cpick .menu').forEach(function (m) { if (m.place) m.place(); });
+    }, true);
 
     /* ── 그리기 ── */
     function render() {
@@ -315,7 +335,7 @@
       renderStats(posts, comments);
       renderCategory(posts);
       renderComp(posts.concat(comments));
-      renderLevels(posts);
+      renderLevels(posts.concat(comments));
       renderUnits(posts);
       renderStudents(posts, comments);
       renderQuestions(posts.concat(comments).filter(matchesPick));
@@ -326,11 +346,11 @@
       posts.forEach(function (p) { authors[p.author] = 1; });
       var box = $('stats');
       box.innerHTML = '';
-      var leveled = posts.filter(function (p) { return p.level; });
+      var leveled = posts.concat(comments).filter(function (p) { return p.level; });
       var high = leveled.filter(function (p) { return HIGH_LEVELS.indexOf(p.level) !== -1; }).length;
       [['질문', posts.length + '개'], state.student ? null : ['질문한 학생', Object.keys(authors).length + '명'],
         ['학생 댓글', comments.length + '개'],
-        leveled.length ? ['높은 수준(분석·종합·평가) 질문', Math.round(high / leveled.length * 100) + '%'] : null
+        leveled.length ? ['높은 수준(분석·종합·평가) 질문·댓글', Math.round(high / leveled.length * 100) + '%'] : null
       ].forEach(function (s) {
         if (s) box.appendChild(el('div', { cls: 'stat' }, [el('b', { text: s[1] }), s[0]]));
       });
@@ -352,7 +372,7 @@
     function renderCategory(posts) {
       var counts = {};
       posts.forEach(function (p) { var k = p.category || NONE; counts[k] = (counts[k] || 0) + 1; });
-      bars($('cCategory'), slicesFor(data.categories, counts), posts.length, 'category');
+      bars($('cCategory'), slicesFor(data.categories, counts, true), posts.length, 'category', '', true);
     }
 
     /** 질문과 학생 댓글을 함께 셉니다. 막대 길이는 전체 질문·댓글 중 비율입니다. */
@@ -363,12 +383,11 @@
         else if (!p.competencies.length) counts[NONE] = (counts[NONE] || 0) + 1;
         p.competencies.forEach(function (c) { counts[c] = (counts[c] || 0) + 1; });
       });
-      var slices = slicesFor(data.competencies.map(function (c) { return c.name; }), counts);
-      if (counts[NOCOMP]) {
-        var at = slices.length && slices[slices.length - 1].key === NONE ? slices.length - 1 : slices.length;
-        slices.splice(at, 0, { key: NOCOMP, label: NOCOMP, count: counts[NOCOMP], color: 'var(--nocomp)' });
-      }
-      bars($('cComp'), slices, posts.length, 'comp');
+      // 역량과 '드러난 역량 없음'은 0개라도 항상 모두 보여 줍니다.
+      var slices = slicesFor(data.competencies.map(function (c) { return c.name; }), counts, true);
+      var at = slices.length && slices[slices.length - 1].key === NONE ? slices.length - 1 : slices.length;
+      slices.splice(at, 0, { key: NOCOMP, label: NOCOMP, count: counts[NOCOMP] || 0, color: 'var(--nocomp)' });
+      bars($('cComp'), slices, posts.length, 'comp', '', true);
     }
 
     /** 인지적 수준은 순서가 있는 단계라, 비어 있는 단계도 순서대로 모두 보여 주고 높을수록 진한 색으로 칠합니다. */
@@ -458,6 +477,11 @@
         var s = student(by, c.author);
         s.nc++;
         c.competencies.forEach(function (x) { s.comp[x] = (s.comp[x] || 0) + 1; });
+        if (c.level) {
+          s.lv[c.level] = (s.lv[c.level] || 0) + 1;
+          s.leveled++;
+          if (HIGH_LEVELS.indexOf(c.level) !== -1) s.high++;
+        }
       });
       var rows = Object.keys(by).map(function (k) { return by[k]; })
         .sort(function (a, b) { return b.n - a.n || b.nc - a.nc || a.name.localeCompare(b.name, 'ko'); });
@@ -475,39 +499,89 @@
       });
     }
 
-    /** 과목 · 대단원 칸. 질문의 미분류 과목·대단원은 드롭다운으로 고릅니다. 댓글은 질문의 분류를 따릅니다. */
+    /** 과목 · 대단원 칸. 질문은 드롭다운으로 고르거나 바꿉니다. 댓글은 질문의 분류를 따릅니다. */
     function subjectCell(p) {
       if (p.kind === 'comment') return el('td', { text: [p.category || NONE, p.unit].filter(String).join(' · ') });
-      if (!p.category) {
-        return el('td', {}, [fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }))]);
-      }
+      var cat = fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }), p.category);
       var units = data.units[p.category] || [];
-      if (p.unit || !units.length) return el('td', { text: [p.category, p.unit].filter(String).join(' · ') });
-      return el('td', {}, [p.category + ' · ', fixSelect(p, 'unit', '대단원 고르기', units.map(function (u) { return [u, u]; }))]);
+      if (!p.category || !units.length) return el('td', {}, [cat]);
+      return el('td', {}, [cat, ' · ', fixSelect(p, 'unit', '대단원 고르기', units.map(function (u) { return [u, u]; }), p.unit)]);
     }
 
-    /** 미분류 항목을 선생님이 직접 분류하는 드롭다운. 고르면 바로 시트에 저장합니다. */
-    function fixSelect(item, field, placeholder, options) {
-      var sel = el('select', { cls: 'fix', 'aria-label': placeholder });
-      sel.appendChild(el('option', { value: '', text: placeholder + ' ▾' }));
+    /**
+     * 분류 드롭다운. 미분류면 점선으로 눈에 띄게, 이미 분류된 것은 현재 값이 골라진 채로 보이고 바꿀 수 있습니다.
+     * 고르면 바로 시트에 저장합니다.
+     */
+    function fixSelect(item, field, placeholder, options, current) {
+      var sel = el('select', { cls: 'fix' + (current ? ' done' : ''), 'aria-label': placeholder });
+      if (!current) sel.appendChild(el('option', { value: '', text: placeholder + ' ▾' }));
       options.forEach(function (o) { sel.appendChild(el('option', { value: o[0], text: o[1] })); });
+      sel.value = current || '';
       var wrap = el('span', {}, [sel]);
       sel.addEventListener('change', function () {
-        if (!sel.value) return;
-        var value = sel.value;
+        if (!sel.value || sel.value === current) return;
         sel.disabled = true;
-        google.script.run
-          .withSuccessHandler(function (saved) { applyFix(item, field, saved); render(); })
-          .withFailureHandler(function (err) {
-            sel.disabled = false;
-            sel.value = '';
-            var old = wrap.querySelector('.fix-err');
-            if (old) old.remove();
-            wrap.appendChild(el('span', { cls: 'fix-err', text: (err && err.message || String(err)).replace(/^Error:\s*/, '') }));
-          })
-          .setClassification(load('teacherPw'), item.kind, item.id, field, value);
+        save(item, field, sel.value, wrap, function () { sel.disabled = false; sel.value = current || ''; });
       });
       return wrap;
+    }
+
+    /** 역량 칸: 누르면 체크박스 목록이 열리고, 여러 개를 골라 저장합니다. '드러난 역량 없음'은 다른 것과 함께 고를 수 없습니다. */
+    function compPicker(item) {
+      var empty = !item.competencies.length && !item.noCompetency;
+      var wrap = el('span', { cls: 'cpick' + (empty ? ' empty' : '') });
+      var label = item.competencies.length ? item.competencies.join(', ') : item.noCompetency ? '없음' : '역량 고르기';
+      var btn = el('button', { type: 'button', text: label + ' ▾', 'aria-haspopup': 'true' });
+      wrap.appendChild(btn);
+      btn.addEventListener('click', function () {
+        var open = wrap.querySelector('.menu');
+        document.querySelectorAll('.cpick .menu').forEach(function (m) { m.remove(); });
+        if (open) return;
+        var menu = el('div', { cls: 'menu' });
+        var boxes = data.competencies.map(function (c) {
+          var cb = el('input', { type: 'checkbox', value: c.name });
+          cb.checked = item.competencies.indexOf(c.name) !== -1;
+          menu.appendChild(el('label', {}, [cb, c.name]));
+          return cb;
+        });
+        var none = el('input', { type: 'checkbox', value: '없음' });
+        none.checked = item.noCompetency;
+        menu.appendChild(el('label', { cls: 'none' }, [none, NOCOMP]));
+        none.addEventListener('change', function () { if (none.checked) boxes.forEach(function (b) { b.checked = false; }); });
+        boxes.forEach(function (b) { b.addEventListener('change', function () { if (b.checked) none.checked = false; }); });
+        var ok = el('button', { type: 'button', text: '저장' });
+        var cancel = el('button', { type: 'button', cls: 'ghost', text: '닫기', onclick: function () { menu.remove(); } });
+        ok.addEventListener('click', function () {
+          var picked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+          var value = none.checked ? '없음' : picked.join(', ');
+          if (!value) { menu.remove(); return; }
+          ok.disabled = true;
+          save(item, 'competencies', value, wrap, function () { ok.disabled = false; });
+        });
+        menu.appendChild(el('div', { cls: 'row' }, [cancel, ok]));
+        wrap.appendChild(menu);
+        // 표 칸에 잘리지 않게 화면 기준으로 띄웁니다 (아래 공간이 부족하면 위로). 스크롤하면 버튼을 따라갑니다.
+        menu.place = function () {
+          var r = btn.getBoundingClientRect();
+          var h = menu.offsetHeight;
+          menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+          menu.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - 4 - h) : r.bottom + 4) + 'px';
+        };
+        menu.place();
+      });
+      return wrap;
+    }
+
+    function save(item, field, value, wrap, onFail) {
+      google.script.run
+        .withSuccessHandler(function (saved) { applyFix(item, field, saved); render(); })
+        .withFailureHandler(function (err) {
+          onFail();
+          var old = wrap.querySelector('.fix-err');
+          if (old) old.remove();
+          wrap.appendChild(el('span', { cls: 'fix-err', text: (err && err.message || String(err)).replace(/^Error:\s*/, '') }));
+        })
+        .setClassification(load('teacherPw'), item.kind, item.id, field, value);
     }
 
     /** 저장된 분류를 화면 데이터에도 반영합니다 (다시 불러오지 않고 바로 그래프에 반영). */
@@ -548,12 +622,8 @@
         if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
         cells.push(el('td', { cls: 'nw', text: isComment ? '댓글' : '질문' }));
         cells.push(subjectCell(p));
-        cells.push(isComment ? el('td', { cls: 'nw' }) : p.level ? el('td', { cls: 'nw', text: p.level })
-          : el('td', {}, [fixSelect(p, 'level', '수준 고르기', data.levels.map(function (l) { return [l.name, l.name]; }))]));
-        cells.push(p.competencies.length ? el('td', {}, p.competencies.map(function (c) { return el('span', { cls: 'chip', text: c }); }))
-          : p.noCompetency ? el('td', { text: '없음' })
-          : el('td', {}, [fixSelect(p, 'competencies', '역량 고르기',
-              data.competencies.map(function (c) { return [c.name, c.name]; }).concat([['없음', NOCOMP]]))]));
+        cells.push(el('td', {}, [fixSelect(p, 'level', '수준 고르기', data.levels.map(function (l) { return [l.name, l.name]; }), p.level)]));
+        cells.push(el('td', {}, [compPicker(p)]));
         cells.push(isComment
           ? el('td', { cls: 'q' }, [p.text, el('div', { cls: 'ctx', text: '↳ 질문: ' + snippet(p.postText, 60) })])
           : el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));

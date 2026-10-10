@@ -41,8 +41,8 @@ var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한
 // 예전 지침에서 AI가 붙이던 표시. 혹시 나오면 지웁니다.
 var NOT_IN_REF_MARK = '[자료없음]';
 
-// competencies: 학생 댓글에 드러난 사회과 교과 역량 (글의 competencies 칸과 같은 형식). AI 댓글은 비워 둡니다.
-var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies', 'email'];
+// competencies·level: 학생 댓글에 드러난 사회과 교과 역량과 인지적 수준 (글의 칸과 같은 형식). AI 댓글은 비워 둡니다.
+var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies', 'email', 'level'];
 
 // 학생 분석 기준. 처음 실행할 때 시트에 '단원', '역량' 탭을 아래 기본값으로 만듭니다.
 // 학교 교과서·교육과정에 맞게 시트에서 고치면 다음 분류부터 바로 반영됩니다.
@@ -377,7 +377,8 @@ function getAnalysis(password) {
           author: String(c.author).trim(),
           text: String(c.text),
           competencies: validCompetencies_(c.competencies).split(', ').filter(String),
-          noCompetency: competencyCell_(c.competencies) === NO_COMPETENCY
+          noCompetency: competencyCell_(c.competencies) === NO_COMPETENCY,
+          level: validLevel_(c.level)
         };
       })
   };
@@ -398,27 +399,23 @@ function checkTeacher_(password) {
 }
 
 /**
- * 분석 화면에서 선생님이 미분류 항목을 직접 분류합니다.
+ * 분석 화면에서 선생님이 분류를 직접 고릅니다 (미분류 채우기, 이미 분류된 것 바꾸기 모두).
  * kind: 'post' | 'comment', field: 'category' | 'unit' | 'level' | 'competencies'
- * 댓글은 competencies만 고칠 수 있습니다. 저장한 값을 돌려줍니다.
+ * 댓글은 competencies·level만 고칠 수 있습니다. 저장한 값을 돌려줍니다.
  */
 function setClassification(password, kind, id, field, value) {
   checkTeacher_(password);
   value = String(value == null ? '' : value).trim();
   return withLock_(function () {
     if (kind === 'comment') {
-      if (field !== 'competencies') throw new Error('댓글은 역량만 분류할 수 있어요.');
-      var v = competencyCell_(value);
-      if (!v) throw new Error('알 수 없는 역량이에요.');
-      var sheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
-      var rows = readRows_(sheet, COMMENT_HEADERS);
-      for (var i = 0; i < rows.length; i++) {
-        if (String(rows[i].id) === String(id)) {
-          sheet.getRange(i + 2, COMMENT_HEADERS.indexOf('competencies') + 1).setValue(v);
-          return v;
-        }
-      }
-      throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+      // 댓글의 과목·대단원은 질문을 따르므로 역량·인지적 수준만 고칩니다.
+      var v;
+      if (field === 'competencies') v = competencyCell_(value);
+      else if (field === 'level') v = validLevel_(value);
+      else throw new Error('댓글의 과목·대단원은 질문 줄에서 바꿔 주세요.');
+      if (!v) throw new Error(field === 'level' ? '알 수 없는 인지적 수준이에요.' : '알 수 없는 역량이에요.');
+      if (!setCommentField_(id, field, v, true)) throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+      return v;
     }
     var found = findPostRow_(id);
     if (!found) throw new Error('질문을 찾을 수 없어요. 새로고침해 주세요.');
@@ -518,7 +515,7 @@ function analyzeExisting(limit) {
   var postText = {};
   readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS).forEach(function (p) { postText[p.id] = String(p.text); });
   var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS).filter(function (c) {
-    return isStudentComment_(c) && postText[c.postId] !== undefined && !competencyCell_(c.competencies);
+    return isStudentComment_(c) && postText[c.postId] !== undefined && (!competencyCell_(c.competencies) || !validLevel_(c.level));
   });
   var doneComments = 0;
   for (var j = 0; j < comments.length && done < limit && !limited; j++) {
@@ -636,7 +633,7 @@ function answerPost_(postId) {
   // 질문 자체에 처음 답할 때는 분류도 같이 받습니다.
   var needCategory = target === String(postId) && !thread.post.category;
   var system = systemPrompt_(thread.post.category);
-  var answer, category, unit, competencies, level, status, commentCompetencies;
+  var answer, category, unit, competencies, level, status, commentCompetencies, commentLevel;
   try {
     if (needCategory) {
       try {
@@ -652,13 +649,16 @@ function answerPost_(postId) {
         console.error('분류 요청 거절, 답변만 받습니다: ' + e);
       }
       if (!answer) answer = callGemini_(thread.contents, null, system);
-    } else if (thread.lastHumanComment && !competencyCell_(thread.lastHumanComment.competencies) &&
-        !isTeacherName_(thread.lastHumanComment.author) && analysisConfig_().competencies.length) {
-      // 학생 댓글에 답할 때는 그 댓글의 역량도 같이 받습니다 (Gemini 호출 수는 그대로).
+    } else if (thread.lastHumanComment && !isTeacherName_(thread.lastHumanComment.author) &&
+        (!competencyCell_(thread.lastHumanComment.competencies) || !validLevel_(thread.lastHumanComment.level))) {
+      // 학생 댓글에 답할 때는 그 댓글의 역량·인지적 수준도 같이 받습니다 (Gemini 호출 수는 그대로).
       try {
         var rc = callGeminiJson_(thread.contents, commentAnswerSchema_(), system);
         answer = String(rc.answer || '').trim();
-        if (answer) commentCompetencies = competencyCell_(rc.competencies);
+        if (answer) {
+          commentCompetencies = competencyCell_(rc.competencies);
+          commentLevel = validLevel_(rc.level);
+        }
       } catch (e) {
         if (!/Gemini API 400/.test(String(e))) throw e;
         console.error('댓글 역량 분류 요청 거절, 답변만 받습니다: ' + e);
@@ -688,7 +688,8 @@ function answerPost_(postId) {
     }
     if (competencies && !competencyCell_(now.post.competencies)) setCell_(now.post, 'competencies', competencies);
     if (level && !validLevel_(now.post.level)) setCell_(now.post, 'level', level);
-    if (commentCompetencies) setCommentCompetencies_(target, commentCompetencies);
+    if (commentCompetencies) setCommentField_(target, 'competencies', commentCompetencies, false);
+    if (commentLevel) setCommentField_(target, 'level', commentLevel, false);
     // 답하는 사이 새 댓글이 달렸으면 그 댓글을 위해 pending으로 둡니다.
     if (now.lastHumanId === target) setStatus_(now.post, status);
   });
@@ -796,13 +797,19 @@ function addAnalysisFields_(schema, category) {
       description: '질문이 속하는 대단원. 반드시 고른 과목의 단원 중에서 고를 것 (' + guide + ')' };
     schema.required.push('unit');
   }
+  addLevelField_(schema, '학생 질문');
+  addCompetencyField_(schema, '학생의 질문에');
+  return schema;
+}
+
+/** 인지적 수준(블룸의 분류) 칸. subject: '학생 질문', '학생의 마지막 댓글' 등 */
+function addLevelField_(schema, subject) {
   schema.properties.level = {
     type: 'STRING', enum: LEVEL_NAMES,
-    description: '학생 질문의 인지적 수준(블룸의 분류) 하나. 질문이 학생에게 요구하는 사고를 기준으로 고르고, 애매하면 더 낮은 단계를 고를 것. 기준: ' +
+    description: subject + '의 인지적 수준(블룸의 분류) 하나. 학생이 드러낸 사고를 기준으로 고르고, 애매하면 더 낮은 단계를 고를 것. 기준: ' +
       LEVELS.map(function (l) { return l[0] + '(' + l[1] + ')'; }).join('; ')
   };
   schema.required.push('level');
-  addCompetencyField_(schema, '학생의 질문에');
   return schema;
 }
 
@@ -830,6 +837,7 @@ function commentAnswerSchema_() {
     properties: { answer: { type: 'STRING', description: '학생에게 보여 줄 답변' } },
     required: ['answer']
   };
+  addLevelField_(schema, '학생의 마지막 댓글');
   return addCompetencyField_(schema, '학생의 마지막 댓글에');
 }
 
@@ -849,30 +857,37 @@ function isStudentComment_(c) {
   return c.id !== '' && !isAIComment_(c) && !isTeacherName_(c.author) && String(c.text).trim() !== '';
 }
 
-function setCommentCompetencies_(commentId, value) {
+/**
+ * 댓글 한 칸(competencies 또는 level)을 저장합니다. overwrite가 아니면 비어 있을 때만 씁니다.
+ * 댓글을 찾으면 true.
+ */
+function setCommentField_(commentId, field, value, overwrite) {
   var sheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
   var rows = readRows_(sheet, COMMENT_HEADERS);
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].id) === String(commentId)) {
-      if (!competencyCell_(rows[i].competencies)) {
-        sheet.getRange(i + 2, COMMENT_HEADERS.indexOf('competencies') + 1).setValue(value);
-      }
-      return;
+      var filled = field === 'level' ? validLevel_(rows[i].level) : competencyCell_(rows[i].competencies);
+      if (overwrite || !filled) sheet.getRange(i + 2, COMMENT_HEADERS.indexOf(field) + 1).setValue(value);
+      return true;
     }
   }
+  return false;
 }
 
 /** AI가 답하지 않은 학생 댓글의 역량을 따로 분류합니다. 원래 질문을 함께 보여 줍니다. */
 function analyzeComment_(comment, postText) {
-  var schema = addCompetencyField_({ type: 'OBJECT', properties: {}, required: [] }, '학생 댓글에');
-  if (!schema.required.length) return;
+  var schema = addLevelField_({ type: 'OBJECT', properties: {}, required: [] }, '학생 댓글');
+  addCompetencyField_(schema, '학생 댓글에');
   var r = callGeminiJson_(
-    [{ role: 'user', parts: [{ text: '다음은 게시판의 질문에 학생이 단 댓글이야. 댓글에 드러난 역량을 분류해.\n\n' +
+    [{ role: 'user', parts: [{ text: '다음은 게시판의 질문에 학생이 단 댓글이야. 댓글에 드러난 역량과 인지적 수준을 분류해.\n\n' +
       '원래 질문: ' + postText + '\n\n학생 댓글: ' + comment.text }] }],
     schema, '너는 고등학교 사회과 교사를 돕는 분류 도우미야. 학생 댓글 하나를 정해진 기준으로 분류해.');
-  var value = competencyCell_(r.competencies);
-  if (!value) return;
-  withLock_(function () { setCommentCompetencies_(comment.id, value); });
+  var comp = competencyCell_(r.competencies);
+  var level = validLevel_(r.level);
+  withLock_(function () {
+    if (comp) setCommentField_(comment.id, 'competencies', comp, false);
+    if (level) setCommentField_(comment.id, 'level', level, false);
+  });
 }
 
 /** 이미 답이 달린 글의 과목·대단원·역량·인지적 수준 중 빈 칸을 AI로 채웁니다. */
@@ -930,7 +945,8 @@ function validCompetencies_(list) {
     c = String(c).trim();
     if (names.indexOf(c) !== -1 && picked.indexOf(c) === -1) picked.push(c);
   });
-  return picked.slice(0, MAX_COMPETENCIES).join(', ');
+  // AI는 스키마로 최대 MAX_COMPETENCIES개만 고르고, 선생님이 직접 고를 때는 개수 제한이 없습니다.
+  return picked.join(', ');
 }
 
 var analysisConfigCache_ = null;
