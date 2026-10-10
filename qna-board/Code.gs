@@ -10,6 +10,7 @@
  *   BOARD_TITLE     (선택) 게시판 제목. 기본값 "질문 게시판"
  *   SYSTEM_PROMPT   (선택) AI 답변 지침. 비우면 아래 DEFAULT_SYSTEM_PROMPT 사용
  *   AI_NAME         (선택) AI 답글에 표시할 이름. 기본값 "AI 선생님"
+ *   CHARACTER_IMAGE_URL (선택) 캐릭터 이미지 주소(https://...). 비우면 기본 부엉이 캐릭터
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  */
 
@@ -41,6 +42,8 @@ var DEFAULT_SYSTEM_PROMPT = [
 function doGet() {
   var tpl = HtmlService.createTemplateFromFile('Index');
   tpl.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
+  var img = getProp_('CHARACTER_IMAGE_URL', '');
+  tpl.characterUrl = /^https:\/\//.test(img) ? img : '';
   return tpl.evaluate()
     .setTitle(tpl.boardTitle)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')

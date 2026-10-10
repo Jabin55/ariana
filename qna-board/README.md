@@ -47,6 +47,7 @@
 | `BOARD_TITLE` | 게시판 제목 | 질문 게시판 |
 | `GEMINI_MODEL` | 사용할 Gemini 모델 | gemini-3.8-flash |
 | `AI_NAME` | AI 답글에 표시할 이름 | AI 선생님 |
+| `CHARACTER_IMAGE_URL` | 캐릭터를 내 그림으로 바꿀 때 이미지 주소 (`https://`로 시작, 누구나 볼 수 있는 주소) | 부엉이 선생님 |
 | `AI_REPLY_TO_COMMENTS` | `false` 면 댓글에는 AI가 답하지 않음 | true |
 | `SYSTEM_PROMPT` | AI 답변 지침 (예: "너는 고등학교 정치 선생님이야…") | `Code.gs`의 `DEFAULT_SYSTEM_PROMPT` |
 

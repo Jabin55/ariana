@@ -5,15 +5,27 @@
   <meta charset="utf-8">
   <style>
     :root {
-      --bg: #f4f1ea; --card: #fff; --ink: #222; --muted: #777; --line: #e5e0d6;
-      --accent: #3b6ef5; --ai-bg: #eef3ff; --ai-ink: #2a4bb0; --err: #c0392b;
+      --bg: #fdf6e9; --card: #fff; --ink: #2b2b2b; --muted: #7a7266; --line: #ece3d3;
+      --accent: #ff7a59; --ai-bg: #eaf4ff; --ai-ink: #2560b5; --err: #c0392b;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--ink);
+    body { margin: 0; color: var(--ink);
+      background: var(--bg) radial-gradient(#e9dcc4 1.2px, transparent 1.2px) 0 0 / 22px 22px;
       font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
     header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
-    h1 { margin: 0 0 4px; font-size: 24px; }
-    .sub { color: var(--muted); font-size: 14px; }
+    .hero { display: flex; align-items: center; gap: 16px; border-radius: 20px; padding: 18px 22px;
+      background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%);
+      box-shadow: 0 4px 14px rgba(255,122,89,.25); }
+    .hero .mascot { width: 96px; height: 96px; flex: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,.18)); }
+    .hero img.mascot { object-fit: contain; }
+    h1 { margin: 0 0 8px; font-size: 26px; color: #3a2414; }
+    .bubble { position: relative; display: inline-block; background: #fff; border-radius: 14px;
+      padding: 8px 12px; font-size: 14px; color: #5a3d2b; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    .bubble::before { content: ''; position: absolute; left: -7px; top: 12px; border: 7px solid transparent;
+      border-left: 0; border-right-color: #fff; }
+    .chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.7); color: #5a3d2b; }
+    @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; } }
     main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
 
     .composer { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 18px;
@@ -29,13 +41,16 @@
     button.link { background: none; color: var(--accent); padding: 4px 0; justify-self: start; }
 
     .grid { columns: 300px; column-gap: 16px; }
-    .card { break-inside: avoid; background: var(--card); border-radius: 12px; padding: 14px;
-      margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .card { break-inside: avoid; background: var(--card); border-radius: 14px; padding: 14px;
+      margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,.07); border-top: 6px solid var(--tone, #ffd56b); }
+    .card.t0 { --tone: #ffd56b; } .card.t1 { --tone: #8fd3a8; } .card.t2 { --tone: #8cc4ff; }
+    .card.t3 { --tone: #ffa3c4; } .card.t4 { --tone: #c3a6ff; } .card.t5 { --tone: #ffb37a; }
     .meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     .q { white-space: pre-wrap; word-break: break-word; font-size: 16px; line-height: 1.5; }
     .comments { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
     .c { font-size: 14px; line-height: 1.55; word-break: break-word; }
-    .c .who { font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    .c .who { font-weight: 600; font-size: 12px; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+    .c .av { width: 26px; height: 26px; flex: none; border-radius: 50%; background: #fff; object-fit: contain; }
     .c.ai { background: var(--ai-bg); border-radius: 8px; padding: 8px 10px; }
     .c.ai .who { color: var(--ai-ink); }
     .c .body { white-space: pre-wrap; }
@@ -49,9 +64,48 @@
   </style>
 </head>
 <body>
+  <!-- AI 선생님 캐릭터 (부엉이). 스크립트 속성 CHARACTER_IMAGE_URL 을 넣으면 그 이미지로 바뀝니다. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="owl" viewBox="0 0 120 120">
+      <polygon points="28,34 36,10 50,28" fill="#7a4e2d"/>
+      <polygon points="92,34 84,10 70,28" fill="#7a4e2d"/>
+      <ellipse cx="60" cy="70" rx="40" ry="44" fill="#9a6640"/>
+      <ellipse cx="22" cy="78" rx="10" ry="22" fill="#7a4e2d" transform="rotate(15 22 78)"/>
+      <ellipse cx="98" cy="78" rx="10" ry="22" fill="#7a4e2d" transform="rotate(-15 98 78)"/>
+      <ellipse cx="60" cy="86" rx="24" ry="26" fill="#f6dcb4"/>
+      <path d="M48 80 q4 4 8 0 M58 88 q4 4 8 0 M50 96 q4 4 8 0 M62 78 q4 4 8 0" stroke="#d9b98c" stroke-width="2" fill="none"/>
+      <circle cx="43" cy="52" r="15" fill="#fff"/>
+      <circle cx="77" cy="52" r="15" fill="#fff"/>
+      <circle cx="45" cy="54" r="7" fill="#2b2b2b"/>
+      <circle cx="75" cy="54" r="7" fill="#2b2b2b"/>
+      <circle cx="47" cy="51" r="2.4" fill="#fff"/>
+      <circle cx="77" cy="51" r="2.4" fill="#fff"/>
+      <circle cx="43" cy="52" r="16" fill="none" stroke="#2b2b2b" stroke-width="3"/>
+      <circle cx="77" cy="52" r="16" fill="none" stroke="#2b2b2b" stroke-width="3"/>
+      <line x1="59" y1="52" x2="61" y2="52" stroke="#2b2b2b" stroke-width="3"/>
+      <polygon points="54,64 66,64 60,74" fill="#ff9f1c"/>
+      <ellipse cx="44" cy="113" rx="8" ry="4" fill="#ff9f1c"/>
+      <ellipse cx="76" cy="113" rx="8" ry="4" fill="#ff9f1c"/>
+      <polygon points="60,2 98,16 60,30 22,16" fill="#33334d"/>
+      <rect x="44" y="20" width="32" height="12" rx="3" fill="#33334d"/>
+      <path d="M90 19 v14" stroke="#ffd23f" stroke-width="3"/>
+      <circle cx="90" cy="35" r="4" fill="#ffd23f"/>
+    </symbol>
+  </svg>
+
   <header>
-    <h1><?= boardTitle ?></h1>
-    <div class="sub">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
+    <div class="hero">
+      <? if (characterUrl) { ?>
+        <img class="mascot" src="<?= characterUrl ?>" alt="">
+      <? } else { ?>
+        <svg class="mascot" role="img" aria-label="AI 선생님 캐릭터"><use href="#owl"/></svg>
+      <? } ?>
+      <div>
+        <h1><?= boardTitle ?></h1>
+        <div class="bubble">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
+        <div class="chips"><span class="chip">사회와 문화</span><span class="chip">정치</span><span class="chip">경제</span><span class="chip">법과 사회</span></div>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -71,6 +125,10 @@
 
   <script>
     var REFRESH_MS = 10000;
+    var CHARACTER_URL = <?!= JSON.stringify(characterUrl) ?>;
+    var AVATAR = CHARACTER_URL
+      ? '<img class="av" src="' + CHARACTER_URL.replace(/"/g, '&quot;') + '" alt="">'
+      : '<svg class="av" viewBox="0 0 120 120"><use href="#owl"/></svg>';
     var grid = document.getElementById('grid');
     var openReplies = {};   // 댓글 입력창을 열어 둔 글 (새로고침해도 유지)
     var drafts = {};        // 작성 중인 댓글 내용
@@ -105,6 +163,12 @@
       clearTimeout(toast.timer);
       toast.timer = setTimeout(function () { t.style.display = 'none'; }, 3500);
     }
+    // 글마다 고정된 색을 줍니다 (새 글이 와도 색이 바뀌지 않도록 id로 계산)
+    function tone(id) {
+      var h = 0;
+      for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
+      return h % 6;
+    }
     function errMsg(e) { return (e && e.message) ? e.message : String(e); }
 
     function render(posts) {
@@ -121,12 +185,12 @@
       grid.innerHTML = all.map(function (p) {
         var comments = p.comments.map(function (c) {
           return '<div class="c' + (c.isAI ? ' ai' : '') + '">' +
-            '<div class="who">' + (c.isAI ? '🤖 ' : '') + esc(c.author) +
+            '<div class="who">' + (c.isAI ? AVATAR : '') + esc(c.author) +
             ' <span class="meta">' + when(c.createdAt) + '</span></div>' +
             '<div class="body">' + (c.isAI ? fmt(c.text) : esc(c.text)) + '</div></div>';
         }).join('');
         var state = '';
-        if (p.status === 'pending') state = '<div class="pending">🤖 AI가 답변을 쓰고 있어요…</div>';
+        if (p.status === 'pending') state = '<div class="pending">✏️ AI 선생님이 답변을 쓰고 있어요…</div>';
         if (p.status === 'error') state = '<div class="error">AI 답변을 받지 못했어요. ' +
           '<button class="link" data-retry="' + esc(p.id) + '">다시 받기</button></div>';
         var replyBox = p.local ? '' :
@@ -135,7 +199,7 @@
           '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
           esc(drafts[p.id] || '') + '</textarea>' +
           '<button data-send="' + esc(p.id) + '">댓글 등록</button></div>';
-        return '<div class="card">' +
+        return '<div class="card t' + tone(p.id) + '">' +
           '<div class="meta">' + esc(p.author) + ' · ' + when(p.createdAt) + '</div>' +
           '<div class="q">' + esc(p.text) + '</div>' +
           '<div class="comments">' + comments + state + replyBox + '</div></div>';
