@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg: #f4f1ea; --card: #fff; --ink: #222; --muted: #777; --line: #e5e0d6;
+      --accent: #3b6ef5; --ai-bg: #eef3ff; --ai-ink: #2a4bb0; --err: #c0392b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+      font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+    header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font-size: 24px; }
+    .sub { color: var(--muted); font-size: 14px; }
+    main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
+
+    .composer { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08); display: grid; gap: 8px; }
+    input, textarea { width: 100%; font: inherit; padding: 9px 10px; border: 1px solid var(--line);
+      border-radius: 8px; background: #fff; }
+    textarea { resize: vertical; min-height: 70px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row input { flex: 1; }
+    button { font: inherit; border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer;
+      background: var(--accent); color: #fff; white-space: nowrap; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.link { background: none; color: var(--accent); padding: 4px 0; justify-self: start; }
+
+    .grid { columns: 300px; column-gap: 16px; }
+    .card { break-inside: avoid; background: var(--card); border-radius: 12px; padding: 14px;
+      margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .q { white-space: pre-wrap; word-break: break-word; font-size: 16px; line-height: 1.5; }
+    .comments { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
+    .c { font-size: 14px; line-height: 1.55; word-break: break-word; }
+    .c .who { font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    .c.ai { background: var(--ai-bg); border-radius: 8px; padding: 8px 10px; }
+    .c.ai .who { color: var(--ai-ink); }
+    .c .body { white-space: pre-wrap; }
+    .pending { font-size: 13px; color: var(--ai-ink); }
+    .error { font-size: 13px; color: var(--err); }
+    .reply { margin-top: 8px; display: none; gap: 6px; }
+    .reply.open { display: grid; }
+    .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #333;
+      color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><?= boardTitle ?></h1>
+    <div class="sub">질문을 올리면 AI가 자동으로 답변을 달아 줍니다. 개인정보는 적지 마세요.</div>
+  </header>
+
+  <main>
+    <form class="composer" id="composer">
+      <textarea id="qText" maxlength="1000" placeholder="궁금한 것을 적어 주세요" required></textarea>
+      <div class="row">
+        <input id="qName" maxlength="30" placeholder="이름 (비우면 익명)">
+        <button id="qSubmit" type="submit">질문 올리기</button>
+      </div>
+    </form>
+
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" style="display:none">아직 질문이 없어요. 첫 질문을 올려 보세요!</div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var REFRESH_MS = 10000;
+    var grid = document.getElementById('grid');
+    var openReplies = {};   // 댓글 입력창을 열어 둔 글 (새로고침해도 유지)
+    var drafts = {};        // 작성 중인 댓글 내용
+    var localPending = [];  // 서버 저장 전, 화면에 먼저 보여 주는 내 질문
+    var lastPosts = [];
+
+    // 이름은 이 브라우저에 기억해 둡니다.
+    var nameInput = document.getElementById('qName');
+    try { nameInput.value = localStorage.getItem('qna-name') || ''; } catch (e) {}
+    nameInput.addEventListener('change', function () {
+      try { localStorage.setItem('qna-name', nameInput.value); } catch (e) {}
+    });
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (ch) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+      });
+    }
+    // AI 답변의 **굵게** 정도만 살립니다. (그 외 HTML은 모두 이스케이프)
+    function fmt(s) {
+      return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[*-] /gm, '• ');
+    }
+    function when(iso) {
+      var d = new Date(iso);
+      if (isNaN(d)) return '';
+      return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+        d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    function toast(msg) {
+      var t = document.getElementById('toast');
+      t.textContent = msg; t.style.display = 'block';
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(function () { t.style.display = 'none'; }, 3500);
+    }
+    function errMsg(e) { return (e && e.message) ? e.message : String(e); }
+
+    function render(posts) {
+      // 다시 그리기 전에 작성 중인 댓글을 보관
+      grid.querySelectorAll('.reply textarea').forEach(function (ta) { drafts[ta.dataset.id] = ta.value; });
+
+      lastPosts = posts;
+      // 서버에 이미 저장된 내 질문은 임시 카드 대신 서버 카드로 보여 줌
+      var mine = localPending.filter(function (lp) {
+        return !posts.some(function (p) { return p.text === lp.text && p.author === lp.author; });
+      });
+      var all = mine.concat(posts);
+      document.getElementById('empty').style.display = all.length ? 'none' : 'block';
+      grid.innerHTML = all.map(function (p) {
+        var comments = p.comments.map(function (c) {
+          return '<div class="c' + (c.isAI ? ' ai' : '') + '">' +
+            '<div class="who">' + (c.isAI ? '🤖 ' : '') + esc(c.author) +
+            ' <span class="meta">' + when(c.createdAt) + '</span></div>' +
+            '<div class="body">' + (c.isAI ? fmt(c.text) : esc(c.text)) + '</div></div>';
+        }).join('');
+        var state = '';
+        if (p.status === 'pending') state = '<div class="pending">🤖 AI가 답변을 쓰고 있어요…</div>';
+        if (p.status === 'error') state = '<div class="error">AI 답변을 받지 못했어요. ' +
+          '<button class="link" data-retry="' + esc(p.id) + '">다시 받기</button></div>';
+        var replyBox = p.local ? '' :
+          '<button class="link" data-toggle="' + esc(p.id) + '">댓글 달기</button>' +
+          '<div class="reply' + (openReplies[p.id] ? ' open' : '') + '">' +
+          '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
+          esc(drafts[p.id] || '') + '</textarea>' +
+          '<button data-send="' + esc(p.id) + '">댓글 등록</button></div>';
+        return '<div class="card">' +
+          '<div class="meta">' + esc(p.author) + ' · ' + when(p.createdAt) + '</div>' +
+          '<div class="q">' + esc(p.text) + '</div>' +
+          '<div class="comments">' + comments + state + replyBox + '</div></div>';
+      }).join('');
+    }
+
+    function refresh() {
+      google.script.run
+        .withSuccessHandler(render)
+        .withFailureHandler(function (e) { console.error(e); })
+        .getBoard();
+    }
+
+    document.getElementById('composer').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var textEl = document.getElementById('qText');
+      var text = textEl.value.trim();
+      if (!text) return;
+      var name = nameInput.value.trim();
+      var btn = document.getElementById('qSubmit');
+      btn.disabled = true;
+
+      var temp = { id: 'local-' + Date.now(), local: true, author: name || '익명',
+        text: text, createdAt: new Date().toISOString(), status: 'pending', comments: [] };
+      localPending.unshift(temp);
+      textEl.value = '';
+      render(lastPosts); // 서버 응답 전에 내 질문을 바로 보여 줌
+      btn.disabled = false;
+
+      google.script.run
+        .withSuccessHandler(function () { localPending.splice(localPending.indexOf(temp), 1); refresh(); })
+        .withFailureHandler(function (e) {
+          localPending.splice(localPending.indexOf(temp), 1);
+          textEl.value = text;
+          toast('질문을 올리지 못했어요: ' + errMsg(e));
+          refresh();
+        })
+        .addPost(name, text);
+    });
+
+    grid.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t.dataset.toggle) {
+        var id = t.dataset.toggle;
+        openReplies[id] = !openReplies[id];
+        t.nextElementSibling.classList.toggle('open', openReplies[id]);
+        if (openReplies[id]) t.nextElementSibling.querySelector('textarea').focus();
+      } else if (t.dataset.send) {
+        var pid = t.dataset.send;
+        var ta = t.parentNode.querySelector('textarea');
+        var text = ta.value.trim();
+        if (!text) return;
+        t.disabled = true;
+        google.script.run
+          .withSuccessHandler(function () { drafts[pid] = ''; ta.value = ''; openReplies[pid] = false; refresh(); })
+          .withFailureHandler(function (e) { t.disabled = false; toast('댓글을 올리지 못했어요: ' + errMsg(e)); })
+          .addComment(pid, nameInput.value.trim(), text);
+      } else if (t.dataset.retry) {
+        t.disabled = true;
+        t.textContent = '요청 중…';
+        google.script.run
+          .withSuccessHandler(refresh)
+          .withFailureHandler(function (e) { toast('다시 받기 실패: ' + errMsg(e)); refresh(); })
+          .retryAnswer(t.dataset.retry);
+      }
+    });
+
+    refresh();
+    setInterval(function () { if (!document.hidden) refresh(); }, REFRESH_MS);
+  </script>
+</body>
+</html>
