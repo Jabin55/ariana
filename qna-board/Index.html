@@ -72,19 +72,23 @@
     .filter-note button { margin-left: 6px; }
     .sorting .label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
     .sorting .cards { columns: 280px; column-gap: 14px; }
-    .tone-0 { --tone: #8fd3a8; } .tone-1 { --tone: #8cc4ff; } .tone-2 { --tone: #ffd56b; } .tone-3 { --tone: #c3a6ff; }
-    .tone-x { --tone: #e2d6c2; }
+    /* 과목 색: --tone(칸 제목·띠), --soft(댓글 상자), --soft-ink(AI 이름 글씨) */
+    .tone-0 { --tone: #8fd3a8; --soft: #e8f7ec; --soft-ink: #2f7a48; }  /* 사회와 문화: 연두 */
+    .tone-1 { --tone: #8cc4ff; --soft: #eaf4ff; --soft-ink: #2560b5; }  /* 정치: 하늘 */
+    .tone-2 { --tone: #ffd56b; --soft: #fff6d6; --soft-ink: #8a6200; }  /* 경제: 연노랑 */
+    .tone-3 { --tone: #c3a6ff; --soft: #f1eaff; --soft-ink: #6a43c2; }  /* 법과 사회: 연보라 */
+    .tone-x { --tone: #e2d6c2; --soft: #f5f0e8; --soft-ink: #6b5a45; }  /* 분류 전 */
     .card { break-inside: avoid; background: var(--card); border-radius: 14px; padding: 14px;
       margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,.07); border-top: 6px solid var(--tone, #ffd56b); }
 
     .meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     .q { white-space: pre-wrap; word-break: break-word; font-size: 16px; line-height: 1.5; }
     .comments { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
-    .c { font-size: 14px; line-height: 1.55; word-break: break-word; }
+    .c { font-size: 14px; line-height: 1.55; word-break: break-word;
+      background: var(--soft, var(--ai-bg)); border-radius: 8px; padding: 8px 10px; }
     .c .who { font-weight: 600; font-size: 12px; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
     .c .av { width: 26px; height: 26px; flex: none; border-radius: 50%; background: #fff; object-fit: contain; }
-    .c.ai { background: var(--ai-bg); border-radius: 8px; padding: 8px 10px; }
-    .c.ai .who { color: var(--ai-ink); }
+    .c.ai .who { color: var(--soft-ink, var(--ai-ink)); }
     .c .body { white-space: pre-wrap; }
     .pending { font-size: 13px; color: var(--ai-ink); }
     .error { font-size: 13px; color: var(--err); }
