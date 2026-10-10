@@ -17,9 +17,10 @@
       background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%);
       box-shadow: 0 4px 14px rgba(255,122,89,.25); }
     .hero { position: relative; }
-    .teacher-link { position: absolute; top: 10px; right: 12px; font-size: 12px; text-decoration: none;
-      color: #5a3d2b; background: rgba(255,255,255,.7); border-radius: 999px; padding: 4px 10px; }
-    .teacher-link:hover { background: #fff; }
+    .teacher-bar { position: absolute; top: 10px; right: 12px; display: flex; gap: 6px; }
+    .teacher-bar a, .teacher-bar button { font: inherit; font-size: 12px; text-decoration: none; color: #5a3d2b;
+      background: rgba(255,255,255,.7); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+    .teacher-bar a:hover, .teacher-bar button:hover { background: #fff; }
     .hero .mascot { width: 96px; height: 96px; flex: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,.18)); }
     .hero img.mascot { object-fit: contain; }
     h1 { margin: 0 0 8px; font-size: 26px; color: #3a2414; }
@@ -144,7 +145,10 @@
   <header>
     <div class="hero">
       <? if (teacherUrl) { ?>
-        <a class="teacher-link" href="<?= teacherUrl ?>">🔒 교사 로그인</a>
+        <div class="teacher-bar">
+          <a id="teacherLink" href="<?= teacherUrl ?>">🔒 교사 로그인</a>
+          <button type="button" id="teacherLogout" hidden>로그아웃</button>
+        </div>
       <? } ?>
       <? if (characterUrl) { ?>
         <img class="mascot" src="<?= characterUrl ?>" alt="">
@@ -239,6 +243,24 @@
       clearTimeout(toast.timer);
       toast.timer = setTimeout(function () { t.style.display = 'none'; }, 3500);
     }
+    // 교사 로그인 상태(분석 페이지에서 로그인하면 이 탭이 닫힐 때까지 유지)를 게시판에도 보여 줍니다.
+    (function () {
+      var link = document.getElementById('teacherLink');
+      var out = document.getElementById('teacherLogout');
+      if (!link) return;
+      var loggedIn = false;
+      try { loggedIn = !!sessionStorage.getItem('teacherPw'); } catch (e) {}
+      if (!loggedIn) return;
+      link.textContent = '📊 학생 분석';
+      out.hidden = false;
+      out.addEventListener('click', function () {
+        try { sessionStorage.removeItem('teacherPw'); } catch (e) {}
+        link.textContent = '🔒 교사 로그인';
+        out.hidden = true;
+        toast('로그아웃했어요.');
+      });
+    })();
+
     function errMsg(e) { return (e && e.message) ? e.message : String(e); }
 
     function render(posts) {
