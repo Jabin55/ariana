@@ -88,6 +88,13 @@ var OLD_COMPETENCY_DESCS = [
 var NO_COMPETENCY = '없음';
 var MAX_COMPETENCIES = 2;
 
+// '나도 궁금해요' 공감. 한 사람(브라우저마다 만든 익명 번호)이 한 질문에 한 번만 누를 수 있습니다.
+var LIKES_SHEET = 'Likes';
+var LIKE_HEADERS = ['postId', 'voter', 'createdAt'];
+// 게시판 맨 위에 크게 띄우는 '토론 주제' 질문 (스크립트 속성에 질문 id를 저장)
+var PINNED_PROP = 'PINNED_POST_ID';
+var MAX_GROUP_QUESTIONS = 150; // 비슷한 질문 묶기에 한 번에 보내는 질문 수 (무료 한도 보호)
+
 // 선생님이 분석 화면에서 직접 고른 분류. AI가 자동 분류할 때 참고 예시로 보여 줍니다.
 // 잘못 저장된 예시는 시트의 이 탭에서 그 줄을 지우면 됩니다.
 var EXAMPLES_SHEET = '분류 예시';
@@ -180,6 +187,8 @@ function getBoard() {
     });
   });
 
+  var likes = likeCounts_();
+  var pinned = getProp_(PINNED_PROP, '');
   return posts
     .filter(function (p) { return p.id !== ''; })
     .map(function (p) {
@@ -190,10 +199,126 @@ function getBoard() {
         text: String(p.text),
         status: String(p.status),
         category: CATEGORIES.indexOf(String(p.category)) === -1 ? '' : String(p.category),
+        likes: likes[p.id] || 0,
+        pinned: String(p.id) === pinned,
         comments: byPost[p.id] || []
       };
     })
     .reverse();
+}
+
+/* ───────────── 나도 궁금해요 · 토론 주제 · 내 질문 성장 ───────────── */
+
+function likeCounts_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(LIKES_SHEET)) return {};
+  var counts = {};
+  readRows_(getSheet_(LIKES_SHEET, LIKE_HEADERS), LIKE_HEADERS).forEach(function (r) {
+    if (r.postId !== '') counts[r.postId] = (counts[r.postId] || 0) + 1;
+  });
+  return counts;
+}
+
+/**
+ * '나도 궁금해요'를 누르거나 취소합니다. voter는 브라우저마다 만든 익명 번호입니다.
+ * { liked: 지금 누른 상태인지, likes: 공감 수 }를 돌려줍니다.
+ */
+function toggleLike(postId, voter) {
+  voter = String(voter || '').replace(/[^\w-]/g, '').slice(0, 64);
+  if (!voter) throw new Error('잠시 후 다시 눌러 주세요.');
+  return withLock_(function () {
+    if (!findPostRow_(postId)) throw new Error('질문을 찾을 수 없어요.');
+    var sheet = getSheet_(LIKES_SHEET, LIKE_HEADERS);
+    var rows = readRows_(sheet, LIKE_HEADERS);
+    var mineRow = -1, count = 0;
+    rows.forEach(function (r, i) {
+      if (String(r.postId) !== String(postId)) return;
+      count++;
+      if (String(r.voter) === voter) mineRow = i + 2;
+    });
+    if (mineRow !== -1) {
+      sheet.deleteRow(mineRow);
+      return { liked: false, likes: count - 1 };
+    }
+    sheet.appendRow([String(postId), voter, new Date()]);
+    return { liked: true, likes: count + 1 };
+  });
+}
+
+/** 선생님이 질문 하나를 게시판 맨 위 '토론 주제'로 띄웁니다. postId가 비면 내립니다. */
+function setPinned(password, postId) {
+  checkTeacher_(password);
+  postId = String(postId || '');
+  if (postId && !findPostRow_(postId)) throw new Error('질문을 찾을 수 없어요.');
+  var props = PropertiesService.getScriptProperties();
+  if (postId) props.setProperty(PINNED_PROP, postId);
+  else props.deleteProperty(PINNED_PROP);
+  return postId;
+}
+
+/**
+ * 학생 본인의 질문 성장 기록. 이 브라우저에서 올린 질문 id(추측할 수 없는 긴 번호)와,
+ * 학교 계정으로 들어왔다면 그 계정으로 쓴 질문만 돌려줍니다. 다른 학생 기록은 볼 수 없습니다.
+ */
+function getMyGrowth(ids) {
+  var want = {};
+  (Array.isArray(ids) ? ids : []).slice(0, 500).forEach(function (id) { want[String(id)] = true; });
+  var email = currentEmail_();
+  return readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS)
+    .filter(function (p) { return p.id !== '' && (want[String(p.id)] || (email && String(p.email) === email)); })
+    .map(function (p) {
+      return { createdAt: toIso_(p.createdAt), text: String(p.text), category: validCategory_(p.category),
+        level: validLevel_(p.level) };
+    });
+}
+
+/**
+ * 비슷한 질문 묶기. 선생님이 분석 화면에서 고른 질문들을 AI가 주제별로 묶고, 묶음마다 핵심 궁금증을 요약합니다.
+ * ids: 묶을 질문 id 목록 (분석 화면의 현재 필터 결과)
+ */
+function groupQuestions(password, ids) {
+  checkTeacher_(password);
+  var want = {};
+  (Array.isArray(ids) ? ids : []).forEach(function (id) { want[String(id)] = true; });
+  var posts = readRows_(getSheet_(POSTS_SHEET, POST_HEADERS), POST_HEADERS)
+    .filter(function (p) { return p.id !== '' && want[String(p.id)] && String(p.text).trim(); })
+    .slice(-MAX_GROUP_QUESTIONS);
+  if (posts.length < 2) throw new Error('묶을 질문이 2개 이상 있어야 해요.');
+  var list = posts.map(function (p, i) { return (i + 1) + '. ' + String(p.text).replace(/\s+/g, ' ').slice(0, 200); }).join('\n');
+  var schema = {
+    type: 'OBJECT',
+    properties: {
+      groups: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            title: { type: 'STRING', description: '묶음 이름 (핵심 개념이나 주제, 15자 안팎)' },
+            summary: { type: 'STRING', description: '이 묶음에서 학생들이 공통으로 궁금해하거나 헷갈려하는 점 한두 문장' },
+            numbers: { type: 'ARRAY', items: { type: 'INTEGER' }, description: '이 묶음에 속하는 질문 번호' }
+          },
+          required: ['title', 'summary', 'numbers']
+        }
+      }
+    },
+    required: ['groups']
+  };
+  var r = callGeminiJson_([{ role: 'user', parts: [{ text:
+    '다음은 고등학교 사회과 수업에서 학생들이 올린 질문이야. 내용이 비슷한 질문끼리 묶어 줘. ' +
+    '모든 질문은 정확히 한 묶음에만 넣고, 비슷한 질문이 없으면 혼자 한 묶음이 되어도 괜찮아. ' +
+    '묶음은 질문이 많은 순서로 정렬해.\n\n' + list }] }],
+    schema, '너는 고등학교 사회과 교사가 수업을 준비하도록 돕는 도우미야.');
+  var used = {};
+  var groups = (r.groups || []).map(function (g) {
+    var members = (g.numbers || []).map(function (n) { return posts[n - 1]; })
+      .filter(function (p) { return p && !used[p.id] && (used[p.id] = true); })
+      .map(function (p) { return String(p.id); });
+    return { title: String(g.title || '').slice(0, 60), summary: String(g.summary || '').slice(0, 300), ids: members };
+  }).filter(function (g) { return g.ids.length; });
+  var rest = posts.filter(function (p) { return !used[p.id]; }).map(function (p) { return String(p.id); });
+  if (rest.length) groups.push({ title: '기타', summary: '', ids: rest });
+  groups.sort(function (a, b) { return b.ids.length - a.ids.length; });
+  return groups;
 }
 
 /** 질문을 저장하고 곧바로 AI 답변을 시도합니다. */
@@ -343,6 +468,7 @@ function getAnalysis(password) {
   checkTeacher_(password);
 
   var cfg = analysisConfig_();
+  var likes = likeCounts_();
   var comments = readRows_(getSheet_(COMMENTS_SHEET, COMMENT_HEADERS), COMMENT_HEADERS);
   var followUps = {}; // 글쓴이가 자기 질문에 단 후속 댓글 수
   var authorOf = {};
@@ -354,6 +480,7 @@ function getAnalysis(password) {
 
   return {
     categories: CATEGORIES,
+    pinned: getProp_(PINNED_PROP, ''),
     units: cfg.units,
     competencies: cfg.competencies,
     levels: LEVELS.map(function (l) { return { name: l[0], desc: l[1] }; }),
@@ -367,6 +494,7 @@ function getAnalysis(password) {
         text: String(p.text),
         category: category,
         unit: validUnit_(category, p.unit),
+        likes: likes[p.id] || 0,
         competencies: [], // 질문은 역량을 평가하지 않습니다
         noCompetency: false,
         level: validLevel_(p.level),

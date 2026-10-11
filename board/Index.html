@@ -108,6 +108,30 @@
     .error { font-size: 13px; color: var(--err); }
     .reply { margin-top: 8px; display: none; gap: 6px; }
     .reply.open { display: grid; }
+    /* 나도 궁금해요 */
+    .card-actions { margin-top: 8px; }
+    .like { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+      background: #f6f1e7; color: #5a4a36; border: 1px solid transparent; }
+    .like b { margin-left: 4px; }
+    .like.on { background: var(--soft, #fff1e0); border-color: var(--tone, #ffb36b); color: #3a2a18; font-weight: 600; }
+    /* 토론 주제 (선생님이 맨 위에 띄운 질문) */
+    .pin-banner { margin-bottom: 20px; border-radius: 18px; padding: 14px; background: var(--soft);
+      border: 2px solid var(--tone); }
+    .pin-banner .pin-label { font-weight: 700; font-size: 15px; color: var(--soft-ink); margin-bottom: 10px; }
+    .pin-banner .card { margin-bottom: 0; }
+    .pin-banner .q { font-size: 22px; font-weight: 600; }
+    @media (max-width: 520px) { .pin-banner .q { font-size: 18px; } }
+    /* 내 질문 성장 */
+    .growth-bg { position: fixed; inset: 0; background: rgba(40,30,20,.45); z-index: 50; display: flex;
+      align-items: center; justify-content: center; padding: 16px; }
+    .growth-bg[hidden] { display: none; }
+    .growth { background: #fff; border-radius: 16px; padding: 18px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+    .growth h2 { margin: 0 0 4px; font-size: 18px; }
+    .growth .sub { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .growth svg { width: 100%; height: auto; display: block; }
+    .growth .tip { background: #fff7e8; border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.6; margin-top: 12px; }
+    .growth .tip b { color: #8a4b12; }
+    .growth .close { float: right; }
     .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #333;
       color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; display: none; }
   </style>
@@ -179,6 +203,7 @@
       </div>
       <div class="names" id="names"></div>
       <div class="filter-note" id="filterNote" style="display:none"></div>
+      <button type="button" class="link" id="growthBtn">📈 내 질문 성장 보기</button>
     </div>
     </div>
 
@@ -186,6 +211,14 @@
   </main>
 
   <div class="toast" id="toast"></div>
+  <div class="growth-bg" id="growthBg" hidden>
+    <div class="growth" role="dialog" aria-labelledby="growthTitle">
+      <button type="button" class="link close" id="growthClose">닫기 ✕</button>
+      <h2 id="growthTitle">📈 내 질문 성장</h2>
+      <div class="sub">내가 올린 질문이 얼마나 깊어지고 있는지 보여 줘요. 나만 볼 수 있어요.</div>
+      <div id="growthBody"></div>
+    </div>
+  </div>
 
   <script>
     var REFRESH_MS = 10000;
@@ -214,6 +247,23 @@
       mine[id] = 1;
       try { localStorage.setItem('qna-mine', JSON.stringify(mine)); } catch (e) {}
     }
+    // 내가 올린 질문 (내 질문 성장 보기용)
+    var myQuestions = [];
+    try { myQuestions = JSON.parse(localStorage.getItem('qna-myq') || '[]') || []; } catch (e) {}
+    function markMyQuestion(id) {
+      if (myQuestions.indexOf(id) === -1) myQuestions.push(id);
+      try { localStorage.setItem('qna-myq', JSON.stringify(myQuestions)); } catch (e) {}
+    }
+    // '나도 궁금해요'용 익명 번호와 내가 누른 질문
+    var voter = '';
+    try { voter = localStorage.getItem('qna-voter') || ''; } catch (e) {}
+    if (!voter) {
+      voter = 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      try { localStorage.setItem('qna-voter', voter); } catch (e) {}
+    }
+    var myLikes = {};
+    try { myLikes = JSON.parse(localStorage.getItem('qna-likes') || '{}') || {}; } catch (e) {}
+    function saveLikes() { try { localStorage.setItem('qna-likes', JSON.stringify(myLikes)); } catch (e) {} }
 
     // 이름은 이 브라우저에 기억해 둡니다.
     var nameInput = document.getElementById('qName');
@@ -309,7 +359,16 @@
                           : '<div class="col-empty">아직 질문이 없어요</div>') +
           '</section>';
       }).join('') + '</div>';
-      grid.innerHTML = html + sortingHtml;
+      // 선생님이 띄운 토론 주제는 맨 위에 크게 보여 줍니다.
+      var pinned = posts.filter(function (p) { return p.pinned; })[0];
+      var pinHtml = '';
+      if (pinned) {
+        var ti = CATEGORIES.indexOf(pinned.category);
+        var tone = ti === -1 ? 'x' : ti;
+        pinHtml = '<section class="pin-banner tone-' + tone + '"><div class="pin-label">🗣️ 토론 주제 · 함께 생각해 봐요</div>' +
+          card(pinned, tone) + '</section>';
+      }
+      grid.innerHTML = pinHtml + html + sortingHtml;
     }
 
     // 이번 달 질문은 그대로 보여 주고, 지난 달 질문은 "2026년 10월" 묶음으로 접어 둡니다.
@@ -401,6 +460,9 @@
           picker +
           '<div class="meta">' + esc(p.author) + ' · ' + when(p.createdAt) + '</div>' +
           '<div class="q">' + esc(p.text) + '</div>' +
+          (p.local ? '' : '<div class="card-actions"><button type="button" class="like' + (myLikes[p.id] ? ' on' : '') +
+            '" data-like="' + esc(p.id) + '" aria-pressed="' + (myLikes[p.id] ? 'true' : 'false') + '">🙋 나도 궁금해요<b>' +
+            (p.likes || 0) + '</b></button></div>') +
           '<div class="comments">' + comments + state + replyBox + '</div></div>';
     }
 
@@ -472,7 +534,7 @@
       btn.disabled = false;
 
       google.script.run
-        .withSuccessHandler(function (id) { markMine(id); justPosted[id] = 1; openTalks[id] = true; localPending.splice(localPending.indexOf(temp), 1); refresh(); })
+        .withSuccessHandler(function (id) { markMine(id); markMyQuestion(id); justPosted[id] = 1; openTalks[id] = true; localPending.splice(localPending.indexOf(temp), 1); refresh(); })
         .withFailureHandler(function (e) {
           localPending.splice(localPending.indexOf(temp), 1);
           textEl.value = text;
@@ -511,6 +573,11 @@
       if (mh) {
         openMonths[mh.dataset.month] = !openMonths[mh.dataset.month];
         render(lastPosts);
+        return;
+      }
+      var likeBtn = ev.target.closest('[data-like]');
+      if (likeBtn) {
+        toggleLike(likeBtn.dataset.like);
         return;
       }
       var t = ev.target;
@@ -553,6 +620,97 @@
 
     refresh();
     setInterval(function () { if (!document.hidden) refresh(); }, REFRESH_MS);
+
+    /* ── 나도 궁금해요 ── */
+    function toggleLike(postId) {
+      var post = lastPosts.filter(function (p) { return p.id === postId; })[0];
+      if (!post) return;
+      // 화면에 먼저 반영하고, 서버 결과로 맞춥니다.
+      var on = !myLikes[postId];
+      if (on) myLikes[postId] = 1; else delete myLikes[postId];
+      post.likes = Math.max(0, (post.likes || 0) + (on ? 1 : -1));
+      saveLikes();
+      render(lastPosts);
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (r.liked) myLikes[postId] = 1; else delete myLikes[postId];
+          post.likes = r.likes;
+          saveLikes();
+          render(lastPosts);
+        })
+        .withFailureHandler(function (e) { toast('공감을 저장하지 못했어요: ' + errMsg(e)); refresh(); })
+        .toggleLike(postId, voter);
+    }
+
+    /* ── 내 질문 성장 보기 ── */
+    var LEVELS = ['지식', '이해', '적용', '분석', '종합', '평가'];
+    var LEVEL_COLORS = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#184f95', '#0d366b'];
+    // 지금 주로 하는 질문 수준에서 한 단계 더 나아가 볼 질문 틀
+    var NEXT_STEP = [
+      '<b>"왜 그럴까?"</b>, <b>"○○와 △△는 뭐가 다를까?"</b>처럼 이유와 차이를 물어보세요. (이해)',
+      '<b>"이걸 우리 학교·동네에 적용하면?"</b>, <b>"뉴스 속 이 사례도 같은 경우일까?"</b>처럼 실제 사례에 연결해 보세요. (적용)',
+      '<b>"이 일이 생긴 원인은 뭘까?"</b>, <b>"누구에게 어떤 영향이 있을까?"</b>처럼 원인과 영향을 나누어 보세요. (분석)',
+      '<b>"이 문제를 해결하려면 어떤 방법이 있을까?"</b>, <b>"두 생각을 합치면 어떤 대안이 나올까?"</b>처럼 새 방안을 만들어 보세요. (종합)',
+      '<b>"이 제도는 공정할까?"</b>, <b>"어떤 기준으로 판단해야 할까?"</b>처럼 기준을 세워 판단해 보세요. (평가)',
+      '이미 가장 깊은 수준의 질문을 하고 있어요! <b>"반대 입장에서는 어떻게 볼까?"</b>처럼 다른 관점에서도 따져 보세요.'
+    ];
+    document.getElementById('growthBtn').addEventListener('click', function () {
+      var body = document.getElementById('growthBody');
+      body.textContent = '불러오는 중…';
+      document.getElementById('growthBg').hidden = false;
+      google.script.run
+        .withSuccessHandler(renderGrowth)
+        .withFailureHandler(function (e) { body.textContent = '불러오지 못했어요: ' + errMsg(e); })
+        .getMyGrowth(myQuestions);
+    });
+    document.getElementById('growthClose').addEventListener('click', function () { document.getElementById('growthBg').hidden = true; });
+    document.getElementById('growthBg').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+
+    function renderGrowth(list) {
+      var body = document.getElementById('growthBody');
+      list = (list || []).slice().sort(function (a, b) { return a.createdAt < b.createdAt ? -1 : 1; });
+      var leveled = list.filter(function (q) { return LEVELS.indexOf(q.level) !== -1; });
+      if (!list.length) {
+        body.innerHTML = '<p>아직 이 기기에서 올린 질문이 없어요. 질문을 올리면 여기에서 내 질문이 어떻게 깊어지는지 볼 수 있어요.</p>' +
+          '<p class="sub">질문은 이 브라우저에 기억돼요. 다른 기기나 브라우저에서 올린 질문은 보이지 않아요.</p>';
+        return;
+      }
+      if (!leveled.length) {
+        body.innerHTML = '<p>질문 ' + list.length + '개를 올렸어요. 아직 수준 분석이 끝나지 않았어요. 조금 뒤에 다시 열어 보세요.</p>';
+        return;
+      }
+      // 시간 순서대로 점을 찍고 잇는 그래프 (위로 갈수록 깊은 질문)
+      var W = 420, H = 230, L = 46, R = 12, T = 12, B = 28;
+      var n = leveled.length;
+      var x = function (i) { return n === 1 ? (L + W - R) / 2 : L + i * (W - L - R) / (n - 1); };
+      var y = function (lv) { return T + (5 - lv) * (H - T - B) / 5; };
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="질문 수준 변화">';
+      LEVELS.forEach(function (name, i) {
+        svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(i) + '" y2="' + y(i) + '" stroke="#eee6d8" />' +
+          '<text x="' + (L - 8) + '" y="' + (y(i) + 4) + '" text-anchor="end" font-size="14" fill="#6f675b">' + name + '</text>';
+      });
+      var pts = leveled.map(function (q, i) { return x(i) + ',' + y(LEVELS.indexOf(q.level)); });
+      if (n > 1) svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#c9bfae" stroke-width="2" />';
+      leveled.forEach(function (q, i) {
+        var lv = LEVELS.indexOf(q.level);
+        svg += '<circle cx="' + x(i) + '" cy="' + y(lv) + '" r="6" fill="' + LEVEL_COLORS[lv] + '" stroke="#fff" stroke-width="2">' +
+          '<title>' + esc(when(q.createdAt) + ' · ' + q.level + ' · ' + q.text) + '</title></circle>';
+      });
+      svg += '<text x="' + L + '" y="' + (H - 6) + '" font-size="13" fill="#6f675b">처음 질문</text>' +
+        '<text x="' + (W - R) + '" y="' + (H - 6) + '" font-size="13" fill="#6f675b" text-anchor="end">최근 질문</text></svg>';
+
+      // 최근 질문(최대 5개)에서 가장 많이 한 수준을 기준으로 다음 단계를 제안
+      var recent = leveled.slice(-5), cnt = [0, 0, 0, 0, 0, 0];
+      recent.forEach(function (q) { cnt[LEVELS.indexOf(q.level)]++; });
+      var top = Math.max.apply(null, cnt);
+      var main = cnt.lastIndexOf(top); // 같은 개수면 더 깊은 수준을 기준으로
+      var first = LEVELS.indexOf(leveled[0].level), last = LEVELS.indexOf(leveled[n - 1].level);
+      var cheer = n > 1 && last > first ? '처음보다 질문이 한층 깊어졌어요! 👏 ' : '';
+      var high = leveled.filter(function (q) { return LEVELS.indexOf(q.level) >= 3; }).length;
+      body.innerHTML = svg +
+        '<div class="sub" style="margin-top:8px">질문 ' + list.length + '개 · 깊은 질문(분석·종합·평가) ' + high + '개</div>' +
+        '<div class="tip">' + cheer + '요즘 내 질문은 주로 <b>' + LEVELS[main] + '</b> 수준이에요.<br>다음엔 ' + NEXT_STEP[main] + '</div>';
+    }
   </script>
 </body>
 </html>

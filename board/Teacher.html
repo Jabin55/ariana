@@ -73,6 +73,16 @@
     th { color: var(--muted); font-weight: 600; white-space: nowrap; }
     td.num { font-variant-numeric: tabular-nums; }
     td.nw { white-space: nowrap; }
+    .pin { font-size: 12px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+    .pin.on { background: var(--accent); color: #fff; }
+    tr.pinned td { background: #fff4ec; }
+    .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+    .group { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fffdf9; }
+    .group h3 { margin: 0 0 4px; font-size: 15px; display: flex; justify-content: space-between; gap: 8px; }
+    .group h3 .cnt { font-size: 12px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+    .group .sum { font-size: 13px; color: #5a4a36; background: #fff4e0; border-radius: 8px; padding: 6px 8px; margin: 6px 0 8px; }
+    .group ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; }
+    .group li .who { color: var(--muted); font-size: 12px; }
     td.muted-cell { color: var(--muted); font-size: 12px; }
     tr.click { cursor: pointer; }
     tr.click:hover { background: #faf5ec; }
@@ -166,6 +176,14 @@
         <h2>학생별 현황</h2>
         <p class="hint">이름을 누르면 그 학생의 분석을 볼 수 있어요.</p>
         <div class="table-wrap"><table id="students"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>비슷한 질문 묶기</h2>
+        <p class="hint">위에서 고른 학생·과목·기간·막대에 해당하는 질문을 AI가 주제별로 묶고, 묶음마다 학생들이 궁금해하는 핵심을 요약해요.</p>
+        <button type="button" id="groupBtn">🧩 지금 보이는 질문 묶기</button>
+        <div class="err" id="groupErr"></div>
+        <div class="groups" id="groups"></div>
       </section>
 
       <section class="panel">
@@ -326,12 +344,44 @@
       // 역량 체크박스 목록은 바깥을 누르면 닫습니다.
       if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick .menu').forEach(function (m) { m.remove(); });
       if (!state.pick || !data) return;
-      if (e.target.closest('.brow.pickable, button, select, input, a, label, #questions, #comments, #students')) return;
+      if (e.target.closest('.brow.pickable, button, select, input, a, label, #questions, #comments, #students, #groups')) return;
       setPick(null);
     });
     window.addEventListener('scroll', function () {
       document.querySelectorAll('.cpick .menu').forEach(function (m) { if (m.place) m.place(); });
     }, true);
+
+    /* ── 비슷한 질문 묶기 ── */
+    var visiblePosts = [];
+    $('groupBtn').addEventListener('click', function () {
+      var btn = this;
+      $('groupErr').textContent = '';
+      if (visiblePosts.length < 2) { $('groupErr').textContent = '묶을 질문이 2개 이상 있어야 해요.'; return; }
+      btn.disabled = true;
+      btn.textContent = '묶는 중… (질문이 많으면 30초쯤 걸려요)';
+      google.script.run
+        .withSuccessHandler(function (groups) { btn.disabled = false; btn.textContent = '🧩 지금 보이는 질문 묶기'; renderGroups(groups); })
+        .withFailureHandler(function (e) {
+          btn.disabled = false; btn.textContent = '🧩 지금 보이는 질문 묶기';
+          $('groupErr').textContent = (e && e.message || String(e)).replace(/^Error:\s*/, '');
+        })
+        .groupQuestions(load('teacherPw'), visiblePosts.map(function (p) { return p.id; }));
+    });
+    function renderGroups(groups) {
+      var box = $('groups');
+      box.innerHTML = '';
+      groups.forEach(function (g) {
+        var items = g.ids.map(postById).filter(Boolean);
+        var likes = items.reduce(function (a, p) { return a + (p.likes || 0); }, 0);
+        box.appendChild(el('div', { cls: 'group' }, [
+          el('h3', {}, [g.title, el('span', { cls: 'cnt', text: '질문 ' + items.length + '개' + (likes ? ' · 🙋 ' + likes : '') })]),
+          g.summary ? el('div', { cls: 'sum', text: g.summary }) : null,
+          el('ul', {}, items.map(function (p) {
+            return el('li', {}, [p.text + ' ', el('span', { cls: 'who', text: '— ' + p.author + (p.likes ? ' · 🙋 ' + p.likes : '') })]);
+          }))
+        ]));
+      });
+    }
 
     /* ── 그리기 ── */
     function render() {
@@ -346,7 +396,8 @@
       renderStudents(posts, comments);
       // 역량 막대를 고르면 질문 목록은 그대로 두고 댓글 목록만 거릅니다 (질문은 역량을 보지 않음).
       var commentOnly = state.pick && state.pick.type === 'comp';
-      renderQuestions(commentOnly ? posts : posts.filter(matchesPick));
+      visiblePosts = commentOnly ? posts : posts.filter(matchesPick);
+      renderQuestions(visiblePosts);
       renderComments(comments.filter(matchesPick));
     }
 
@@ -637,22 +688,40 @@
       t.innerHTML = '';
       t.appendChild(el('tr', {}, heads.map(function (h) { return el('th', { text: h }); })));
       if (!rows.length) { t.appendChild(el('tr', {}, [el('td', { colspan: heads.length, cls: 'empty', text: emptyText })])); return; }
-      rows.forEach(function (cells) { t.appendChild(el('tr', {}, cells)); });
+      rows.forEach(function (cells) { t.appendChild(el('tr', { cls: cells.rowClass || '' }, cells)); });
     }
 
     /** 질문 목록: 과목 · 대단원 · 인지적 수준 */
     function renderQuestions(posts) {
       if (state.pick && state.pick.type === 'comp') $('pickNote').innerHTML = ''; // 역량 선택은 댓글 목록에만 적용
       else pickNote($('pickNote'), '질문');
-      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목', '대단원', '인지적 수준', '질문']);
+      var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목', '대단원', '인지적 수준', '질문', '🙋 공감', '토론 주제']);
       table($('questions'), heads, newestFirst(posts).map(function (p) {
         var cells = [dateCell(p)];
         if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
         cells = cells.concat(subjectCells(p));
         cells.push(levelCell(p));
         cells.push(el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
+        cells.push(el('td', { cls: 'num', text: String(p.likes || 0) }));
+        cells.push(el('td', {}, [pinButton(p)]));
+        if (data.pinned === p.id) cells.rowClass = 'pinned';
         return cells;
       }), '해당하는 질문이 없어요.');
+    }
+
+    /** 토론 주제 띄우기 버튼. 하나만 띄울 수 있고, 다시 누르면 내립니다. */
+    function pinButton(p) {
+      var on = data.pinned === p.id;
+      var b = el('button', { type: 'button', cls: 'pin ' + (on ? 'on' : 'ghost'), text: on ? '📌 띄우는 중' : '📌 띄우기',
+        title: on ? '게시판에서 내리기' : '게시판 맨 위에 토론 주제로 띄우기' });
+      b.addEventListener('click', function () {
+        b.disabled = true;
+        google.script.run
+          .withSuccessHandler(function (id) { data.pinned = id; render(); })
+          .withFailureHandler(function (e) { b.disabled = false; alert((e && e.message || String(e)).replace(/^Error:\s*/, '')); })
+          .setPinned(load('teacherPw'), on ? '' : p.id);
+      });
+      return b;
     }
 
     /** 댓글 목록: 원래 질문의 과목 · 대단원, 인지적 수준, 사회과 교과 역량 */
