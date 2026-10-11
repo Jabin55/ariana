@@ -17,7 +17,9 @@
       background: linear-gradient(120deg, #ffd56b 0%, #ff9f7a 55%, #ff7aa8 100%);
       box-shadow: 0 4px 14px rgba(255,122,89,.25); }
     .hero { position: relative; }
-    .teacher-bar { position: absolute; top: 10px; right: 12px; display: flex; gap: 6px; }
+    .teacher-bar { position: absolute; top: 10px; right: 12px; left: 12px; display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; pointer-events: none; }
+    .teacher-bar > * { pointer-events: auto; }
+    .teacher-bar a.school-login { background: #fff; color: #b4471f; font-weight: 700; }
     .teacher-bar a, .teacher-bar button { font: inherit; font-size: 12px; text-decoration: none; color: #5a3d2b;
       background: rgba(255,255,255,.7); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
     .teacher-bar a:hover, .teacher-bar button:hover { background: #fff; }
@@ -32,7 +34,6 @@
     .howto { margin-top: 10px; font-size: 13px; color: #4a2e1c; line-height: 1.5; }
     .login-note { margin-top: 8px; font-size: 13px; line-height: 1.5; background: rgba(255,255,255,.7); border-radius: 10px;
       padding: 6px 10px; color: #4a2e1c; display: inline-block; }
-    .login-note a { color: #b4471f; font-weight: 700; margin-left: 4px; white-space: nowrap; }
     @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; }
       .hero { padding-top: 34px; } }
     main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
@@ -171,10 +172,14 @@
 
   <header>
     <div class="hero">
-      <? if (teacherUrl) { ?>
+      <? var showLogin = loginUrl && !userEmail; ?>
+      <? if (teacherUrl || showLogin) { ?>
         <div class="teacher-bar">
-          <a id="teacherLink" href="<?= teacherUrl ?>">🔒 교사 로그인</a>
-          <button type="button" id="teacherLogout" hidden>로그아웃</button>
+          <? if (showLogin) { ?><a class="school-login" href="<?= loginUrl ?>">🔑 학교 계정 로그인</a><? } ?>
+          <? if (teacherUrl) { ?>
+            <a id="teacherLink" href="<?= teacherUrl ?>">🔒 교사 로그인</a>
+            <button type="button" id="teacherLogout" hidden>로그아웃</button>
+          <? } ?>
         </div>
       <? } ?>
       <? if (characterUrl) { ?>
@@ -189,7 +194,7 @@
         <? if (userEmail) { ?>
           <div class="login-note">✔ 학교 계정(<?= userEmail ?>)으로 쓰고 있어요. 선생님이 여러분의 질문과 생각을 살펴보고 수업에 반영할 거예요.</div>
         <? } else if (loginUrl) { ?>
-          <div class="login-note">🔑 학교 계정으로 로그인해서 쓰면 선생님이 여러분의 질문과 생각을 더 잘 살펴볼 수 있어요.<a href="<?= loginUrl ?>">학교 계정으로 쓰기 →</a></div>
+          <div class="login-note">🔑 학교 계정으로 로그인해서 쓰면 선생님이 여러분의 질문과 생각을 더 잘 살펴볼 수 있어요. 오른쪽 위 <b>학교 계정 로그인</b>을 눌러 보세요.</div>
         <? } ?>
       </div>
     </div>
