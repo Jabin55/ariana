@@ -174,7 +174,7 @@
 
       <section class="panel" id="studentsPanel">
         <h2>학생별 현황</h2>
-        <p class="hint">이름을 누르면 그 학생의 분석을 볼 수 있어요.</p>
+        <p class="hint">이름을 누르면 그 학생의 분석을 볼 수 있어요. ✔는 학교 계정으로 로그인해서 쓴 학생이에요 (계정으로 묶여서 이름을 다르게 써도 같은 학생으로 보여요).</p>
         <div class="table-wrap"><table id="students"></table></div>
       </section>
 
@@ -282,18 +282,44 @@
         c.unit = p.unit;
         c.postText = p.text;
       });
+      prepareIdentity();
+    }
+
+    /**
+     * 학생 구분: 학교 계정으로 쓴 글은 계정(이메일)으로 같은 학생으로 묶고 이름 뒤에 ✔를 붙입니다.
+     * 익명 주소로 쓴 글은 입력한 이름으로 구분합니다.
+     */
+    var whoNames = {};
+    function prepareIdentity() {
+      var latest = {};
+      whoNames = {};
+      data.posts.concat(data.comments).forEach(function (x) {
+        x.who = x.email ? 'e:' + x.email : 'n:' + x.author;
+        if (!x.email) { whoNames[x.who] = x.author; return; }
+        var named = x.author && x.author !== '익명';
+        var cur = latest[x.who];
+        if (!cur || (named && (!cur.named || x.createdAt > cur.at))) latest[x.who] = { name: x.author, at: x.createdAt, named: named };
+      });
+      Object.keys(latest).forEach(function (k) {
+        var l = latest[k];
+        whoNames[k] = (l.named ? l.name : k.slice(2).split('@')[0]) + ' ✔';
+      });
+      data.posts.concat(data.comments).forEach(function (x) { x.whoName = whoNames[x.who]; });
+    }
+    function whoCell(x) {
+      return el('td', { cls: 'nw', text: x.whoName, title: x.email ? '학교 계정: ' + x.email : '익명 주소에서 입력한 이름' });
     }
 
     function setupControls() {
       var names = {}, cnames = {};
-      data.posts.forEach(function (p) { names[p.author] = (names[p.author] || 0) + 1; });
-      data.comments.forEach(function (c) { cnames[c.author] = (cnames[c.author] || 0) + 1; if (!names[c.author]) names[c.author] = 0; });
+      data.posts.forEach(function (p) { names[p.who] = (names[p.who] || 0) + 1; });
+      data.comments.forEach(function (c) { cnames[c.who] = (cnames[c.who] || 0) + 1; if (!names[c.who]) names[c.who] = 0; });
       var sel = $('fStudent');
       var keep = state.student;
       sel.innerHTML = '';
       sel.appendChild(el('option', { value: '', text: '학생 전체' }));
-      Object.keys(names).sort(function (a, b) { return a.localeCompare(b, 'ko'); }).forEach(function (n) {
-        sel.appendChild(el('option', { value: n, text: n + ' (질문 ' + names[n] + (cnames[n] ? ' · 댓글 ' + cnames[n] : '') + ')' }));
+      Object.keys(names).sort(function (a, b) { return whoNames[a].localeCompare(whoNames[b], 'ko'); }).forEach(function (n) {
+        sel.appendChild(el('option', { value: n, text: whoNames[n] + ' (질문 ' + names[n] + (cnames[n] ? ' · 댓글 ' + cnames[n] : '') + ')' }));
       });
       sel.value = names[keep] !== undefined ? keep : '';
       state.student = sel.value;
@@ -310,7 +336,7 @@
     function baseComments() { return baseFilter(data.comments); }
     function baseFilter(list) {
       return list.filter(function (p) {
-        if (state.student && p.author !== state.student) return false;
+        if (state.student && p.who !== state.student) return false;
         if (state.subject && p.category !== state.subject) return false;
         var d = localDate(p.createdAt);
         if (state.from && d < state.from) return false;
@@ -377,7 +403,7 @@
           el('h3', {}, [g.title, el('span', { cls: 'cnt', text: '질문 ' + items.length + '개' + (likes ? ' · 🙋 ' + likes : '') })]),
           g.summary ? el('div', { cls: 'sum', text: g.summary }) : null,
           el('ul', {}, items.map(function (p) {
-            return el('li', {}, [p.text + ' ', el('span', { cls: 'who', text: '— ' + p.author + (p.likes ? ' · 🙋 ' + p.likes : '') })]);
+            return el('li', {}, [p.text + ' ', el('span', { cls: 'who', text: '— ' + p.whoName + (p.likes ? ' · 🙋 ' + p.likes : '') })]);
           }))
         ]));
       });
@@ -403,7 +429,7 @@
 
     function renderStats(posts, comments) {
       var authors = {};
-      posts.forEach(function (p) { authors[p.author] = 1; });
+      posts.forEach(function (p) { authors[p.who] = 1; });
       var box = $('stats');
       box.innerHTML = '';
       var leveled = posts.concat(comments).filter(function (p) { return p.level; });
@@ -523,7 +549,7 @@
       if (state.student) return;
       var by = {};
       posts.forEach(function (p) {
-        var s = student(by, p.author);
+        var s = student(by, p.who);
         s.n++;
         if (p.category) s.cat[p.category] = (s.cat[p.category] || 0) + 1;
         if (p.level) {
@@ -533,7 +559,7 @@
         }
       });
       comments.forEach(function (c) {
-        var s = student(by, c.author);
+        var s = student(by, c.who);
         s.nc++;
         c.competencies.forEach(function (x) { s.comp[x] = (s.comp[x] || 0) + 1; });
         if (c.level) {
@@ -549,7 +575,7 @@
       t.appendChild(el('tr', {}, ['이름', '질문', '댓글', '많이 물은 과목', '주로 드러난 역량', '주된 인지적 수준', '높은 수준 질문 비중'].map(function (h) { return el('th', { text: h }); })));
       if (!rows.length) { t.appendChild(el('tr', {}, [el('td', { colspan: 7, cls: 'empty', text: '질문이 없어요.' })])); return; }
       rows.forEach(function (s) {
-        t.appendChild(el('tr', { cls: 'click', onclick: function () { state.student = s.name; state.pick = null; render(); window.scrollTo(0, 0); } }, [
+        t.appendChild(el('tr', { cls: 'click', onclick: function () { state.student = s.key; state.pick = null; render(); window.scrollTo(0, 0); } }, [
           el('td', { cls: 'nw', text: s.name }), el('td', { cls: 'num', text: String(s.n) }), el('td', { cls: 'num', text: String(s.nc) }),
           el('td', { text: topKey(s.cat) || '-' }), el('td', { text: topKey(s.comp) || '-' }),
           el('td', { cls: 'nw', text: topKey(s.lv) || '-' }),
@@ -670,7 +696,7 @@
     }
 
     function student(by, name) {
-      return by[name] = by[name] || { name: name, n: 0, nc: 0, cat: {}, comp: {}, lv: {}, high: 0, leveled: 0 };
+      return by[name] = by[name] || { key: name, name: whoNames[name] || name, n: 0, nc: 0, cat: {}, comp: {}, lv: {}, high: 0, leveled: 0 };
     }
 
     function pickNote(box, what) {
@@ -698,7 +724,7 @@
       var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목', '대단원', '인지적 수준', '질문', '🙋 공감', '토론 주제']);
       table($('questions'), heads, newestFirst(posts).map(function (p) {
         var cells = [dateCell(p)];
-        if (!state.student) cells.push(el('td', { cls: 'nw', text: p.author }));
+        if (!state.student) cells.push(whoCell(p));
         cells = cells.concat(subjectCells(p));
         cells.push(levelCell(p));
         cells.push(el('td', { cls: 'q', text: p.text + (p.followUps ? '  (후속 댓글 ' + p.followUps + ')' : '') }));
@@ -730,7 +756,7 @@
       var heads = ['날짜'].concat(state.student ? [] : ['이름']).concat(['과목', '대단원', '인지적 수준', '사회과 교과 역량', '댓글']);
       table($('comments'), heads, newestFirst(comments).map(function (c) {
         var cells = [dateCell(c)];
-        if (!state.student) cells.push(el('td', { cls: 'nw', text: c.author }));
+        if (!state.student) cells.push(whoCell(c));
         cells = cells.concat(subjectCells(c));
         cells.push(levelCell(c), el('td', {}, [compPicker(c)]));
         cells.push(el('td', { cls: 'q', text: c.text }));

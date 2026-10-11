@@ -30,6 +30,9 @@
       border-left: 0; border-right-color: #fff; }
     .credit { font-size: 12px; font-weight: 400; color: rgba(58,36,20,.45); margin-left: 6px; vertical-align: middle; }
     .howto { margin-top: 10px; font-size: 13px; color: #4a2e1c; line-height: 1.5; }
+    .login-note { margin-top: 8px; font-size: 13px; line-height: 1.5; background: rgba(255,255,255,.7); border-radius: 10px;
+      padding: 6px 10px; color: #4a2e1c; display: inline-block; }
+    .login-note a { color: #b4471f; font-weight: 700; margin-left: 4px; white-space: nowrap; }
     @media (max-width: 520px) { .hero .mascot { width: 68px; height: 68px; } h1 { font-size: 21px; }
       .hero { padding-top: 34px; } }
     main { padding: 8px 16px 40px; max-width: 1200px; margin: 0 auto; }
@@ -183,6 +186,11 @@
         <h1><?= boardTitle ?> <span class="credit">made by JB</span></h1>
         <div class="bubble">사회와 문화, 정치, 경제, 법과 사회에 관해 물어보세요.</div>
         <div class="howto">🦉 질문을 올리면 AI 튜터가 먼저 답변을 달아요. 학교의 교과 담당 선생님도 질문을 확인하고 직접 댓글을 달아 줄 거예요.</div>
+        <? if (userEmail) { ?>
+          <div class="login-note">✔ 학교 계정(<?= userEmail ?>)으로 쓰고 있어요. 선생님이 여러분의 질문과 생각을 살펴보고 수업에 반영할 거예요.</div>
+        <? } else if (loginUrl) { ?>
+          <div class="login-note">🔑 학교 계정으로 로그인해서 쓰면 선생님이 여러분의 질문과 생각을 더 잘 살펴볼 수 있어요.<a href="<?= loginUrl ?>">학교 계정으로 쓰기 →</a></div>
+        <? } ?>
       </div>
     </div>
   </header>
