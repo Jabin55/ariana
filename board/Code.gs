@@ -19,6 +19,7 @@
  *   AI_REPLY_TO_COMMENTS (선택) false로 두면 댓글에는 AI가 답하지 않습니다. 기본값 true
  *   TEACHER_NAMES   (선택) 선생님이 댓글에 쓰는 이름(쉼표로 여러 개). 이 이름의 댓글은 학생 분석에서 뺍니다. 기본값 "선생님"
  *   LOGIN_URL       (선택) '학교 내 사용자'로 따로 배포한 웹 앱 주소. 넣으면 익명 게시판에 '학교 계정으로 쓰기' 안내가 나옵니다.
+ *   TEACHER_EMAILS  (선택) 교사 화면을 쓸 수 있는 학교 계정 (쉼표로 여러 개). 비우면 학교 계정으로 로그인한 누구나 비밀번호로 들어올 수 있음
  *   TEACHER_PASSWORD (선택) 선생님 전용 '학생 분석' 화면(게시판 주소 뒤에 ?teacher)의 비밀번호.
  *                   비워 두면 분석 화면이 열리지 않습니다.
  */
@@ -141,6 +142,8 @@ function doGet(e) {
     var t = HtmlService.createTemplateFromFile('Teacher');
     t.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
     t.boardUrl = ScriptApp.getService().getUrl() || '';
+    t.userEmail = currentEmail_();
+    t.teacherLoginUrl = teacherLoginUrl_();
     return t.evaluate()
       .setTitle('학생 분석 · ' + t.boardTitle)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -150,9 +153,8 @@ function doGet(e) {
   tpl.boardTitle = getProp_('BOARD_TITLE', DEFAULT_TITLE);
   var img = getProp_('CHARACTER_IMAGE_URL', '');
   tpl.characterUrl = /^https:\/\//.test(img) ? img : '';
-  // 분석 화면 비밀번호를 정해 둔 경우에만 '교사용' 버튼을 보여 줍니다.
-  var url = ScriptApp.getService().getUrl();
-  tpl.teacherUrl = getProp_('TEACHER_PASSWORD', '') && url ? url + '?teacher' : '';
+  // 분석 화면 비밀번호를 정해 둔 경우에만 '교사 로그인' 버튼을 보여 줍니다 (학교 계정 주소의 교사 화면으로 연결).
+  tpl.teacherUrl = getProp_('TEACHER_PASSWORD', '') ? teacherLoginUrl_() : '';
   // 학교 계정 주소로 들어오면 그 계정이 보이고, 익명 주소에서는 학교 계정 주소로 가는 안내가 보입니다.
   tpl.userEmail = currentEmail_();
   var loginUrl = getProp_('LOGIN_URL', '');
@@ -519,8 +521,19 @@ function getAnalysis(password) {
   };
 }
 
-/** 선생님 비밀번호 확인. 10번 틀리면 10분 동안 막습니다. */
+var NEED_SCHOOL_LOGIN = '학교 계정으로 로그인해야 교사 화면을 쓸 수 있어요.';
+
+/**
+ * 선생님 확인: ① 학교 계정으로 로그인한 상태 (TEACHER_EMAILS가 있으면 그 계정만) ② 비밀번호.
+ * 비밀번호를 10번 틀리면 10분 동안 막습니다.
+ */
 function checkTeacher_(password) {
+  // 1단계: 학교 계정으로 로그인한 상태여야 합니다 (익명 주소나 로그인하지 않은 상태에서는 비밀번호를 알아도 안 됨).
+  var email = currentEmail_();
+  if (!email) throw new Error(NEED_SCHOOL_LOGIN);
+  var allowed = getProp_('TEACHER_EMAILS', '').split(',').map(function (x) { return x.trim().toLowerCase(); }).filter(String);
+  if (allowed.length && allowed.indexOf(email.toLowerCase()) === -1) throw new Error('교사 화면을 쓸 수 있는 계정이 아니에요.');
+  // 2단계: 비밀번호
   var expected = getProp_('TEACHER_PASSWORD', '');
   if (!expected) throw new Error('스크립트 속성에 TEACHER_PASSWORD 를 먼저 넣어 주세요.');
   var cache = CacheService.getScriptCache();
@@ -1325,6 +1338,13 @@ function findPostRow_(postId) {
     }
   }
   return null;
+}
+
+/** 교사 화면 주소. 학교 계정 주소(LOGIN_URL)가 있으면 그쪽으로 보내 로그인한 상태로 열리게 합니다. */
+function teacherLoginUrl_() {
+  var login = getProp_('LOGIN_URL', '');
+  var base = /^https:\/\//.test(login) ? login : (ScriptApp.getService().getUrl() || '');
+  return base ? base + (base.indexOf('?') === -1 ? '?' : '&') + 'teacher' : '';
 }
 
 /** 헤더 이름 순서에 맞춰 시트 한 줄을 만듭니다. 없는 칸은 비워 둡니다. */

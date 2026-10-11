@@ -125,9 +125,16 @@
     </div>
   </header>
   <main>
-    <section id="gate" class="panel">
+    <? if (!userEmail) { ?>
+    <section class="panel" id="needLogin" style="max-width:420px;margin:40px auto">
+      <h2>학교 계정 로그인이 필요해요</h2>
+      <p class="hint" style="margin:0">교사 화면은 학교 계정으로 로그인한 뒤 비밀번호를 넣어야 열려요.</p>
+      <? if (teacherLoginUrl) { ?><p><a href="<?= teacherLoginUrl ?>">🔑 학교 계정으로 로그인해서 열기 →</a></p><? } ?>
+    </section>
+    <? } ?>
+    <section id="gate" class="panel"<? if (!userEmail) { ?> hidden<? } ?>>
       <h2>교사 로그인</h2>
-      <p class="hint">로그인하면 이 브라우저 창을 닫을 때까지 유지돼요.</p>
+      <p class="hint">✔ <?= userEmail ?> 로그인됨 · 비밀번호를 넣으면 이 브라우저 창을 닫을 때까지 유지돼요.</p>
       <form class="row" id="gateForm">
         <input id="pw" type="password" autocomplete="current-password" required>
         <button id="pwBtn">로그인</button>
@@ -267,7 +274,11 @@
     });
     $('gateForm').addEventListener('submit', function (e) { e.preventDefault(); openAnalysis($('pw').value); });
     $('reload').addEventListener('click', function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); });
-    (function () { var pw = load('teacherPw'); if (pw) openAnalysis(pw); else $('pw').focus(); })();
+    var LOGGED_IN = <?!= JSON.stringify(!!userEmail) ?>;
+    (function () {
+      if (!LOGGED_IN) return; // 학교 계정으로 로그인하지 않으면 비밀번호 단계로 가지 않음 (서버에서도 막음)
+      var pw = load('teacherPw'); if (pw) openAnalysis(pw); else $('pw').focus();
+    })();
 
     /* ── 필터 ── */
     /** 학생 댓글에 댓글이 달린 글의 과목·대단원·질문을 붙여 둡니다. */
