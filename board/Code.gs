@@ -1315,7 +1315,12 @@ function referenceText_(category) {
 function callGemini_(contents, generationConfig, systemText) {
   var apiKey = getProp_('GEMINI_API_KEY', '');
   if (!apiKey) throw new Error('스크립트 속성에 GEMINI_API_KEY가 없습니다.');
-  var model = getProp_('GEMINI_MODEL', DEFAULT_MODEL);
+  // 모델 이름: 앞뒤 공백과 'models/'는 정리하고, 모양이 이상하면 알아보기 쉬운 오류를 냅니다.
+  var model = String(getProp_('GEMINI_MODEL', DEFAULT_MODEL)).trim().replace(/^models\//, '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(model)) {
+    throw new Error('스크립트 속성 GEMINI_MODEL 의 모델 이름이 올바르지 않아요: "' + model +
+      '". 영어 모델 이름만 넣거나, 이 속성을 지우면 기본 모델(' + DEFAULT_MODEL + ')을 씁니다.');
+  }
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
     encodeURIComponent(model) + ':generateContent';
 
