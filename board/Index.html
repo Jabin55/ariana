@@ -205,7 +205,7 @@
     <form class="composer" id="composer">
       <textarea id="qText" maxlength="1000" placeholder="궁금한 것을 적어 주세요" required></textarea>
       <div class="row">
-        <input id="qName" maxlength="30" placeholder="이름 (비우면 익명)">
+        <input id="qName" maxlength="30" placeholder="<?= userEmail ? '이름 (꼭 적어 주세요)' : '이름 (비우면 익명)' ?>"<?= userEmail ? ' required' : '' ?>>
         <button id="qSubmit" type="submit">질문 올리기</button>
       </div>
     </form>
@@ -235,6 +235,7 @@
 
   <script>
     var REFRESH_MS = 10000;
+    var SCHOOL_LOGIN = <?!= JSON.stringify(!!userEmail) ?>; // 학교 계정으로 들어왔으면 이름을 꼭 받음
     var CATEGORIES = ['사회와 문화', '정치', '경제', '법과 사회'];
     var CHARACTER_URL = <?!= JSON.stringify(characterUrl) ?>;
     var AVATAR = CHARACTER_URL
@@ -459,7 +460,7 @@
         var replyBox = p.local ? '' :
           '<button class="link" data-toggle="' + esc(p.id) + '">댓글 달기</button>' +
           '<div class="reply' + (openReplies[p.id] ? ' open' : '') + '">' +
-          '<input data-id="' + esc(p.id) + '" maxlength="30" placeholder="이름 (비우면 익명)" value="' +
+          '<input data-id="' + esc(p.id) + '" maxlength="30" placeholder="' + (SCHOOL_LOGIN ? '이름 (꼭 적어 주세요)' : '이름 (비우면 익명)') + '" value="' +
           esc(p.id in draftNames ? draftNames[p.id] : nameInput.value) + '">' +
           '<textarea data-id="' + esc(p.id) + '" maxlength="1000" placeholder="댓글">' +
           esc(drafts[p.id] || '') + '</textarea>' +
@@ -536,6 +537,7 @@
       var text = textEl.value.trim();
       if (!text) return;
       var name = nameInput.value.trim();
+      if (SCHOOL_LOGIN && !name) { toast('학교 계정으로 쓸 때는 이름을 꼭 적어 주세요.'); nameInput.focus(); return; }
       var btn = document.getElementById('qSubmit');
       btn.disabled = true;
 
@@ -610,6 +612,7 @@
         var author = t.parentNode.querySelector('input').value.trim();
         var text = ta.value.trim();
         if (!text) return;
+        if (SCHOOL_LOGIN && !author) { toast('학교 계정으로 쓸 때는 이름을 꼭 적어 주세요.'); t.parentNode.querySelector('input').focus(); return; }
         t.disabled = true;
         google.script.run
           .withSuccessHandler(function (aiReplies) {

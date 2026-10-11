@@ -187,7 +187,6 @@
 
       <section class="panel">
         <h2>비슷한 질문 묶기</h2>
-        <p class="hint">위에서 고른 학생·과목·기간·막대에 해당하는 질문을 AI가 주제별로 묶고, 묶음마다 학생들이 궁금해하는 핵심을 요약해요.</p>
         <button type="button" id="groupBtn">🧩 지금 보이는 질문 묶기</button>
         <div class="err" id="groupErr"></div>
         <div class="groups" id="groups"></div>
@@ -289,8 +288,8 @@
       data.comments.forEach(function (c) {
         var p = byId[c.postId];
         c.kind = 'comment';
-        c.category = p.category;
-        c.unit = p.unit;
+        // 선생님이 따로 정하지 않았으면 질문의 과목·대단원을 따릅니다.
+        if (!c.ownSubject) { c.category = p.category; c.unit = p.unit; }
         c.postText = p.text;
       });
       prepareIdentity();
@@ -597,11 +596,10 @@
 
     /**
      * 과목 칸과 대단원 칸 (두 칸). 드롭다운으로 고르거나 바꿉니다.
-     * 댓글은 원래 질문의 분류를 따르므로, 댓글 줄에서 바꾸면 원래 질문(과 그 질문의 모든 댓글)이 바뀝니다.
+     * 댓글은 처음엔 질문의 과목을 따르고, 댓글 줄에서 바꾸면 그 댓글만 바뀝니다 (질문과 게시판은 그대로).
      */
     function subjectCells(item) {
-      var p = item.kind === 'comment' ? postById(item.postId) : item;
-      if (!p) return [el('td', { cls: 'nw', text: item.category || NONE }), el('td', { cls: 'nw', text: item.unit || '-' })];
+      var p = item;
       var cat = el('td', { cls: 'nw' }, [fixSelect(p, 'category', '과목 고르기', data.categories.map(function (c) { return [c, c]; }), p.category)]);
       var units = data.units[p.category] || [];
       var unit = p.category && units.length
@@ -694,11 +692,17 @@
         return;
       }
       item[field] = saved;
-      if (field === 'category') {
-        if ((data.units[saved] || []).indexOf(item.unit) === -1) item.unit = '';
-        data.comments.forEach(function (c) { if (c.postId === item.id) { c.category = item.category; c.unit = item.unit; } });
+      if (field === 'category' && (data.units[saved] || []).indexOf(item.unit) === -1) item.unit = '';
+      if (item.kind === 'comment') {
+        if (field === 'category' || field === 'unit') item.ownSubject = true; // 이 댓글만 따로 정함
+        return;
       }
-      if (field === 'unit') data.comments.forEach(function (c) { if (c.postId === item.id) c.unit = saved; });
+      // 질문의 과목이 바뀌면, 따로 정하지 않은 댓글도 따라갑니다.
+      if (field === 'category' || field === 'unit') {
+        data.comments.forEach(function (c) {
+          if (c.postId === item.id && !c.ownSubject) { c.category = item.category; c.unit = item.unit; }
+        });
+      }
     }
 
     function postById(id) {

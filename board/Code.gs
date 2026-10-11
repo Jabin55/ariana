@@ -43,7 +43,10 @@ var MAX_REF_CHARS = 60000; // 한 번에 AI에게 보내는 자료 길이 상한
 var NOT_IN_REF_MARK = '[자료없음]';
 
 // competencies·level: 학생 댓글에 드러난 사회과 교과 역량과 인지적 수준 (글의 칸과 같은 형식). AI 댓글은 비워 둡니다.
-var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies', 'email', 'level'];
+// category·unit: 선생님이 학생 분석에서 댓글의 과목·대단원을 따로 정한 경우만 채웁니다. 비어 있으면 질문의 과목을 따릅니다.
+// (게시판에서는 언제나 질문의 과목 칸에 보입니다.)
+var COMMENT_HEADERS = ['id', 'postId', 'createdAt', 'author', 'text', 'isAI', 'replyTo', 'competencies', 'email', 'level',
+  'category', 'unit'];
 
 // 학생 분석 기준. 처음 실행할 때 시트에 '단원', '역량' 탭을 아래 기본값으로 만듭니다.
 // 학교 교과서·교육과정에 맞게 시트에서 고치면 다음 분류부터 바로 반영됩니다.
@@ -323,12 +326,16 @@ function groupQuestions(password, ids) {
   return groups;
 }
 
+// 학교 계정으로 쓸 때는 선생님이 누구인지 알 수 있도록 이름을 꼭 받습니다.
+var NEED_NAME = '학교 계정으로 쓸 때는 이름을 꼭 적어 주세요.';
+
 /** 질문을 저장하고 곧바로 AI 답변을 시도합니다. */
 function addPost(author, text) {
   text = clean_(text, MAX_TEXT_LENGTH);
   if (!text) throw new Error('질문 내용을 입력해 주세요.');
   author = clean_(author, MAX_NAME_LENGTH) || '익명';
   var email = currentEmail_();
+  if (email && author === '익명') throw new Error(NEED_NAME);
 
   var id = Utilities.getUuid();
   withLock_(function () {
@@ -428,6 +435,7 @@ function addComment(postId, author, text) {
   author = clean_(author, MAX_NAME_LENGTH) || '익명';
   var aiReplies = getProp_('AI_REPLY_TO_COMMENTS', 'true') !== 'false';
   var email = currentEmail_();
+  if (email && author === '익명') throw new Error(NEED_NAME);
 
   withLock_(function () {
     var found = findPostRow_(postId);
@@ -515,7 +523,10 @@ function getAnalysis(password) {
           text: String(c.text),
           competencies: validCompetencies_(c.competencies).split(', ').filter(String),
           noCompetency: competencyCell_(c.competencies) === NO_COMPETENCY,
-          level: validLevel_(c.level)
+          level: validLevel_(c.level),
+          ownSubject: !!validCategory_(c.category), // 학생 분석에서 따로 정한 과목이 있는지
+          category: validCategory_(c.category),
+          unit: validCategory_(c.category) ? validUnit_(validCategory_(c.category), c.unit) : ''
         };
       })
   };
@@ -556,13 +567,16 @@ function setClassification(password, kind, id, field, value) {
   value = String(value == null ? '' : value).trim();
   return withLock_(function () {
     if (kind === 'comment') {
-      // 댓글의 과목·대단원은 질문을 따르므로 역량·인지적 수준만 고칩니다.
       var v;
-      if (field === 'competencies') v = competencyCell_(value);
-      else if (field === 'level') v = validLevel_(value);
-      else throw new Error('댓글의 과목·대단원은 질문 줄에서 바꿔 주세요.');
-      if (!v) throw new Error(field === 'level' ? '알 수 없는 인지적 수준이에요.' : '알 수 없는 역량이에요.');
-      if (!setCommentField_(id, field, v, true)) throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+      if (field === 'category' || field === 'unit') {
+        v = setCommentSubject_(id, field, value);
+      } else {
+        if (field === 'competencies') v = competencyCell_(value);
+        else if (field === 'level') v = validLevel_(value);
+        else throw new Error('알 수 없는 항목이에요.');
+        if (!v) throw new Error(field === 'level' ? '알 수 없는 인지적 수준이에요.' : '알 수 없는 역량이에요.');
+        if (!setCommentField_(id, field, v, true)) throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+      }
       recordExample_('comment', id);
       return v;
     }
@@ -1073,6 +1087,41 @@ function isAIComment_(c) {
 /** 역량을 분류할 학생 댓글인지 (AI·선생님 댓글 제외) */
 function isStudentComment_(c) {
   return c.id !== '' && !isAIComment_(c) && !isTeacherName_(c.author) && String(c.text).trim() !== '';
+}
+
+/**
+ * 학생 분석에서 댓글의 과목·대단원을 따로 정합니다 (질문의 과목은 그대로). 잠금 안에서 호출합니다.
+ * 대단원만 바꿔도 지금 보이는 과목을 함께 저장해, 이후 질문의 과목이 바뀌어도 이 댓글은 그대로 둡니다.
+ */
+function setCommentSubject_(commentId, field, value) {
+  var sheet = getSheet_(COMMENTS_SHEET, COMMENT_HEADERS);
+  var rows = readRows_(sheet, COMMENT_HEADERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].id) !== String(commentId)) continue;
+    var post = findPostRow_(rows[i].postId);
+    var subj = commentSubject_(rows[i], post);
+    var category = subj.category, unit = subj.unit;
+    if (field === 'category') {
+      category = validCategory_(value);
+      if (!category) throw new Error('알 수 없는 과목이에요.');
+      if (!validUnit_(category, unit)) unit = '';
+    } else {
+      if (!category) throw new Error('과목을 먼저 골라 주세요.');
+      unit = validUnit_(category, value);
+      if (!unit) throw new Error('이 과목에 없는 대단원이에요.');
+    }
+    sheet.getRange(i + 2, COMMENT_HEADERS.indexOf('category') + 1, 1, 2).setValues([[category, unit]]);
+    return field === 'category' ? category : unit;
+  }
+  throw new Error('댓글을 찾을 수 없어요. 새로고침해 주세요.');
+}
+
+/** 댓글의 과목·대단원: 선생님이 따로 정했으면 그것, 아니면 질문의 것. own은 따로 정했는지 여부. */
+function commentSubject_(c, post) {
+  var own = validCategory_(c.category);
+  if (own) return { category: own, unit: validUnit_(own, c.unit), own: true };
+  var pc = post ? validCategory_(post.category) : '';
+  return { category: pc, unit: post ? validUnit_(pc, post.unit) : '', own: false };
 }
 
 /**
