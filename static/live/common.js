@@ -376,3 +376,37 @@ function resultBars(a) {
 }
 
 const KIND_NAMES = { ox: "OX 퀴즈", choice: "객관식", poll: "투표", text: "주관식" };
+
+/* ───────────────────────── 화질 설정 (저대역폭 모드) ───────────────────────── */
+
+/** 화상 서버 작업이 끝나지 않고 멈추는 경우(방이 닫히는 중 등)를 막는다 */
+function withTimeout(promise, ms = 10000) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => {
+    const err = new Error("시간 초과");
+    err.name = "Timeout";
+    reject(err);
+  }, ms))]);
+}
+
+const MEDIA_ERRORS = new Set(["NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError", "AbortError"]);
+
+/** 카메라 [캡처 옵션, 전송 옵션]. 저대역폭 모드면 해상도·프레임·비트레이트 상한을 둔다. */
+function cameraOptions(lowbw, role) {
+  if (!lowbw) {
+    return [{ resolution: VideoPresets.h360.resolution }, { simulcast: true, videoSimulcastLayers: [VideoPresets.h180] }];
+  }
+  if (role === "teacher") { // 선생님: 360p·15fps·최대 300kbps (+ 작은 화면용 180p 층)
+    return [{ resolution: { ...VideoPresets.h360.resolution, frameRate: 15 } },
+      { videoEncoding: { maxBitrate: 300_000, maxFramerate: 15 }, simulcast: true, videoSimulcastLayers: [VideoPresets.h180] }];
+  }
+  // 학생(모둠 활동): 180p·15fps·최대 120kbps 한 층
+  return [{ resolution: { ...VideoPresets.h180.resolution, frameRate: 15 } },
+    { videoEncoding: { maxBitrate: 120_000, maxFramerate: 15 }, simulcast: false }];
+}
+
+/** 화면 공유 [캡처 옵션, 전송 옵션]. 저대역폭 모드면 720p·초당 5장(슬라이드에 충분)·최대 500kbps. */
+function screenOptions(lowbw, extra = {}) {
+  if (!lowbw) return [{ audio: true, ...extra }, {}];
+  return [{ audio: true, contentHint: "detail", resolution: { width: 1280, height: 720, frameRate: 5 }, ...extra },
+    { screenShareEncoding: { maxBitrate: 500_000, maxFramerate: 5 }, screenShareSimulcastLayers: [] }];
+}

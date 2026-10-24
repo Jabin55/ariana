@@ -313,3 +313,4 @@ table.att tr.rejoined td:first-child { box-shadow: inset 3px 0 var(--warn); }
 .sessions .gap { color: var(--warn); }
 table.att td:last-child { white-space: normal; min-width: 240px; }
 .sessions > div { white-space: normal; }
+.hint { margin: 0 0 0 26px; font-size: 0.8rem; }

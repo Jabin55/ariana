@@ -298,3 +298,47 @@ def test_silent_device_is_recorded_as_network_drop(monkeypatch):
     time.sleep(0.3)
     p = t.get(f"/api/live/history/{cid}").json()["students"][0]
     assert [s["reason"] for s in p["sessions"]] == ["network", "network", "closed"]
+
+
+def test_low_bandwidth_mode_limits_student_publishing():
+    from livekit import api as lk
+    verifier = lk.TokenVerifier(cr.LIVEKIT_API_KEY, cr.LIVEKIT_API_SECRET)
+
+    def grants(client, room):
+        r = client.post(f"/api/live/classes/{code}/token", json={"room": room})
+        assert r.status_code == 200, r.text
+        return verifier.verify(r.json()["token"]).video
+
+    t = teacher()
+    code = create(t)["code"]
+    a = student(1)
+    assert a.post(f"/api/live/classes/{code}/join").status_code == 200
+    # 기본값: 데이터 절약 모드 → 전체 교실에서 학생은 마이크만
+    g = grants(a, "main")
+    assert g.can_publish and g.can_publish_sources == ["microphone"]
+    assert "camera" in grants(t, "main").can_publish_sources  # 선생님은 제한 없음
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        st = state(sa)
+        assert st["settings"]["lowbw"] is True
+        sid = st["me"]["id"]
+        # 발언권을 받으면 카메라도 가능
+        tw.send_json({"t": "allow_mic", "target": sid, "on": True})
+        state(sa, lambda m: m["me"]["can_speak"])
+        assert sorted(grants(a, "main").can_publish_sources) == ["camera", "microphone"]
+        # 발언권 회수 + 마이크 잠금 → 아무것도 못 내보냄 (빈 목록은 '모두 허용'이 되므로 can_publish=False)
+        tw.send_json({"t": "allow_mic", "target": sid, "on": False})
+        tw.send_json({"t": "settings", "mic_lock": True})
+        state(sa, lambda m: m["settings"]["mic_lock"] and not m["me"]["can_speak"])
+        g = grants(a, "main")
+        assert g.can_publish is False
+        # 모둠에서는 카메라·마이크·화면 공유 모두 가능
+        tw.send_json({"t": "breakout_plan", "n": 1})
+        tw.send_json({"t": "breakout_start"})
+        room = state(sa, lambda m: m["room"] != "main")["room"]
+        g = grants(a, room)
+        assert g.can_publish and set(g.can_publish_sources) == {"camera", "microphone", "screen_share", "screen_share_audio"}
+        tw.send_json({"t": "breakout_end"})
+        # 데이터 절약 모드를 끄면 전체 교실에서도 카메라 가능
+        tw.send_json({"t": "settings", "lowbw": False, "mic_lock": False})
+        state(sa, lambda m: m["room"] == "main" and not m["settings"]["lowbw"])
+        assert sorted(grants(a, "main").can_publish_sources) == ["camera", "microphone"]

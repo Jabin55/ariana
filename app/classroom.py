@@ -49,6 +49,9 @@ SILENCE_LIMIT = 70
 # 같은 학생이 새로 연결했을 때, 이만큼 조용하던 옛 연결은 끊긴 것으로 바로 정리한다
 STALE_AFTER = 30
 TEXT_LIMIT = 500
+# 저대역폭 모드 기본값: 전체 교실에서는 학생 카메라를 끄고(모둠 활동 때만 허용) 영상 화질을 낮춘다.
+# 화상 서버 데이터 비용과 학생 휴대폰 데이터를 크게 줄인다. LOW_BANDWIDTH=0 이면 기본으로 끔.
+LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
 
 
 def livekit_ready() -> bool:
@@ -105,7 +108,8 @@ class Klass:
     chat: list[dict] = field(default_factory=list)
     questions: list[dict] = field(default_factory=list)
     activity: dict | None = None
-    settings: dict = field(default_factory=lambda: {"chat": True, "ai": True, "mic_lock": False})
+    settings: dict = field(default_factory=lambda: {
+        "chat": True, "ai": True, "mic_lock": False, "lowbw": LOW_BANDWIDTH_DEFAULT})
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
     ends_at: float | None = None
@@ -453,6 +457,51 @@ async def lk_call(fn) -> None:
         log.warning("LiveKit API 호출 실패", exc_info=True)
 
 
+SOURCE_ENUM = {
+    "camera": lk.TrackSource.CAMERA, "microphone": lk.TrackSource.MICROPHONE,
+    "screen_share": lk.TrackSource.SCREEN_SHARE, "screen_share_audio": lk.TrackSource.SCREEN_SHARE_AUDIO,
+}
+
+
+def student_sources(k: Klass, s: Student, room: str) -> list[str]:
+    """학생이 그 방에서 내보낼 수 있는 것. 화상 서버가 강제하므로 학생 화면을 고쳐도 우회할 수 없다."""
+    if room != "main":  # 모둠: 카메라·마이크·화면 공유(발표) 모두 가능
+        return ["camera", "microphone", "screen_share", "screen_share_audio"]
+    out = []
+    if not (k.settings["mic_lock"] and not s.can_speak):
+        out.append("microphone")
+    if not (k.settings["lowbw"] and not s.can_speak):  # 저대역폭 모드: 발언권 받은 학생만 카메라
+        out.append("camera")
+    return out
+
+
+def enforce_sources(k: Klass, students: list[Student] | None = None) -> None:
+    """설정이 바뀌면 전체 교실에 있는 학생들의 권한을 화상 서버에 바로 반영한다.
+    권한이 없어진 카메라·마이크는 화상 서버가 즉시 끊는다."""
+    targets = [(s.id, student_sources(k, s, "main"))
+               for s in (students if students is not None else list(k.students.values()))
+               if k.room_of(s) == "main" and s.conns]
+    if not targets or not livekit_ready():
+        return
+    room = lk_room_name(k.code, "main")
+
+    async def run(api):
+        async def one(sid: str, src: list[str]):
+            # 목록이 비면 '모두 허용'으로 해석되므로 그때는 아예 내보내기를 막는다
+            perm = lk.ParticipantPermission(
+                can_subscribe=True, can_publish=bool(src), can_publish_data=False,
+                can_publish_sources=[SOURCE_ENUM[x] for x in src])
+            try:
+                await api.room.update_participant(
+                    lk.UpdateParticipantRequest(room=room, identity=f"s-{sid}", permission=perm))
+            except Exception:
+                pass  # 아직 화상에 들어오지 않은 학생
+
+        await asyncio.gather(*(one(sid, src) for sid, src in targets))
+
+    asyncio.get_running_loop().create_task(lk_call(run))
+
+
 def remove_from_livekit(k: Klass, sid: str) -> None:
     rooms = ["main"] + [g["id"] for g in k.groups]
 
@@ -561,15 +610,14 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
         if req.room != k.room_of(s):
             raise HTTPException(403, "지금은 그 방에 들어갈 수 없어요.")
         identity, name, role = f"s-{s.id}", s.name, "student"
-        sources = ["camera", "microphone"]
-        if req.room != "main":  # 모둠에서는 화면 공유로 발표할 수 있게
-            sources += ["screen_share", "screen_share_audio"]
+        sources = student_sources(k, s, req.room)
     else:
         raise HTTPException(403, "이 수업에 들어갈 수 없어요.")
 
     grants = lk.VideoGrants(
         room_join=True, room=lk_room_name(k.code, req.room),
-        can_publish=True, can_subscribe=True, can_publish_data=False,
+        # 목록이 비면 '모두 허용'으로 해석되므로 그때는 아예 내보내기를 막는다
+        can_publish=bool(sources), can_subscribe=True, can_publish_data=False,
         can_publish_sources=sources, room_admin=(role == "teacher"),
     )
     token = (
@@ -771,13 +819,15 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     t = m.get("t")
     group_ids = {g["id"] for g in k.groups}
     if t == "settings":
-        for name in ("chat", "ai", "mic_lock"):
+        for name in ("chat", "ai", "mic_lock", "lowbw"):
             if name in m:
                 k.settings[name] = bool(m[name])
         if m.get("mic_lock"):
             for s in k.students.values():
                 s.can_speak = False
             send_to_students(k, {"t": "cmd", "cmd": "mute"})
+        if "mic_lock" in m or "lowbw" in m:
+            enforce_sources(k)
     elif t == "cmd":  # 학생 기기 제어(음소거·카메라 끄기)
         cmd = m.get("cmd")
         if cmd in ("mute", "cam_off"):
@@ -791,6 +841,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 s.hand = False
             else:
                 send_to_students(k, {"t": "cmd", "cmd": "mute"}, s.id)
+            enforce_sources(k, [s])
     elif t == "lower_hand":
         target = m.get("target")
         for s in k.students.values():

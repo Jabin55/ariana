@@ -107,15 +107,41 @@ async function setMic(on) {
   renderControls();
 }
 
+let camLowbw = null; // 지금 켜진 카메라의 화질 설정
+
 async function setCam(on) {
   prefs.cam = on;
-  try { await mainRoom?.localParticipant.setCameraEnabled(on); } catch (err) { prefs.cam = false; toast(mediaError(err), 5000); }
+  const lp = mainRoom?.localParticipant;
+  try {
+    const lowbw = !!S?.settings.lowbw;
+    const [capture, publish] = cameraOptions(lowbw, "teacher");
+    const pub = lp?.getTrackPublication(Track.Source.Camera);
+    if (on && pub?.track && camLowbw !== lowbw) await lp.unpublishTrack(pub.track, true); // 꺼 둔 사이 화질 설정이 바뀜
+    await lp?.setCameraEnabled(on, capture, publish);
+    if (on) camLowbw = lowbw;
+  } catch (err) {
+    prefs.cam = false;
+    toast(mediaError(err), 5000);
+  }
   renderControls();
+}
+
+/** 저대역폭 모드를 바꾸면 켜져 있는 카메라를 새 화질로 다시 켠다 */
+async function applyQuality() {
+  const lp = mainRoom?.localParticipant;
+  if (!lp || !prefs.cam || camLowbw === !!S.settings.lowbw) return;
+  camLowbw = !!S.settings.lowbw;
+  // 끄기만 하면 예전 화질 설정이 남으므로 트랙을 완전히 내렸다가 다시 올린다
+  const pub = lp.getTrackPublication(Track.Source.Camera);
+  if (pub?.track) await lp.unpublishTrack(pub.track, true);
+  await setCam(true);
+  if (prefs.screen) toast("화면 공유는 다시 시작하면 새 화질이 적용돼요.");
 }
 
 async function setScreen(on) {
   try {
-    await mainRoom?.localParticipant.setScreenShareEnabled(on, { audio: true, selfBrowserSurface: "exclude" });
+    const [capture, publish] = screenOptions(!!S?.settings.lowbw, { selfBrowserSurface: "exclude" });
+    await mainRoom?.localParticipant.setScreenShareEnabled(on, capture, publish);
     prefs.screen = on;
   } catch (err) {
     prefs.screen = false;
@@ -417,6 +443,8 @@ function render() {
   $("#set-chat").checked = S.settings.chat;
   $("#set-ai").checked = S.settings.ai;
   $("#set-mic-lock").checked = S.settings.mic_lock;
+  $("#set-lowbw").checked = S.settings.lowbw;
+  applyQuality();
   renderPeople();
   renderActivity();
   renderQuestions();
@@ -462,11 +490,12 @@ function renderPeople() {
     h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
       roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },
-      S.settings.mic_lock ? h("button", {
-        class: s.can_speak ? "on" : "", title: "발언권",
+      S.settings.mic_lock || S.settings.lowbw ? h("button", {
+        class: s.can_speak ? "on" : "",
+        title: "발언권: 마이크 잠금·데이터 절약 모드에서도 이 학생은 마이크와 카메라를 쓸 수 있어요",
         onclick: () => sock.send({ t: "allow_mic", target: s.id, on: !s.can_speak }),
       }, s.can_speak ? "🎤 발언 중" : "🎤 발언권") : null,
-      s.hand && !S.settings.mic_lock ? h("button", { onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "손 내리기") : null,
+      s.hand && !S.settings.mic_lock && !S.settings.lowbw ? h("button", { onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "손 내리기") : null,
       h("button", { title: "마이크 끄기", onclick: () => sock.send({ t: "cmd", cmd: "mute", target: s.id }) }, "🔇"),
       h("button", { title: "카메라 끄기", onclick: () => sock.send({ t: "cmd", cmd: "cam_off", target: s.id }) }, "📷"),
       h("button", { title: "내보내기", class: "danger", onclick: () => {
@@ -479,6 +508,7 @@ function renderPeople() {
 $("#set-chat").addEventListener("change", (e) => sock.send({ t: "settings", chat: e.target.checked }));
 $("#set-ai").addEventListener("change", (e) => sock.send({ t: "settings", ai: e.target.checked }));
 $("#set-mic-lock").addEventListener("change", (e) => sock.send({ t: "settings", mic_lock: e.target.checked }));
+$("#set-lowbw").addEventListener("change", (e) => sock.send({ t: "settings", lowbw: e.target.checked }));
 $("#mute-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "mute", target: "all" }); toast("모든 학생의 마이크를 껐어요."); });
 $("#camoff-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "cam_off", target: "all" }); toast("모든 학생의 카메라를 껐어요."); });
 $("#lower-all").addEventListener("click", () => sock.send({ t: "lower_hand", target: "all" }));

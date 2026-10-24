@@ -81,6 +81,12 @@ function micAllowed() {
   return !(S.settings.mic_lock && S.room === "main" && !S.me.can_speak);
 }
 
+/** 저대역폭 모드에서는 전체 교실에서 카메라를 쓸 수 없다(발언권을 받으면 가능). 모둠에서는 언제나 가능. */
+function camAllowed() {
+  if (!S) return true;
+  return !(S.settings.lowbw && S.room === "main" && !S.me.can_speak);
+}
+
 async function reconcileRoom() {
   if (ended || !S || !S.livekit) return;
   if (media.id === S.room) return;
@@ -117,27 +123,66 @@ async function reconcileRoom() {
 }
 
 async function applyPrefs() {
-  await setCam(prefs.cam, true);
+  await syncCamera();
   await setMic(prefs.mic && micAllowed(), true);
 }
 
-async function setMic(on, quiet = false) {
+/** 기기 문제(권한 거부 등)는 사용자에게 알리고, 화상 서버 권한이 아직 반영되지 않은 경우는 잠시 뒤 다시 시도한다. */
+function retryable(err) { return !MEDIA_ERRORS.has(err?.name); }
+
+async function setMic(on, quiet = false, attempt = 0) {
   if (on && !micAllowed()) { toast("선생님이 마이크를 잠갔어요. 말하고 싶으면 손을 들어 주세요."); return; }
   prefs.mic = on;
   const lp = media.room?.localParticipant;
   if (lp && media.room.state === "connected") {
-    try { await lp.setMicrophoneEnabled(on); } catch (err) { prefs.mic = false; if (!quiet || on) toast(mediaError(err), 5000); }
+    try {
+      await lp.setMicrophoneEnabled(on);
+    } catch (err) {
+      if (on && retryable(err) && attempt < 3) { setTimeout(() => prefs.mic && setMic(true, true, attempt + 1), 1500); return; }
+      prefs.mic = false;
+      if (!quiet || on) toast(mediaError(err), 5000);
+    }
   }
   renderControls();
 }
 
-async function setCam(on, quiet = false) {
-  prefs.cam = on;
-  const lp = media.room?.localParticipant;
-  if (lp && media.room.state === "connected") {
-    try { await lp.setCameraEnabled(on); } catch (err) { prefs.cam = false; if (!quiet || on) toast(mediaError(err), 5000); }
+/** prefs.cam = 학생이 원하는 상태. 실제로 켤지는 지금 방·설정이 허용하는지에 따라 정한다. */
+let camOp = null; // 진행 중인 카메라 작업 { room }
+let camAgain = false;
+let camLowbw = null; // 지금 카메라 트랙이 어떤 화질 설정으로 만들어졌는지
+
+async function syncCamera(attempt = 0) {
+  const room = media.room;
+  // 옮겨 가는 중이면(곧 닫힐 방) 건드리지 않는다. 새 방에 들어가면 다시 불린다.
+  if (!room || room.state !== "connected" || media.id !== S?.room) return renderControls();
+  if (camOp?.room === room) { camAgain = true; return; }
+  camOp = { room };
+  try {
+    const lp = room.localParticipant;
+    const want = prefs.cam && camAllowed();
+    const lowbw = !!S?.settings.lowbw;
+    // 화질 설정이 바뀌었으면 트랙을 완전히 내린다(끄기만 하면 예전 화질 설정이 남는다)
+    const pub = lp.getTrackPublication(Track.Source.Camera);
+    if (pub?.track && camLowbw !== lowbw) await withTimeout(lp.unpublishTrack(pub.track, true));
+    if (lp.isCameraEnabled !== want) {
+      const [capture, publish] = cameraOptions(lowbw, "student");
+      await withTimeout(lp.setCameraEnabled(want, capture, publish));
+      if (want) camLowbw = lowbw;
+    }
+  } catch (err) {
+    if (retryable(err) && attempt < 3) setTimeout(() => syncCamera(attempt + 1), 1500);
+    else { prefs.cam = false; toast(mediaError(err), 5000); }
+  } finally {
+    if (camOp?.room === room) camOp = null;
   }
+  if (camAgain) { camAgain = false; return syncCamera(); }
   renderControls();
+}
+
+async function setCam(on) {
+  prefs.cam = on;
+  if (on && !camAllowed()) toast("데이터 절약 모드라 카메라는 모둠 활동 때 켜져요.");
+  await syncCamera();
 }
 
 function renderMedia(room) {
@@ -203,6 +248,7 @@ function render() {
   renderQuestions();
   renderTabs();
   if (!micAllowed() && prefs.mic) setMic(false);
+  syncCamera(); // 방 이동·설정 변경·발언권에 맞춰 카메라를 켜고 끈다
   renderMedia(media.room);
   const note = $("#chat-note");
   note.hidden = S.settings.chat;
@@ -219,8 +265,10 @@ function renderControls() {
   mic.disabled = !connected;
   if (S && !micAllowed()) mic.textContent = "🔒 마이크 잠김";
   const cam = $("#cam");
-  cam.textContent = prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐";
-  cam.classList.toggle("on", prefs.cam);
+  const camOk = camAllowed();
+  cam.textContent = !camOk ? (prefs.cam ? "📷 모둠 때 켜짐" : "📷 카메라 꺼짐") : (prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐");
+  cam.title = camOk ? "카메라" : "데이터 절약 모드: 전체 교실에서는 카메라를 쓰지 않아요";
+  cam.classList.toggle("on", prefs.cam && camOk);
   cam.disabled = !connected;
   if (!S) return;
   const hand = $("#hand");
@@ -381,7 +429,8 @@ async function setScreen(on) {
   prefs.screen = false;
   if (!lp) return renderControls();
   try {
-    await lp.setScreenShareEnabled(on, { audio: true });
+    const [capture, publish] = screenOptions(!!S?.settings.lowbw);
+    await lp.setScreenShareEnabled(on, capture, publish);
     prefs.screen = on;
   } catch (err) {
     if (err?.name !== "NotAllowedError") toast("화면 공유를 시작하지 못했어요. 휴대폰에서는 지원되지 않을 수 있어요.");
