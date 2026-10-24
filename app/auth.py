@@ -177,7 +177,8 @@ async def save_profile(p: Profile, request: Request):
     u = await require_user(request, profile=False)
     name = re.sub(r"\s+", " ", p.name).strip()
     school = p.school.strip()
-    if SCHOOLS and school and school not in SCHOOLS:
+    # 학교 목록은 학생에게만 적용. 강사는 대학교수 등 학교 밖 사람일 수 있어 소속을 자유롭게 적는다.
+    if u["role"] == "student" and SCHOOLS and school and school not in SCHOOLS:
         raise HTTPException(400, "목록에 있는 학교를 골라 주세요.")
     values = {"name": name, "school": school}
     if u["role"] == "student":

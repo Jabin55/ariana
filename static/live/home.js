@@ -25,7 +25,7 @@ async function boot() {
   ME = CONFIG.user;
   $("#logout").hidden = !ME;
   $("#edit-profile").hidden = !ME || ME.needs_profile;
-  $("#who").textContent = ME ? `${ME.display} (${ME.role === "teacher" ? "선생님" : "학생"})` : "";
+  $("#who").textContent = ME ? `${ME.display} (${ME.role === "teacher" ? "강사" : "학생"})` : "";
   if (!ME) return showLogin();
   if (ME.needs_profile) return showProfile();
   if (ME.role === "teacher") return showTeacher();
@@ -90,10 +90,14 @@ function showProfile() {
   for (const id of ["#p-grade", "#p-class", "#p-number"]) $(id).required = student;
   $("#profile-hint").textContent = student
     ? "선생님이 출석을 확인할 수 있도록 정확하게 적어 주세요. 새 학년이 되면 여기서 고칠 수 있어요."
-    : "학생들에게 보일 이름과 학교를 적어 주세요.";
+    : "학생들에게 보일 이름과 소속을 적어 주세요. 학교 선생님이 아니어도 돼요(예: 대학교수).";
   $("#p-name").value = ME.name || "";
+  $("#p-school-label").textContent = student ? "학교" : "소속 (선택: 학교·대학교·기관)";
+  $("#p-school").placeholder = student ? "예: 가나중학교" : "예: 한국대학교 정치외교학과";
   const sel = $("#p-school-select");
-  if (CONFIG.schools.length) {
+  sel.hidden = true;
+  $("#p-school").hidden = false;
+  if (student && CONFIG.schools.length) {
     sel.hidden = false;
     $("#p-school").hidden = true;
     sel.replaceChildren(h("option", { value: "" }, "학교를 고르세요"),
@@ -119,7 +123,7 @@ $("#profile").addEventListener("submit", async (e) => {
   $("#profile-error").textContent = "";
   const body = {
     name: $("#p-name").value.trim(),
-    school: CONFIG.schools.length ? $("#p-school-select").value : $("#p-school").value.trim(),
+    school: ME.role === "student" && CONFIG.schools.length ? $("#p-school-select").value : $("#p-school").value.trim(),
   };
   if (ME.role === "student") {
     Object.assign(body, { grade: Number($("#p-grade").value), class_no: Number($("#p-class").value), number: Number($("#p-number").value) });
@@ -326,7 +330,6 @@ async function loadTeacherCourses() {
   ({ courses: teacherCourses } = await api("/api/courses/mine"));
   // 강좌 개설 칸 기본값: 내 이름·학교
   if (!$("#c-instructor").value) $("#c-instructor").value = ME?.name || "";
-  if (!$("#c-hub").value) $("#c-hub").value = ME?.school || "";
   const active = teacherCourses.filter((c) => !c.archived);
   // 수업 열기: 강좌 고르기
   const sel = $("#t-course");

@@ -521,3 +521,20 @@ def test_course_enrollment_join_without_code():
     assert b.get("/api/courses/available").json()["courses"] == []
     assert t.post("/api/live/classes", json={"title": "x", "course_id": cid}).status_code == 409
     assert t.post("/api/live/classes", json={"title": "x", "course_id": 999}).status_code == 404
+
+
+def test_instructor_can_be_outside_school_list(monkeypatch):
+    monkeypatch.setattr(auth, "SCHOOLS", [SCHOOL])
+    # 대학교수: 학교 목록에 없는 소속도 저장되고, 거점학교는 소속과 다르게 적을 수 있다
+    # 강사 목록(TEACHER_EMAILS)에 없는 대학 계정은 학교 계정이 아니라서 로그인 불가
+    assert TestClient(app).post("/api/auth/dev", json={"email": "prof@univ.ac.kr"}).status_code == 403
+    monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "prof@univ.ac.kr"})
+    prof = login("prof@univ.ac.kr", name="김교수", school="한국대학교 정치외교학과")
+    assert prof.get("/api/me").json()["user"]["school"] == "한국대학교 정치외교학과"
+    cid = prof.post("/api/courses", json={"title": "민주주의 이론", "instructor": "김교수", "hub_school": "가나고등학교",
+                                          "start_date": "2026-03-02", "end_date": "2099-12-18"}).json()["id"]
+    c = student(1).get("/api/courses/available").json()["courses"][0]
+    assert c["id"] == cid and c["instructor"] == "김교수" and c["hub_school"] == "가나고등학교"
+    # 학생은 여전히 목록에 있는 학교만
+    s = login("kid2@s.school.kr")
+    assert s.post("/api/me/profile", json={"name": "학생", "school": "아무학교", "grade": 1, "class_no": 1, "number": 1}).status_code == 400

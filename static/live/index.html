@@ -37,7 +37,7 @@
       <form id="profile">
         <label class="muted" for="p-name">이름 (실명)</label>
         <input id="p-name" maxlength="30" required>
-        <label class="muted" for="p-school">학교</label>
+        <label class="muted" for="p-school" id="p-school-label">학교</label>
         <select id="p-school-select" hidden></select>
         <input id="p-school" maxlength="60" placeholder="예: 가나중학교">
         <div class="student-only row">
@@ -125,7 +125,7 @@
           <form id="course-create" class="course-form">
             <label>강의명 <input id="c-title" maxlength="60" required placeholder="예: 정치와 법 (공동교육과정)"></label>
             <label>강사명 <input id="c-instructor" maxlength="30" required placeholder="예: 박선생"></label>
-            <label>거점학교명 <input id="c-hub" maxlength="60" required placeholder="예: 가나고등학교"></label>
+            <label>거점학교명 <input id="c-hub" maxlength="60" required placeholder="강의를 운영하는 학교 (강사 소속과 달라도 돼요)"></label>
             <div class="period">강의기간
               <div class="row"><input id="c-start" type="date" required> ~ <input id="c-end" type="date" required></div>
             </div>
