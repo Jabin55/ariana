@@ -335,3 +335,10 @@ table.att.grade tr.ungraded td:first-child { box-shadow: inset 3px 0 var(--accen
 #my-courses .row, #open-courses .row { border-bottom: 1px solid var(--border); padding: 6px 0; flex-wrap: nowrap; }
 .course-card.archived { opacity: 0.7; }
 details.card > summary { cursor: pointer; }
+.course-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.course-form label, .course-form .period { display: grid; gap: 4px; font-size: 0.9rem; color: var(--muted); }
+.course-form input { color: var(--text); }
+.course-form .wide { grid-column: 1 / -1; }
+.course-info { font-size: 0.85rem; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.course-form .period .row { flex-wrap: nowrap; }
+.course-form .period input { flex: 1; min-width: 0; }

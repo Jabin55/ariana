@@ -457,10 +457,22 @@ def test_grading_after_class():
 
 def test_course_enrollment_join_without_code():
     t = teacher()
-    cid = t.post("/api/courses", json={"title": "2026-1 정치", "description": "화·목"}).json()["id"]
+    course = {"title": "2026-1 정치", "instructor": "박선생", "hub_school": "가나고등학교",
+              "start_date": "2026-03-02", "end_date": "2099-07-17", "description": "화·목"}
+    bad = {**course, "start_date": "2026-08-01", "end_date": "2026-03-01"}
+    assert t.post("/api/courses", json=bad).status_code == 400  # 끝나는 날이 더 빠름
+    assert t.post("/api/courses", json={"title": "x"}).status_code == 422  # 필수 항목 빠짐
+    cid = t.post("/api/courses", json=course).json()["id"]
     a, b, outsider = student(1), student(2), student(3)
-    # 학생: 강좌 목록 → 수강신청 → 승인 대기
-    assert [c["title"] for c in a.get("/api/courses/available").json()["courses"]] == ["2026-1 정치"]
+    # 학생: 강좌 목록(강사명·거점학교·강의기간 표시) → 수강신청 → 승인 대기
+    shown = a.get("/api/courses/available").json()["courses"]
+    assert [(c["title"], c["instructor"], c["hub_school"], c["start_date"], c["end_date"]) for c in shown] == [
+        ("2026-1 정치", "박선생", "가나고등학교", "2026-03-02", "2099-07-17")]
+    # 거점학교 공동교육과정: 다른 학교 학생도 보이고 신청할 수 있다
+    other = login("far@s.school.kr", name="최다른", school="다라고등학교", grade=1, class_no=1, number=1)
+    assert [c["id"] for c in other.get("/api/courses/available").json()["courses"]] == [cid]
+    assert other.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    assert other.delete(f"/api/courses/{cid}/enroll").status_code == 200
     assert a.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
     assert b.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
     assert outsider.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
@@ -498,6 +510,10 @@ def test_course_enrollment_join_without_code():
     assert outsider.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
     assert b.delete(f"/api/courses/{cid}/enroll").status_code == 200
     assert b.get("/api/courses/live-now").json()["classes"] == []
+    # 정보 수정 (기간 검증 포함)
+    assert t.post(f"/api/courses/{cid}", json={"hub_school": "다라고등학교"}).status_code == 200
+    assert t.post(f"/api/courses/{cid}", json={"end_date": "2020-01-01"}).status_code == 400
+    assert a.get("/api/courses/available").json()["courses"][0]["hub_school"] == "다라고등학교"
     # 수강신청을 닫으면 새 신청 불가, 보관하면 목록에서 사라지고 수업도 못 연다
     t.post(f"/api/courses/{cid}", json={"open": False})
     assert b.post(f"/api/courses/{cid}/enroll").status_code == 409

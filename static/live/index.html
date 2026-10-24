@@ -120,12 +120,17 @@
 
       <div data-panel="courses" hidden>
         <section class="card" style="margin-bottom:16px">
-          <h2>새 강좌 만들기</h2>
+          <h2>새 강좌 개설</h2>
           <p class="muted" style="margin:0 0 10px;font-size:0.9rem">학기 초에 강좌를 만들면 학생들이 첫 화면에서 수강신청해요. 승인한 학생은 수업 때 코드 없이 들어오고, 승인하지 않은 학생은 코드를 알아도 들어올 수 없어요.</p>
-          <form id="course-create" class="row">
-            <input id="c-title" class="grow" maxlength="60" required placeholder="강좌 이름 (예: 2026-1학기 2학년 정치 화·목)">
-            <input id="c-desc" class="grow" maxlength="300" placeholder="설명 (선택)">
-            <button class="primary" type="submit">강좌 만들기</button>
+          <form id="course-create" class="course-form">
+            <label>강의명 <input id="c-title" maxlength="60" required placeholder="예: 정치와 법 (공동교육과정)"></label>
+            <label>강사명 <input id="c-instructor" maxlength="30" required placeholder="예: 박선생"></label>
+            <label>거점학교명 <input id="c-hub" maxlength="60" required placeholder="예: 가나고등학교"></label>
+            <div class="period">강의기간
+              <div class="row"><input id="c-start" type="date" required> ~ <input id="c-end" type="date" required></div>
+            </div>
+            <label class="wide">설명 (선택) <input id="c-desc" maxlength="300" placeholder="예: 화·목 7~8교시, 선거와 정당 단원"></label>
+            <button class="primary wide" type="submit">강좌 개설</button>
           </form>
           <p class="error" id="course-error"></p>
         </section>

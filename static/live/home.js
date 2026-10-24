@@ -154,13 +154,23 @@ async function loadLiveNow() {
     const { classes } = await api("/api/courses/live-now");
     const box = $("#live-now");
     box.replaceChildren(...classes.map((c) => h("div", { class: "live-item" },
-      h("div", { class: "grow" }, h("div", { class: "muted", style: "font-size:0.85rem" }, `${c.course_title} · ${fmtTime(c.started_at)} 시작`),
+      h("div", { class: "grow" }, h("div", { class: "muted", style: "font-size:0.85rem" },
+        `${c.course_title}${c.instructor ? ` · ${c.instructor}` : ""} · ${fmtTime(c.started_at)} 시작`),
         h("strong", {}, c.title)),
       h("button", { class: "primary", onclick: () => join(c.code) }, "입장하기"))));
     if (!classes.length) {
       box.append(h("span", { class: "muted" }, "지금 열린 수업이 없어요. 선생님이 수업을 열면 여기에 바로 나타나요."));
     }
   } catch { /* 다음 새로고침 때 다시 시도 */ }
+}
+
+const fmtDate = (d) => (d ? d.replaceAll("-", ".") : "");
+function courseInfo(c) {
+  const bits = [];
+  if (c.instructor) bits.push(`강사 ${c.instructor}`);
+  if (c.hub_school) bits.push(`거점학교 ${c.hub_school}`);
+  if (c.start_date || c.end_date) bits.push(`강의기간 ${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}`);
+  return h("div", { class: "course-info" }, bits.join(" · "), c.finished ? h("span", { class: "status rejected" }, "기간 종료") : null);
 }
 
 const ENROLL_STATUS = { approved: "수강 중", pending: "승인 대기", rejected: "거절됨" };
@@ -182,7 +192,7 @@ async function loadCourses() {
     loadCourses();
   };
   const line = (c) => h("div", { class: "course-line" },
-    h("div", { class: "grow" }, h("strong", {}, c.title), h("span", { class: "muted" }, ` · ${c.teacher || ""} 선생님`),
+    h("div", { class: "grow" }, h("strong", {}, c.title), courseInfo(c),
       c.description ? h("div", { class: "muted", style: "font-size:0.85rem" }, c.description) : null),
     c.status ? h("span", { class: `status ${c.status}` }, ENROLL_STATUS[c.status]) : null);
   $("#my-courses").replaceChildren(...mine.map((c) => h("div", { class: "row" }, line(c),
@@ -285,10 +295,38 @@ $("#create").addEventListener("submit", async (e) => {
 /* 강좌·수강생 관리 */
 
 let teacherCourses = [];
+const editing = new Set(); // 정보 수정 중인 강좌
+
+function courseEditForm(c) {
+  const f = (id, label, value, attrs = {}) => h("label", {}, label, h("input", { name: id, value, ...attrs }));
+  const form = h("form", { class: "course-form", style: "margin-top:8px", onsubmit: async (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(form));
+    try {
+      await api(`/api/courses/${c.id}`, v);
+      editing.delete(c.id);
+      toast("강좌 정보를 고쳤어요.");
+      loadTeacherCourses();
+    } catch (err) { toast(err.message); }
+  } },
+    f("title", "강의명", c.title, { maxlength: 60, required: true }),
+    f("instructor", "강사명", c.instructor, { maxlength: 30, required: true }),
+    f("hub_school", "거점학교명", c.hub_school, { maxlength: 60, required: true }),
+    h("div", { class: "period" }, "강의기간", h("div", { class: "row" },
+      h("input", { name: "start_date", type: "date", value: c.start_date, required: true }), " ~ ",
+      h("input", { name: "end_date", type: "date", value: c.end_date, required: true }))),
+    h("label", { class: "wide" }, "설명", h("input", { name: "description", value: c.description, maxlength: 300 })),
+    h("div", { class: "row wide" }, h("button", { class: "primary", type: "submit" }, "저장"),
+      h("button", { type: "button", onclick: () => { editing.delete(c.id); renderCourseList(); } }, "취소")));
+  return form;
+}
 const openCourse = new Set(); // 수강생 목록을 펼친 강좌
 
 async function loadTeacherCourses() {
   ({ courses: teacherCourses } = await api("/api/courses/mine"));
+  // 강좌 개설 칸 기본값: 내 이름·학교
+  if (!$("#c-instructor").value) $("#c-instructor").value = ME?.name || "";
+  if (!$("#c-hub").value) $("#c-hub").value = ME?.school || "";
   const active = teacherCourses.filter((c) => !c.archived);
   // 수업 열기: 강좌 고르기
   const sel = $("#t-course");
@@ -317,9 +355,11 @@ $("#course-create").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("#course-error").textContent = "";
   try {
-    await api("/api/courses", { title: $("#c-title").value, description: $("#c-desc").value });
-    $("#c-title").value = "";
-    $("#c-desc").value = "";
+    await api("/api/courses", {
+      title: $("#c-title").value, instructor: $("#c-instructor").value, hub_school: $("#c-hub").value,
+      start_date: $("#c-start").value, end_date: $("#c-end").value, description: $("#c-desc").value,
+    });
+    for (const id of ["#c-title", "#c-desc", "#c-start", "#c-end"]) $(id).value = "";
     toast("강좌를 만들었어요. 학생들이 첫 화면에서 수강신청할 수 있어요.");
     loadTeacherCourses();
   } catch (err) { $("#course-error").textContent = err.message; }
@@ -335,12 +375,15 @@ function renderCourseList() {
         h("h2", { class: "grow", style: "margin:0" }, c.title, c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
         h("span", {}, `수강생 ${c.approved}명`),
         c.pending ? h("span", { class: "status pending" }, `승인 대기 ${c.pending}`) : null),
+      courseInfo(c),
       c.description ? h("p", { class: "muted", style: "margin:4px 0" }, c.description) : null,
+      editing.has(c.id) ? courseEditForm(c) : null,
       h("div", { class: "row", style: "margin-top:6px" },
         !c.archived ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: c.open, onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
         h("button", { class: "small", onclick: () => { if (openCourse.has(c.id)) openCourse.delete(c.id); else openCourse.add(c.id); renderCourseList(); } },
           openCourse.has(c.id) ? "수강생 목록 접기" : "수강생 관리"),
         h("span", { class: "grow" }),
+        !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); renderCourseList(); } }, "정보 수정") : null,
         h("button", { class: "small", onclick: () => {
           if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
         } }, c.archived ? "보관 해제" : "보관 (학기 끝)")),

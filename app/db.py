@@ -45,9 +45,13 @@ courses = Table(
     "courses", metadata,  # 학기 초에 선생님이 여는 강좌. 학생은 수강신청하고 선생님이 승인한다.
     Column("id", Integer, primary_key=True),
     Column("teacher_id", Integer, nullable=False, index=True),
-    Column("title", String(60), nullable=False),
+    Column("title", String(60), nullable=False),  # 강의명
     Column("description", String(300), nullable=False, default=""),
-    Column("school", String(60), nullable=False, default=""),
+    Column("school", String(60), nullable=False, default=""),  # 개설한 선생님의 학교 (참고용)
+    Column("instructor", String(30), nullable=False, default=""),  # 강사명
+    Column("hub_school", String(60), nullable=False, default=""),  # 거점학교명
+    Column("start_date", String(10), nullable=False, default=""),  # 강의기간 시작 (YYYY-MM-DD)
+    Column("end_date", String(10), nullable=False, default=""),  # 강의기간 끝
     Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
     Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
     Column("created_at", Float, nullable=False),
@@ -136,7 +140,11 @@ def init() -> None:
     added = [("attendance", "left_reason", "VARCHAR(10)"),
              ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),
              ("activities", "points", "FLOAT NOT NULL DEFAULT 1"),
-             ("classes", "course_id", "INTEGER")]
+             ("classes", "course_id", "INTEGER"),
+             ("courses", "instructor", "VARCHAR(30) NOT NULL DEFAULT ''"),
+             ("courses", "hub_school", "VARCHAR(60) NOT NULL DEFAULT ''"),
+             ("courses", "start_date", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "end_date", "VARCHAR(10) NOT NULL DEFAULT ''")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:
