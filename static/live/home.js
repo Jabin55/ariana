@@ -7,7 +7,10 @@ const views = ["login-view", "profile-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
   $("#student-questions").hidden = true;
+  $("#student-results").hidden = true;
 }
+
+const fmtScore = (n) => (n === null || n === undefined ? "미채점" : `${Math.round(n * 100) / 100}`);
 
 function qaItem(q, who) {
   return h("div", { class: `q ${q.reply ? "" : "pending-reply"}` },
@@ -139,7 +142,24 @@ function showStudent() {
     return;
   }
   $("#code").focus();
+  loadMyResults();
   loadMyQuestions();
+}
+
+async function loadMyResults() {
+  try {
+    const { classes } = await api("/api/live/my-results");
+    if (!classes.length) return;
+    $("#my-results").replaceChildren(...classes.map((c) => h("details", { class: "result-class" },
+      h("summary", {}, h("strong", {}, `${c.date} · ${c.title}`), h("span", { class: "muted" }, `  ${fmtScore(c.score)} / ${fmtScore(c.max)}점`)),
+      ...c.items.map((it) => h("div", { class: "q" },
+        h("div", { class: "meta" }, `${it.no}. ${it.kind} · ${fmtScore(it.score)} / ${fmtScore(it.points)}점`),
+        h("div", {}, it.prompt),
+        h("div", {}, h("span", { class: "muted" }, "내 답: "), it.answer || "(답하지 않음)"),
+        it.correct_answer ? h("div", {}, h("span", { class: "muted" }, "정답: "), it.correct_answer) : null,
+        it.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${it.feedback}`) : null)))));
+    $("#student-results").hidden = false;
+  } catch { /* 결과를 못 불러와도 입장에는 지장 없음 */ }
 }
 
 async function loadMyQuestions() {
@@ -263,7 +283,80 @@ async function loadDetail(id) {
     h("p", { class: "muted", style: "font-size:0.85rem;margin-bottom:0" },
       "접속 시간은 실제로 수업에 들어와 있던 시간의 합, 중간 이탈은 첫 접속부터 마지막 종료 사이에 나가 있던 시간이에요. "
       + "새로고침·인터넷 끊김도 모두 한 번의 나감·들어옴으로 기록되고, 연결이 끊긴 경우 나간 시각은 학생 기기에서 마지막으로 신호가 온 때예요.")));
+  await loadGrades(id);
   loadClassQuestions(id);
+}
+
+/* 퀴즈·활동 채점: 수업이 끝난 뒤에도 답을 보고 점수·피드백을 줄 수 있다 */
+async function loadGrades(id) {
+  const box = h("section", { class: "card", id: "grades-box", style: "margin-top:12px" });
+  $("#h-detail").append(box);
+  await renderGrades(id, box);
+}
+
+async function renderGrades(id, box) {
+  const book = await api(`/api/live/history/${id}/grades`);
+  const acts = book.activities;
+  const ungraded = book.summary.reduce((n, p) => n + p.ungraded, 0);
+  box.replaceChildren(...[
+    h("div", { class: "row" },
+      h("h2", { class: "grow", style: "margin:0" }, `📝 퀴즈·활동 채점 ${acts.length}개`),
+      acts.length ? h("a", { href: `/api/live/history/${id}/grades.csv`, class: "button" }, "📥 점수 CSV") : null),
+    acts.length ? h("div", { class: "row" },
+      h("label", { class: "switch" }, h("input", {
+        type: "checkbox", checked: book.public,
+        onchange: async (e) => {
+          await api(`/api/live/history/${id}/publish`, { on: e.target.checked });
+          toast(e.target.checked ? "학생들이 첫 화면에서 자기 점수와 피드백을 볼 수 있어요." : "학생에게 보이지 않게 했어요.");
+        },
+      }), "채점 결과를 학생에게 공개"),
+      h("span", { class: "muted" }, ungraded ? `미채점 ${ungraded}건` : "모두 채점됨")) : null,
+    !acts.length ? h("p", { class: "muted" }, "이 수업에서 보낸 퀴즈·활동이 없어요.") : null,
+    ...acts.map((a) => gradeActivity(id, a, box)),
+    acts.length ? h("details", { open: true }, h("summary", {}, h("strong", {}, "학생별 총점")),
+      h("div", { class: "table-wrap" }, h("table", { class: "att" },
+        h("thead", {}, h("tr", {}, ["학번", "이름", "총점", "만점", "미채점"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, book.summary.map((p) => h("tr", {},
+          h("td", {}, p.student_no || "-"), h("td", {}, p.name), h("td", { class: "num" }, h("strong", {}, fmtScore(p.score))),
+          h("td", { class: "num" }, fmtScore(p.max)), h("td", { class: "num" }, p.ungraded || "-"))))))) : null,
+  ].filter(Boolean));
+}
+
+function gradeActivity(classId, a, box) {
+  const base = `/api/live/history/${classId}/activities/${a.id}`;
+  const points = h("input", { type: "number", min: 0, step: 0.5, value: a.points, style: "width:5em",
+    onchange: async (e) => { await api(`${base}/points`, { points: Number(e.target.value) || 0 }); await renderGrades(classId, box); } });
+  const head = h("div", { class: "row" },
+    h("strong", { class: "grow" }, `${a.no}. [${a.kind_name}] ${a.prompt}`),
+    a.gradable ? h("label", { class: "row" }, "배점", points, "점") : h("span", { class: "muted" }, "투표 (채점 안 함)"));
+  const info = a.correct_answer ? h("div", { class: "muted" }, `정답: ${a.correct_answer} · 자동 채점됨 (점수를 바꾸면 덮어써요)`)
+    : a.gradable ? h("div", { class: "muted" }, "정답이 없는 문제예요. 학생마다 점수를 주세요.") : null;
+  const rows = a.rows.map((r) => {
+    const save = async (score, feedback) => {
+      try {
+        await api(`${base}/grade`, { user_id: r.user_id, score, feedback });
+        await renderGrades(classId, box);
+      } catch (err) { toast(err.message); }
+    };
+    const scoreIn = h("input", { type: "number", min: 0, max: a.points, step: 0.5, value: r.score ?? "", placeholder: "점수", style: "width:5em" });
+    const fbIn = h("input", { class: "grow", maxlength: 1000, value: r.feedback, placeholder: "피드백 (선택)" });
+    const saveRow = () => save(scoreIn.value === "" ? null : Number(scoreIn.value), fbIn.value);
+    scoreIn.addEventListener("change", saveRow);
+    fbIn.addEventListener("change", saveRow);
+    return h("tr", { class: r.score === null && a.gradable && r.answered ? "ungraded" : "" },
+      h("td", {}, r.student_no || "-"), h("td", {}, r.name),
+      h("td", { class: "answer" }, r.answered ? r.answer : h("span", { class: "muted" }, "(미응답)"),
+        r.correct === true ? " ⭕" : r.correct === false ? " ❌" : ""),
+      a.gradable ? h("td", {}, h("div", { class: "row" }, scoreIn,
+        h("button", { class: "small", title: "만점", onclick: () => save(a.points, fbIn.value) }, "⭕"),
+        h("button", { class: "small", title: "0점", onclick: () => save(0, fbIn.value) }, "❌"),
+        r.manual ? h("span", { class: "muted", style: "font-size:0.75rem" }, "직접 채점") : null)) : null,
+      a.gradable ? h("td", {}, fbIn) : null);
+  });
+  return h("div", { class: "box", style: "margin-top:10px" }, head, info,
+    h("div", { class: "table-wrap" }, h("table", { class: "att grade" },
+      h("thead", {}, h("tr", {}, ["학번", "이름", "답", ...(a.gradable ? ["점수", "피드백"] : [])].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows))));
 }
 
 /* 이 수업의 '선생님께 질문'과 답장 */

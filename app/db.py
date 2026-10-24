@@ -11,7 +11,8 @@ import os
 import time
 
 from sqlalchemy import (
-    Column, Float, Integer, MetaData, String, Table, Text, create_engine, inspect, text, update,
+    Column, Float, Integer, MetaData, String, Table, Text, UniqueConstraint, create_engine, inspect, text,
+    update,
 )
 
 _url = os.environ.get("DATABASE_URL", "sqlite:///./live.db")
@@ -51,6 +52,7 @@ classes = Table(
     Column("target_class", Integer),
     Column("created_at", Float, nullable=False, index=True),
     Column("ended_at", Float),
+    Column("results_public", Integer, nullable=False, default=0),  # 채점 결과를 학생에게 공개
 )
 
 attendance = Table(
@@ -89,16 +91,31 @@ activities = Table(
     Column("correct", Integer),
     Column("responses", Text, nullable=False),  # JSON {user_id: 값}
     Column("created_at", Float, nullable=False),
+    Column("points", Float, nullable=False, default=1),  # 배점
+)
+
+grades = Table(
+    "grades", metadata,  # 수업이 끝난 뒤 선생님이 매긴 점수·피드백 (자동 채점을 덮어쓸 수도 있음)
+    Column("id", Integer, primary_key=True),
+    Column("activity_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False),
+    Column("score", Float),
+    Column("feedback", Text, nullable=False, default=""),
+    Column("graded_at", Float, nullable=False),
+    UniqueConstraint("activity_id", "user_id"),
 )
 
 
 def init() -> None:
     metadata.create_all(engine)
     # 예전 버전으로 만든 표에 새 칸 추가
-    cols = {c["name"] for c in inspect(engine).get_columns("attendance")}
-    if "left_reason" not in cols:
-        with engine.begin() as c:
-            c.execute(text("ALTER TABLE attendance ADD COLUMN left_reason VARCHAR(10)"))
+    added = [("attendance", "left_reason", "VARCHAR(10)"),
+             ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),
+             ("activities", "points", "FLOAT NOT NULL DEFAULT 1")]
+    for table, col, kind in added:
+        if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
+            with engine.begin() as c:
+                c.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {kind}"))
     # 서버가 갑자기 꺼져 '접속 중'으로 남은 기록은 마지막 확인 시각에 나간 것으로 정리
     with engine.begin() as c:
         c.execute(update(attendance).where(attendance.c.left_at.is_(None))

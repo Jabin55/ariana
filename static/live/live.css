@@ -317,3 +317,9 @@ table.att td:last-child { white-space: normal; min-width: 240px; }
 .q.pending-reply { border-style: dashed; }
 .landing > .row h1 { min-width: max-content; }
 @media (max-width: 600px) { #who { font-size: 0.8rem; } }
+table.att.grade td.answer { white-space: normal; min-width: 160px; }
+table.att.grade td:last-child { min-width: 180px; }
+table.att.grade tr.ungraded td:first-child { box-shadow: inset 3px 0 var(--accent); }
+.result-class { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.result-class summary { cursor: pointer; }
+.result-class .q { margin-top: 6px; }

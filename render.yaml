@@ -19,6 +19,9 @@ services:
     name: live-class
     runtime: python
     plan: free
+    # 학생 개인정보(회원·출결·질문·점수)를 다루므로 EU(독일)에 둔다.
+    # EU는 2025년 9월 개인정보보호위원회가 국내와 동등한 보호 수준으로 인정해 별도 동의 없이 이전할 수 있다.
+    region: frankfurt
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:

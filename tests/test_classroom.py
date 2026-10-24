@@ -386,3 +386,70 @@ def test_questions_and_replies_are_kept():
     assert b.get("/api/live/my-questions").json()["questions"] == []  # 다른 학생 것은 안 보임
     assert a.get(f"/api/live/history/{cid}/questions").status_code == 403
     assert teacher("other@gmail.com").get(f"/api/live/history/{cid}/questions").status_code == 404
+
+
+def test_grading_after_class():
+    t = teacher()
+    c = create(t, title="선거 제도")
+    code, cid = c["code"], c["class_id"]
+    a, b = student(1), student(2)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, \
+         a.websocket_connect(f"/ws/live/{code}") as sa, b.websocket_connect(f"/ws/live/{code}") as sb:
+        state(sa)
+        state(sb)
+        # 1) 객관식 (정답 있음) → 자동 채점
+        tw.send_json({"t": "activity_start", "kind": "choice", "prompt": "대통령제 국가는?",
+                      "options": ["영국", "미국"], "correct": 1})
+        act = state(sa, lambda m: m["activity"])["activity"]
+        sa.send_json({"t": "answer", "id": act["id"], "value": 1})
+        sb.send_json({"t": "answer", "id": act["id"], "value": 0})
+        state(tw, lambda m: m["activity"] and m["activity"]["total"] == 2)
+        # 2) 주관식 → 선생님이 채점 (학생2는 답하지 않음)
+        tw.send_json({"t": "activity_start", "kind": "text", "prompt": "선거의 4대 원칙을 쓰세요"})
+        act2 = state(sa, lambda m: m["activity"] and m["activity"]["kind"] == "text")["activity"]
+        sa.send_json({"t": "answer", "id": act2["id"], "value": "보통, 평등, 직접, 비밀"})
+        state(tw, lambda m: m["activity"] and m["activity"]["total"] == 1)
+        # 3) 투표 → 채점 안 함
+        tw.send_json({"t": "activity_start", "kind": "poll", "prompt": "오늘 수업 어땠나요?", "options": ["좋음", "보통"]})
+        act3 = state(sa, lambda m: m["activity"] and m["activity"]["kind"] == "poll")["activity"]
+        sa.send_json({"t": "answer", "id": act3["id"], "value": 0})
+        state(tw, lambda m: m["activity"] and m["activity"]["total"] == 1)
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    time.sleep(0.4)
+
+    book = t.get(f"/api/live/history/{cid}/grades").json()
+    assert [x["kind"] for x in book["activities"]] == ["choice", "text", "poll"]
+    choice, text, poll = book["activities"]
+    r = {x["student_no"]: x for x in choice["rows"]}
+    assert r["20301"]["score"] == 1 and r["20302"]["score"] == 0 and r["20301"]["correct"] is True
+    assert {x["student_no"]: x["score"] for x in text["rows"]} == {"20301": None, "20302": 0}  # 답한 학생은 미채점, 미응답은 0점
+    assert not poll["gradable"]
+    s1 = next(p for p in book["summary"] if p["student_no"] == "20301")
+    assert s1["score"] == 1 and s1["max"] == 2 and s1["ungraded"] == 1
+
+    # 배점 바꾸고 주관식 채점, 객관식 점수 직접 고치기
+    uid1 = r["20301"]["user_id"]
+    uid2 = r["20302"]["user_id"]
+    base = f"/api/live/history/{cid}/activities"
+    assert t.post(f"{base}/{text['id']}/points", json={"points": 4}).status_code == 200
+    assert t.post(f"{base}/{text['id']}/grade", json={"user_id": uid1, "score": 3, "feedback": "'직접'의 뜻도 써 보세요"}).status_code == 200
+    assert t.post(f"{base}/{text['id']}/grade", json={"user_id": uid2, "score": 9}).status_code == 400  # 배점 초과
+    assert t.post(f"{base}/{text['id']}/grade", json={"user_id": uid2, "score": 0, "feedback": "미제출"}).status_code == 200
+    assert t.post(f"{base}/{choice['id']}/grade", json={"user_id": uid2, "score": 0.5, "feedback": "부분 점수"}).status_code == 200
+    book = t.get(f"/api/live/history/{cid}/grades").json()
+    tot = {p["student_no"]: p for p in book["summary"]}
+    assert tot["20301"]["score"] == 4 and tot["20301"]["max"] == 5 and tot["20301"]["ungraded"] == 0
+    assert tot["20302"]["score"] == 0.5
+    csv_text = t.get(f"/api/live/history/{cid}/grades.csv").text
+    assert "20301" in csv_text and "'직접'의 뜻도" in csv_text and "부분 점수" in csv_text
+
+    # 공개 전에는 학생이 못 보고, 공개하면 자기 것만 본다
+    assert a.get("/api/live/my-results").json()["classes"] == []
+    assert t.post(f"/api/live/history/{cid}/publish", json={"on": True}).status_code == 200
+    mine = a.get("/api/live/my-results").json()["classes"][0]
+    assert mine["title"] == "선거 제도" and mine["score"] == 4 and mine["max"] == 5
+    assert [i["score"] for i in mine["items"]] == [1, 3] and mine["items"][1]["feedback"] == "'직접'의 뜻도 써 보세요"
+    # 다른 선생님·학생은 채점 불가
+    assert a.post(f"{base}/{text['id']}/grade", json={"user_id": uid1, "score": 4}).status_code == 403
+    assert teacher("other@gmail.com").get(f"/api/live/history/{cid}/grades").status_code == 404
