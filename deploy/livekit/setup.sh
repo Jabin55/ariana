@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# 실시간 수업용 화상 서버(LiveKit) 설치 스크립트
+#
+# 새로 만든 Ubuntu 24.04 서버에서 root로 한 번만 실행하면 된다.
+#   bash setup.sh                      → 무료 주소(…sslip.io)를 자동으로 사용
+#   bash setup.sh live.myschool.kr     → 내 도메인 사용. live.myschool.kr 와 turn.live.myschool.kr 가
+#                                        이 서버 IP를 가리키도록 DNS(A 레코드)를 먼저 만들어 둘 것
+#
+# 하는 일: Docker 설치 → 방화벽 → 보안 업데이트 자동 설치(새벽 4시 자동 재부팅)
+#         → LiveKit + Caddy(HTTPS 인증서 자동 발급·갱신, TURN 우회 경로) 실행 → 접속 정보 출력
+# 다시 실행해도 안전하다(키는 처음 만든 것을 그대로 쓴다).
+set -euo pipefail
+
+LIVEKIT_IMAGE="livekit/livekit-server:v1.13.10"
+CADDY_IMAGE="livekit/caddyl4:v2.11.3"
+DIR="${LIVEKIT_DIR:-/opt/livekit}"
+INFO="${LIVEKIT_INFO:-/root/livekit-info.txt}"
+SKIP_SYSTEM="${SKIP_SYSTEM:-0}"  # 1이면 설정 파일만 만든다 (시험용)
+
+log() { echo -e "\n\033[1;34m▶ $*\033[0m"; }
+
+IP="${SERVER_IP:-$(curl -4 -fsS --max-time 10 https://api.ipify.org || hostname -I | awk '{print $1}')}"
+DOMAIN="${1:-live.${IP//./-}.sslip.io}"
+TURN_DOMAIN="${2:-turn.$DOMAIN}"
+mkdir -p "$DIR"
+
+# ── 키: 처음 한 번 만들고 계속 같은 것을 쓴다 (Render 설정을 다시 할 필요 없게)
+if [ -f "$DIR/keys.env" ]; then
+  # shellcheck disable=SC1091
+  source "$DIR/keys.env"
+else
+  API_KEY="API$(openssl rand -hex 6)"
+  API_SECRET="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48)"
+  printf 'API_KEY=%s\nAPI_SECRET=%s\n' "$API_KEY" "$API_SECRET" > "$DIR/keys.env"
+  chmod 600 "$DIR/keys.env"
+fi
+
+if [ "$SKIP_SYSTEM" != "1" ]; then
+  log "프로그램 설치 (Docker, 방화벽, 자동 보안 업데이트)"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y docker.io docker-compose-v2 ufw unattended-upgrades curl openssl
+  systemctl enable --now docker
+  timedatectl set-timezone Asia/Seoul || true
+
+  # 보안 업데이트는 매일 자동 설치, 필요하면 새벽 4시(한국 시각)에 자동 재부팅 → 관리할 필요 없음
+  cat > /etc/apt/apt.conf.d/52live-class-auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+EOF
+
+  log "방화벽 설정"
+  ufw allow 22/tcp          # 관리용 접속
+  ufw allow 80/tcp          # HTTPS 인증서 발급
+  ufw allow 443/tcp         # 화상 서버 접속 + 학교망 우회(TURN/TLS)
+  ufw allow 7881/tcp        # UDP가 막힌 곳에서 영상 전송
+  ufw allow 3478/udp        # TURN
+  ufw allow 50000:60000/udp # 영상·음성
+  ufw --force enable
+fi
+
+log "설정 파일 만들기 ($DIR)"
+cat > "$DIR/livekit.yaml" <<EOF
+# 자동 생성됨 (setup.sh). 고친 뒤에는: cd $DIR && docker compose restart
+port: 7880
+bind_addresses:
+  - ""
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+  enable_loopback_candidate: false
+turn:
+  enabled: true
+  domain: $TURN_DOMAIN
+  tls_port: 5349
+  udp_port: 3478
+  external_tls: true
+  proxy_protocol: true
+keys:
+  $API_KEY: $API_SECRET
+logging:
+  level: info
+EOF
+chmod 600 "$DIR/livekit.yaml"
+
+# Caddy: 443 포트 하나로 들어온 연결을 이름(SNI)에 따라 화상 서버와 TURN으로 나눈다.
+# 인증서는 Let's Encrypt에서 자동으로 받고 자동으로 갱신한다.
+cat > "$DIR/caddy.yaml" <<EOF
+logging:
+  logs:
+    default:
+      level: INFO
+storage:
+  module: file_system
+  root: /data
+apps:
+  tls:
+    certificates:
+      automate:
+        - $DOMAIN
+        - $TURN_DOMAIN
+  layer4:
+    servers:
+      main:
+        listen: [":443"]
+        routes:
+          - match:
+              - tls:
+                  sni: ["$TURN_DOMAIN"]
+            handle:
+              - handler: tls
+              - handler: proxy
+                proxy_protocol: v2
+                upstreams:
+                  - dial: ["localhost:5349"]
+          - match:
+              - tls:
+                  sni: ["$DOMAIN"]
+            handle:
+              - handler: tls
+                connection_policies:
+                  - alpn: ["http/1.1"]
+              - handler: proxy
+                upstreams:
+                  - dial: ["localhost:7880"]
+EOF
+
+cat > "$DIR/docker-compose.yaml" <<EOF
+# 자동 생성됨 (setup.sh). 서버가 재부팅되면 자동으로 다시 켜진다.
+services:
+  caddy:
+    image: $CADDY_IMAGE
+    command: run --config /etc/caddy.yaml --adapter yaml
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./caddy.yaml:/etc/caddy.yaml:ro
+      - ./caddy_data:/data
+  livekit:
+    image: $LIVEKIT_IMAGE
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+EOF
+
+cat > "$INFO" <<EOF
+━━━━━━━━━━━━ 실시간 수업 화상 서버 접속 정보 ━━━━━━━━━━━━
+아래 세 줄을 Render 환경 변수에 넣으세요.
+
+LIVEKIT_URL=wss://$DOMAIN
+LIVEKIT_API_KEY=$API_KEY
+LIVEKIT_API_SECRET=$API_SECRET
+
+상태 확인 주소(브라우저에서 OK가 보이면 정상): https://$DOMAIN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+chmod 600 "$INFO"
+
+if [ "$SKIP_SYSTEM" = "1" ]; then
+  cat "$INFO"
+  exit 0
+fi
+
+# 서버 콘솔에 로그인하면 접속 정보가 바로 보이게
+cp "$INFO" /etc/motd
+
+log "화상 서버 시작"
+cd "$DIR"
+for i in 1 2 3 4 5; do  # Docker Hub가 일시적으로 거절할 때를 대비해 다시 시도
+  docker compose pull && break
+  sleep $((i * 20))
+done
+docker compose up -d
+
+log "HTTPS 인증서 발급을 기다리는 중 (보통 1분 이내)"
+ok=0
+for _ in $(seq 1 60); do
+  if curl -fsS --max-time 5 "https://$DOMAIN" 2>/dev/null | grep -q OK; then ok=1; break; fi
+  sleep 5
+done
+
+cat "$INFO"
+if [ "$ok" = "1" ]; then
+  echo "✅ 설치 완료: 화상 서버가 정상 동작합니다."
+else
+  echo "⚠️  아직 https://$DOMAIN 에 연결되지 않습니다. 도메인(DNS)이 이 서버 IP($IP)를 가리키는지 확인하고,"
+  echo "    몇 분 뒤 브라우저로 다시 열어 보세요. 로그 확인: cd $DIR && docker compose logs --tail 50"
+fi

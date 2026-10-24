@@ -96,7 +96,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 |---|---|---|
 | 웹 서버 | Render 무료 웹 서비스 | 무료 (월 750시간). 안정성이 걱정되면 Starter 월 $7 |
 | 데이터베이스(회원·출결) | [Neon](https://neon.com) 무료 PostgreSQL | 무료 (1GB, 월 100 CU-시간, 기한 없음) |
-| 화상·음성 | [LiveKit Cloud](https://livekit.io/pricing) **Ship** | 월 $50: 15만 참가자·분, 내려받는 데이터 250GB 포함. 넘으면 GB당 $0.12 |
+| 화상·음성 | **직접 운영 (Hetzner, 추천)** — [설치 안내](deploy/livekit/README.md) | 월 약 €6 (한 반) ~ €30~60 (학교 전체) |
+| 화상·음성 (대안) | [LiveKit Cloud](https://livekit.io/pricing) **Ship** | 월 $50: 15만 참가자·분, 내려받는 데이터 250GB 포함. 넘으면 GB당 $0.12 |
 
 - 참가자·분은 Ship 포함량(15만) 안에 넉넉히 들어갑니다.
 - 데이터 절약 모드(기본)를 켜 두면 35명 × 월 5회 × 4시간에 약 100~180GB라 포함량(250GB) 안에 들어갑니다. 예상: **월 $50 (약 7만 원)**.
@@ -134,11 +135,11 @@ Google Workspace for Education은 **만 18세 미만 학생이 관리자가 허�
 | `SECRET_KEY` | 로그인 쿠키 서명용. `render.yaml` 로 배포하면 자동 생성 |
 | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | 4)의 값 |
 
-### 화상 서버를 직접 운영하기 (매주 여러 번 수업할 때)
+### 화상 서버를 직접 운영하기 (추천: 연 10만 원대)
 
-서울 리전 가상 서버(2~4코어·4GB, 월 2~4만 원 선)에 LiveKit을 설치하면 사용량 제한이 없습니다.
-도메인이 하나 필요하고, [공식 설치 안내](https://docs.livekit.io/home/self-hosting/vm/)의 설정 생성기(`docker run --rm -it -v$PWD:/output livekit/generate`)가 HTTPS·TURN 설정까지 만들어 줍니다.
-학교망이 UDP를 막는 경우가 많으니 **TURN(TLS 443)을 꼭 켜 두세요.**
+**[deploy/livekit/README.md](deploy/livekit/README.md)** 를 따라 Hetzner 해외 서버(월 약 €6, 트래픽 20TB 포함)에 설치하면
+LiveKit Cloud 요금 없이 운영할 수 있습니다. 서버를 만들 때 [`cloud-init.yaml`](deploy/livekit/cloud-init.yaml) 을 붙여 넣으면 설치가 자동으로 끝나고,
+HTTPS 인증서·보안 업데이트·재시작이 모두 자동이라 평소 관리할 일이 없습니다. 학교 와이파이처럼 UDP가 막힌 곳을 위한 우회 경로(TURN, 443 포트)도 함께 설정됩니다.
 
 ### 개인정보 관련 확인할 점
 
@@ -199,7 +200,7 @@ Google Workspace for Education은 **만 18세 미만 학생이 관리자가 허�
 ### 개발
 
 ```bash
-pip install -r requirements.txt pytest httpx
+pip install -r requirements.txt pytest httpx pyyaml
 python -m pytest tests          # 수업 서버 테스트
 # 로컬 시험: livekit-server --dev 실행 후 (DEV_LOGIN=1 은 구글 없이 이메일만으로 로그인하는 개발용. 배포 서버에서는 절대 켜지 마세요)
 DEV_LOGIN=1 ALLOWED_DOMAINS=s.school.kr TEACHER_EMAILS=t@gmail.com \
