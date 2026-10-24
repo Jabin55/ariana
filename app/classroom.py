@@ -43,6 +43,11 @@ CHAT_INTERVAL = 0.8  # 학생 채팅 최소 간격(초)
 CLASS_REVIVE_LIMIT = 24 * 3600  # 서버 재시작 뒤 이 시간 안에 만든 수업은 같은 코드로 이어진다
 MEMORY_IDLE_LIMIT = 3 * 3600  # 아무도 없는 수업은 메모리에서 내린다(DB에는 남음)
 HEARTBEAT = 60  # 접속 중인 학생의 '마지막 확인 시각'을 DB에 적는 간격(초)
+# 화면은 20초마다 신호를 보낸다. 이 시간 동안 아무 신호가 없으면 인터넷이 끊긴 것으로 본다.
+# (백그라운드 탭은 브라우저가 타이머를 1분 간격까지 늦출 수 있어 여유를 둔다)
+SILENCE_LIMIT = 70
+# 같은 학생이 새로 연결했을 때, 이만큼 조용하던 옛 연결은 끊긴 것으로 바로 정리한다
+STALE_AFTER = 30
 TEXT_LIMIT = 500
 
 
@@ -68,6 +73,7 @@ class Student:
     group: str | None = None
     last_chat: float = 0.0
     att_id: int | None = None  # 지금 열려 있는 출결 기록
+    sessions: int = 0  # 이 수업에 들어온 횟수 (2 이상이면 재입장)
 
 
 @dataclass
@@ -80,6 +86,9 @@ class Conn:
     last_state: str = ""
     chat_room: str | None = None  # 학생이 마지막으로 채팅 기록을 받은 방
     kicked_student: Student | None = None  # 강퇴된 학생 (연결이 끊길 때 출결을 닫기 위함)
+    last_recv: float = field(default_factory=time.time)  # 학생 기기에서 마지막으로 신호가 온 시각
+    leave_reason: str | None = None
+    evicted: bool = False  # 새 연결이 들어와 끊긴 것으로 정리됨
 
 
 @dataclass
@@ -104,8 +113,10 @@ class Klass:
     listening: list[str] = field(default_factory=list)  # 선생님이 듣고 있는 모둠
     talking: str | None = None  # 선생님이 말하고 있는 모둠
     broadcasting: bool = False  # 선생님이 모든 방에 동시에 말하는 중
+    events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)
     seq: int = 0
     flush_scheduled: bool = False
+    flush_at: float = 0.0
 
     def next_id(self) -> str:
         self.seq += 1
@@ -179,10 +190,53 @@ def _att_open(class_id: int, user_id: int) -> int:
             class_id=class_id, user_id=user_id, joined_at=now, last_seen=now)).inserted_primary_key[0]
 
 
-def _att_close(att_id: int) -> None:
-    now = time.time()
+def _att_close(att_id: int, at: float, reason: str) -> None:
     with db.engine.begin() as c:
-        c.execute(update(db.attendance).where(db.attendance.c.id == att_id).values(left_at=now, last_seen=now))
+        c.execute(update(db.attendance).where(db.attendance.c.id == att_id)
+                  .values(left_at=at, last_seen=at, left_reason=reason))
+
+
+def log_event(k: Klass, s: Student, kind: str, reason: str | None = None, ts: float | None = None) -> None:
+    k.events.append({"ts": ts or time.time(), "sid": s.id, "name": s.name, "kind": kind, "reason": reason})
+    del k.events[:-100]
+
+
+def drop_conn(k: Klass, conn: Conn, s: Student | None) -> None:
+    """연결 하나가 끝났을 때: 그 학생의 마지막 연결이었으면 출결을 닫는다."""
+    if conn in k.conns:
+        k.conns.remove(conn)
+    if not s:
+        return
+    s.conns = max(0, s.conns - 1)
+    if s.conns or not s.att_id:
+        return
+    att_id, s.att_id = s.att_id, None
+    reason = conn.leave_reason or "closed"
+    # 연결이 끊긴 경우 실제로 나간 시각은 마지막으로 신호를 받은 때다
+    at = conn.last_recv if reason == "network" else time.time()
+    log_event(k, s, "leave", reason, at)
+    if classes.get(k.code) is k:
+        flush(k)  # 선생님 화면에 바로 알린다
+    # 기다리지 않고 별도 스레드에 맡긴다: 연결 처리 작업이 취소돼도(서버 종료 등) 기록은 끝까지 저장된다
+    fut = asyncio.get_running_loop().run_in_executor(None, _att_close, att_id, at, reason)
+    fut.add_done_callback(lambda f: f.exception() and log.warning("출결 기록 실패: %s", f.exception()))
+
+
+def evict_stale(k: Klass, sid: str) -> None:
+    """같은 학생이 새로 연결했는데 옛 연결이 한동안 조용했다면 인터넷이 끊겼던 것이다."""
+    now = time.time()
+    for old in [c for c in k.conns if c.sid == sid and now - c.last_recv > STALE_AFTER]:
+        old.evicted = True
+        old.leave_reason = "network"
+        drop_conn(k, old, k.students.get(sid))
+
+        async def close(ws=old.ws):
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
+        asyncio.get_running_loop().create_task(close())
 
 
 def _att_touch(ids: list[int]) -> None:
@@ -275,7 +329,8 @@ def teacher_state(k: Klass) -> dict:
         "settings": k.settings, "livekit": livekit_ready(),
         "students": [
             {"id": s.id, "name": s.name, "online": s.conns > 0, "hand": s.hand,
-             "help": s.help, "can_speak": s.can_speak, "group": s.group, "room": k.room_of(s)}
+             "help": s.help, "can_speak": s.can_speak, "group": s.group, "room": k.room_of(s),
+             "sessions": s.sessions}
             for s in k.students.values()
         ],
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at,
@@ -283,6 +338,7 @@ def teacher_state(k: Klass) -> dict:
         "questions": k.questions[-100:],
         "announce": k.announce, "listening": k.listening, "talking": k.talking,
         "broadcasting": k.broadcasting,
+        "events": k.events[-50:],
     }
 
 
@@ -332,9 +388,11 @@ def send(conn: Conn, obj: dict | str) -> None:
 
 def push(k: Klass) -> None:
     """상태가 바뀌었음을 표시한다. 짧은 시간에 여러 번 바뀌면 한 번만 보낸다."""
-    if k.flush_scheduled:
+    now = time.time()
+    if k.flush_scheduled and now - k.flush_at < 1:  # 1초가 넘게 안 보내졌으면 예약이 사라진 것으로 보고 다시 예약
         return
     k.flush_scheduled = True
+    k.flush_at = now
     asyncio.get_running_loop().call_later(0.05, flush, k)
 
 
@@ -596,12 +654,16 @@ async def live_socket(ws: WebSocket, code: str):
 
     writer_task = asyncio.create_task(writer())
     send(conn, {"t": "hello", "now": time.time(), "role": conn.role})
+    if conn.role == "student":
+        evict_stale(k, conn.sid)
     k.conns.append(conn)
     k.last_active = time.time()
     if conn.role == "student":
         s = k.students[conn.sid]
         s.conns += 1
         if s.conns == 1 and not s.att_id:  # 출결: 접속 시작
+            s.sessions += 1
+            log_event(k, s, "rejoin" if s.sessions > 1 else "join")
             try:
                 s.att_id = await db.run(_att_open, k.db_id, int(s.id))
             except Exception:
@@ -613,7 +675,12 @@ async def live_socket(ws: WebSocket, code: str):
 
     try:
         while True:
-            raw = await ws.receive_text()
+            try:
+                raw = await asyncio.wait_for(ws.receive_text(), SILENCE_LIMIT)
+            except asyncio.TimeoutError:
+                conn.leave_reason = "network"  # 기기가 꺼졌거나 인터넷이 끊김
+                break
+            conn.last_recv = time.time()
             try:
                 msg = json.loads(raw)
             except ValueError:
@@ -625,6 +692,9 @@ async def live_socket(ws: WebSocket, code: str):
                 continue
             if conn.sid and conn.sid not in k.students:
                 break  # 강퇴됨
+            if msg.get("t") == "leave":  # 학생이 '나가기'를 눌렀다 (곧 연결을 끊는다)
+                conn.leave_reason = "leave"
+                continue
             k.last_active = time.time()
             if conn.role == "teacher":
                 handle_teacher(k, conn, msg)
@@ -639,31 +709,28 @@ async def live_socket(ws: WebSocket, code: str):
             await ws.close()
         except Exception:
             pass
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as e:
+        # 1000·1001·1005: 창을 닫거나 새로고침·다른 페이지로 이동. 그 밖은 인터넷 끊김·기기 잠듦 등.
+        # 정상 종료 코드라도 그 전에 한동안 신호가 없었다면 서버가 응답 없는 연결을 정리한 것이다.
+        if not conn.leave_reason:
+            normal = e.code in (1000, 1001, 1005) and time.time() - conn.last_recv < STALE_AFTER
+            conn.leave_reason = "closed" if normal else "network"
     except Exception:
+        conn.leave_reason = conn.leave_reason or "network"
         log.exception("WebSocket 처리 중 오류")
     finally:
         writer_task.cancel()
-        if conn in k.conns:
-            k.conns.remove(conn)
-        if conn.role == "teacher" and not k.teacher_online():
-            k.listening, k.talking, k.broadcasting = [], None, False
+        if conn.role == "teacher":
+            if conn in k.conns:
+                k.conns.remove(conn)
+            if not k.teacher_online():
+                k.listening, k.talking, k.broadcasting = [], None, False
+        elif not conn.evicted:  # 이미 정리된 연결은 다시 세지 않는다
+            # 강퇴된 학생은 students에서 빠졌으므로 conn에 남은 정보로 출결을 닫는다
+            drop_conn(k, conn, k.students.get(conn.sid or "") or conn.kicked_student)
         k.last_active = time.time()
         if classes.get(k.code) is k:
             push(k)
-        s = k.students.get(conn.sid or "")
-        if conn.role == "student":
-            # 강퇴된 학생은 students에서 빠졌으므로 conn에 남은 출결 번호로 닫는다
-            s = s or conn.kicked_student
-        if s:
-            s.conns = max(0, s.conns - 1)
-            if s.conns == 0 and s.att_id:  # 출결: 접속 종료
-                att_id, s.att_id = s.att_id, None
-                try:
-                    await db.run(_att_close, att_id)
-                except Exception:
-                    log.warning("출결 기록 실패", exc_info=True)
 
 
 def handle_student(k: Klass, s: Student, m: dict) -> None:
@@ -736,6 +803,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
             for c in k.conns:
                 if c.sid == s.id:
                     c.kicked_student = s  # 연결이 끊길 때 출결을 닫기 위해
+                    c.leave_reason = "kicked"
             send_to_students(k, {"t": "kicked"}, s.id)
             remove_from_livekit(k, s.id)
     elif t == "announce":
@@ -817,6 +885,11 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 s.help = False
     elif t == "end_class":
         save_activity(k, k.activity)
+        # 접속 중인 학생의 출결을 '수업 종료'로 바로 닫는다
+        open_ids = [s.att_id for s in k.students.values() if s.att_id]
+        for s in k.students.values():
+            s.att_id = None
+        ended_at = time.time()
         send_to_students(k, {"t": "ended"})
         for c in k.conns:
             if c.role == "teacher":
@@ -827,7 +900,10 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
 
         def run():
             with db.engine.begin() as c:
-                c.execute(update(db.classes).where(db.classes.c.id == class_id).values(ended_at=time.time()))
+                c.execute(update(db.classes).where(db.classes.c.id == class_id).values(ended_at=ended_at))
+                if open_ids:
+                    c.execute(update(db.attendance).where(db.attendance.c.id.in_(open_ids))
+                              .values(left_at=ended_at, last_seen=ended_at, left_reason="ended"))
 
         asyncio.get_running_loop().create_task(db.run(run))
 

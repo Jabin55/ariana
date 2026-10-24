@@ -221,3 +221,80 @@ def test_websocket_rejects_other_origin_and_anonymous():
         assert ws.receive_json()["code"] == "bad_origin"
     with TestClient(app).websocket_connect(f"/ws/live/{code}") as ws:
         assert ws.receive_json()["code"] == "login"
+
+
+def test_rejoin_reasons_are_recorded():
+    t = teacher()
+    c = create(t)
+    code, cid = c["code"], c["class_id"]
+    a = student(1)
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        # 1) 창 닫기(정상 종료)
+        with a.websocket_connect(f"/ws/live/{code}") as sa:
+            state(sa)
+        state(tw, lambda m: any(e["kind"] == "leave" for e in m["events"]))
+        # 2) 인터넷 끊김(비정상 종료)
+        with a.websocket_connect(f"/ws/live/{code}") as sa:
+            state(sa)
+            sa.close(code=1006)
+        ts = state(tw, lambda m: sum(e["kind"] == "leave" for e in m["events"]) == 2)
+        assert [e["kind"] for e in ts["events"]] == ["join", "leave", "rejoin", "leave"]
+        assert ts["events"][1]["reason"] == "closed" and ts["events"][3]["reason"] == "network"
+        assert ts["students"][0]["sessions"] == 2
+        # 3) 나가기 버튼
+        with a.websocket_connect(f"/ws/live/{code}") as sa:
+            state(sa)
+            sa.send_json({"t": "leave"})
+        state(tw, lambda m: sum(e["kind"] == "leave" for e in m["events"]) == 3)
+
+        # 4) 다시 들어와 있다가 수업 종료
+        sa = a.websocket_connect(f"/ws/live/{code}")
+        sa.__enter__()
+        state(sa)
+        state(tw, lambda m: m["students"][0]["online"])
+        tw.send_json({"t": "end_class"})
+        until(sa, lambda m: m["t"] == "ended")
+        sa.__exit__(None, None, None)
+    time.sleep(0.3)
+    rep = t.get(f"/api/live/history/{cid}").json()
+    p = rep["students"][0]
+    assert p["count"] == 4 and p["rejoins"] == 3
+    assert [s["reason"] for s in p["sessions"]] == ["closed", "network", "leave", "ended"]
+    assert p["sessions"][0]["gap_before"] is None and p["sessions"][1]["gap_before"] is not None
+    log_csv = t.get(f"/api/live/history/{cid}/attendance-log.csv").text
+    assert log_csv.count("20301") == 4 and "연결 끊김" in log_csv and "나가기 버튼" in log_csv and "수업 종료" in log_csv
+
+
+def test_silent_device_is_recorded_as_network_drop(monkeypatch):
+    t = teacher()
+    c = create(t)
+    code, cid = c["code"], c["class_id"]
+    a = student(1)
+    # 1) 기기가 멈춰 아무 신호도 없으면 일정 시간 뒤 '연결 끊김'
+    monkeypatch.setattr(cr, "SILENCE_LIMIT", 1)
+    with a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)
+        with pytest.raises(Exception):  # 서버가 연결을 끊는다
+            for _ in range(20):
+                sa.receive_json()
+    k = cr.classes[code]
+    assert k.events[-1]["kind"] == "leave" and k.events[-1]["reason"] == "network"
+    # 2) 끊긴 줄 모르는 사이 다시 연결되면 옛 연결을 '연결 끊김'으로 정리하고 재입장으로 기록
+    monkeypatch.setattr(cr, "SILENCE_LIMIT", 60)
+    monkeypatch.setattr(cr, "STALE_AFTER", 0.5)
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        old = a.websocket_connect(f"/ws/live/{code}")
+        old.__enter__()
+        state(old)
+        time.sleep(1)
+        with a.websocket_connect(f"/ws/live/{code}") as new:
+            state(new)
+            ts = state(tw, lambda m: [e["kind"] for e in m["events"]][-3:] == ["rejoin", "leave", "rejoin"])
+            assert ts["events"][-2]["reason"] == "network" and ts["students"][0]["online"]
+        try:
+            old.__exit__(None, None, None)
+        except Exception:
+            pass
+    time.sleep(0.3)
+    p = t.get(f"/api/live/history/{cid}").json()["students"][0]
+    assert [s["reason"] for s in p["sessions"]] == ["network", "network", "closed"]

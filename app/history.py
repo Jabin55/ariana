@@ -19,6 +19,10 @@ from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
 
 router = APIRouter()
 KST = ZoneInfo("Asia/Seoul")
+REASONS = {
+    "leave": "나가기 버튼", "closed": "창 닫음·새로고침", "network": "연결 끊김",
+    "kicked": "내보냄", "ended": "수업 종료", "server": "서버 재시작",
+}
 
 
 def kst(ts: float | None) -> str:
@@ -130,21 +134,37 @@ def attendance_report(cls, teacher_id: int) -> dict:
             "user_id": uid, "student_no": student_no(m), "name": m["name"] or m["google_name"],
             "school": m["school"], "email": m["email"], "sessions": [], "online": False,
         })
-        p["sessions"].append({"joined": m["joined_at"], "left": None if online else end, "_end": end})
+        reason = None if online else (m["left_reason"] or ("server" if m["left_at"] is None else "closed"))
+        p["sessions"].append({"joined": m["joined_at"], "end": end, "online": online, "reason": reason})
         p["online"] = p["online"] or online
 
     out = []
     for p in people.values():
-        spans = [(s["joined"], s["_end"]) for s in p["sessions"]]
+        sess = sorted(p["sessions"], key=lambda x: x["joined"])
+        spans = [(x["joined"], x["end"]) for x in sess]
+        first, last = min(a for a, _ in spans), max(b for _, b in spans)
+        total = merged_seconds(spans)
+        shown, prev_end = [], None
+        for x in sess:
+            gap = max(0.0, x["joined"] - prev_end) if prev_end is not None else None
+            prev_end = x["end"] if prev_end is None else max(prev_end, x["end"])
+            shown.append({
+                "joined": kst(x["joined"]), "left": "접속 중" if x["online"] else kst(x["end"]),
+                "minutes": round((x["end"] - x["joined"]) / 60, 1),
+                "reason": x["reason"], "reason_text": "접속 중" if x["online"] else REASONS.get(x["reason"], x["reason"]),
+                "gap_before": None if gap is None else round(gap / 60, 1),  # 직전에 나갔다가 다시 들어오기까지(분)
+            })
         out.append({
             **{k: v for k, v in p.items() if k != "sessions"},
-            "first_join": min(s for s, _ in spans), "first_join_text": kst(min(s for s, _ in spans)),
-            "last_leave": None if p["online"] else max(e for _, e in spans),
-            "last_leave_text": "접속 중" if p["online"] else kst(max(e for _, e in spans)),
-            "minutes": round(merged_seconds(spans) / 60),
-            "count": len(p["sessions"]),
-            "sessions": [{"joined": kst(s["joined"]), "left": kst(s["left"]) if s["left"] else "접속 중"}
-                         for s in p["sessions"]],
+            "first_join": first, "first_join_text": kst(first),
+            "last_leave": None if p["online"] else last,
+            "last_leave_text": "접속 중" if p["online"] else kst(last),
+            "last_reason_text": "" if p["online"] else shown[-1]["reason_text"],
+            "minutes": round(total / 60),
+            "away_minutes": round(max(0.0, (last - first) - total) / 60),  # 중간에 자리를 비운 시간
+            "count": len(sess),
+            "rejoins": len(sess) - 1,
+            "sessions": shown,
         })
     out.sort(key=lambda p: (p["student_no"] or "~", p["name"]))
     absent = [
@@ -166,24 +186,42 @@ async def class_history(class_id: int, request: Request):
 def csv_response(rows: list[list], filename: str) -> Response:
     buf = io.StringIO()
     csv.writer(buf).writerows(rows)
-    return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",  # 엑셀 한글 깨짐 방지 BOM
+    return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",  # 엑셀 한글 깨짐 방지 BOM
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/api/live/history/{class_id}/attendance.csv")
 async def attendance_csv(class_id: int, request: Request):
+    """학생 한 명당 한 줄: 첫 접속·마지막 종료·접속 시간·재입장 횟수·자리 비운 시간"""
     t = await require_user(request, "teacher")
     cls = await db.run(_owned_class, class_id, t["id"])
     rep = await db.run(attendance_report, cls, t["id"])
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
-    rows = [["날짜", "수업", "학번", "이름", "학교", "이메일", "첫 접속", "마지막 종료", "접속 시간(분)", "접속 횟수", "접속 기록"]]
+    rows = [["날짜", "수업", "학번", "이름", "학교", "이메일", "첫 접속", "마지막 종료", "마지막 종료 사유",
+             "접속 시간(분)", "중간 이탈 시간(분)", "재입장 횟수", "접속 기록"]]
     for p in rep["students"]:
         rows.append([day, cls.title, p["student_no"], p["name"], p["school"], p["email"],
-                     p["first_join_text"], p["last_leave_text"], p["minutes"], p["count"],
-                     " / ".join(f"{s['joined']}~{s['left']}" for s in p["sessions"])])
+                     p["first_join_text"], p["last_leave_text"], p["last_reason_text"],
+                     p["minutes"], p["away_minutes"], p["rejoins"],
+                     " / ".join(f"{s['joined']}~{s['left']}({s['reason_text']})" for s in p["sessions"])])
     for a in rep["absent"]:
-        rows.append([day, cls.title, a["student_no"], a["name"], "", a["email"], "미접속", "", 0, 0, ""])
+        rows.append([day, cls.title, a["student_no"], a["name"], "", a["email"], "미접속", "", "", 0, 0, 0, ""])
     return csv_response(rows, f"attendance-{day}-{cls.code}.csv")
+
+
+@router.get("/api/live/history/{class_id}/attendance-log.csv")
+async def attendance_log_csv(class_id: int, request: Request):
+    """들어오고 나간 기록 하나당 한 줄 (재입장까지 모두)"""
+    t = await require_user(request, "teacher")
+    cls = await db.run(_owned_class, class_id, t["id"])
+    rep = await db.run(attendance_report, cls, t["id"])
+    day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
+    rows = [["날짜", "수업", "학번", "이름", "순서", "들어옴", "나감", "나간 사유", "머문 시간(분)", "직전 이탈 후 다시 들어오기까지(분)"]]
+    for p in rep["students"]:
+        for i, x in enumerate(p["sessions"], 1):
+            rows.append([day, cls.title, p["student_no"], p["name"], i, x["joined"], x["left"], x["reason_text"],
+                         x["minutes"], "" if x["gap_before"] is None else x["gap_before"]])
+    return csv_response(rows, f"attendance-log-{day}-{cls.code}.csv")
 
 
 @router.get("/api/live/history/{class_id}/results.csv")

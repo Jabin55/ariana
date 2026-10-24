@@ -425,6 +425,26 @@ function render() {
   if (mainRoom) renderMain(mainRoom);
 }
 
+const LEAVE_REASONS = {
+  leave: "나가기 버튼", closed: "창 닫음·새로고침", network: "연결 끊김", kicked: "내보냄", ended: "수업 종료", server: "서버 재시작",
+};
+let lastEventTs = 0;
+
+function renderEvents() {
+  const evs = (S.events || []).slice().sort((a, b) => b.ts - a.ts); // 연결 끊김은 나중에 알아차리므로 시각순 정렬
+  $("#events").replaceChildren(...evs.slice(0, 30).map((e) => h("div", { class: `ev ${e.kind}` },
+    h("span", { class: "muted" }, fmtTime(e.ts)), " ",
+    e.kind === "leave" ? `🚪 ${e.name} 나감 (${LEAVE_REASONS[e.reason] || e.reason})`
+      : e.kind === "rejoin" ? `↩️ ${e.name} 다시 들어옴` : `✅ ${e.name} 들어옴`)));
+  if (!evs.length) $("#events").append(h("span", { class: "muted" }, "아직 없어요."));
+  // 수업 중 연결이 끊긴 학생은 바로 알려 준다
+  for (const e of S.events || []) {
+    if (e.ts > lastEventTs && lastEventTs && e.kind === "leave" && e.reason === "network") toast(`${e.name} 학생의 연결이 끊겼어요.`);
+  }
+  if (S.events?.length) lastEventTs = Math.max(lastEventTs, S.events[S.events.length - 1].ts);
+  else lastEventTs = lastEventTs || 1;
+}
+
 function roomLabel(s) {
   if (s.room !== "main") return groupName(s.room);
   if (s.group && S.groups.some((g) => g.id === s.group)) return `(${groupName(s.group)} 예정)`;
@@ -439,7 +459,8 @@ function renderPeople() {
   $("#hand-badge").hidden = !hands;
   $("#people").replaceChildren(...list.map((s) => h("div", { class: `person ${s.hand ? "hand" : ""}` },
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
-    h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" }, roomLabel(s))),
+    h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
+      roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },
       S.settings.mic_lock ? h("button", {
         class: s.can_speak ? "on" : "", title: "발언권",
@@ -452,6 +473,7 @@ function renderPeople() {
         if (confirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });
       } }, "✕")))));
   if (!list.length) $("#people").append(h("p", { class: "muted", style: "margin:0" }, "아직 들어온 학생이 없어요."));
+  renderEvents();
 }
 
 $("#set-chat").addEventListener("change", (e) => sock.send({ t: "settings", chat: e.target.checked }));

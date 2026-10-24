@@ -11,7 +11,7 @@ import os
 import time
 
 from sqlalchemy import (
-    Column, Float, Integer, MetaData, String, Table, Text, create_engine, update,
+    Column, Float, Integer, MetaData, String, Table, Text, create_engine, inspect, text, update,
 )
 
 _url = os.environ.get("DATABASE_URL", "sqlite:///./live.db")
@@ -61,6 +61,9 @@ attendance = Table(
     Column("joined_at", Float, nullable=False),
     Column("left_at", Float),
     Column("last_seen", Float, nullable=False),
+    # 나간 이유: leave(나가기 버튼) closed(창 닫음·새로고침) network(연결 끊김)
+    #           kicked(내보냄) ended(수업 종료) server(서버 재시작)
+    Column("left_reason", String(10)),
 )
 
 activities = Table(
@@ -78,10 +81,15 @@ activities = Table(
 
 def init() -> None:
     metadata.create_all(engine)
+    # 예전 버전으로 만든 표에 새 칸 추가
+    cols = {c["name"] for c in inspect(engine).get_columns("attendance")}
+    if "left_reason" not in cols:
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE attendance ADD COLUMN left_reason VARCHAR(10)"))
     # 서버가 갑자기 꺼져 '접속 중'으로 남은 기록은 마지막 확인 시각에 나간 것으로 정리
     with engine.begin() as c:
         c.execute(update(attendance).where(attendance.c.left_at.is_(None))
-                  .values(left_at=attendance.c.last_seen))
+                  .values(left_at=attendance.c.last_seen, left_reason="server"))
 
 
 async def run(fn, *args):

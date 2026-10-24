@@ -10,6 +10,8 @@ let unread = 0;
 let ai = null;
 let activitySig = "";
 let textDraft = "";
+const MAX_PEER_VIDEOS = 6;
+let videoSlots = []; // 영상을 받는 친구들
 
 $("#code").textContent = CODE;
 api("/api/me").then(({ user }) => {
@@ -170,9 +172,21 @@ function renderMedia(room) {
     }
     syncTiles(stage, stageItems);
     $("#stage-empty").hidden = stageItems.length > 0;
-    syncTiles(grid, people.filter((p) => !isTeacher(p)).map((p) => cameraItem(room, p, {
-      flag: S?.me && p === room.localParticipant && S.me.hand ? "✋" : "",
-    })));
+    // 데이터 절약: 친구 영상은 최대 MAX_PEER_VIDEOS명만 받는다(말하는 친구 우선). 나머지는 이름만.
+    const peers = people.filter((p) => !isTeacher(p) && p !== room.localParticipant);
+    const ids = new Set(peers.map((p) => p.identity));
+    videoSlots = videoSlots.filter((id) => ids.has(id));
+    for (const p of peers.filter((x) => x.isSpeaking)) {
+      if (videoSlots.includes(p.identity)) continue;
+      if (videoSlots.length >= MAX_PEER_VIDEOS) videoSlots.shift();
+      videoSlots.push(p.identity);
+    }
+    for (const p of peers) if (videoSlots.length < MAX_PEER_VIDEOS && !videoSlots.includes(p.identity)) videoSlots.push(p.identity);
+    syncTiles(grid, [room.localParticipant, ...peers].map((p) => {
+      const it = cameraItem(room, p, { flag: S?.me && p === room.localParticipant && S.me.hand ? "✋" : "" });
+      if (p !== room.localParticipant && !videoSlots.includes(p.identity)) it.track = null;
+      return it;
+    }));
   }
   $("#sound").hidden = room.canPlaybackAudio;
   renderControls();
@@ -379,6 +393,7 @@ $("#screen").addEventListener("click", () => setScreen(!prefs.screen));
 $("#leave").addEventListener("click", () => {
   if (!confirm("수업에서 나갈까요? 코드로 다시 들어올 수 있어요.")) return;
   ended = true;
+  sock?.send({ t: "leave" }, true); // 출결에 '나가기 버튼'으로 남긴다
   sock?.stop();
   disposeRoom(media.room);
   location.href = "/live";

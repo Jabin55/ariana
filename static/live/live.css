@@ -307,3 +307,9 @@ table.att tr.absent td { color: var(--danger); }
 .sessions { font-size: 0.8rem; color: var(--muted); }
 .monitor-head .danger.solid { animation: pulse 1.4s infinite; }
 @keyframes pulse { 50% { opacity: 0.75; } }
+.events { display: grid; gap: 2px; font-size: 0.85rem; max-height: 220px; overflow: auto; margin-top: 6px; }
+.ev.leave { color: var(--warn); }
+table.att tr.rejoined td:first-child { box-shadow: inset 3px 0 var(--warn); }
+.sessions .gap { color: var(--warn); }
+table.att td:last-child { white-space: normal; min-width: 240px; }
+.sessions > div { white-space: normal; }

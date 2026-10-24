@@ -79,7 +79,11 @@ class LiveSocket {
     this.retry = 0;
     this.stopped = false;
     this.connect();
-    this.pinger = setInterval(() => this.send({ t: "ping" }, true), 20000);
+    this.pinger = setInterval(() => {
+      // 50초 넘게 서버 응답이 없으면 연결이 죽은 것으로 보고 다시 연결한다
+      if (this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMsg > 50000) this.ws.close();
+      else this.send({ t: "ping" }, true);
+    }, 20000);
   }
 
   connect() {
@@ -87,8 +91,9 @@ class LiveSocket {
     // 로그인 쿠키로 누구인지 확인한다
     const ws = new WebSocket(`${proto}://${location.host}/ws/live/${CODE}`);
     this.ws = ws;
-    ws.onopen = () => { this.retry = 0; this.onStatus(true); };
+    ws.onopen = () => { this.retry = 0; this.lastMsg = Date.now(); this.onStatus(true); };
     ws.onmessage = (e) => {
+      this.lastMsg = Date.now();
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       if (msg.t === "hello" || msg.t === "pong") clock.offset = msg.now - Date.now() / 1000;
