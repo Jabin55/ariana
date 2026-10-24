@@ -1,30 +1,32 @@
-"""실시간 수업 서버: 화상(LiveKit) 입장권 발급, 수업 상태(퀴즈·채팅·질문·소그룹) 동기화.
+"""실시간 수업 서버: 화상(LiveKit) 입장권 발급, 수업 상태(퀴즈·채팅·질문·모둠) 동기화, 출결 기록.
 
 - 화상·음성은 LiveKit 서버가 맡고, 이 서버는 누가 어느 방(전체/모둠)에 들어갈 수 있는지만 정해 입장권(JWT)을 준다.
-- 나머지 수업 상태는 메모리에 두고 WebSocket(/ws/live/{code})으로 선생님·학생 화면에 실시간으로 보낸다.
-  서버가 다시 시작되면 수업 상태는 사라진다(퀴즈 결과는 CSV로 내려받아 두면 된다).
+- 진행 중인 수업 상태는 메모리에 두고 WebSocket(/ws/live/{code})으로 선생님·학생 화면에 실시간으로 보낸다.
+- 수업 목록·출결·퀴즈 결과는 DB에 남는다. 서버가 다시 시작돼도 같은 코드로 수업이 이어진다
+  (진행 중이던 채팅·질문은 사라지고, 학생들은 자동으로 다시 접속한다).
 """
 
 from __future__ import annotations
 
 import asyncio
-import csv
-import io
 import json
 import logging
 import os
 import random
-import secrets
 import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import Response
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+from sqlalchemy import insert, select, update
 
 from livekit import api as lk
+
+from app import db
+from app.auth import current_user, display_name, needs_profile, require_user
 
 log = logging.getLogger("live-class")
 router = APIRouter()
@@ -32,14 +34,15 @@ router = APIRouter()
 LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "")
 LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
-TEACHER_PASSWORD = os.environ.get("TEACHER_PASSWORD", "")
 
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 헷갈리는 0/O, 1/I 제외
 MAX_STUDENTS = 60
 MAX_GROUPS = 12
 MAX_CHAT = 300  # 수업당 보관하는 채팅 수
 CHAT_INTERVAL = 0.8  # 학생 채팅 최소 간격(초)
-CLASS_IDLE_LIMIT = 12 * 3600  # 아무도 접속하지 않은 수업은 12시간 뒤 정리
+CLASS_REVIVE_LIMIT = 24 * 3600  # 서버 재시작 뒤 이 시간 안에 만든 수업은 같은 코드로 이어진다
+MEMORY_IDLE_LIMIT = 3 * 3600  # 아무도 없는 수업은 메모리에서 내린다(DB에는 남음)
+HEARTBEAT = 60  # 접속 중인 학생의 '마지막 확인 시각'을 DB에 적는 간격(초)
 TEXT_LIMIT = 500
 
 
@@ -56,15 +59,15 @@ def clean(text: Any, limit: int = TEXT_LIMIT) -> str:
 
 @dataclass
 class Student:
-    id: str
-    name: str
-    key: str
+    id: str  # 사용자 id (문자열)
+    name: str  # 화면에 보이는 이름 (예: 20315 김민준)
     conns: int = 0
     hand: bool = False
     help: bool = False  # 모둠 활동 중 '선생님 호출'
     can_speak: bool = False  # 마이크 잠금 중에도 말할 수 있게 허락받음
     group: str | None = None
     last_chat: float = 0.0
+    att_id: int | None = None  # 지금 열려 있는 출결 기록
 
 
 @dataclass
@@ -76,22 +79,23 @@ class Conn:
     loop: asyncio.AbstractEventLoop = field(default_factory=asyncio.get_running_loop)
     last_state: str = ""
     chat_room: str | None = None  # 학생이 마지막으로 채팅 기록을 받은 방
+    kicked_student: Student | None = None  # 강퇴된 학생 (연결이 끊길 때 출결을 닫기 위함)
 
 
 @dataclass
 class Klass:
+    db_id: int
     code: str
     title: str
-    teacher_key: str
+    teacher_id: int
     created: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
     students: dict[str, Student] = field(default_factory=dict)
-    keys: dict[str, str] = field(default_factory=dict)  # 학생 key → id
+    banned: set[str] = field(default_factory=set)
     conns: list[Conn] = field(default_factory=list)
     chat: list[dict] = field(default_factory=list)
     questions: list[dict] = field(default_factory=list)
     activity: dict | None = None
-    history: list[dict] = field(default_factory=list)  # 끝난 활동 (CSV 내보내기용)
     settings: dict = field(default_factory=lambda: {"chat": True, "ai": True, "mic_lock": False})
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
@@ -99,6 +103,7 @@ class Klass:
     announce: dict | None = None
     listening: list[str] = field(default_factory=list)  # 선생님이 듣고 있는 모둠
     talking: str | None = None  # 선생님이 말하고 있는 모둠
+    broadcasting: bool = False  # 선생님이 모든 방에 동시에 말하는 중
     seq: int = 0
     flush_scheduled: bool = False
 
@@ -118,25 +123,109 @@ class Klass:
 classes: dict[str, Klass] = {}
 
 
-def get_class(code: str) -> Klass:
-    k = classes.get(code.upper())
-    if not k:
+def _load_class(code: str):
+    with db.engine.connect() as c:
+        return c.execute(
+            select(db.classes)
+            .where(db.classes.c.code == code, db.classes.c.ended_at.is_(None),
+                   db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT)
+            .order_by(db.classes.c.id.desc())
+        ).first()
+
+
+async def get_class(code: str) -> Klass:
+    code = code.upper()
+    k = classes.get(code)
+    if k:
+        return k
+    row = await db.run(_load_class, code) if code.isalnum() and len(code) <= 8 else None
+    if not row:
         raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요.")
+    k = classes.get(code)  # 기다리는 사이 다른 요청이 먼저 살렸을 수 있다
+    if not k:
+        k = Klass(db_id=row.id, code=row.code, title=row.title, teacher_id=row.teacher_id, created=row.created_at)
+        classes[code] = k
     return k
 
 
 def prune_classes() -> None:
     now = time.time()
     for code, k in list(classes.items()):
-        if not k.conns and now - k.last_active > CLASS_IDLE_LIMIT:
+        if not k.conns and now - k.last_active > MEMORY_IDLE_LIMIT:
             classes.pop(code, None)
 
 
-def new_code() -> str:
+def _code_taken(code: str) -> bool:
+    with db.engine.connect() as c:
+        return c.execute(select(db.classes.c.id).where(
+            db.classes.c.code == code, db.classes.c.ended_at.is_(None),
+            db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT)).first() is not None
+
+
+async def new_code() -> str:
     while True:
         code = "".join(random.choices(CODE_CHARS, k=6))
-        if code not in classes:
+        if code not in classes and not await db.run(_code_taken, code):
             return code
+
+
+# ───────────────────────── DB 기록 (출결·활동) ─────────────────────────
+
+
+def _att_open(class_id: int, user_id: int) -> int:
+    now = time.time()
+    with db.engine.begin() as c:
+        return c.execute(insert(db.attendance).values(
+            class_id=class_id, user_id=user_id, joined_at=now, last_seen=now)).inserted_primary_key[0]
+
+
+def _att_close(att_id: int) -> None:
+    now = time.time()
+    with db.engine.begin() as c:
+        c.execute(update(db.attendance).where(db.attendance.c.id == att_id).values(left_at=now, last_seen=now))
+
+
+def _att_touch(ids: list[int]) -> None:
+    with db.engine.begin() as c:
+        c.execute(update(db.attendance).where(db.attendance.c.id.in_(ids)).values(last_seen=time.time()))
+
+
+async def heartbeat_loop() -> None:
+    while True:
+        await asyncio.sleep(HEARTBEAT)
+        ids = [s.att_id for k in classes.values() for s in k.students.values() if s.att_id and s.conns]
+        if ids:
+            try:
+                await db.run(_att_touch, ids)
+            except Exception:
+                log.warning("출결 갱신 실패", exc_info=True)
+        prune_classes()
+
+
+def save_activity(k: Klass, a: dict | None) -> None:
+    """활동(퀴즈·투표) 결과를 DB에 저장한다. 같은 활동은 덮어쓴다."""
+    if not a or (not a["responses"] and a.get("db_id") is None):
+        return
+    values = {
+        "class_id": k.db_id, "kind": a["kind"], "prompt": a["prompt"],
+        "options": json.dumps(a["options"], ensure_ascii=False), "correct": a["correct"],
+        "responses": json.dumps(a["responses"], ensure_ascii=False), "created_at": a["created"],
+    }
+
+    def run():
+        with db.engine.begin() as c:
+            if a.get("db_id"):
+                c.execute(update(db.activities).where(db.activities.c.id == a["db_id"]).values(**values))
+            else:
+                a["db_id"] = c.execute(insert(db.activities).values(**values)).inserted_primary_key[0]
+
+    async def task():
+        try:
+            await db.run(run)
+        except Exception:
+            log.warning("활동 결과 저장 실패", exc_info=True)
+
+    asyncio.get_running_loop().create_task(task())
 
 
 # ───────────────────────── 화면별 상태 만들기 ─────────────────────────
@@ -182,7 +271,7 @@ def activity_for_student(a: dict | None, sid: str) -> dict | None:
 
 def teacher_state(k: Klass) -> dict:
     return {
-        "t": "state", "role": "teacher", "code": k.code, "title": k.title,
+        "t": "state", "role": "teacher", "code": k.code, "title": k.title, "class_id": k.db_id,
         "settings": k.settings, "livekit": livekit_ready(),
         "students": [
             {"id": s.id, "name": s.name, "online": s.conns > 0, "hand": s.hand,
@@ -191,9 +280,9 @@ def teacher_state(k: Klass) -> dict:
         ],
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at,
         "activity": activity_for_teacher(k, k.activity),
-        "history_count": len(k.history),
         "questions": k.questions[-100:],
         "announce": k.announce, "listening": k.listening, "talking": k.talking,
+        "broadcasting": k.broadcasting,
     }
 
 
@@ -214,6 +303,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "teacher_online": k.teacher_online(),
         "teacher_listening": room != "main" and (room in k.listening or k.talking == room),
         "teacher_talking": room != "main" and k.talking == room,
+        "teacher_broadcast": k.broadcasting,
         "activity": activity_for_student(k.activity, s.id),
         "announce": k.announce,
         "my_questions": [q for q in k.questions if q["sid"] == s.id][-20:],
@@ -336,75 +426,80 @@ def close_livekit_rooms(k: Klass) -> None:
 
 
 class CreateReq(BaseModel):
-    password: str = Field(max_length=200)
     title: str = Field(default="", max_length=60)
-
-
-class JoinReq(BaseModel):
-    name: str = Field(min_length=1, max_length=20)
-    key: str | None = Field(default=None, max_length=100)
+    target_grade: int | None = Field(default=None, ge=1, le=6)
+    target_class: int | None = Field(default=None, ge=1, le=30)
 
 
 class TokenReq(BaseModel):
-    key: str = Field(max_length=100)
     room: str = Field(max_length=10)
 
 
 @router.post("/api/live/classes")
-async def create_class(req: CreateReq):
-    if not TEACHER_PASSWORD:
-        raise HTTPException(503, "서버에 TEACHER_PASSWORD 환경 변수가 설정되지 않았어요.")
-    if not secrets.compare_digest(req.password.encode(), TEACHER_PASSWORD.encode()):
-        await asyncio.sleep(1)  # 비밀번호 무작위 대입을 늦춘다
-        raise HTTPException(403, "선생님 비밀번호가 맞지 않아요.")
+async def create_class(req: CreateReq, request: Request):
+    t = await require_user(request, "teacher")
     prune_classes()
-    code = new_code()
-    k = Klass(code=code, title=clean(req.title, 60) or "실시간 수업", teacher_key=secrets.token_urlsafe(24))
-    classes[code] = k
-    return {"code": code, "teacher_key": k.teacher_key, "title": k.title}
+    code = await new_code()
+    title = clean(req.title, 60) or "실시간 수업"
+
+    def run():
+        with db.engine.begin() as c:
+            return c.execute(insert(db.classes).values(
+                code=code, title=title, teacher_id=t["id"], school=t["school"] or "",
+                target_grade=req.target_grade, target_class=req.target_class, created_at=time.time(),
+            )).inserted_primary_key[0]
+
+    class_id = await db.run(run)
+    classes[code] = Klass(db_id=class_id, code=code, title=title, teacher_id=t["id"])
+    return {"code": code, "title": title, "class_id": class_id}
 
 
 @router.get("/api/live/classes/{code}")
 async def class_info(code: str):
-    k = get_class(code)
+    k = await get_class(code)
     return {"code": k.code, "title": k.title, "livekit": livekit_ready()}
 
 
-@router.post("/api/live/classes/{code}/join")
-async def join_class(code: str, req: JoinReq):
-    k = get_class(code)
-    if req.key and req.key in k.keys:  # 새로고침·재접속
-        s = k.students[k.keys[req.key]]
-        s.name = clean(req.name, 20) or s.name
-        push(k)
-        return {"student_id": s.id, "key": s.key, "name": s.name}
+def add_student(k: Klass, u: dict) -> Student:
+    sid = str(u["id"])
+    if sid in k.banned:
+        raise HTTPException(403, "선생님이 이 수업에서 내보냈어요.")
+    s = k.students.get(sid)
+    if s:
+        s.name = display_name(u)
+        return s
     if len(k.students) >= MAX_STUDENTS:
         raise HTTPException(409, "수업 인원이 가득 찼어요.")
-    name = clean(req.name, 20)
-    if not name:
-        raise HTTPException(400, "이름을 입력해 주세요.")
-    s = Student(id=k.next_id(), name=name, key=secrets.token_urlsafe(18))
+    s = Student(id=sid, name=display_name(u))
     if k.breakout and k.groups:  # 모둠 활동 중에 들어오면 인원이 가장 적은 모둠으로
         s.group = smallest_group(k)
-    k.students[s.id] = s
-    k.keys[s.key] = s.id
+    k.students[sid] = s
+    return s
+
+
+@router.post("/api/live/classes/{code}/join")
+async def join_class(code: str, request: Request):
+    u = await require_user(request, "student")
+    k = await get_class(code)
+    s = add_student(k, u)
     k.last_active = time.time()
     push(k)
-    return {"student_id": s.id, "key": s.key, "name": s.name}
+    return {"student_id": s.id, "name": s.name}
 
 
 @router.post("/api/live/classes/{code}/token")
-async def livekit_token(code: str, req: TokenReq):
-    k = get_class(code)
+async def livekit_token(code: str, req: TokenReq, request: Request):
+    u = await require_user(request)
+    k = await get_class(code)
     if not livekit_ready():
         raise HTTPException(503, "화상 서버(LiveKit)가 아직 설정되지 않았어요.")
-    if req.key == k.teacher_key:
+    if u["role"] == "teacher" and u["id"] == k.teacher_id:
         if req.room != "main" and not any(g["id"] == req.room for g in k.groups):
             raise HTTPException(404, "없는 모둠이에요.")
         identity, name, role = "teacher", "선생님", "teacher"
         sources = ["camera", "microphone", "screen_share", "screen_share_audio"]
-    elif req.key in k.keys:
-        s = k.students[k.keys[req.key]]
+    elif u["role"] == "student" and str(u["id"]) in k.students:
+        s = k.students[str(u["id"])]
         if req.room != k.room_of(s):
             raise HTTPException(403, "지금은 그 방에 들어갈 수 없어요.")
         identity, name, role = f"s-{s.id}", s.name, "student"
@@ -412,7 +507,7 @@ async def livekit_token(code: str, req: TokenReq):
         if req.room != "main":  # 모둠에서는 화면 공유로 발표할 수 있게
             sources += ["screen_share", "screen_share_audio"]
     else:
-        raise HTTPException(403, "입장 정보가 올바르지 않아요.")
+        raise HTTPException(403, "이 수업에 들어갈 수 없어요.")
 
     grants = lk.VideoGrants(
         room_join=True, room=lk_room_name(k.code, req.room),
@@ -427,27 +522,6 @@ async def livekit_token(code: str, req: TokenReq):
         .to_jwt()
     )
     return {"url": LIVEKIT_URL, "token": token, "room": req.room}
-
-
-@router.get("/api/live/classes/{code}/results.csv")
-async def results_csv(code: str, key: str):
-    k = get_class(code)
-    if not secrets.compare_digest(key.encode(), k.teacher_key.encode()):
-        raise HTTPException(403, "선생님만 내려받을 수 있어요.")
-    acts = k.history + ([k.activity] if k.activity else [])
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["활동 번호", "유형", "문제", "이름", "응답", "정답 여부"])
-    kinds = {"ox": "OX", "choice": "객관식", "poll": "투표", "text": "주관식"}
-    for i, a in enumerate(acts, 1):
-        for sid, v in a["responses"].items():
-            name = k.students[sid].name if sid in k.students else "(나감)"
-            shown = a["options"][v] if isinstance(v, int) and v < len(a["options"]) else v
-            ok = "" if a["correct"] is None else ("O" if v == a["correct"] else "X")
-            w.writerow([i, kinds.get(a["kind"], a["kind"]), a["prompt"], name, shown, ok])
-    data = "﻿" + buf.getvalue()  # 엑셀에서 한글이 깨지지 않게 BOM
-    return Response(data, media_type="text/csv; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="{k.code}-results.csv"'})
 
 
 # ───────────────────────── 모둠 ─────────────────────────
@@ -475,22 +549,39 @@ def plan_groups(k: Klass, n: int) -> None:
 # ───────────────────────── WebSocket ─────────────────────────
 
 
+def same_origin(ws: WebSocket) -> bool:
+    """다른 사이트가 학생의 로그인 쿠키로 몰래 접속하지 못하게 출처를 확인한다."""
+    origin = ws.headers.get("origin")
+    return not origin or urlparse(origin).netloc == ws.headers.get("host")
+
+
+async def reject(ws: WebSocket, code: str, text: str) -> None:
+    await ws.send_text(json.dumps({"t": "error", "code": code, "text": text}, ensure_ascii=False))
+    await ws.close()
+
+
 @router.websocket("/ws/live/{code}")
-async def live_socket(ws: WebSocket, code: str, key: str = ""):
+async def live_socket(ws: WebSocket, code: str):
     await ws.accept()
-    k = classes.get(code.upper())
-    if not k:
-        await ws.send_text(json.dumps({"t": "error", "code": "no_class", "text": "수업이 끝났거나 없는 수업이에요."}))
-        await ws.close()
-        return
-    if key and secrets.compare_digest(key.encode(), k.teacher_key.encode()):
+    if not same_origin(ws):
+        return await reject(ws, "bad_origin", "잘못된 접근이에요.")
+    try:
+        k = await get_class(code)
+    except HTTPException:
+        return await reject(ws, "no_class", "수업이 끝났거나 없는 수업이에요.")
+    u = await current_user(ws)
+    if not u:
+        return await reject(ws, "login", "로그인이 필요해요.")
+    if u["role"] == "teacher" and u["id"] == k.teacher_id:
         conn = Conn(ws=ws, role="teacher", sid=None)
-    elif key in k.keys:
-        conn = Conn(ws=ws, role="student", sid=k.keys[key])
+    elif u["role"] == "student" and not needs_profile(u):
+        try:
+            s = add_student(k, u)
+        except HTTPException as e:
+            return await reject(ws, "denied", e.detail)
+        conn = Conn(ws=ws, role="student", sid=s.id)
     else:
-        await ws.send_text(json.dumps({"t": "error", "code": "bad_key", "text": "입장 정보가 올바르지 않아요."}))
-        await ws.close()
-        return
+        return await reject(ws, "denied", "이 수업에 들어갈 수 없어요.")
 
     async def writer():
         try:
@@ -508,12 +599,17 @@ async def live_socket(ws: WebSocket, code: str, key: str = ""):
     k.conns.append(conn)
     k.last_active = time.time()
     if conn.role == "student":
-        k.students[conn.sid].conns += 1
+        s = k.students[conn.sid]
+        s.conns += 1
+        if s.conns == 1 and not s.att_id:  # 출결: 접속 시작
+            try:
+                s.att_id = await db.run(_att_open, k.db_id, int(s.id))
+            except Exception:
+                log.warning("출결 기록 실패", exc_info=True)
     else:
         send(conn, {"t": "chat_init", "msgs": k.chat[-200:]})
     flush(k)  # 접속하자마자 현재 상태를 보낸다
-    if conn.role == "teacher":
-        push(k)  # 학생들에게 '선생님 접속' 반영
+    push(k)
 
     try:
         while True:
@@ -534,7 +630,7 @@ async def live_socket(ws: WebSocket, code: str, key: str = ""):
                 handle_teacher(k, conn, msg)
             else:
                 handle_student(k, k.students[conn.sid], msg)
-            if code.upper() not in classes:
+            if classes.get(k.code) is not k:
                 break  # 수업 종료됨
             push(k)
         # 강퇴·수업 종료로 끝난 경우: 마지막 안내 메시지를 보낸 뒤 닫는다
@@ -551,14 +647,23 @@ async def live_socket(ws: WebSocket, code: str, key: str = ""):
         writer_task.cancel()
         if conn in k.conns:
             k.conns.remove(conn)
+        if conn.role == "teacher" and not k.teacher_online():
+            k.listening, k.talking, k.broadcasting = [], None, False
+        k.last_active = time.time()
+        if classes.get(k.code) is k:
+            push(k)
         s = k.students.get(conn.sid or "")
+        if conn.role == "student":
+            # 강퇴된 학생은 students에서 빠졌으므로 conn에 남은 출결 번호로 닫는다
+            s = s or conn.kicked_student
         if s:
             s.conns = max(0, s.conns - 1)
-        if conn.role == "teacher" and not k.teacher_online():
-            k.listening, k.talking = [], None
-        k.last_active = time.time()
-        if code.upper() in classes:
-            push(k)
+            if s.conns == 0 and s.att_id:  # 출결: 접속 종료
+                att_id, s.att_id = s.att_id, None
+                try:
+                    await db.run(_att_close, att_id)
+                except Exception:
+                    log.warning("출결 기록 실패", exc_info=True)
 
 
 def handle_student(k: Klass, s: Student, m: dict) -> None:
@@ -597,6 +702,7 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
 
 def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     t = m.get("t")
+    group_ids = {g["id"] for g in k.groups}
     if t == "settings":
         for name in ("chat", "ai", "mic_lock"):
             if name in m:
@@ -626,7 +732,10 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "kick":
         s = k.students.pop(str(m.get("target")), None)
         if s:
-            k.keys.pop(s.key, None)
+            k.banned.add(s.id)
+            for c in k.conns:
+                if c.sid == s.id:
+                    c.kicked_student = s  # 연결이 끊길 때 출결을 닫기 위해
             send_to_students(k, {"t": "kicked"}, s.id)
             remove_from_livekit(k, s.id)
     elif t == "announce":
@@ -635,8 +744,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "chat":
         text = clean(m.get("text"))
         scope = m.get("scope") or "main"
-        scopes = ["main"] + [g["id"] for g in k.groups]
-        if text and scope in scopes:
+        if text and (scope == "main" or scope in group_ids):
             post_chat(k, {"id": k.next_id(), "role": "teacher", "sid": None, "name": "선생님",
                           "text": text, "scope": scope, "ts": time.time()})
     elif t == "broadcast":  # 모든 방 채팅에 같은 공지
@@ -656,12 +764,13 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         start_activity(k, m)
     elif t == "activity_close" and k.activity:
         k.activity["open"] = False
+        save_activity(k, k.activity)
     elif t == "activity_reopen" and k.activity:
         k.activity["open"] = True
     elif t == "activity_reveal" and k.activity:
         k.activity["reveal"] = bool(m.get("on"))
     elif t == "activity_clear" and k.activity:
-        k.history.append(k.activity)
+        save_activity(k, k.activity)
         k.activity = None
     elif t == "breakout_plan":
         plan_groups(k, int(m.get("n") or 2))
@@ -672,7 +781,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "breakout_assign":
         s = k.students.get(str(m.get("target")))
         gid = m.get("group")
-        if s and (gid is None or any(g["id"] == gid for g in k.groups)):
+        if s and (gid is None or gid in group_ids):
             s.group = gid
             s.help = False
     elif t == "breakout_start":
@@ -690,14 +799,14 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "breakout_end":
         k.breakout = False
         k.ends_at = None
-        k.listening, k.talking = [], None
+        k.listening, k.talking, k.broadcasting = [], None, False
         for s in k.students.values():
             s.help = False
     elif t == "listen":
-        ids = {g["id"] for g in k.groups}
-        k.listening = [g for g in (m.get("groups") or []) if g in ids]
+        k.listening = [g for g in (m.get("groups") or []) if g in group_ids]
         talking = m.get("talking")
-        k.talking = talking if talking in ids else None
+        k.talking = talking if talking in group_ids else None
+        k.broadcasting = bool(m.get("broadcast"))
         if k.talking:  # 선생님이 들어가면 호출 표시를 끈다
             for s in k.students.values():
                 if s.group == k.talking:
@@ -707,12 +816,20 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
             if s.group == m.get("group"):
                 s.help = False
     elif t == "end_class":
+        save_activity(k, k.activity)
         send_to_students(k, {"t": "ended"})
         for c in k.conns:
             if c.role == "teacher":
                 send(c, {"t": "ended"})
         close_livekit_rooms(k)
         classes.pop(k.code, None)
+        class_id = k.db_id
+
+        def run():
+            with db.engine.begin() as c:
+                c.execute(update(db.classes).where(db.classes.c.id == class_id).values(ended_at=time.time()))
+
+        asyncio.get_running_loop().create_task(db.run(run))
 
 
 def start_activity(k: Klass, m: dict) -> None:
@@ -731,7 +848,6 @@ def start_activity(k: Klass, m: dict) -> None:
     correct = m.get("correct")
     if kind in ("poll", "text") or not (isinstance(correct, int) and 0 <= correct < len(options)):
         correct = None
-    if k.activity:
-        k.history.append(k.activity)
+    save_activity(k, k.activity)
     k.activity = {"id": k.next_id(), "kind": kind, "prompt": prompt or "질문", "options": options,
-                  "correct": correct, "open": True, "reveal": False, "responses": {}}
+                  "correct": correct, "open": True, "reveal": False, "responses": {}, "created": time.time()}

@@ -1,7 +1,4 @@
 /* 학생 화면 */
-const saved = store.get(`live:s:${CODE}`);
-if (!saved?.key) location.replace(`/live?c=${CODE}`);
-
 let S = null; // 서버에서 받은 최신 상태
 let sock = null;
 let media = { id: null, room: null }; // 지금 들어가 있는 화상 방
@@ -15,7 +12,10 @@ let activitySig = "";
 let textDraft = "";
 
 $("#code").textContent = CODE;
-$("#prejoin-name").textContent = `${saved?.name || ""} 이름으로 들어가요.`;
+api("/api/me").then(({ user }) => {
+  if (!user || user.role !== "student" || user.needs_profile) location.replace(`/live?c=${CODE}`);
+  else $("#prejoin-name").textContent = `${user.display} 이름으로 들어가요.`;
+}).catch(() => {});
 
 /* ───── 입장 ───── */
 
@@ -24,7 +24,7 @@ $("#prejoin-form").addEventListener("submit", (e) => {
   prefs.cam = $("#pre-cam").checked;
   prefs.mic = $("#pre-mic").checked;
   $("#prejoin").hidden = true;
-  sock = new LiveSocket(saved.key, onMessage, (ok) => {
+  sock = new LiveSocket("", onMessage, (ok) => {
     $("#status").textContent = ok ? "● 연결됨" : "다시 연결하는 중…";
     $("#status").classList.toggle("bad", !ok);
   });
@@ -50,16 +50,13 @@ function onMessage(msg) {
       break;
     case "kicked":
       finish("선생님이 수업에서 내보냈어요.");
-      store.del(`live:s:${CODE}`);
       break;
     case "ended":
       finish("수업이 끝났어요. 수고했어요! 👋");
       break;
     case "error":
-      if (msg.code === "bad_key") {
-        store.del(`live:s:${CODE}`);
-        location.replace(`/live?c=${CODE}`);
-      } else finish(msg.text);
+      if (msg.code === "login") location.replace(`/live?c=${CODE}`);
+      else finish(msg.text);
       break;
   }
 }
@@ -94,7 +91,7 @@ async function reconcileRoom() {
   renderMedia(null);
   if (target !== "main") toast(`${S.group?.name || "모둠"}으로 이동해요`);
   try {
-    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { key: saved.key, room: target });
+    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { room: target });
     if (seq !== joinSeq) return;
     const room = createRoom(renderMedia);
     room.on(RoomEvent.Disconnected, () => {
@@ -235,7 +232,8 @@ function renderBanners() {
     box.append(h("div", { class: "banner ok" },
       h("strong", {}, `👥 ${S.group.name}`), h("span", { class: "muted" }, S.group.members.join(", ")),
       h("span", { class: "grow" }), S.ends_at ? timer : null));
-    if (S.teacher_talking) box.append(h("div", { class: "banner" }, "👩‍🏫 선생님이 우리 모둠에 들어와 말하고 있어요."));
+    if (S.teacher_broadcast) box.append(h("div", { class: "banner warn" }, "📢 선생님이 모든 모둠에 안내하고 있어요. 잘 들어 주세요."));
+    else if (S.teacher_talking) box.append(h("div", { class: "banner" }, "👩‍🏫 선생님이 우리 모둠에 들어와 말하고 있어요."));
     else if (S.teacher_listening) box.append(h("div", { class: "banner" }, "🎧 선생님이 우리 모둠 이야기를 듣고 있어요."));
     tickTimer();
   }

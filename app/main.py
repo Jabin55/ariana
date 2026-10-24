@@ -4,9 +4,12 @@
 서버는 Claude 응답을 Server-Sent Events(SSE)로 스트리밍한다.
 """
 
+import asyncio
 import json
 import logging
 import os
+import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -15,8 +18,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.sessions import SessionMiddleware
 
-from app.classroom import router as live_router
+from app import db
+from app.auth import router as auth_router
+from app.classroom import heartbeat_loop, router as live_router
+from app.history import router as history_router
 from app.prompts import SYSTEM_PROMPT
 
 MODEL = os.environ.get("CHATBOT_MODEL", "claude-opus-5-5")
@@ -29,9 +36,30 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 log = logging.getLogger("politics-chatbot")
 client = anthropic.AsyncAnthropic()
-app = FastAPI(title="정치쌤 챗봇")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await db.run(db.init)
+    task = asyncio.create_task(heartbeat_loop())
+    yield
+    task.cancel()
+
+
+SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
+if not os.environ.get("SECRET_KEY"):
+    log.warning("SECRET_KEY 가 없어 임시 키를 씁니다. 서버가 다시 시작되면 모두 다시 로그인해야 해요.")
+
+app = FastAPI(title="정치쌤 챗봇", lifespan=lifespan)
+app.add_middleware(
+    SessionMiddleware, secret_key=SECRET_KEY, session_cookie="live_session",
+    max_age=14 * 24 * 3600, same_site="lax",
+    https_only=bool(os.environ.get("RENDER") or os.environ.get("COOKIE_SECURE")),
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(auth_router)
 app.include_router(live_router)
+app.include_router(history_router)
 
 
 class ChatMessage(BaseModel):

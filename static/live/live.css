@@ -283,3 +283,27 @@ label.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
   .mainarea { padding: 8px; gap: 8px; }
   .topbar { padding: 6px 10px; gap: 8px; }
 }
+
+/* ───── 첫 화면·출결 기록 ───── */
+.card.narrow { max-width: 440px; }
+.card .dev { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px; }
+a.button {
+  display: inline-block; text-decoration: none; color: var(--text); border: 1px solid var(--border);
+  background: var(--surface); border-radius: 8px; padding: 6px 12px; white-space: nowrap;
+}
+a.button.small { padding: 2px 8px; font-size: 0.85rem; }
+a.button:hover { border-color: var(--accent); }
+.page-tabs { margin: 8px 0 16px; border-bottom: 1px solid var(--border); }
+.page-tabs button { flex: 0 0 auto; padding: 10px 18px; }
+.class-pick { text-align: left; white-space: normal; }
+.class-pick.on { background: var(--accent-soft); border-color: var(--accent); }
+.table-wrap { overflow-x: auto; }
+table.att { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+table.att th, table.att td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+table.att th { color: var(--muted); font-weight: 600; }
+table.att td.num { text-align: right; }
+table.att tr.absent td { color: var(--danger); }
+.ok-text { color: var(--ok); }
+.sessions { font-size: 0.8rem; color: var(--muted); }
+.monitor-head .danger.solid { animation: pulse 1.4s infinite; }
+@keyframes pulse { 50% { opacity: 0.75; } }

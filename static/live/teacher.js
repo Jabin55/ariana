@@ -1,7 +1,7 @@
 /* 선생님 화면 */
-const saved = store.get(`live:t:${CODE}`);
-if (!saved?.key) location.replace("/live");
-const KEY = saved?.key;
+api("/api/me").then(({ user }) => {
+  if (!user || user.role !== "teacher") location.replace("/live");
+}).catch(() => {});
 
 let S = null;
 let sock = null;
@@ -15,6 +15,7 @@ const studentLink = `${location.origin}/live?c=${CODE}`;
 const monitors = new Map(); // gid → { room, card, grid }
 const listening = new Set();
 let talking = null;
+let broadcast = null; // 모든 모둠에 동시에 말하기: { src, pubs: [{ room, track }] }
 let focusGroup = null;
 const monitorAudio = h("div", { hidden: true });
 document.body.append(monitorAudio);
@@ -22,7 +23,6 @@ document.body.append(monitorAudio);
 $("#code").textContent = CODE;
 $("#share-code").textContent = CODE;
 $("#share-url").textContent = studentLink;
-$("#csv-link").href = `/api/live/classes/${CODE}/results.csv?key=${encodeURIComponent(KEY)}`;
 
 /* ───── 시작 ───── */
 
@@ -31,7 +31,7 @@ $("#prejoin-form").addEventListener("submit", (e) => {
   prefs.cam = $("#pre-cam").checked;
   prefs.mic = $("#pre-mic").checked;
   $("#prejoin").hidden = true;
-  sock = new LiveSocket(KEY, onMessage, (ok) => {
+  sock = new LiveSocket("", onMessage, (ok) => {
     $("#status").textContent = ok ? "● 연결됨" : "다시 연결하는 중…";
     $("#status").classList.toggle("bad", !ok);
     if (ok && S) sendListen(); // 재접속하면 듣기 상태를 다시 알린다
@@ -58,8 +58,8 @@ function onMessage(msg) {
       finish("수업을 종료했어요.");
       break;
     case "error":
-      store.del(`live:t:${CODE}`);
-      finish(msg.text);
+      if (msg.code === "login") location.replace("/live");
+      else finish(msg.text);
       break;
   }
 }
@@ -79,7 +79,7 @@ function finish(text) {
 async function connectMain() {
   if (!S.livekit) return;
   try {
-    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { key: KEY, room: "main" });
+    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { room: "main" });
     const room = createRoom(renderMain);
     room.on(RoomEvent.Disconnected, () => {
       if (mainRoom !== room) return;
@@ -201,7 +201,7 @@ async function connectMonitor(gid) {
   const m = monitors.get(gid);
   if (!m) return;
   try {
-    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { key: KEY, room: gid });
+    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { room: gid });
     if (monitors.get(gid) !== m) return;
     const room = createRoom(() => renderMonitor(gid), { audioSink: monitorAudio });
     room.on(RoomEvent.TrackPublished, () => applySubs(gid));
@@ -215,6 +215,7 @@ async function connectMonitor(gid) {
     // 관찰용 연결은 영상만 받고, 소리는 '듣기'를 켠 모둠만 받는다(데이터 절약)
     await room.connect(url, token, { autoSubscribe: false });
     applySubs(gid);
+    if (broadcast) await publishBroadcast(room); // 방송 중에 새로 연결된 모둠에도
     renderMonitor(gid);
   } catch (err) {
     console.error(err);
@@ -270,6 +271,7 @@ function renderMonitor(gid) {
   const talkBtn = m.card.querySelector(".talk");
   talkBtn.classList.toggle("on", talking === gid);
   talkBtn.textContent = talking === gid ? "🎤 말하는 중 (끄기)" : "🎤 들어가서 말하기";
+  m.card.classList.toggle("active-talk", talking === gid || !!broadcast);
   m.card.querySelector(".focus-btn").textContent = focusGroup === gid ? "↙ 작게" : "🔍 크게";
   if (room) {
     const items = [];
@@ -284,7 +286,7 @@ function renderMonitor(gid) {
 }
 
 function sendListen() {
-  sock?.send({ t: "listen", groups: [...listening], talking }, true);
+  sock?.send({ t: "listen", groups: [...listening], talking, broadcast: !!broadcast }, true);
 }
 
 function toggleListen(gid) {
@@ -296,6 +298,7 @@ function toggleListen(gid) {
 }
 
 async function toggleTalk(gid) {
+  if (broadcast) await stopBroadcast();
   const prev = talking;
   if (prev) {
     talking = null;
@@ -319,6 +322,51 @@ async function toggleTalk(gid) {
   }
   sendListen();
 }
+
+/* 모든 모둠에 동시에 말하기: 마이크 하나를 복제해 모든 모둠 방에 내보낸다 */
+async function publishBroadcast(room) {
+  try {
+    const pub = await room.localParticipant.publishTrack(broadcast.src.clone(), { source: Track.Source.Microphone, name: "broadcast" });
+    broadcast.pubs.push({ room, track: pub.track });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function startBroadcast() {
+  if (talking) await toggleTalk(talking);
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (err) {
+    toast(mediaError(err), 5000);
+    return;
+  }
+  broadcast = { src: stream.getAudioTracks()[0], pubs: [] };
+  const rooms = [...monitors.values()].map((m) => m.room).filter((r) => r?.state === "connected");
+  await Promise.all(rooms.map(publishBroadcast));
+  toast(`모든 모둠(${broadcast?.pubs.length || 0}개)에 말하고 있어요.`);
+  renderBroadcast();
+  sendListen();
+}
+
+async function stopBroadcast() {
+  const b = broadcast;
+  if (!b) return;
+  broadcast = null;
+  await Promise.all(b.pubs.map(({ room, track }) => room.localParticipant.unpublishTrack(track, true).catch(() => {})));
+  b.src.stop();
+  renderBroadcast();
+  sendListen();
+}
+
+function renderBroadcast() {
+  const btn = $("#bo-voice");
+  btn.classList.toggle("solid", !!broadcast);
+  btn.textContent = broadcast ? "🔴 모든 모둠에 말하는 중 (끄기)" : "📢 모든 모둠에 말하기";
+  for (const gid of monitors.keys()) renderMonitor(gid);
+}
+$("#bo-voice").addEventListener("click", () => (broadcast ? stopBroadcast() : startBroadcast()));
 
 function tickTimer() {
   const el = $("#bo-timer");
@@ -347,7 +395,8 @@ function render() {
   $("#title").textContent = S.title;
   const online = S.students.filter((s) => s.online).length;
   $("#online").textContent = `👥 ${online}명 접속`;
-  store.set(`live:t:${CODE}`, { ...saved, title: S.title, at: Date.now() });
+  $("#csv-link").href = `/api/live/history/${S.class_id}/results.csv`;
+  $("#history-link").href = `/live?tab=history&class=${S.class_id}`;
 
   const banners = $("#banners");
   banners.replaceChildren();
@@ -358,7 +407,10 @@ function render() {
   $("#main-view").hidden = S.breakout;
   $("#main-view").style.display = S.breakout ? "none" : "contents";
   $("#monitor-view").hidden = !S.breakout;
-  if (!S.breakout) { listening.clear(); talking = null; focusGroup = null; }
+  if (!S.breakout) {
+    listening.clear(); talking = null; focusGroup = null;
+    if (broadcast) stopBroadcast();
+  }
   syncMonitors();
   tickTimer();
 
@@ -653,9 +705,8 @@ $("#copy-link").addEventListener("click", async () => {
 });
 
 $("#end-class").addEventListener("click", () => {
-  if (!confirm("수업을 종료할까요? 모든 학생이 나가고, 퀴즈 결과도 사라져요.\n(결과가 필요하면 먼저 '퀴즈·투표' 탭에서 내려받으세요)")) return;
+  if (!confirm("수업을 종료할까요? 모든 학생이 나가요.\n출결과 퀴즈 결과는 '출결 기록'에서 계속 볼 수 있어요.")) return;
   sock.send({ t: "end_class" });
-  store.del(`live:t:${CODE}`);
 });
 
 renderActForm();

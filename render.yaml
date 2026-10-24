@@ -10,9 +10,19 @@ services:
         value: 3.12.7
       - key: ANTHROPIC_API_KEY
         sync: false  # 배포할 때 Render 화면에서 직접 입력
-      # 실시간 수업(/live)용. 비워 두면 그 기능만 꺼진다.
-      - key: TEACHER_PASSWORD
+      # ── 실시간 수업(/live) ──
+      - key: SECRET_KEY
+        generateValue: true  # Render가 무작위 값을 만들어 준다
+      - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: ALLOWED_DOMAINS
+        sync: false
+      - key: TEACHER_EMAILS
+        sync: false
+      - key: SCHOOLS
+        sync: false
+      - key: DATABASE_URL
+        sync: false  # Neon 무료 PostgreSQL 주소
       - key: LIVEKIT_URL
         sync: false
       - key: LIVEKIT_API_KEY

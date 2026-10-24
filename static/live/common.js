@@ -73,8 +73,7 @@ function fmtTime(ts) {
 
 /** 수업 상태를 주고받는 WebSocket. 끊기면 자동으로 다시 연결한다. */
 class LiveSocket {
-  constructor(key, onMessage, onStatus) {
-    this.key = key;
+  constructor(_unused, onMessage, onStatus) {
     this.onMessage = onMessage;
     this.onStatus = onStatus;
     this.retry = 0;
@@ -85,7 +84,8 @@ class LiveSocket {
 
   connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/live/${CODE}?key=${encodeURIComponent(this.key)}`);
+    // 로그인 쿠키로 누구인지 확인한다
+    const ws = new WebSocket(`${proto}://${location.host}/ws/live/${CODE}`);
     this.ws = ws;
     ws.onopen = () => { this.retry = 0; this.onStatus(true); };
     ws.onmessage = (e) => {

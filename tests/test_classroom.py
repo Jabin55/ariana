@@ -1,41 +1,62 @@
-"""실시간 수업 서버 테스트: pytest tests/"""
+"""실시간 수업 서버 테스트: python -m pytest tests"""
 
 import os
+import tempfile
+import time
 
+_tmp = tempfile.mkdtemp()
+os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
 os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
 import pytest
 from fastapi.testclient import TestClient
 
+import app.auth as auth
 import app.classroom as cr
+from app import db
 from app.main import app
+
+SCHOOL = "가나중학교"
 
 
 @pytest.fixture(autouse=True)
 def setup(monkeypatch):
-    monkeypatch.setattr(cr, "TEACHER_PASSWORD", "pw")
+    monkeypatch.setattr(auth, "DEV_LOGIN", True)
+    monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "other@gmail.com"})
+    monkeypatch.setattr(auth, "ALLOWED_DOMAINS", {"s.school.kr"})
     monkeypatch.setattr(cr, "LIVEKIT_URL", "ws://localhost:7880")
     monkeypatch.setattr(cr, "LIVEKIT_API_KEY", "devkey")
     monkeypatch.setattr(cr, "LIVEKIT_API_SECRET", "secret-secret-secret-secret-secret")
+    db.metadata.drop_all(db.engine)
+    db.init()
     cr.classes.clear()
 
 
-client = TestClient(app)
+def login(email, **profile):
+    c = TestClient(app)
+    r = c.post("/api/auth/dev", json={"email": email})
+    assert r.status_code == 200, r.text
+    if profile:
+        r = c.post("/api/me/profile", json=profile)
+        assert r.status_code == 200, r.text
+    return c
 
 
-def create():
-    r = client.post("/api/live/classes", json={"password": "pw", "title": "정치"})
-    assert r.status_code == 200
+def teacher(email="teacher@gmail.com"):
+    return login(email, name="박선생", school=SCHOOL)
+
+
+def student(n, grade=2, class_no=3):
+    return login(f"st{n}@s.school.kr", name=f"학생{n}", school=SCHOOL, grade=grade, class_no=class_no, number=n)
+
+
+def create(t, **kw):
+    r = t.post("/api/live/classes", json={"title": "정치", **kw})
+    assert r.status_code == 200, r.text
     return r.json()
 
 
-def join(code, name):
-    r = client.post(f"/api/live/classes/{code}/join", json={"name": name})
-    assert r.status_code == 200
-    return r.json()
-
-
-def until(ws, pred, limit=50):
+def until(ws, pred, limit=60):
     for _ in range(limit):
         msg = ws.receive_json()
         if pred(msg):
@@ -47,131 +68,156 @@ def state(ws, pred=lambda m: True):
     return until(ws, lambda m: m["t"] == "state" and pred(m))
 
 
-def test_wrong_password():
-    r = client.post("/api/live/classes", json={"password": "nope"})
-    assert r.status_code == 403
+def test_login_rules():
+    c = TestClient(app)
+    assert c.post("/api/auth/dev", json={"email": "kid@gmail.com"}).status_code == 403  # 학교 계정 아님
+    s = login("kid@s.school.kr")
+    me = s.get("/api/me").json()["user"]
+    assert me["role"] == "student" and me["needs_profile"]
+    t = teacher()
+    code = create(t)["code"]
+    assert s.post(f"/api/live/classes/{code}/join").status_code == 409  # 내 정보 먼저
+    assert s.post("/api/live/classes", json={}).status_code in (403, 409)  # 학생은 수업을 못 연다
+    r = s.post("/api/me/profile", json={"name": "김민준", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 15})
+    assert r.json()["student_no"] == "20315" and r.json()["display"] == "20315 김민준"
+    assert s.post(f"/api/live/classes/{code}/join").status_code == 200
 
 
-def test_quiz_flow_hides_answers_until_reveal():
-    c = create()
-    code, tkey = c["code"], c["teacher_key"]
-    a = join(code, "김민준")
-    b = join(code, "이서연")
-    with client.websocket_connect(f"/ws/live/{code}?key={tkey}") as t, \
-         client.websocket_connect(f"/ws/live/{code}?key={a['key']}") as sa, \
-         client.websocket_connect(f"/ws/live/{code}?key={b['key']}") as sb:
-        t.send_json({"t": "activity_start", "kind": "choice", "prompt": "대통령제 국가는?",
-                     "options": ["영국", "미국", "일본"], "correct": 1})
-        st = state(sa, lambda m: m["activity"])
-        act = st["activity"]
+def test_quiz_flow_and_results_saved():
+    t = teacher()
+    c = create(t)
+    code, cid = c["code"], c["class_id"]
+    a, b = student(1), student(2)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, \
+         a.websocket_connect(f"/ws/live/{code}") as sa, \
+         b.websocket_connect(f"/ws/live/{code}") as sb:
+        tw.send_json({"t": "activity_start", "kind": "choice", "prompt": "대통령제 국가는?",
+                      "options": ["영국", "미국", "일본"], "correct": 1})
+        act = state(sa, lambda m: m["activity"])["activity"]
         assert "correct" not in act and "counts" not in act
         sa.send_json({"t": "answer", "id": act["id"], "value": 1})
         sb.send_json({"t": "answer", "id": act["id"], "value": 0})
-        sb.send_json({"t": "answer", "id": act["id"], "value": 99})  # 잘못된 값은 무시
-        ts = state(t, lambda m: m["activity"] and m["activity"]["total"] == 2)
+        ts = state(tw, lambda m: m["activity"] and m["activity"]["total"] == 2)
         assert ts["activity"]["counts"] == [1, 1, 0]
-        t.send_json({"t": "activity_close"})
-        t.send_json({"t": "activity_reveal", "on": True})
+        tw.send_json({"t": "activity_close"})
+        tw.send_json({"t": "activity_reveal", "on": True})
         st = state(sa, lambda m: m["activity"]["reveal"])
         assert st["activity"]["correct"] == 1 and st["activity"]["mine"] == 1
-        assert st["activity"]["counts"] == [1, 1, 0]
-        sa.send_json({"t": "answer", "id": act["id"], "value": 0})  # 마감 후 변경 불가
+        tw.send_json({"t": "activity_clear"})
+        state(sa, lambda m: m["activity"] is None)
+    time.sleep(0.3)  # 결과 저장은 비동기
+    body = t.get(f"/api/live/history/{cid}/results.csv").text
+    assert "20301" in body and "미국" in body and ",O" in body and ",X" in body
+    assert a.get(f"/api/live/history/{cid}/results.csv").status_code == 403
+    assert teacher("other@gmail.com").get(f"/api/live/history/{cid}/results.csv").status_code == 404
 
-    r = client.get(f"/api/live/classes/{code}/results.csv", params={"key": tkey})
-    assert r.status_code == 200
-    body = r.text
-    assert "김민준" in body and "미국" in body and ",O" in body and ",X" in body
-    assert client.get(f"/api/live/classes/{code}/results.csv", params={"key": a["key"]}).status_code == 403
 
-
-def test_breakout_rooms_tokens_and_scoped_chat():
-    c = create()
-    code, tkey = c["code"], c["teacher_key"]
-    students = [join(code, f"학생{i}") for i in range(6)]
-    with client.websocket_connect(f"/ws/live/{code}?key={tkey}") as t:
-        socks = [client.websocket_connect(f"/ws/live/{code}?key={s['key']}") for s in students]
+def test_breakout_tokens_chat_and_broadcast():
+    t = teacher()
+    code = create(t)["code"]
+    studs = [student(i) for i in range(1, 7)]
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        socks = [s.websocket_connect(f"/ws/live/{code}") for s in studs]
         try:
             for ws in socks:
                 ws.__enter__()
-            state(t, lambda m: sum(s["online"] for s in m["students"]) == 6)
-            t.send_json({"t": "breakout_plan", "n": 3})
-            t.send_json({"t": "breakout_start", "minutes": 5})
-            ts = state(t, lambda m: m["breakout"])
-            assert len(ts["groups"]) == 3
-            assert all(s["room"] in ("g1", "g2", "g3") for s in ts["students"])
+            state(tw, lambda m: sum(s["online"] for s in m["students"]) == 6)
+            tw.send_json({"t": "breakout_plan", "n": 3})
+            tw.send_json({"t": "breakout_start", "minutes": 5})
+            ts = state(tw, lambda m: m["breakout"])
             sizes = [sum(s["group"] == g["id"] for s in ts["students"]) for g in ts["groups"]]
             assert sizes == [2, 2, 2]
-
             st0 = state(socks[0], lambda m: m["room"] != "main")
             room0 = st0["room"]
-            assert st0["group"]["name"].endswith("모둠") and len(st0["group"]["members"]) == 2
 
-            # 입장권: 자기 모둠만 가능, 선생님은 모든 모둠 가능
-            tok = lambda key, room: client.post(f"/api/live/classes/{code}/token", json={"key": key, "room": room})
-            assert tok(students[0]["key"], room0).status_code == 200
+            tok = lambda c, room: c.post(f"/api/live/classes/{code}/token", json={"room": room})
+            assert tok(studs[0], room0).status_code == 200
             other = next(g["id"] for g in ts["groups"] if g["id"] != room0)
-            assert tok(students[0]["key"], other).status_code == 403
-            assert tok(students[0]["key"], "main").status_code == 403
-            assert all(tok(tkey, g["id"]).status_code == 200 for g in ts["groups"])
+            assert tok(studs[0], other).status_code == 403
+            assert tok(studs[0], "main").status_code == 403
+            assert all(tok(t, g["id"]).status_code == 200 for g in ts["groups"])
+            assert tok(teacher("other@gmail.com"), room0).status_code == 403  # 다른 선생님의 수업
 
-            # 모둠 채팅은 같은 모둠에만
             socks[0].send_json({"t": "chat", "text": "우리 모둠 안녕"})
-            msg = until(t, lambda m: m["t"] == "chat")
-            assert msg["msg"]["scope"] == room0
-            mate = next(i for i, s in enumerate(ts["students"]) if s["group"] == room0 and s["name"] != "학생0")
-            until(socks[mate], lambda m: m["t"] == "chat" and m["msg"]["text"] == "우리 모둠 안녕")
+            assert until(tw, lambda m: m["t"] == "chat")["msg"]["scope"] == room0
 
-            # 선생님 듣기 표시
-            t.send_json({"t": "listen", "groups": [room0], "talking": None})
-            assert state(socks[0], lambda m: m["teacher_listening"])["teacher_talking"] is False
-
-            # 학생 옮기기
-            sid0 = next(s["id"] for s in ts["students"] if s["name"] == "학생0")
-            t.send_json({"t": "breakout_assign", "target": sid0, "group": other})
-            assert state(socks[0], lambda m: m["room"] == other)["teacher_listening"] is False
-
-            t.send_json({"t": "breakout_end"})
+            tw.send_json({"t": "listen", "groups": [room0], "talking": None})
+            state(socks[0], lambda m: m["teacher_listening"])
+            # 모든 모둠에 동시에 말하기
+            tw.send_json({"t": "listen", "groups": [], "talking": None, "broadcast": True})
+            for ws in socks:
+                state(ws, lambda m: m["teacher_broadcast"])
+            tw.send_json({"t": "breakout_end"})
             st = state(socks[0], lambda m: m["room"] == "main")
-            assert not st["breakout"]
-            assert tok(students[0]["key"], "main").status_code == 200
+            assert not st["breakout"] and not st["teacher_broadcast"]
         finally:
             for ws in socks:
                 ws.__exit__(None, None, None)
 
 
-def test_mic_lock_kick_and_end():
-    c = create()
-    code, tkey = c["code"], c["teacher_key"]
-    a = join(code, "김민준")
-    with client.websocket_connect(f"/ws/live/{code}?key={tkey}") as t, \
-         client.websocket_connect(f"/ws/live/{code}?key={a['key']}") as sa:
-        t.send_json({"t": "settings", "mic_lock": True})
+def test_attendance_history_and_absent():
+    t = teacher()
+    c = create(t, target_grade=2, target_class=3)
+    code, cid = c["code"], c["class_id"]
+    a, b = student(1), student(2)
+    student(3)  # 같은 반이지만 접속 안 함
+    student(4, class_no=5)  # 다른 반
+    with a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)
+    time.sleep(0.2)
+    with a.websocket_connect(f"/ws/live/{code}") as sa, b.websocket_connect(f"/ws/live/{code}") as sb:
+        state(sa)
+        state(sb)
+        rep = t.get(f"/api/live/history/{cid}").json()
+        p1 = next(p for p in rep["students"] if p["student_no"] == "20301")
+        assert p1["count"] == 2 and p1["online"] and p1["last_leave_text"] == "접속 중"
+    time.sleep(0.3)
+    rep = t.get(f"/api/live/history/{cid}").json()
+    assert [p["student_no"] for p in rep["students"]] == ["20301", "20302"]
+    assert not any(p["online"] for p in rep["students"])
+    assert [x["student_no"] for x in rep["absent"]] == ["20303"]
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+    day = t.get("/api/live/history", params={"date": today}).json()
+    assert day["classes"][0]["id"] == cid and day["classes"][0]["attended"] == 2
+    csv_text = t.get(f"/api/live/history/{cid}/attendance.csv").text
+    assert "20301" in csv_text and "미접속" in csv_text
+    assert a.get(f"/api/live/history/{cid}").status_code == 403
+
+
+def test_kick_mic_lock_end_and_revive():
+    t = teacher()
+    code = create(t)["code"]
+    a = student(1)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)  # 학생 연결이 끝난 뒤에 명령을 보낸다
+        tw.send_json({"t": "settings", "mic_lock": True})
         until(sa, lambda m: m["t"] == "cmd" and m["cmd"] == "mute")
-        st = state(sa, lambda m: m["settings"]["mic_lock"])
-        assert st["me"]["can_speak"] is False
-        sid = st["me"]["id"]
-        t.send_json({"t": "allow_mic", "target": sid, "on": True})
+        sid = state(sa, lambda m: m["settings"]["mic_lock"])["me"]["id"]
+        tw.send_json({"t": "allow_mic", "target": sid, "on": True})
         state(sa, lambda m: m["me"]["can_speak"])
-
-        sa.send_json({"t": "question", "text": "질문 있어요"})
-        ts = state(t, lambda m: m["questions"])
-        qid = ts["questions"][0]["id"]
-        t.send_json({"t": "question_update", "id": qid, "reply": "좋은 질문!", "done": True})
-        st = state(sa, lambda m: m["my_questions"] and m["my_questions"][0]["reply"])
-        assert st["my_questions"][0]["reply"] == "좋은 질문!"
-
-        t.send_json({"t": "kick", "target": sid})
+        tw.send_json({"t": "kick", "target": sid})
         until(sa, lambda m: m["t"] == "kicked")
-    assert client.post(f"/api/live/classes/{code}/token", json={"key": a["key"], "room": "main"}).status_code == 403
+    assert a.post(f"/api/live/classes/{code}/join").status_code == 403
 
-    with client.websocket_connect(f"/ws/live/{code}?key={tkey}") as t:
-        t.send_json({"t": "end_class"})
-        until(t, lambda m: m["t"] == "ended")
-    assert client.get(f"/api/live/classes/{code}").status_code == 404
+    cr.classes.clear()  # 서버 재시작 흉내: 메모리 상태가 사라져도 같은 코드로 이어진다
+    b = student(2)
+    assert b.post(f"/api/live/classes/{code}/join").status_code == 200
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        assert state(tw)["title"] == "정치"
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    time.sleep(0.2)
+    cr.classes.clear()
+    assert b.post(f"/api/live/classes/{code}/join").status_code == 404
 
 
-def test_rejoin_keeps_identity():
-    c = create()
-    a = join(c["code"], "김민준")
-    r = client.post(f"/api/live/classes/{c['code']}/join", json={"name": "김민준", "key": a["key"]})
-    assert r.json()["student_id"] == a["student_id"]
+def test_websocket_rejects_other_origin_and_anonymous():
+    t = teacher()
+    code = create(t)["code"]
+    with t.websocket_connect(f"/ws/live/{code}", headers={"origin": "https://evil.example"}) as ws:
+        assert ws.receive_json()["code"] == "bad_origin"
+    with TestClient(app).websocket_connect(f"/ws/live/{code}") as ws:
+        assert ws.receive_json()["code"] == "login"

@@ -9,93 +9,100 @@
 </head>
 <body>
   <main class="landing">
-    <h1>🎥 실시간 수업</h1>
-    <p>화상 수업 · 퀴즈와 투표 · 채팅과 질문 · 모둠 활동 · AI 조교</p>
-
-    <div class="cards">
-      <section class="card">
-        <h2>학생 입장</h2>
-        <form id="join">
-          <label for="code" class="muted">선생님이 알려 준 수업 코드</label>
-          <input id="code" class="code-input" maxlength="6" autocomplete="off" required placeholder="ABC123">
-          <label for="name" class="muted">이름 (선생님이 알아볼 수 있게)</label>
-          <input id="name" maxlength="20" required placeholder="예: 3번 김민준" autocomplete="name">
-          <button class="primary" type="submit">입장하기</button>
-          <p class="error" id="join-error"></p>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>선생님: 수업 만들기</h2>
-        <form id="create">
-          <label for="title" class="muted">수업 이름</label>
-          <input id="title" maxlength="60" placeholder="예: 2학년 3반 정치 - 선거 제도">
-          <label for="password" class="muted">선생님 비밀번호</label>
-          <input id="password" type="password" required autocomplete="current-password">
-          <button class="primary" type="submit">새 수업 열기</button>
-          <p class="error" id="create-error"></p>
-        </form>
-        <div class="recent" id="recent"></div>
-      </section>
+    <div class="row" style="margin-bottom:4px">
+      <h1 class="grow">🎥 실시간 수업</h1>
+      <span class="muted" id="who"></span>
+      <button class="small" id="edit-profile" hidden>내 정보</button>
+      <button class="small" id="logout" hidden>로그아웃</button>
     </div>
+    <p id="lead">화상 수업 · 퀴즈와 투표 · 채팅과 질문 · 모둠 활동 · AI 조교</p>
+
+    <!-- 로그인 -->
+    <section class="card narrow" id="login-view" hidden>
+      <h2>로그인</h2>
+      <p class="muted" id="login-hint">학교에서 받은 구글 계정으로 로그인하세요.</p>
+      <div id="google-btn"></div>
+      <form id="dev-login" class="dev" hidden>
+        <p class="muted" style="margin:0">개발용 로그인 (DEV_LOGIN=1)</p>
+        <input id="dev-email" placeholder="email@school.kr" required>
+        <button type="submit">개발용 로그인</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </section>
+
+    <!-- 내 정보 -->
+    <section class="card narrow" id="profile-view" hidden>
+      <h2>내 정보</h2>
+      <p class="muted" id="profile-hint">선생님이 출석을 확인할 수 있도록 정확하게 적어 주세요.</p>
+      <form id="profile">
+        <label class="muted" for="p-name">이름 (실명)</label>
+        <input id="p-name" maxlength="30" required>
+        <label class="muted" for="p-school">학교</label>
+        <select id="p-school-select" hidden></select>
+        <input id="p-school" maxlength="60" placeholder="예: 가나중학교">
+        <div class="student-only row">
+          <label>학년 <input id="p-grade" type="number" min="1" max="6" required style="width:4.5em"></label>
+          <label>반 <input id="p-class" type="number" min="1" max="30" required style="width:4.5em"></label>
+          <label>번호 <input id="p-number" type="number" min="1" max="60" required style="width:4.5em"></label>
+        </div>
+        <p class="muted student-only" style="margin:0;font-size:0.9rem">학번: <strong id="p-no">-</strong></p>
+        <button class="primary" type="submit">저장</button>
+        <p class="error" id="profile-error"></p>
+      </form>
+    </section>
+
+    <!-- 학생 -->
+    <section class="card narrow" id="student-view" hidden>
+      <h2>수업 입장</h2>
+      <form id="join">
+        <label for="code" class="muted">선생님이 알려 준 수업 코드</label>
+        <input id="code" class="code-input" maxlength="6" autocomplete="off" required placeholder="ABC123">
+        <button class="primary" type="submit">입장하기</button>
+        <p class="error" id="join-error"></p>
+      </form>
+    </section>
+
+    <!-- 선생님 -->
+    <section id="teacher-view" hidden>
+      <nav class="tabs page-tabs" id="home-tabs">
+        <button data-tab="classes" class="active">수업</button>
+        <button data-tab="history">출결 기록</button>
+      </nav>
+
+      <div data-panel="classes" class="cards">
+        <section class="card">
+          <h2>새 수업 열기</h2>
+          <form id="create">
+            <label for="title" class="muted">수업 이름</label>
+            <input id="title" maxlength="60" placeholder="예: 2학년 3반 정치 - 선거 제도">
+            <span class="muted">대상 학급 (선택: 정하면 출결 기록에 '미접속' 학생도 보여요)</span>
+            <div class="row">
+              <input id="t-grade" type="number" min="1" max="6" placeholder="학년" style="width:6em">
+              <input id="t-class" type="number" min="1" max="30" placeholder="반" style="width:6em">
+            </div>
+            <button class="primary" type="submit">수업 열기</button>
+            <p class="error" id="create-error"></p>
+          </form>
+        </section>
+        <section class="card">
+          <h2>진행 중인 수업</h2>
+          <div class="recent" id="live-classes"><span class="muted">없어요.</span></div>
+        </section>
+      </div>
+
+      <div data-panel="history" hidden>
+        <div class="row" style="margin:12px 0">
+          <label>날짜 <input type="date" id="h-date"></label>
+          <span class="muted" id="h-summary"></span>
+        </div>
+        <div class="recent" id="h-classes"></div>
+        <div id="h-detail"></div>
+      </div>
+    </section>
   </main>
 
   <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
   <script src="/static/live/common.js"></script>
-  <script>
-    const codeInput = $("#code");
-    const nameInput = $("#name");
-    const params = new URLSearchParams(location.search);
-    if (params.get("c")) codeInput.value = params.get("c").toUpperCase();
-    nameInput.value = store.get("live:name") || "";
-    (codeInput.value ? nameInput : codeInput).focus();
-
-    $("#join").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const code = codeInput.value.trim().toUpperCase();
-      const name = nameInput.value.trim();
-      const err = $("#join-error");
-      err.textContent = "";
-      try {
-        const saved = store.get(`live:s:${code}`);
-        const res = await api(`/api/live/classes/${code}/join`, { name, key: saved?.key });
-        store.set(`live:s:${code}`, { key: res.key, name: res.name });
-        store.set("live:name", name);
-        location.href = `/live/class/${code}`;
-      } catch (ex) {
-        err.textContent = ex.message;
-      }
-    });
-
-    $("#create").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const err = $("#create-error");
-      err.textContent = "";
-      try {
-        const res = await api("/api/live/classes", { password: $("#password").value, title: $("#title").value });
-        store.set(`live:t:${res.code}`, { key: res.teacher_key, title: res.title, at: Date.now() });
-        location.href = `/live/teacher/${res.code}`;
-      } catch (ex) {
-        err.textContent = ex.message;
-      }
-    });
-
-    // 이 브라우저에서 최근에 연 수업 (새로고침·실수로 닫았을 때 다시 열기)
-    const recent = [];
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k.startsWith("live:t:")) recent.push({ code: k.slice(7), ...store.get(k) });
-      }
-    } catch { /* 저장소를 못 쓰는 환경 */ }
-    recent.sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 5).forEach(async (r) => {
-      try {
-        await api(`/api/live/classes/${r.code}`);
-        $("#recent").append(h("a", { href: `/live/teacher/${r.code}` }, `↩ ${r.title} (${r.code}) 다시 열기`));
-      } catch {
-        store.del(`live:t:${r.code}`); // 이미 끝난 수업
-      }
-    });
-  </script>
+  <script src="/static/live/home.js"></script>
 </body>
 </html>
