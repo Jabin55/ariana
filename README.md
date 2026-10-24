@@ -28,6 +28,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 3. `ANTHROPIC_API_KEY` 입력란에 API 키를 넣고 **Apply** 를 누릅니다.
 4. 몇 분 뒤 `https://politics-chatbot-xxxx.onrender.com` 같은 주소가 생깁니다. 이 주소를 학생들에게 알려 주면 됩니다.
 
+> 이 설정 파일(`render.yaml`)은 사이트를 **두 개** 만듭니다. 정치쌤 챗봇(`politics-chatbot-….onrender.com`)과
+> 실시간 수업(`live-class-….onrender.com`, 첫 주소가 바로 수업 화면)입니다. 실시간 수업 사이트에 넣을 값은 아래 [실시간 수업](#실시간-수업-live) 부분을 보세요.
+> 주소 앞부분은 서비스 이름으로 정해지니, 원하는 이름이 있으면 `render.yaml` 의 `name` 을 바꾸거나 Render 화면에서 바꾸면 됩니다.
+
 이후 GitHub 저장소에 코드를 올리면 Render가 자동으로 다시 배포합니다.
 무료 요금제는 한동안 접속이 없으면 잠들었다가, 다음 접속 때 깨어나느라 첫 화면이 30초~1분 정도 늦게 뜰 수 있습니다.
 
@@ -123,7 +127,7 @@ Google Workspace for Education은 **만 18세 미만 학생이 관리자가 허�
 
 **4) LiveKit** — https://cloud.livekit.io 가입 → 프로젝트 → Settings → Keys 에서 URL·키·시크릿을 `LIVEKIT_*` 에. 시험은 무료(Build)로 하고, 정규 수업 전에 **Billing에서 Ship 요금제로 올리세요**(무료 한도를 넘으면 그 달은 화상 접속이 막힙니다).
 
-**5) Render 환경 변수**
+**5) Render 환경 변수** — Blueprint로 배포하면 생기는 **`live-class`** 서비스에 넣습니다 (정치쌤 챗봇과 별개의 사이트).
 
 | 변수 | 설명 |
 |---|---|

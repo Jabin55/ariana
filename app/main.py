@@ -15,7 +15,7 @@ from typing import Literal
 
 import anthropic
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
@@ -75,8 +75,14 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@app.get("/")
-async def index() -> FileResponse:
+# APP_MODE=live 이면 이 서버는 '실시간 수업' 전용 사이트다: 첫 주소(/)가 바로 수업 화면으로 간다.
+APP_MODE = os.environ.get("APP_MODE", "chatbot")
+
+
+@app.get("/", response_model=None)
+async def index() -> FileResponse | RedirectResponse:
+    if APP_MODE == "live":
+        return RedirectResponse("/live")
     return FileResponse(STATIC_DIR / "index.html")
 
 

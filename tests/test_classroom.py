@@ -342,3 +342,12 @@ def test_low_bandwidth_mode_limits_student_publishing():
         tw.send_json({"t": "settings", "lowbw": False, "mic_lock": False})
         state(sa, lambda m: m["room"] == "main" and not m["settings"]["lowbw"])
         assert sorted(grants(a, "main").can_publish_sources) == ["camera", "microphone"]
+
+
+def test_live_site_mode_root_goes_to_class(monkeypatch):
+    import app.main as main
+    c = TestClient(app)
+    assert c.get("/", follow_redirects=False).status_code == 200  # 기본: 정치쌤 챗봇
+    monkeypatch.setattr(main, "APP_MODE", "live")
+    r = c.get("/", follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "/live"
