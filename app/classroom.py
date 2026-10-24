@@ -29,6 +29,7 @@ from livekit import api as lk
 
 from app import db
 from app.auth import current_user, display_name, needs_profile, require_user
+from app.courses import is_enrolled, owned_course
 
 log = logging.getLogger("live-class")
 router = APIRouter()
@@ -103,6 +104,7 @@ class Klass:
     title: str
     teacher_id: int
     created: float = field(default_factory=time.time)
+    course_id: int | None = None  # 강좌 수업이면 승인된 수강생만 들어올 수 있다
     last_active: float = field(default_factory=time.time)
     students: dict[str, Student] = field(default_factory=dict)
     banned: set[str] = field(default_factory=set)
@@ -158,10 +160,11 @@ async def get_class(code: str) -> Klass:
     row = await db.run(_load_class, code) if code.isalnum() and len(code) <= 8 else None
     if not row:
         raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요.")
-    saved_questions = await db.run(_load_questions, row.id)  # 서버가 다시 켜져도 질문·답장은 이어진다
+    saved_questions = await db.run(_load_questions, row.id)  # 서버가 다시 켜져도 질문답변은 이어진다
     k = classes.get(code)  # 기다리는 사이 다른 요청이 먼저 살렸을 수 있다
     if not k:
-        k = Klass(db_id=row.id, code=row.code, title=row.title, teacher_id=row.teacher_id, created=row.created_at)
+        k = Klass(db_id=row.id, code=row.code, title=row.title, teacher_id=row.teacher_id, created=row.created_at,
+                  course_id=row.course_id)
         k.questions = saved_questions
         classes[code] = k
     return k
@@ -264,7 +267,7 @@ async def heartbeat_loop() -> None:
         prune_classes()
 
 
-# 질문 저장은 한 줄로 세운 스레드 하나가 순서대로 처리한다(답장이 질문보다 먼저 저장되는 일이 없도록)
+# 질문 저장은 한 줄로 세운 스레드 하나가 순서대로 처리한다(답변이 질문보다 먼저 저장되는 일이 없도록)
 _question_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="question-writer")
 
 
@@ -369,6 +372,7 @@ def activity_for_student(a: dict | None, sid: str) -> dict | None:
 def teacher_state(k: Klass) -> dict:
     return {
         "t": "state", "role": "teacher", "code": k.code, "title": k.title, "class_id": k.db_id,
+        "course_id": k.course_id,
         "settings": k.settings, "livekit": livekit_ready(),
         "students": [
             {"id": s.id, "name": s.name, "online": s.conns > 0, "hand": s.hand,
@@ -573,6 +577,7 @@ def close_livekit_rooms(k: Klass) -> None:
 
 class CreateReq(BaseModel):
     title: str = Field(default="", max_length=60)
+    course_id: int | None = None  # 강좌 수업: 승인된 수강생은 코드 없이 들어온다
     target_grade: int | None = Field(default=None, ge=1, le=6)
     target_class: int | None = Field(default=None, ge=1, le=30)
 
@@ -584,6 +589,10 @@ class TokenReq(BaseModel):
 @router.post("/api/live/classes")
 async def create_class(req: CreateReq, request: Request):
     t = await require_user(request, "teacher")
+    if req.course_id is not None:
+        course = await db.run(owned_course, req.course_id, t["id"])
+        if course.archived:
+            raise HTTPException(409, "보관된 강좌에는 수업을 열 수 없어요.")
     prune_classes()
     code = await new_code()
     title = clean(req.title, 60) or "실시간 수업"
@@ -593,10 +602,11 @@ async def create_class(req: CreateReq, request: Request):
             return c.execute(insert(db.classes).values(
                 code=code, title=title, teacher_id=t["id"], school=t["school"] or "",
                 target_grade=req.target_grade, target_class=req.target_class, created_at=time.time(),
+                course_id=req.course_id,
             )).inserted_primary_key[0]
 
     class_id = await db.run(run)
-    classes[code] = Klass(db_id=class_id, code=code, title=title, teacher_id=t["id"])
+    classes[code] = Klass(db_id=class_id, code=code, title=title, teacher_id=t["id"], course_id=req.course_id)
     return {"code": code, "title": title, "class_id": class_id}
 
 
@@ -623,10 +633,17 @@ def add_student(k: Klass, u: dict) -> Student:
     return s
 
 
+async def ensure_enrolled(k: Klass, u: dict) -> None:
+    """강좌 수업이면 수강 승인된 학생만 들어온다(코드를 알아도 안 됨)."""
+    if k.course_id and not await db.run(is_enrolled, k.course_id, u["id"]):
+        raise HTTPException(403, "이 강좌에 수강신청이 승인된 학생만 들어올 수 있어요.")
+
+
 @router.post("/api/live/classes/{code}/join")
 async def join_class(code: str, request: Request):
     u = await require_user(request, "student")
     k = await get_class(code)
+    await ensure_enrolled(k, u)
     s = add_student(k, u)
     k.last_active = time.time()
     push(k)
@@ -721,6 +738,7 @@ async def live_socket(ws: WebSocket, code: str):
         conn = Conn(ws=ws, role="teacher", sid=None)
     elif u["role"] == "student" and not needs_profile(u):
         try:
+            await ensure_enrolled(k, u)
             s = add_student(k, u)
         except HTTPException as e:
             return await reject(ws, "denied", e.detail)

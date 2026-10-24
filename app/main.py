@@ -23,6 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import db
 from app.auth import router as auth_router
 from app.classroom import heartbeat_loop, router as live_router
+from app.courses import router as courses_router
 from app.grading import router as grading_router
 from app.history import router as history_router
 from app.prompts import SYSTEM_PROMPT
@@ -62,6 +63,7 @@ app.include_router(auth_router)
 app.include_router(live_router)
 app.include_router(history_router)
 app.include_router(grading_router)
+app.include_router(courses_router)
 
 
 class ChatMessage(BaseModel):

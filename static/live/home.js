@@ -17,7 +17,7 @@ function qaItem(q, who) {
     h("div", { class: "meta" }, who),
     h("div", {}, `❓ ${q.text}`),
     q.reply ? h("div", { class: "reply" }, `👩‍🏫 ${q.reply}`, h("span", { class: "muted", style: "font-size:0.75rem" }, ` · ${q.reply_time.slice(0, 5)}`))
-      : h("div", { class: "muted", style: "font-size:0.85rem" }, "답장 없음"));
+      : h("div", { class: "muted", style: "font-size:0.85rem" }, "답변 없음"));
 }
 
 async function boot() {
@@ -141,9 +141,57 @@ function showStudent() {
     join(code); // 링크로 들어왔으면 바로 입장
     return;
   }
-  $("#code").focus();
+  loadLiveNow();
+  setInterval(loadLiveNow, 15000); // 선생님이 수업을 열면 곧바로 보이게
+  loadCourses();
   loadMyResults();
   loadMyQuestions();
+}
+
+/* 수강 승인된 강좌에서 지금 열린 수업 → 코드 없이 입장 */
+async function loadLiveNow() {
+  try {
+    const { classes } = await api("/api/courses/live-now");
+    const box = $("#live-now");
+    box.replaceChildren(...classes.map((c) => h("div", { class: "live-item" },
+      h("div", { class: "grow" }, h("div", { class: "muted", style: "font-size:0.85rem" }, `${c.course_title} · ${fmtTime(c.started_at)} 시작`),
+        h("strong", {}, c.title)),
+      h("button", { class: "primary", onclick: () => join(c.code) }, "입장하기"))));
+    if (!classes.length) {
+      box.append(h("span", { class: "muted" }, "지금 열린 수업이 없어요. 선생님이 수업을 열면 여기에 바로 나타나요."));
+    }
+  } catch { /* 다음 새로고침 때 다시 시도 */ }
+}
+
+const ENROLL_STATUS = { approved: "수강 중", pending: "승인 대기", rejected: "거절됨" };
+
+async function loadCourses() {
+  const { courses } = await api("/api/courses/available");
+  const mine = courses.filter((c) => c.status === "approved" || c.status === "pending");
+  const others = courses.filter((c) => !mine.includes(c));
+  const enrollBtn = async (c, method) => {
+    try {
+      if (method === "DELETE") {
+        if (!confirm(`'${c.title}' 수강을 취소할까요?`)) return;
+        await fetch(`/api/courses/${c.id}/enroll`, { method: "DELETE" });
+      } else {
+        await api(`/api/courses/${c.id}/enroll`, {});
+        toast("수강신청했어요. 선생님이 승인하면 수업에 들어갈 수 있어요.");
+      }
+    } catch (err) { toast(err.message); }
+    loadCourses();
+  };
+  const line = (c) => h("div", { class: "course-line" },
+    h("div", { class: "grow" }, h("strong", {}, c.title), h("span", { class: "muted" }, ` · ${c.teacher || ""} 선생님`),
+      c.description ? h("div", { class: "muted", style: "font-size:0.85rem" }, c.description) : null),
+    c.status ? h("span", { class: `status ${c.status}` }, ENROLL_STATUS[c.status]) : null);
+  $("#my-courses").replaceChildren(...mine.map((c) => h("div", { class: "row" }, line(c),
+    h("button", { class: "small", onclick: () => enrollBtn(c, "DELETE") }, c.status === "pending" ? "신청 취소" : "수강 취소"))));
+  if (!mine.length) $("#my-courses").append(h("span", { class: "muted" }, "아직 수강 중인 강좌가 없어요."));
+  $("#open-courses").replaceChildren(...others.map((c) => h("div", { class: "row" }, line(c),
+    c.open ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
+      : h("span", { class: "muted" }, "마감"))));
+  if (!others.length) $("#open-courses").append(h("span", { class: "muted" }, "신청할 수 있는 강좌가 없어요."));
 }
 
 async function loadMyResults() {
@@ -196,6 +244,7 @@ function showTeacher() {
   $("#lead").hidden = true;
   $("#h-date").value = params.get("date") || today();
   loadLive();
+  loadTeacherCourses();
   if (params.get("tab") === "history" || params.get("class")) showHomeTab("history");
 }
 
@@ -203,6 +252,7 @@ function showHomeTab(name) {
   for (const b of $("#home-tabs").children) b.classList.toggle("active", b.dataset.tab === name);
   for (const p of document.querySelectorAll("#teacher-view [data-panel]")) p.hidden = p.dataset.panel !== name;
   if (name === "history") loadHistory();
+  if (name === "courses") loadTeacherCourses();
 }
 $("#home-tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
@@ -213,7 +263,7 @@ async function loadLive() {
   const { classes } = await api("/api/live/my-classes");
   const box = $("#live-classes");
   box.replaceChildren(...classes.map((c) => h("a", { href: `/live/teacher/${c.code}` },
-    `▶ ${c.title} (${c.code}) · ${fmtTime(c.created_at)} 시작`)));
+    `▶ ${c.course_title ? `[${c.course_title}] ` : ""}${c.title} (${c.code}) · ${fmtTime(c.created_at)} 시작`)));
   if (!classes.length) box.append(h("span", { class: "muted" }, "없어요."));
 }
 
@@ -221,14 +271,115 @@ $("#create").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("#create-error").textContent = "";
   try {
+    const courseId = Number($("#t-course").value) || null;
     const res = await api("/api/live/classes", {
       title: $("#title").value,
+      course_id: courseId,
       target_grade: Number($("#t-grade").value) || null,
       target_class: Number($("#t-class").value) || null,
     });
     location.href = `/live/teacher/${res.code}`;
   } catch (err) { $("#create-error").textContent = err.message; }
 });
+
+/* 강좌·수강생 관리 */
+
+let teacherCourses = [];
+const openCourse = new Set(); // 수강생 목록을 펼친 강좌
+
+async function loadTeacherCourses() {
+  ({ courses: teacherCourses } = await api("/api/courses/mine"));
+  const active = teacherCourses.filter((c) => !c.archived);
+  // 수업 열기: 강좌 고르기
+  const sel = $("#t-course");
+  const cur = sel.value;
+  sel.replaceChildren(...active.map((c) => h("option", { value: c.id }, c.title)),
+    h("option", { value: "" }, "강좌 없이 열기 (수업 코드로 입장)"));
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  updateCourseHint();
+  const pending = active.reduce((n, c) => n + c.pending, 0);
+  $("#pending-badge").textContent = pending;
+  $("#pending-badge").hidden = !pending;
+  renderCourseList();
+}
+
+function updateCourseHint() {
+  const id = Number($("#t-course").value);
+  const c = teacherCourses.find((x) => x.id === id);
+  $("#t-course-hint").textContent = c
+    ? `승인된 수강생 ${c.approved}명은 첫 화면에서 바로 들어와요(코드 필요 없음). 수강생이 아니면 들어올 수 없어요.`
+    : teacherCourses.length ? "학생들에게 수업 코드를 알려 줘야 해요." : "강좌를 먼저 만들면 학생들이 코드 없이 들어올 수 있어요 ('강좌·수강생' 탭).";
+  document.querySelectorAll(".no-course").forEach((el) => { el.hidden = !!c; });
+}
+$("#t-course").addEventListener("change", updateCourseHint);
+
+$("#course-create").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#course-error").textContent = "";
+  try {
+    await api("/api/courses", { title: $("#c-title").value, description: $("#c-desc").value });
+    $("#c-title").value = "";
+    $("#c-desc").value = "";
+    toast("강좌를 만들었어요. 학생들이 첫 화면에서 수강신청할 수 있어요.");
+    loadTeacherCourses();
+  } catch (err) { $("#course-error").textContent = err.message; }
+});
+
+function renderCourseList() {
+  const box = $("#course-list");
+  box.replaceChildren(...teacherCourses.map((c) => {
+    const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
+    const members = h("div", { class: "members-box" });
+    const card = h("section", { class: `card course-card ${c.archived ? "archived" : ""}`, style: "margin-bottom:12px" },
+      h("div", { class: "row" },
+        h("h2", { class: "grow", style: "margin:0" }, c.title, c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
+        h("span", {}, `수강생 ${c.approved}명`),
+        c.pending ? h("span", { class: "status pending" }, `승인 대기 ${c.pending}`) : null),
+      c.description ? h("p", { class: "muted", style: "margin:4px 0" }, c.description) : null,
+      h("div", { class: "row", style: "margin-top:6px" },
+        !c.archived ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: c.open, onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
+        h("button", { class: "small", onclick: () => { if (openCourse.has(c.id)) openCourse.delete(c.id); else openCourse.add(c.id); renderCourseList(); } },
+          openCourse.has(c.id) ? "수강생 목록 접기" : "수강생 관리"),
+        h("span", { class: "grow" }),
+        h("button", { class: "small", onclick: () => {
+          if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
+        } }, c.archived ? "보관 해제" : "보관 (학기 끝)")),
+      members);
+    if (openCourse.has(c.id)) renderMembers(c, members);
+    return card;
+  }));
+  if (!teacherCourses.length) box.append(h("p", { class: "muted" }, "아직 만든 강좌가 없어요."));
+}
+
+async function renderMembers(c, box) {
+  const { enrollments } = await api(`/api/courses/${c.id}/enrollments`);
+  const decide = async (e, status) => {
+    if (status === "removed" && !confirm(`${e.name} 학생을 이 강좌에서 뺄까요?`)) return;
+    await api(`/api/courses/${c.id}/enrollments/${e.user_id}`, { status });
+    loadTeacherCourses();
+  };
+  const group = (status, title, actions) => {
+    const list = enrollments.filter((e) => e.status === status);
+    if (!list.length) return null;
+    return h("div", { class: "box", style: "margin-top:8px" },
+      h("div", { class: "row" }, h("strong", { class: "grow" }, `${title} ${list.length}명`),
+        status === "pending" ? h("button", { class: "small primary", onclick: async () => {
+          const r = await api(`/api/courses/${c.id}/approve-all`, {});
+          toast(`${r.approved}명을 승인했어요.`);
+          loadTeacherCourses();
+        } }, "모두 승인") : null),
+      h("div", { class: "people" }, list.map((e) => h("div", { class: "person" },
+        h("span", { class: `dot ${status === "approved" ? "on" : ""}` }),
+        h("span", {}, `${e.student_no || "-"} ${e.name} `, h("span", { class: "muted", style: "font-size:0.8rem" }, e.school)),
+        h("span", { class: "acts" }, actions.map(([label, st, cls]) => h("button", { class: cls || "", onclick: () => decide(e, st) }, label)))))));
+  };
+  box.replaceChildren(...[
+    group("pending", "승인 대기", [["승인", "approved", "primary"], ["거절", "rejected"]]),
+    group("approved", "수강생", [["빼기", "removed", "danger"]]),
+    group("rejected", "거절함", [["승인", "approved"], ["삭제", "removed"]]),
+  ].filter(Boolean));
+  if (!enrollments.length) box.append(h("p", { class: "muted" }, "아직 수강신청한 학생이 없어요."));
+}
 
 /* 출결 기록 */
 
@@ -238,7 +389,7 @@ async function loadHistory() {
   $("#h-summary").textContent = `수업 ${classes.length}개`;
   const box = $("#h-classes");
   box.replaceChildren(...classes.map((c) => h("button", { class: "class-pick", "data-id": c.id, onclick: () => loadDetail(c.id) },
-    `${c.start.slice(0, 5)} · ${c.title} (${c.code}) · 참여 ${c.attended}명${c.questions ? ` · 질문 ${c.questions}건` : ""}${c.live ? " · 진행 중" : ""}`)));
+    `${c.start.slice(0, 5)} · ${c.course_title ? `[${c.course_title}] ` : ""}${c.title} (${c.code}) · 참여 ${c.attended}명${c.questions ? ` · 질문 ${c.questions}건` : ""}${c.live ? " · 진행 중" : ""}`)));
   if (!classes.length) box.append(h("span", { class: "muted" }, "이 날짜에 연 수업이 없어요."));
   $("#h-detail").replaceChildren();
   const want = Number(params.get("class"));
@@ -359,15 +510,15 @@ function gradeActivity(classId, a, box) {
       h("tbody", {}, rows))));
 }
 
-/* 이 수업의 '선생님께 질문'과 답장 */
+/* 이 수업의 '선생님께 질문'과 답변 */
 async function loadClassQuestions(id) {
   const { questions } = await api(`/api/live/history/${id}/questions`);
   const replied = questions.filter((q) => q.reply).length;
   $("#h-detail").append(h("section", { class: "card", style: "margin-top:12px" },
     h("div", { class: "row" },
-      h("h2", { class: "grow", style: "margin:0" }, `💬 질문·답장 ${questions.length}건`),
-      questions.length ? h("a", { href: `/api/live/history/${id}/questions.csv`, class: "button" }, "📥 질문·답장 CSV") : null),
-    h("p", { class: "muted" }, questions.length ? `답장한 질문 ${replied}건 · 답장 없는 질문 ${questions.length - replied}건` : "이 수업에서 받은 질문이 없어요."),
+      h("h2", { class: "grow", style: "margin:0" }, `💬 질문답변 ${questions.length}건`),
+      questions.length ? h("a", { href: `/api/live/history/${id}/questions.csv`, class: "button" }, "📥 질문답변 CSV") : null),
+    h("p", { class: "muted" }, questions.length ? `답변한 질문 ${replied}건 · 답변 없는 질문 ${questions.length - replied}건` : "이 수업에서 받은 질문이 없어요."),
     h("div", { class: "people" }, questions.map((q) => qaItem(q, `${q.time.slice(0, 5)} · ${q.student_no} ${q.name}`)))));
 }
 

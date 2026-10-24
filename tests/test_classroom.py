@@ -366,7 +366,7 @@ def test_questions_and_replies_are_kept():
         state(sa, lambda m: m["my_questions"] and m["my_questions"][0]["reply"])
     time.sleep(0.3)
 
-    # 서버 재시작 흉내: 진행 중인 수업에 다시 들어가도 질문·답장이 그대로
+    # 서버 재시작 흉내: 진행 중인 수업에 다시 들어가도 질문답변이 그대로
     cr.classes.clear()
     with t.websocket_connect(f"/ws/live/{code}") as tw:
         qs = state(tw)["questions"]
@@ -453,3 +453,55 @@ def test_grading_after_class():
     # 다른 선생님·학생은 채점 불가
     assert a.post(f"{base}/{text['id']}/grade", json={"user_id": uid1, "score": 4}).status_code == 403
     assert teacher("other@gmail.com").get(f"/api/live/history/{cid}/grades").status_code == 404
+
+
+def test_course_enrollment_join_without_code():
+    t = teacher()
+    cid = t.post("/api/courses", json={"title": "2026-1 정치", "description": "화·목"}).json()["id"]
+    a, b, outsider = student(1), student(2), student(3)
+    # 학생: 강좌 목록 → 수강신청 → 승인 대기
+    assert [c["title"] for c in a.get("/api/courses/available").json()["courses"]] == ["2026-1 정치"]
+    assert a.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    assert b.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    assert outsider.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    mine = t.get("/api/courses/mine").json()["courses"][0]
+    assert mine["pending"] == 3 and mine["approved"] == 0
+    # 선생님: 학생1 승인, 학생3 거절, 나머지 모두 승인(학생2)
+    uid = {e["student_no"]: e["user_id"] for e in t.get(f"/api/courses/{cid}/enrollments").json()["enrollments"]}
+    assert t.post(f"/api/courses/{cid}/enrollments/{uid['20301']}", json={"status": "approved"}).status_code == 200
+    assert t.post(f"/api/courses/{cid}/enrollments/{uid['20303']}", json={"status": "rejected"}).status_code == 200
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
+    # 다른 선생님·학생은 관리 불가
+    assert teacher("other@gmail.com").get(f"/api/courses/{cid}/enrollments").status_code == 404
+    assert a.post(f"/api/courses/{cid}/approve-all").status_code == 403
+
+    # 강좌 수업을 열면 승인된 학생 첫 화면에 바로 뜬다
+    c = create(t, title="3주차 선거 제도", course_id=cid)
+    code = c["code"]
+    live = a.get("/api/courses/live-now").json()["classes"]
+    assert live[0]["code"] == code and live[0]["course_title"] == "2026-1 정치"
+    assert outsider.get("/api/courses/live-now").json()["classes"] == []
+    # 승인된 학생은 입장, 거절된 학생은 코드를 알아도 못 들어옴 (HTTP·WebSocket·화상 입장권 모두)
+    assert a.post(f"/api/live/classes/{code}/join").status_code == 200
+    assert outsider.post(f"/api/live/classes/{code}/join").status_code == 403
+    with outsider.websocket_connect(f"/ws/live/{code}") as ws:
+        assert ws.receive_json()["code"] == "denied"
+    assert outsider.post(f"/api/live/classes/{code}/token", json={"room": "main"}).status_code == 403
+    with a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)
+    # 출결의 미접속 대상은 승인된 수강생 (학생2)
+    time.sleep(0.3)
+    rep = t.get(f"/api/live/history/{c['class_id']}").json()
+    assert [p["student_no"] for p in rep["students"]] == ["20301"]
+    assert [x["student_no"] for x in rep["absent"]] == ["20302"]
+    # 거절된 학생은 다시 신청 가능, 수강 취소도 가능
+    assert outsider.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    assert b.delete(f"/api/courses/{cid}/enroll").status_code == 200
+    assert b.get("/api/courses/live-now").json()["classes"] == []
+    # 수강신청을 닫으면 새 신청 불가, 보관하면 목록에서 사라지고 수업도 못 연다
+    t.post(f"/api/courses/{cid}", json={"open": False})
+    assert b.post(f"/api/courses/{cid}/enroll").status_code == 409
+    t.post(f"/api/courses/{cid}", json={"archived": True})
+    assert b.get("/api/courses/available").json()["courses"] == []
+    assert t.post("/api/live/classes", json={"title": "x", "course_id": cid}).status_code == 409
+    assert t.post("/api/live/classes", json={"title": "x", "course_id": 999}).status_code == 404

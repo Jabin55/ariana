@@ -15,6 +15,7 @@ from sqlalchemy import and_, select
 
 from app import db
 from app.auth import require_user, student_no
+from app.courses import course_roster
 from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
 
 router = APIRouter()
@@ -38,9 +39,10 @@ def day_range(day: str) -> tuple[float, float]:
     return start.timestamp(), (start + timedelta(days=1)).timestamp()
 
 
-def class_row(r) -> dict:
+def class_row(r, course_titles: dict | None = None) -> dict:
     return {
         "id": r.id, "code": r.code, "title": r.title, "created_at": r.created_at, "ended_at": r.ended_at,
+        "course_id": r.course_id, "course_title": (course_titles or {}).get(r.course_id, ""),
         "target_grade": r.target_grade, "target_class": r.target_class,
         "live": r.ended_at is None and r.created_at > time.time() - CLASS_REVIVE_LIMIT,
     }
@@ -52,12 +54,16 @@ async def my_classes(request: Request):
 
     def run():
         with db.engine.connect() as c:
-            return c.execute(select(db.classes).where(
+            rows = c.execute(select(db.classes).where(
                 db.classes.c.teacher_id == t["id"], db.classes.c.ended_at.is_(None),
                 db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT,
             ).order_by(db.classes.c.id.desc())).all()
+            titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)
+                                    .where(db.courses.c.teacher_id == t["id"])).all())
+            return rows, titles
 
-    return {"classes": [class_row(r) for r in await db.run(run)]}
+    rows, titles = await db.run(run)
+    return {"classes": [class_row(r, titles) for r in rows]}
 
 
 @router.get("/api/live/history")
@@ -77,10 +83,12 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                                                  .where(db.attendance.c.class_id == r.id)).scalars()))
                 qcounts[r.id] = len(c.execute(select(db.questions.c.id)
                                               .where(db.questions.c.class_id == r.id)).all())
-            return rows, counts, qcounts
+            titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)
+                                    .where(db.courses.c.teacher_id == t["id"])).all())
+            return rows, counts, qcounts, titles
 
-    rows, counts, qcounts = await db.run(run)
-    return {"classes": [{**class_row(r), "attended": counts[r.id], "questions": qcounts[r.id],
+    rows, counts, qcounts, titles = await db.run(run)
+    return {"classes": [{**class_row(r, titles), "attended": counts[r.id], "questions": qcounts[r.id],
                          "start": kst(r.created_at)} for r in rows]}
 
 
@@ -119,7 +127,9 @@ def attendance_report(cls, teacher_id: int) -> dict:
             .order_by(db.attendance.c.joined_at)
         ).all()
         roster = []
-        if cls.target_grade and cls.target_class:
+        if cls.course_id:  # 강좌 수업: 승인된 수강생이 출석 대상
+            roster = course_roster(cls.course_id)
+        elif cls.target_grade and cls.target_class:
             cond = [db.users.c.role == "student", db.users.c.grade == cls.target_grade,
                     db.users.c.class_no == cls.target_class]
             if cls.school:
@@ -228,7 +238,7 @@ async def attendance_log_csv(class_id: int, request: Request):
 
 
 def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
-    """수업 중 '선생님께 질문'과 답장. user_id 를 주면 그 학생 것만."""
+    """수업 중 '선생님께 질문'과 답변. user_id 를 주면 그 학생 것만."""
     with db.engine.connect() as c:
         q = (select(db.questions, db.users, db.classes.c.title, db.classes.c.code,
                     db.classes.c.created_at.label("class_created"))
@@ -262,7 +272,7 @@ async def class_questions_csv(class_id: int, request: Request):
     cls = await db.run(_owned_class, class_id, t["id"])
     qs = await db.run(_questions, class_id)
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
-    rows = [["날짜", "수업", "학번", "이름", "질문 시각", "질문", "답장 시각", "답장", "확인"]]
+    rows = [["날짜", "수업", "학번", "이름", "질문 시각", "질문", "답변 시각", "답변", "확인"]]
     for q in qs:
         rows.append([day, cls.title, q["student_no"], q["name"], q["time"], q["text"],
                      q["reply_time"], q["reply"], "확인함" if q["done"] else ""])
@@ -271,7 +281,7 @@ async def class_questions_csv(class_id: int, request: Request):
 
 @router.get("/api/live/my-questions")
 async def my_questions(request: Request):
-    """학생: 지난 수업들에서 선생님께 한 질문과 받은 답장"""
+    """학생: 지난 수업들에서 선생님께 한 질문과 받은 답변"""
     u = await require_user(request, "student")
     qs = await db.run(_questions, 0, u["id"])
     return {"questions": [{k: q[k] for k in ("class_title", "date", "time", "text", "reply", "reply_time")}

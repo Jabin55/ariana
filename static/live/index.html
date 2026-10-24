@@ -52,14 +52,28 @@
     </section>
 
     <!-- 학생 -->
-    <section class="card narrow" id="student-view" hidden>
-      <h2>수업 입장</h2>
-      <form id="join">
-        <label for="code" class="muted">선생님이 알려 준 수업 코드</label>
-        <input id="code" class="code-input" maxlength="6" autocomplete="off" required placeholder="ABC123">
-        <button class="primary" type="submit">입장하기</button>
+    <section id="student-view" hidden>
+      <section class="card narrow">
+        <h2>지금 들어갈 수 있는 수업</h2>
+        <div id="live-now" class="live-now"><span class="muted">불러오는 중…</span></div>
         <p class="error" id="join-error"></p>
-      </form>
+      </section>
+
+      <section class="card narrow" style="margin-top:16px">
+        <h2>내 강좌</h2>
+        <div id="my-courses" class="people"></div>
+        <h3 class="section-title" style="margin-top:14px">수강신청</h3>
+        <p class="muted" style="margin:4px 0 8px;font-size:0.9rem">신청하면 선생님이 승인한 뒤부터 그 강좌 수업에 코드 없이 들어갈 수 있어요.</p>
+        <div id="open-courses" class="people"></div>
+      </section>
+
+      <details class="card narrow" style="margin-top:16px">
+        <summary class="muted">수업 코드로 입장 (강좌에 속하지 않은 수업)</summary>
+        <form id="join" style="margin-top:10px">
+          <input id="code" class="code-input" maxlength="6" autocomplete="off" required placeholder="ABC123">
+          <button class="primary" type="submit">입장하기</button>
+        </form>
+      </details>
     </section>
     <section class="card narrow" id="student-results" hidden style="margin-top:16px">
       <h2>채점 결과</h2>
@@ -67,8 +81,8 @@
       <div id="my-results"></div>
     </section>
     <section class="card narrow" id="student-questions" hidden style="margin-top:16px">
-      <h2>지난 수업 질문·답장</h2>
-      <p class="muted" style="margin:0 0 8px;font-size:0.9rem">수업 중에 선생님께 한 질문과 받은 답장이에요.</p>
+      <h2>지난 수업 질문답변</h2>
+      <p class="muted" style="margin:0 0 8px;font-size:0.9rem">수업 중에 선생님께 한 질문과 받은 답변이에요.</p>
       <div id="my-q" class="people"></div>
     </section>
 
@@ -76,6 +90,7 @@
     <section id="teacher-view" hidden>
       <nav class="tabs page-tabs" id="home-tabs">
         <button data-tab="classes" class="active">수업</button>
+        <button data-tab="courses">강좌·수강생 <span class="badge" id="pending-badge" hidden></span></button>
         <button data-tab="history">출결 기록</button>
       </nav>
 
@@ -83,10 +98,13 @@
         <section class="card">
           <h2>새 수업 열기</h2>
           <form id="create">
+            <label for="t-course" class="muted">강좌</label>
+            <select id="t-course"></select>
+            <span class="muted" id="t-course-hint" style="font-size:0.85rem"></span>
             <label for="title" class="muted">수업 이름</label>
-            <input id="title" maxlength="60" placeholder="예: 2학년 3반 정치 - 선거 제도">
-            <span class="muted">대상 학급 (선택: 정하면 출결 기록에 '미접속' 학생도 보여요)</span>
-            <div class="row">
+            <input id="title" maxlength="60" placeholder="예: 3주차 - 선거 제도">
+            <span class="muted no-course">대상 학급 (선택: 정하면 출결 기록에 '미접속' 학생도 보여요)</span>
+            <div class="row no-course">
               <input id="t-grade" type="number" min="1" max="6" placeholder="학년" style="width:6em">
               <input id="t-class" type="number" min="1" max="30" placeholder="반" style="width:6em">
             </div>
@@ -98,6 +116,20 @@
           <h2>진행 중인 수업</h2>
           <div class="recent" id="live-classes"><span class="muted">없어요.</span></div>
         </section>
+      </div>
+
+      <div data-panel="courses" hidden>
+        <section class="card" style="margin-bottom:16px">
+          <h2>새 강좌 만들기</h2>
+          <p class="muted" style="margin:0 0 10px;font-size:0.9rem">학기 초에 강좌를 만들면 학생들이 첫 화면에서 수강신청해요. 승인한 학생은 수업 때 코드 없이 들어오고, 승인하지 않은 학생은 코드를 알아도 들어올 수 없어요.</p>
+          <form id="course-create" class="row">
+            <input id="c-title" class="grow" maxlength="60" required placeholder="강좌 이름 (예: 2026-1학기 2학년 정치 화·목)">
+            <input id="c-desc" class="grow" maxlength="300" placeholder="설명 (선택)">
+            <button class="primary" type="submit">강좌 만들기</button>
+          </form>
+          <p class="error" id="course-error"></p>
+        </section>
+        <div id="course-list"></div>
       </div>
 
       <div data-panel="history" hidden>

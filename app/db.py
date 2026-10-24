@@ -41,6 +41,29 @@ users = Table(
     Column("last_login", Float),
 )
 
+courses = Table(
+    "courses", metadata,  # 학기 초에 선생님이 여는 강좌. 학생은 수강신청하고 선생님이 승인한다.
+    Column("id", Integer, primary_key=True),
+    Column("teacher_id", Integer, nullable=False, index=True),
+    Column("title", String(60), nullable=False),
+    Column("description", String(300), nullable=False, default=""),
+    Column("school", String(60), nullable=False, default=""),
+    Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
+    Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
+    Column("created_at", Float, nullable=False),
+)
+
+enrollments = Table(
+    "enrollments", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("status", String(10), nullable=False),  # pending(승인 대기) approved(승인) rejected(거절)
+    Column("requested_at", Float, nullable=False),
+    Column("decided_at", Float),
+    UniqueConstraint("course_id", "user_id"),
+)
+
 classes = Table(
     "classes", metadata,
     Column("id", Integer, primary_key=True),
@@ -53,6 +76,7 @@ classes = Table(
     Column("created_at", Float, nullable=False, index=True),
     Column("ended_at", Float),
     Column("results_public", Integer, nullable=False, default=0),  # 채점 결과를 학생에게 공개
+    Column("course_id", Integer, index=True),  # 강좌 수업이면 승인된 수강생만, 코드 없이 입장
 )
 
 attendance = Table(
@@ -69,7 +93,7 @@ attendance = Table(
 )
 
 questions = Table(
-    "questions", metadata,  # 수업 중 '선생님께 질문'과 선생님 답장 (영구 보관)
+    "questions", metadata,  # 수업 중 '선생님께 질문'과 선생님 답변 (영구 보관)
     Column("id", Integer, primary_key=True),
     Column("uid", String(32), unique=True, nullable=False),  # 화면에서 쓰는 질문 번호
     Column("class_id", Integer, nullable=False, index=True),
@@ -111,7 +135,8 @@ def init() -> None:
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
              ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),
-             ("activities", "points", "FLOAT NOT NULL DEFAULT 1")]
+             ("activities", "points", "FLOAT NOT NULL DEFAULT 1"),
+             ("classes", "course_id", "INTEGER")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:

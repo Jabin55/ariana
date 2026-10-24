@@ -422,6 +422,9 @@ function render() {
   const online = S.students.filter((s) => s.online).length;
   $("#online").textContent = `👥 ${online}명 접속`;
   $("#csv-link").href = `/api/live/history/${S.class_id}/results.csv`;
+  $("#share-url").textContent = S.course_id
+    ? "강좌 수강생은 첫 화면에서 코드 없이 바로 들어와요 (수강생만 입장 가능)"
+    : studentLink;
   $("#history-link").href = `/live?tab=history&class=${S.class_id}`;
 
   const banners = $("#banners");
@@ -667,19 +670,19 @@ function renderQuestions() {
   const focusedId = document.activeElement?.dataset?.qid;
   const list = qs.slice().sort((a, b) => (a.done - b.done) || (b.ts - a.ts));
   $("#questions").replaceChildren(...list.map((q) => {
-    const input = h("input", { class: "grow", maxlength: 500, placeholder: "답장 (이 학생에게만 보여요)", "data-qid": q.id,
+    const input = h("input", { class: "grow", maxlength: 500, placeholder: "답변 (이 학생에게만 보여요)", "data-qid": q.id,
       value: qDrafts.get(q.id) ?? "" });
     input.addEventListener("input", () => qDrafts.set(q.id, input.value));
     return h("div", { class: `q ${q.done ? "done" : ""}` },
       h("div", { class: "meta" }, `${q.name} · ${fmtTime(q.ts)}`),
       h("div", {}, q.text),
-      q.reply ? h("div", { class: "reply" }, `답장: ${q.reply}`) : null,
+      q.reply ? h("div", { class: "reply" }, `답변: ${q.reply}`) : null,
       h("form", { class: "row", onsubmit: (e) => {
         e.preventDefault();
         if (!input.value.trim()) return;
         sock.send({ t: "question_update", id: q.id, reply: input.value.trim(), done: true });
         qDrafts.delete(q.id);
-      } }, input, h("button", { type: "submit", class: "small" }, "답장")),
+      } }, input, h("button", { type: "submit", class: "small" }, "답변")),
       h("div", { class: "row" },
         h("button", { class: "small", onclick: () => sock.send({ t: "question_update", id: q.id, done: !q.done }) },
           q.done ? "다시 열기" : "✓ 확인함"),

@@ -323,3 +323,15 @@ table.att.grade tr.ungraded td:first-child { box-shadow: inset 3px 0 var(--accen
 .result-class { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
 .result-class summary { cursor: pointer; }
 .result-class .q { margin-top: 6px; }
+
+/* 강좌·수강신청 */
+.live-now { display: grid; gap: 8px; }
+.live-item { display: flex; gap: 10px; align-items: center; border: 2px solid var(--accent); border-radius: 10px; padding: 10px 12px; background: var(--accent-soft); }
+.course-line { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0; }
+.status { font-size: 0.8rem; padding: 1px 8px; border-radius: 99px; white-space: nowrap; }
+.status.approved { background: var(--ok-soft); color: var(--ok); }
+.status.pending { background: var(--warn-soft); color: var(--warn); }
+.status.rejected { background: var(--danger-soft); color: var(--danger); }
+#my-courses .row, #open-courses .row { border-bottom: 1px solid var(--border); padding: 6px 0; flex-wrap: nowrap; }
+.course-card.archived { opacity: 0.7; }
+details.card > summary { cursor: pointer; }
