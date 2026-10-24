@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실시간 수업</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🎥%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/live/live.css">
+</head>
+<body>
+  <main class="landing">
+    <h1>🎥 실시간 수업</h1>
+    <p>화상 수업 · 퀴즈와 투표 · 채팅과 질문 · 모둠 활동 · AI 조교</p>
+
+    <div class="cards">
+      <section class="card">
+        <h2>학생 입장</h2>
+        <form id="join">
+          <label for="code" class="muted">선생님이 알려 준 수업 코드</label>
+          <input id="code" class="code-input" maxlength="6" autocomplete="off" required placeholder="ABC123">
+          <label for="name" class="muted">이름 (선생님이 알아볼 수 있게)</label>
+          <input id="name" maxlength="20" required placeholder="예: 3번 김민준" autocomplete="name">
+          <button class="primary" type="submit">입장하기</button>
+          <p class="error" id="join-error"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>선생님: 수업 만들기</h2>
+        <form id="create">
+          <label for="title" class="muted">수업 이름</label>
+          <input id="title" maxlength="60" placeholder="예: 2학년 3반 정치 - 선거 제도">
+          <label for="password" class="muted">선생님 비밀번호</label>
+          <input id="password" type="password" required autocomplete="current-password">
+          <button class="primary" type="submit">새 수업 열기</button>
+          <p class="error" id="create-error"></p>
+        </form>
+        <div class="recent" id="recent"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
+  <script src="/static/live/common.js"></script>
+  <script>
+    const codeInput = $("#code");
+    const nameInput = $("#name");
+    const params = new URLSearchParams(location.search);
+    if (params.get("c")) codeInput.value = params.get("c").toUpperCase();
+    nameInput.value = store.get("live:name") || "";
+    (codeInput.value ? nameInput : codeInput).focus();
+
+    $("#join").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const code = codeInput.value.trim().toUpperCase();
+      const name = nameInput.value.trim();
+      const err = $("#join-error");
+      err.textContent = "";
+      try {
+        const saved = store.get(`live:s:${code}`);
+        const res = await api(`/api/live/classes/${code}/join`, { name, key: saved?.key });
+        store.set(`live:s:${code}`, { key: res.key, name: res.name });
+        store.set("live:name", name);
+        location.href = `/live/class/${code}`;
+      } catch (ex) {
+        err.textContent = ex.message;
+      }
+    });
+
+    $("#create").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = $("#create-error");
+      err.textContent = "";
+      try {
+        const res = await api("/api/live/classes", { password: $("#password").value, title: $("#title").value });
+        store.set(`live:t:${res.code}`, { key: res.teacher_key, title: res.title, at: Date.now() });
+        location.href = `/live/teacher/${res.code}`;
+      } catch (ex) {
+        err.textContent = ex.message;
+      }
+    });
+
+    // 이 브라우저에서 최근에 연 수업 (새로고침·실수로 닫았을 때 다시 열기)
+    const recent = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k.startsWith("live:t:")) recent.push({ code: k.slice(7), ...store.get(k) });
+      }
+    } catch { /* 저장소를 못 쓰는 환경 */ }
+    recent.sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 5).forEach(async (r) => {
+      try {
+        await api(`/api/live/classes/${r.code}`);
+        $("#recent").append(h("a", { href: `/live/teacher/${r.code}` }, `↩ ${r.title} (${r.code}) 다시 열기`));
+      } catch {
+        store.del(`live:t:${r.code}`); // 이미 끝난 수업
+      }
+    });
+  </script>
+</body>
+</html>

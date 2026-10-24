@@ -1,0 +1,661 @@
+/* 선생님 화면 */
+const saved = store.get(`live:t:${CODE}`);
+if (!saved?.key) location.replace("/live");
+const KEY = saved?.key;
+
+let S = null;
+let sock = null;
+let mainRoom = null;
+const prefs = { cam: true, mic: true, screen: false };
+let activeTab = "people";
+let unreadChat = 0;
+const studentLink = `${location.origin}/live?c=${CODE}`;
+
+// 모둠 관찰: 모둠마다 별도의 화상 연결을 연다
+const monitors = new Map(); // gid → { room, card, grid }
+const listening = new Set();
+let talking = null;
+let focusGroup = null;
+const monitorAudio = h("div", { hidden: true });
+document.body.append(monitorAudio);
+
+$("#code").textContent = CODE;
+$("#share-code").textContent = CODE;
+$("#share-url").textContent = studentLink;
+$("#csv-link").href = `/api/live/classes/${CODE}/results.csv?key=${encodeURIComponent(KEY)}`;
+
+/* ───── 시작 ───── */
+
+$("#prejoin-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  prefs.cam = $("#pre-cam").checked;
+  prefs.mic = $("#pre-mic").checked;
+  $("#prejoin").hidden = true;
+  sock = new LiveSocket(KEY, onMessage, (ok) => {
+    $("#status").textContent = ok ? "● 연결됨" : "다시 연결하는 중…";
+    $("#status").classList.toggle("bad", !ok);
+    if (ok && S) sendListen(); // 재접속하면 듣기 상태를 다시 알린다
+  });
+});
+
+function onMessage(msg) {
+  switch (msg.t) {
+    case "state": {
+      const first = !S;
+      S = msg;
+      render();
+      if (first) connectMain();
+      break;
+    }
+    case "chat_init":
+      $("#chatlog").replaceChildren();
+      msg.msgs.forEach((m) => addChat(m, false));
+      break;
+    case "chat":
+      addChat(msg.msg, true);
+      break;
+    case "ended":
+      finish("수업을 종료했어요.");
+      break;
+    case "error":
+      store.del(`live:t:${CODE}`);
+      finish(msg.text);
+      break;
+  }
+}
+
+function finish(text) {
+  sock?.stop();
+  disposeRoom(mainRoom);
+  mainRoom = null;
+  for (const gid of [...monitors.keys()]) closeMonitor(gid);
+  document.body.append(h("div", { class: "overlay" },
+    h("div", { class: "card" }, h("h2", { style: "margin:0" }, text),
+      h("button", { class: "primary", onclick: () => { location.href = "/live"; } }, "처음 화면으로"))));
+}
+
+/* ───── 전체 교실 화상 ───── */
+
+async function connectMain() {
+  if (!S.livekit) return;
+  try {
+    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { key: KEY, room: "main" });
+    const room = createRoom(renderMain);
+    room.on(RoomEvent.Disconnected, () => {
+      if (mainRoom !== room) return;
+      mainRoom = null;
+      toast("화상 연결이 끊겼어요. 다시 연결할게요.");
+      setTimeout(connectMain, 2000);
+    });
+    mainRoom = room;
+    await room.connect(url, token);
+    await setCam(prefs.cam);
+    await setMic(prefs.mic);
+    renderMain(room);
+  } catch (err) {
+    console.error(err);
+    mainRoom = null;
+    toast(`화상 연결 실패: ${err.message}`);
+    setTimeout(connectMain, 4000);
+  }
+}
+
+async function setMic(on) {
+  prefs.mic = on;
+  if (on && talking) await toggleTalk(talking); // 모둠에서 말하는 중이면 그만두고 전체로
+  try { await mainRoom?.localParticipant.setMicrophoneEnabled(on); } catch (err) { prefs.mic = false; toast(mediaError(err), 5000); }
+  renderControls();
+}
+
+async function setCam(on) {
+  prefs.cam = on;
+  try { await mainRoom?.localParticipant.setCameraEnabled(on); } catch (err) { prefs.cam = false; toast(mediaError(err), 5000); }
+  renderControls();
+}
+
+async function setScreen(on) {
+  try {
+    await mainRoom?.localParticipant.setScreenShareEnabled(on, { audio: true, selfBrowserSurface: "exclude" });
+    prefs.screen = on;
+  } catch (err) {
+    prefs.screen = false;
+    if (err?.name !== "NotAllowedError") toast("화면 공유를 시작하지 못했어요.");
+  }
+  renderControls();
+}
+
+function renderMain(room) {
+  if (room !== mainRoom) return;
+  const stage = $("#stage");
+  const lp = room.localParticipant;
+  const sc = screenItem(room, lp);
+  prefs.screen = !!lp.getTrackPublication(Track.Source.ScreenShare);
+  stage.hidden = !sc;
+  syncTiles(stage, sc ? [sc] : []);
+  const hands = new Set((S?.students || []).filter((s) => s.hand).map((s) => `s-${s.id}`));
+  const students = [...room.remoteParticipants.values()].filter((p) => !isTeacher(p));
+  syncTiles($("#grid"), [cameraItem(room, lp, { name: "선생님" }),
+    ...students.map((p) => cameraItem(room, p, { flag: hands.has(p.identity) ? "✋" : "" }))]);
+  $("#grid").classList.toggle("big", students.length < 9); // 학생이 적으면 타일을 크게
+  $("#grid-empty").hidden = students.length > 0;
+  $("#sound").hidden = room.canPlaybackAudio;
+  renderControls();
+}
+
+function renderControls() {
+  const ok = mainRoom?.state === "connected";
+  $("#mic").textContent = prefs.mic ? "🎤 마이크 켜짐" : "🔇 마이크 꺼짐";
+  $("#mic").classList.toggle("on", prefs.mic);
+  $("#cam").textContent = prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐";
+  $("#cam").classList.toggle("on", prefs.cam);
+  $("#screen").textContent = prefs.screen ? "🖥️ 공유 중지" : "🖥️ 화면 공유";
+  $("#screen").classList.toggle("on", prefs.screen);
+  for (const id of ["#mic", "#cam", "#screen"]) $(id).disabled = !ok;
+}
+
+$("#mic").addEventListener("click", () => setMic(!prefs.mic));
+$("#cam").addEventListener("click", () => setCam(!prefs.cam));
+$("#screen").addEventListener("click", () => setScreen(!prefs.screen));
+$("#sound").addEventListener("click", async () => {
+  await mainRoom?.startAudio();
+  for (const m of monitors.values()) await m.room?.startAudio();
+  $("#sound").hidden = true;
+});
+
+/* ───── 모둠 관찰 (여러 방에 동시에 접속) ───── */
+
+function groupName(gid) { return S?.groups.find((g) => g.id === gid)?.name || gid; }
+
+function syncMonitors() {
+  const want = new Set(S.breakout && S.livekit ? S.groups.map((g) => g.id) : []);
+  for (const gid of [...monitors.keys()]) if (!want.has(gid)) closeMonitor(gid);
+  for (const g of S.groups) {
+    if (want.has(g.id) && !monitors.has(g.id)) openMonitor(g.id);
+  }
+  // 카드 순서를 모둠 순서대로 (카드 안 영상 요소는 그대로라 괜찮다)
+  const rooms = $("#rooms");
+  for (const g of S.groups) {
+    const m = monitors.get(g.id);
+    if (m && m.card.parentNode !== rooms) rooms.append(m.card);
+  }
+  for (const gid of monitors.keys()) renderMonitor(gid);
+}
+
+function openMonitor(gid) {
+  const grid = h("div", { class: "grid" });
+  const card = h("section", { class: "roomcard" },
+    h("header", {}, h("span", { class: "talk-dot" }), h("h3", {}), h("span", { class: "muted count" }),
+      h("span", { class: "grow" }), h("span", { class: "flags" })),
+    grid,
+    h("div", { class: "actions" },
+      h("button", { class: "listen", onclick: () => toggleListen(gid) }, "🎧 듣기"),
+      h("button", { class: "talk", onclick: () => toggleTalk(gid) }, "🎤 말하기"),
+      h("button", { class: "focus-btn", onclick: () => { focusGroup = focusGroup === gid ? null : gid; syncMonitors(); } }, "🔍 크게")));
+  const m = { room: null, card, grid };
+  monitors.set(gid, m);
+  $("#rooms").append(card);
+  connectMonitor(gid);
+}
+
+async function connectMonitor(gid) {
+  const m = monitors.get(gid);
+  if (!m) return;
+  try {
+    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { key: KEY, room: gid });
+    if (monitors.get(gid) !== m) return;
+    const room = createRoom(() => renderMonitor(gid), { audioSink: monitorAudio });
+    room.on(RoomEvent.TrackPublished, () => applySubs(gid));
+    room.on(RoomEvent.ParticipantConnected, () => applySubs(gid));
+    room.on(RoomEvent.Disconnected, () => {
+      if (monitors.get(gid)?.room !== room) return;
+      m.room = null;
+      setTimeout(() => { if (monitors.get(gid) === m) connectMonitor(gid); }, 3000);
+    });
+    m.room = room;
+    // 관찰용 연결은 영상만 받고, 소리는 '듣기'를 켠 모둠만 받는다(데이터 절약)
+    await room.connect(url, token, { autoSubscribe: false });
+    applySubs(gid);
+    renderMonitor(gid);
+  } catch (err) {
+    console.error(err);
+    if (monitors.get(gid) === m) setTimeout(() => connectMonitor(gid), 4000);
+  }
+}
+
+function closeMonitor(gid) {
+  const m = monitors.get(gid);
+  if (!m) return;
+  monitors.delete(gid);
+  listening.delete(gid);
+  if (talking === gid) talking = null;
+  syncTiles(m.grid, []);
+  disposeRoom(m.room);
+  m.card.remove();
+}
+
+function applySubs(gid) {
+  const room = monitors.get(gid)?.room;
+  if (!room) return;
+  const hear = listening.has(gid) || talking === gid;
+  for (const p of room.remoteParticipants.values()) {
+    for (const pub of p.trackPublications.values()) {
+      const want = pub.kind === Track.Kind.Video ? true : hear;
+      if (pub.isSubscribed !== want) pub.setSubscribed(want);
+    }
+  }
+}
+
+function renderMonitor(gid) {
+  const m = monitors.get(gid);
+  if (!m || !S) return;
+  const room = m.room;
+  const members = S.students.filter((s) => s.group === gid);
+  const helpNeeded = members.some((s) => s.help);
+  const hear = listening.has(gid);
+  const people = room ? [...room.remoteParticipants.values()].filter((p) => !isTeacher(p)) : [];
+  const anySpeaking = people.some((p) => p.isSpeaking);
+
+  m.card.querySelector("h3").textContent = groupName(gid);
+  m.card.querySelector(".count").textContent = room?.state === "connected" ? `${people.length}명 접속` : "연결 중…";
+  m.card.querySelector(".flags").textContent = helpNeeded ? "🙋 도움 요청" : "";
+  m.card.querySelector(".talk-dot").classList.toggle("on", anySpeaking);
+  m.card.classList.toggle("help", helpNeeded);
+  m.card.classList.toggle("listening", hear);
+  m.card.classList.toggle("active-talk", talking === gid);
+  m.card.classList.toggle("focus", focusGroup === gid);
+  const listenBtn = m.card.querySelector(".listen");
+  listenBtn.classList.toggle("on", hear || talking === gid);
+  listenBtn.textContent = hear || talking === gid ? "🔊 듣는 중" : "🔇 듣기";
+  listenBtn.disabled = talking === gid;
+  const talkBtn = m.card.querySelector(".talk");
+  talkBtn.classList.toggle("on", talking === gid);
+  talkBtn.textContent = talking === gid ? "🎤 말하는 중 (끄기)" : "🎤 들어가서 말하기";
+  m.card.querySelector(".focus-btn").textContent = focusGroup === gid ? "↙ 작게" : "🔍 크게";
+  if (room) {
+    const items = [];
+    for (const p of people) {
+      items.push(cameraItem(room, p, { flag: S.students.find((s) => `s-${s.id}` === p.identity)?.help ? "🙋" : "" }));
+      const sc = screenItem(room, p);
+      if (sc) items.push(sc);
+    }
+    syncTiles(m.grid, items);
+    if (!room.canPlaybackAudio && (hear || talking)) $("#sound").hidden = false;
+  }
+}
+
+function sendListen() {
+  sock?.send({ t: "listen", groups: [...listening], talking }, true);
+}
+
+function toggleListen(gid) {
+  if (listening.has(gid)) listening.delete(gid);
+  else listening.add(gid);
+  applySubs(gid);
+  sendListen();
+  renderMonitor(gid);
+}
+
+async function toggleTalk(gid) {
+  const prev = talking;
+  if (prev) {
+    talking = null;
+    try { await monitors.get(prev)?.room?.localParticipant.setMicrophoneEnabled(false); } catch { /* 무시 */ }
+    applySubs(prev);
+    renderMonitor(prev);
+  }
+  if (prev !== gid) {
+    const room = monitors.get(gid)?.room;
+    if (!room || room.state !== "connected") { toast("아직 모둠에 연결 중이에요."); sendListen(); return; }
+    if (prefs.mic) { prefs.mic = false; await mainRoom?.localParticipant.setMicrophoneEnabled(false); renderControls(); }
+    talking = gid;
+    applySubs(gid);
+    try {
+      await room.localParticipant.setMicrophoneEnabled(true);
+    } catch (err) {
+      talking = null;
+      toast(mediaError(err), 5000);
+    }
+    renderMonitor(gid);
+  }
+  sendListen();
+}
+
+function tickTimer() {
+  const el = $("#bo-timer");
+  if (!S?.breakout || !S.ends_at) { el.textContent = S?.breakout ? "시간 제한 없음" : ""; el.classList.remove("over"); return; }
+  const r = fmtRemaining(S.ends_at);
+  el.textContent = r.over ? `⏰ 시간 끝 (${r.text})` : `⏱ ${r.text}`;
+  el.classList.toggle("over", r.over);
+}
+setInterval(tickTimer, 1000);
+
+document.querySelectorAll("[data-add-min]").forEach((b) => b.addEventListener("click", () => {
+  const left = S.ends_at ? Math.max(0, S.ends_at - clock.now()) / 60 : 0;
+  sock.send({ t: "breakout_time", minutes: left + Number(b.dataset.addMin) });
+}));
+$("#bo-end").addEventListener("click", () => sock.send({ t: "breakout_end" }));
+$("#bo-broadcast").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("#bo-broadcast-text");
+  if (input.value.trim() && sock.send({ t: "broadcast", text: input.value.trim() })) { input.value = ""; toast("모든 모둠에 보냈어요."); }
+});
+
+/* ───── 전체 그리기 ───── */
+
+function render() {
+  document.title = `${S.title} · 선생님`;
+  $("#title").textContent = S.title;
+  const online = S.students.filter((s) => s.online).length;
+  $("#online").textContent = `👥 ${online}명 접속`;
+  store.set(`live:t:${CODE}`, { ...saved, title: S.title, at: Date.now() });
+
+  const banners = $("#banners");
+  banners.replaceChildren();
+  if (!S.livekit) banners.append(h("div", { class: "banner warn" }, "화상 서버(LiveKit)가 설정되지 않아 영상 없이 퀴즈·채팅·질문만 동작해요. README의 설정 방법을 확인해 주세요."));
+  if (S.announce) banners.append(h("div", { class: "banner" }, h("strong", {}, "📢 공지 중"), h("span", { class: "grow" }, S.announce.text),
+    h("button", { class: "small", onclick: () => sock.send({ t: "announce", text: "" }) }, "공지 내리기")));
+
+  $("#main-view").hidden = S.breakout;
+  $("#main-view").style.display = S.breakout ? "none" : "contents";
+  $("#monitor-view").hidden = !S.breakout;
+  if (!S.breakout) { listening.clear(); talking = null; focusGroup = null; }
+  syncMonitors();
+  tickTimer();
+
+  $("#set-chat").checked = S.settings.chat;
+  $("#set-ai").checked = S.settings.ai;
+  $("#set-mic-lock").checked = S.settings.mic_lock;
+  renderPeople();
+  renderActivity();
+  renderQuestions();
+  renderGroups();
+  renderScopes();
+  if (mainRoom) renderMain(mainRoom);
+}
+
+function roomLabel(s) {
+  if (s.room !== "main") return groupName(s.room);
+  if (s.group && S.groups.some((g) => g.id === s.group)) return `(${groupName(s.group)} 예정)`;
+  return "";
+}
+
+function renderPeople() {
+  const list = S.students.slice().sort((a, b) =>
+    (b.hand - a.hand) || (b.online - a.online) || a.name.localeCompare(b.name, "ko"));
+  const hands = S.students.filter((s) => s.hand).length;
+  $("#hand-badge").textContent = `✋${hands}`;
+  $("#hand-badge").hidden = !hands;
+  $("#people").replaceChildren(...list.map((s) => h("div", { class: `person ${s.hand ? "hand" : ""}` },
+    h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
+    h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" }, roomLabel(s))),
+    h("span", { class: "acts" },
+      S.settings.mic_lock ? h("button", {
+        class: s.can_speak ? "on" : "", title: "발언권",
+        onclick: () => sock.send({ t: "allow_mic", target: s.id, on: !s.can_speak }),
+      }, s.can_speak ? "🎤 발언 중" : "🎤 발언권") : null,
+      s.hand && !S.settings.mic_lock ? h("button", { onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "손 내리기") : null,
+      h("button", { title: "마이크 끄기", onclick: () => sock.send({ t: "cmd", cmd: "mute", target: s.id }) }, "🔇"),
+      h("button", { title: "카메라 끄기", onclick: () => sock.send({ t: "cmd", cmd: "cam_off", target: s.id }) }, "📷"),
+      h("button", { title: "내보내기", class: "danger", onclick: () => {
+        if (confirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });
+      } }, "✕")))));
+  if (!list.length) $("#people").append(h("p", { class: "muted", style: "margin:0" }, "아직 들어온 학생이 없어요."));
+}
+
+$("#set-chat").addEventListener("change", (e) => sock.send({ t: "settings", chat: e.target.checked }));
+$("#set-ai").addEventListener("change", (e) => sock.send({ t: "settings", ai: e.target.checked }));
+$("#set-mic-lock").addEventListener("change", (e) => sock.send({ t: "settings", mic_lock: e.target.checked }));
+$("#mute-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "mute", target: "all" }); toast("모든 학생의 마이크를 껐어요."); });
+$("#camoff-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "cam_off", target: "all" }); toast("모든 학생의 카메라를 껐어요."); });
+$("#lower-all").addEventListener("click", () => sock.send({ t: "lower_hand", target: "all" }));
+
+/* ───── 퀴즈·투표 ───── */
+
+let actKind = "ox";
+let actSig = "";
+
+function renderActForm() {
+  for (const b of $("#kind-picker").children) b.classList.toggle("on", b.dataset.kind === actKind);
+  const box = $("#act-options");
+  box.replaceChildren();
+  if (actKind === "text") { box.append(h("p", { class: "muted", style: "margin:0" }, "학생이 짧은 글로 답해요.")); return; }
+  if (actKind === "ox") {
+    box.append(h("div", { class: "row" }, "정답:",
+      ...["없음", "O", "X"].map((label, i) => h("label", { class: "switch" },
+        h("input", { type: "radio", name: "ox-correct", value: i - 1, checked: i === 0 }), label))));
+    return;
+  }
+  const rows = h("div", { class: "options", id: "opt-rows" });
+  const addRow = (val = "") => {
+    const row = h("div", { class: "option-row" },
+      actKind === "choice" ? h("input", { type: "radio", name: "correct", title: "정답으로 표시" }) : h("span", {}, "•"),
+      h("input", { class: "opt", maxlength: 100, placeholder: `보기 ${rows.children.length + 1}`, value: val }),
+      h("button", { type: "button", class: "small", onclick: () => { if (rows.children.length > 2) row.remove(); } }, "✕"));
+    rows.append(row);
+  };
+  for (let i = 0; i < 4; i++) addRow();
+  box.append(rows, h("div", { class: "row" },
+    h("button", { type: "button", class: "small", onclick: () => { if (rows.children.length < 8) addRow(); } }, "+ 보기 추가"),
+    actKind === "choice" ? h("span", { class: "muted", style: "font-size:0.85rem" }, "동그라미를 눌러 정답 표시(선택)") : null));
+}
+
+$("#kind-picker").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-kind]");
+  if (!b) return;
+  actKind = b.dataset.kind;
+  renderActForm();
+});
+
+$("#act-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const prompt = $("#act-prompt").value.trim();
+  if (!prompt) return;
+  const msg = { t: "activity_start", kind: actKind, prompt };
+  if (actKind === "ox") {
+    const v = Number(document.querySelector("input[name=ox-correct]:checked")?.value ?? -1);
+    msg.correct = v >= 0 ? v : null;
+  } else if (actKind !== "text") {
+    const rows = [...document.querySelectorAll("#opt-rows .option-row")];
+    const filled = rows.filter((r) => r.querySelector(".opt").value.trim());
+    if (filled.length < 2) { toast("보기를 2개 이상 적어 주세요."); return; }
+    msg.options = filled.map((r) => r.querySelector(".opt").value.trim());
+    const ci = filled.findIndex((r) => r.querySelector("input[type=radio]")?.checked);
+    msg.correct = ci >= 0 ? ci : null;
+  }
+  if (S.activity?.open && !confirm("진행 중인 활동을 끝내고 새 활동을 보낼까요?")) return;
+  if (sock.send(msg)) {
+    $("#act-prompt").value = "";
+    renderActForm();
+    toast("학생들에게 보냈어요.");
+  }
+});
+
+function renderActivity() {
+  const a = S.activity;
+  const online = S.students.filter((s) => s.online).length;
+  const sig = JSON.stringify([a, online]);
+  if (sig === actSig) return;
+  actSig = sig;
+  const box = $("#activity-current");
+  const mini = $("#activity-mini");
+  box.replaceChildren();
+  mini.replaceChildren();
+  if (!a) return;
+
+  const answerText = (r) => (a.kind === "text" ? r.value : (a.options[r.value] ?? "?"));
+  const card = h("section", { class: "activity" },
+    h("div", { class: "kind" }, `${KIND_NAMES[a.kind]} · ${a.open ? "진행 중" : "마감"}${a.reveal ? " · 결과 공개 중" : ""}`),
+    h("h3", {}, a.prompt),
+    h("div", { class: "muted" }, `응답 ${a.total}명 / 접속 ${online}명`),
+    a.kind === "text"
+      ? h("div", { class: "texts" }, a.responses.map((r) => h("div", {}, h("strong", {}, `${r.name}: `), r.value)))
+      : resultBars(a),
+    a.kind !== "text" && a.responses.length ? h("details", {}, h("summary", { class: "muted" }, "누가 무엇을 골랐는지 보기"),
+      h("div", { class: "texts" }, a.responses.map((r) => h("div", {},
+        `${r.name}: ${answerText(r)}${a.correct !== null ? (r.value === a.correct ? " ⭕" : " ❌") : ""}`)))) : null,
+    h("div", { class: "row" },
+      a.open
+        ? h("button", { onclick: () => sock.send({ t: "activity_close" }) }, "⏹ 마감")
+        : h("button", { onclick: () => sock.send({ t: "activity_reopen" }) }, "▶ 다시 열기"),
+      h("button", { class: a.reveal ? "on" : "", onclick: () => sock.send({ t: "activity_reveal", on: !a.reveal }) },
+        a.reveal ? "🙈 결과 숨기기" : "📊 학생에게 결과 공개"),
+      h("button", { class: "danger", onclick: () => sock.send({ t: "activity_clear" }) }, "끝내기")));
+  box.append(card);
+  // 메인 화면에도 짧게 표시
+  mini.append(h("div", { class: "banner" }, h("strong", {}, `📝 ${KIND_NAMES[a.kind]}`),
+    h("span", { class: "grow" }, a.prompt), h("span", { class: "muted" }, `응답 ${a.total}/${online}`),
+    h("button", { class: "small", onclick: () => showTab("activity") }, "보기")));
+}
+
+/* ───── 채팅 ───── */
+
+function renderScopes() {
+  const sel = $("#chat-scope");
+  const opts = [["main", "전체 교실"]];
+  if (S.groups.length) {
+    S.groups.forEach((g) => opts.push([g.id, g.name]));
+    opts.push(["*", "📢 모든 방"]);
+  }
+  const sig = JSON.stringify(opts);
+  if (sel.dataset.sig === sig) return;
+  sel.dataset.sig = sig;
+  const cur = sel.value;
+  sel.replaceChildren(...opts.map(([v, label]) => h("option", { value: v, selected: v === cur }, label)));
+}
+
+function addChat(m, live) {
+  const log = $("#chatlog");
+  const stick = nearBottom(log);
+  const scopeName = m.broadcast ? null : (m.scope === "main" ? (S?.groups.length ? "전체" : null) : groupName(m.scope));
+  log.append(chatBubble(m, { mine: m.role === "teacher", scopeName }));
+  if (stick || m.role === "teacher") log.scrollTop = log.scrollHeight;
+  if (live && activeTab !== "chat" && m.role !== "teacher") {
+    unreadChat++;
+    $("#chat-badge").textContent = unreadChat;
+    $("#chat-badge").hidden = false;
+  }
+}
+
+$("#chatform").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("#chatinput");
+  const text = input.value.trim();
+  if (!text) return;
+  const scope = $("#chat-scope").value;
+  const ok = scope === "*" ? sock.send({ t: "broadcast", text }) : sock.send({ t: "chat", text, scope });
+  if (ok) input.value = "";
+});
+submitOnEnter($("#chatinput"), $("#chatform"));
+
+/* ───── 질문 ───── */
+
+let qSig = "";
+const qDrafts = new Map();
+
+function renderQuestions() {
+  const qs = S.questions;
+  const open = qs.filter((q) => !q.done).length;
+  $("#q-badge").textContent = open;
+  $("#q-badge").hidden = !open;
+  const sig = JSON.stringify(qs);
+  if (sig === qSig) return;
+  qSig = sig;
+  const focusedId = document.activeElement?.dataset?.qid;
+  const list = qs.slice().sort((a, b) => (a.done - b.done) || (b.ts - a.ts));
+  $("#questions").replaceChildren(...list.map((q) => {
+    const input = h("input", { class: "grow", maxlength: 500, placeholder: "답장 (이 학생에게만 보여요)", "data-qid": q.id,
+      value: qDrafts.get(q.id) ?? "" });
+    input.addEventListener("input", () => qDrafts.set(q.id, input.value));
+    return h("div", { class: `q ${q.done ? "done" : ""}` },
+      h("div", { class: "meta" }, `${q.name} · ${fmtTime(q.ts)}`),
+      h("div", {}, q.text),
+      q.reply ? h("div", { class: "reply" }, `답장: ${q.reply}`) : null,
+      h("form", { class: "row", onsubmit: (e) => {
+        e.preventDefault();
+        if (!input.value.trim()) return;
+        sock.send({ t: "question_update", id: q.id, reply: input.value.trim(), done: true });
+        qDrafts.delete(q.id);
+      } }, input, h("button", { type: "submit", class: "small" }, "답장")),
+      h("div", { class: "row" },
+        h("button", { class: "small", onclick: () => sock.send({ t: "question_update", id: q.id, done: !q.done }) },
+          q.done ? "다시 열기" : "✓ 확인함"),
+        h("button", { class: "small", onclick: () => {
+          sock.send({ t: "announce", text: `${q.name}의 질문: ${q.text}` });
+          toast("모든 학생 화면 위에 공지로 띄웠어요.");
+        } }, "📢 모두에게 공유")));
+  }));
+  if (!qs.length) $("#questions").append(h("p", { class: "muted", style: "margin:0" }, "아직 질문이 없어요."));
+  if (focusedId) document.querySelector(`[data-qid="${focusedId}"]`)?.focus();
+}
+
+/* ───── 모둠 편성 ───── */
+
+let gSig = "";
+
+function renderGroups() {
+  const sig = JSON.stringify([S.groups, S.breakout, S.students.map((s) => [s.id, s.name, s.group, s.online])]);
+  if (sig === gSig) return;
+  gSig = sig;
+  $("#bo-start").textContent = S.breakout ? "진행 중 (시간 다시 설정)" : "모둠 활동 시작";
+  const box = $("#group-edit");
+  box.replaceChildren();
+  if (!S.groups.length) return;
+
+  const select = (s) => h("select", { onchange: (e) => sock.send({ t: "breakout_assign", target: s.id, group: e.target.value || null }) },
+    h("option", { value: "" }, "미배정"),
+    S.groups.map((g) => h("option", { value: g.id, selected: s.group === g.id }, g.name)));
+  const chip = (s) => h("span", { class: "chip" }, `${s.online ? "" : "💤 "}${s.name}`, select(s));
+
+  for (const g of S.groups) {
+    const members = S.students.filter((s) => s.group === g.id);
+    box.append(h("div", { class: "g" },
+      h("strong", {}, `${g.name} (${members.length}명)`),
+      h("div", { class: "members" }, members.map(chip))));
+  }
+  const none = S.students.filter((s) => !s.group || !S.groups.some((g) => g.id === s.group));
+  if (none.length) {
+    box.append(h("div", { class: "g" }, h("strong", {}, `미배정 (${none.length}명)`),
+      h("span", { class: "muted", style: "font-size:0.85rem" }, "활동을 시작하면 인원이 적은 모둠으로 자동 배정돼요."),
+      h("div", { class: "members" }, none.map(chip))));
+  }
+}
+
+$("#bo-plan").addEventListener("click", () => {
+  if (S.breakout && !confirm("모둠 활동 중이에요. 다시 무작위로 나누면 학생들이 바로 이동해요. 계속할까요?")) return;
+  sock.send({ t: "breakout_plan", n: Number($("#bo-n").value) || 4 });
+});
+$("#bo-start").addEventListener("click", () => {
+  const minutes = Number($("#bo-min").value) || null;
+  if (S.breakout) sock.send({ t: "breakout_time", minutes });
+  else sock.send({ t: "breakout_start", minutes, n: Number($("#bo-n").value) || 4 });
+});
+
+/* ───── 탭·기타 ───── */
+
+function showTab(name) {
+  activeTab = name;
+  for (const b of $("#tabs").children) b.classList.toggle("active", b.dataset.tab === name);
+  for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== name;
+  if (name === "chat") { unreadChat = 0; $("#chat-badge").hidden = true; $("#chatlog").scrollTop = $("#chatlog").scrollHeight; }
+}
+$("#tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) showTab(b.dataset.tab);
+});
+
+$("#copy-link").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(studentLink);
+    toast("참여 링크를 복사했어요. 학생들에게 보내 주세요.");
+  } catch {
+    prompt("이 링크를 복사해 학생들에게 보내 주세요.", studentLink);
+  }
+});
+
+$("#end-class").addEventListener("click", () => {
+  if (!confirm("수업을 종료할까요? 모든 학생이 나가고, 퀴즈 결과도 사라져요.\n(결과가 필요하면 먼저 '퀴즈·투표' 탭에서 내려받으세요)")) return;
+  sock.send({ t: "end_class" });
+  store.del(`live:t:${CODE}`);
+});
+
+renderActForm();

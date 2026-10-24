@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실시간 수업 (선생님)</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🎥%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/live/live.css">
+  <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1 id="title">실시간 수업</h1>
+      <span class="code" id="code"></span>
+      <button class="small" id="copy-link">참여 링크 복사</button>
+      <span class="grow"></span>
+      <span class="status" id="online"></span>
+      <span class="status" id="status">연결 중…</span>
+      <button class="danger small" id="end-class">수업 종료</button>
+    </header>
+
+    <div class="workspace">
+      <main class="mainarea">
+        <div id="banners"></div>
+        <div id="activity-mini"></div>
+
+        <div id="main-view" style="display:contents">
+          <div class="stage" id="stage" hidden></div>
+          <div class="grid" id="grid"></div>
+          <p class="muted" id="grid-empty" style="margin:0">학생이 들어오면 여기에 보여요. 위의 <strong>참여 링크 복사</strong>로 학생들에게 링크를 보내 주세요.</p>
+        </div>
+
+        <div id="monitor-view" hidden>
+          <div class="monitor-head">
+            <strong>👥 모둠 활동 중</strong>
+            <span class="timer" id="bo-timer"></span>
+            <button class="small" data-add-min="2">+2분</button>
+            <button class="small" data-add-min="5">+5분</button>
+            <span class="grow"></span>
+            <span class="muted" style="font-size:0.85rem">🎧 여러 모둠을 동시에 들을 수 있어요 · 이어폰 권장</span>
+            <button class="primary" id="bo-end">모두 전체 교실로 돌아오기</button>
+          </div>
+          <form class="row" id="bo-broadcast" style="margin:10px 0">
+            <input class="grow" id="bo-broadcast-text" maxlength="500" placeholder="모든 모둠 채팅에 공지 보내기 (예: 2분 남았어요!)">
+            <button type="submit">📢 모든 모둠에 보내기</button>
+          </form>
+          <div class="rooms" id="rooms"></div>
+        </div>
+      </main>
+
+      <aside class="sidebar">
+        <nav class="tabs" id="tabs">
+          <button data-tab="people" class="active">학생 <span class="badge" id="hand-badge" hidden></span></button>
+          <button data-tab="activity">퀴즈·투표</button>
+          <button data-tab="chat">채팅 <span class="badge" id="chat-badge" hidden></span></button>
+          <button data-tab="questions">질문 <span class="badge" id="q-badge" hidden></span></button>
+          <button data-tab="groups">모둠</button>
+        </nav>
+
+        <!-- 학생 -->
+        <section class="panel" data-panel="people">
+          <div class="box sharebox">
+            <span class="muted">학생 입장 코드</span>
+            <span class="big" id="share-code"></span>
+            <span class="muted" id="share-url" style="font-size:0.85rem"></span>
+          </div>
+          <div class="box">
+            <label class="switch"><input type="checkbox" id="set-chat"> 학생 채팅 허용</label>
+            <label class="switch"><input type="checkbox" id="set-ai"> AI 조교 허용</label>
+            <label class="switch"><input type="checkbox" id="set-mic-lock"> 학생 마이크 잠금 (발언권을 준 학생만 말하기)</label>
+          </div>
+          <div class="row">
+            <button id="mute-all">🔇 모두 음소거</button>
+            <button id="camoff-all">📷 모두 카메라 끄기</button>
+            <button id="lower-all">✋ 손 모두 내리기</button>
+          </div>
+          <div class="people" id="people"></div>
+        </section>
+
+        <!-- 퀴즈·투표 -->
+        <section class="panel" data-panel="activity" hidden>
+          <div id="activity-current"></div>
+          <form class="box" id="act-form">
+            <h4>새 활동 보내기</h4>
+            <div class="kind-picker" id="kind-picker">
+              <button type="button" data-kind="ox" class="on">OX</button>
+              <button type="button" data-kind="choice">객관식</button>
+              <button type="button" data-kind="poll">투표</button>
+              <button type="button" data-kind="text">주관식</button>
+            </div>
+            <textarea id="act-prompt" rows="3" maxlength="300" placeholder="문제나 질문을 적어 주세요" required></textarea>
+            <div id="act-options"></div>
+            <button class="primary" type="submit">학생들에게 보내기</button>
+          </form>
+          <a id="csv-link" class="muted" style="font-size:0.9rem">📥 지금까지 활동 결과 내려받기 (엑셀용 CSV)</a>
+        </section>
+
+        <!-- 채팅 -->
+        <section class="panel chatlike" data-panel="chat" hidden>
+          <div class="chatlog" id="chatlog"></div>
+          <form class="chatform" id="chatform">
+            <select id="chat-scope" title="보낼 곳"></select>
+            <textarea id="chatinput" rows="1" maxlength="500" placeholder="메시지"></textarea>
+            <button class="primary" type="submit">보내기</button>
+          </form>
+        </section>
+
+        <!-- 질문 -->
+        <section class="panel" data-panel="questions" hidden>
+          <p class="muted" style="margin:0">학생이 선생님에게만 보낸 질문이에요. 답장은 그 학생에게만 보여요.</p>
+          <div id="questions" class="people"></div>
+        </section>
+
+        <!-- 모둠 -->
+        <section class="panel" data-panel="groups" hidden>
+          <div class="box">
+            <h4>모둠 나누기</h4>
+            <div class="row">
+              <input id="bo-n" type="number" min="1" max="12" value="4" style="width:5em"> 개 모둠으로
+              <button id="bo-plan">무작위 배정</button>
+            </div>
+            <div class="row">
+              <input id="bo-min" type="number" min="1" max="120" value="10" style="width:5em"> 분 동안
+              <button class="primary" id="bo-start">모둠 활동 시작</button>
+            </div>
+            <p class="muted" style="margin:0;font-size:0.85rem">배정 후 아래에서 학생을 다른 모둠으로 옮길 수 있어요. 활동 중에 옮기면 학생 화면이 바로 이동해요.</p>
+          </div>
+          <div class="group-edit" id="group-edit"></div>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="controls">
+      <button id="mic">🎤 마이크</button>
+      <button id="cam">📷 카메라</button>
+      <button id="screen">🖥️ 화면 공유</button>
+      <button id="sound" class="primary" hidden>🔊 소리 켜기</button>
+    </footer>
+  </div>
+
+  <div class="overlay" id="prejoin">
+    <form class="card" id="prejoin-form">
+      <h2 style="margin:0">수업 시작</h2>
+      <label class="switch"><input type="checkbox" id="pre-cam" checked> 카메라 켜기</label>
+      <label class="switch"><input type="checkbox" id="pre-mic" checked> 마이크 켜기</label>
+      <p class="muted" style="margin:0;font-size:0.85rem">모둠 활동을 관찰할 때 여러 모둠 소리를 들으려면 이어폰을 쓰는 것이 좋아요.</p>
+      <button class="primary" type="submit">시작하기</button>
+    </form>
+  </div>
+
+  <script src="/static/live/common.js"></script>
+  <script src="/static/live/teacher.js"></script>
+</body>
+</html>

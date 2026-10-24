@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실시간 수업</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🎥%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/live/live.css">
+  <script src="/static/vendor/marked-12.0.2.min.js"></script>
+  <script src="/static/vendor/purify-3.1.6.min.js"></script>
+  <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1 id="title">실시간 수업</h1>
+      <span class="code" id="code"></span>
+      <span class="grow"></span>
+      <span class="status" id="online"></span>
+      <span class="status" id="status">연결 중…</span>
+    </header>
+
+    <div class="workspace">
+      <main class="mainarea" id="mainarea">
+        <div id="banners"></div>
+        <div id="activity"></div>
+        <div class="stage" id="stage"><div class="empty" id="stage-empty">선생님 화면을 기다리는 중이에요</div></div>
+        <div class="grid" id="grid"></div>
+      </main>
+
+      <aside class="sidebar">
+        <nav class="tabs" id="tabs">
+          <button data-tab="chat" class="active">채팅 <span class="badge" id="chat-badge" hidden></span></button>
+          <button data-tab="ask">선생님께 질문</button>
+          <button data-tab="ai" id="ai-tab">AI 조교</button>
+        </nav>
+        <section class="panel chatlike" data-panel="chat">
+          <div class="chatlog" id="chatlog"></div>
+          <div class="chat-note" id="chat-note" hidden></div>
+          <form class="chatform" id="chatform">
+            <textarea id="chatinput" rows="1" maxlength="500" placeholder="모두에게 보내기"></textarea>
+            <button class="primary" type="submit">보내기</button>
+          </form>
+        </section>
+        <section class="panel" data-panel="ask" hidden>
+          <p class="muted" style="margin:0">여기 쓴 질문은 <strong>선생님만</strong> 볼 수 있어요.</p>
+          <form id="askform" class="row">
+            <textarea id="askinput" class="grow" rows="2" maxlength="500" placeholder="궁금한 점을 적어 주세요"></textarea>
+            <button class="primary" type="submit">보내기</button>
+          </form>
+          <div id="myquestions" class="people"></div>
+        </section>
+        <section class="panel chatlike" data-panel="ai" id="ai-panel" hidden></section>
+      </aside>
+    </div>
+
+    <footer class="controls">
+      <button id="mic" title="마이크">🎤 마이크</button>
+      <button id="cam" title="카메라">📷 카메라</button>
+      <button id="hand" title="손 들기">✋ 손 들기</button>
+      <button id="screen" title="화면 공유 (모둠 활동 중)" hidden>🖥️ 화면 공유</button>
+      <button id="help" title="모둠에 선생님 부르기" hidden>🙋 선생님 호출</button>
+      <button id="sound" class="primary" hidden>🔊 소리 켜기</button>
+      <span class="sep"></span>
+      <button id="leave" class="danger">나가기</button>
+    </footer>
+  </div>
+
+  <div class="overlay" id="prejoin">
+    <form class="card" id="prejoin-form">
+      <h2 style="margin:0">수업 입장</h2>
+      <p class="muted" style="margin:0" id="prejoin-name"></p>
+      <label class="switch"><input type="checkbox" id="pre-cam" checked> 카메라 켜고 들어가기</label>
+      <label class="switch"><input type="checkbox" id="pre-mic"> 마이크 켜고 들어가기</label>
+      <p class="muted" style="margin:0;font-size:0.85rem">처음 들어갈 때 브라우저가 카메라·마이크 사용을 물어보면 <strong>허용</strong>을 눌러 주세요. 수업 중에는 이어폰을 쓰면 소리가 울리지 않아요.</p>
+      <button class="primary" type="submit">입장하기</button>
+    </form>
+  </div>
+
+  <script src="/static/live/common.js"></script>
+  <script src="/static/live/student.js"></script>
+</body>
+</html>

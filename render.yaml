@@ -10,3 +10,12 @@ services:
         value: 3.12.7
       - key: ANTHROPIC_API_KEY
         sync: false  # 배포할 때 Render 화면에서 직접 입력
+      # 실시간 수업(/live)용. 비워 두면 그 기능만 꺼진다.
+      - key: TEACHER_PASSWORD
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false

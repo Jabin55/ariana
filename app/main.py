@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.classroom import router as live_router
 from app.prompts import SYSTEM_PROMPT
 
 MODEL = os.environ.get("CHATBOT_MODEL", "claude-opus-5-5")
@@ -30,6 +31,7 @@ log = logging.getLogger("politics-chatbot")
 client = anthropic.AsyncAnthropic()
 app = FastAPI(title="정치쌤 챗봇")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(live_router)
 
 
 class ChatMessage(BaseModel):
@@ -48,6 +50,22 @@ def sse(event: str, data: dict) -> str:
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+# ── 실시간 수업 화면 ──
+@app.get("/live")
+async def live_index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "live" / "index.html")
+
+
+@app.get("/live/teacher/{code}")
+async def live_teacher(code: str) -> FileResponse:
+    return FileResponse(STATIC_DIR / "live" / "teacher.html")
+
+
+@app.get("/live/class/{code}")
+async def live_student(code: str) -> FileResponse:
+    return FileResponse(STATIC_DIR / "live" / "student.html")
 
 
 @app.post("/api/chat")
