@@ -66,6 +66,19 @@ attendance = Table(
     Column("left_reason", String(10)),
 )
 
+questions = Table(
+    "questions", metadata,  # 수업 중 '선생님께 질문'과 선생님 답장 (영구 보관)
+    Column("id", Integer, primary_key=True),
+    Column("uid", String(32), unique=True, nullable=False),  # 화면에서 쓰는 질문 번호
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("text", Text, nullable=False),
+    Column("reply", Text, nullable=False, default=""),
+    Column("done", Integer, nullable=False, default=0),
+    Column("created_at", Float, nullable=False),
+    Column("replied_at", Float),
+)
+
 activities = Table(
     "activities", metadata,
     Column("id", Integer, primary_key=True),

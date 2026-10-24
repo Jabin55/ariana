@@ -6,6 +6,15 @@ let CONFIG = null;
 const views = ["login-view", "profile-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
+  $("#student-questions").hidden = true;
+}
+
+function qaItem(q, who) {
+  return h("div", { class: `q ${q.reply ? "" : "pending-reply"}` },
+    h("div", { class: "meta" }, who),
+    h("div", {}, `❓ ${q.text}`),
+    q.reply ? h("div", { class: "reply" }, `👩‍🏫 ${q.reply}`, h("span", { class: "muted", style: "font-size:0.75rem" }, ` · ${q.reply_time.slice(0, 5)}`))
+      : h("div", { class: "muted", style: "font-size:0.85rem" }, "답장 없음"));
 }
 
 async function boot() {
@@ -127,7 +136,19 @@ function showStudent() {
   if (code) {
     $("#code").value = code;
     join(code); // 링크로 들어왔으면 바로 입장
-  } else $("#code").focus();
+    return;
+  }
+  $("#code").focus();
+  loadMyQuestions();
+}
+
+async function loadMyQuestions() {
+  try {
+    const { questions } = await api("/api/live/my-questions");
+    if (!questions.length) return;
+    $("#my-q").replaceChildren(...questions.map((q) => qaItem(q, `${q.date} ${q.time.slice(0, 5)} · ${q.class_title}`)));
+    $("#student-questions").hidden = false;
+  } catch { /* 기록을 못 불러와도 입장에는 지장 없음 */ }
 }
 
 async function join(code) {
@@ -197,7 +218,7 @@ async function loadHistory() {
   $("#h-summary").textContent = `수업 ${classes.length}개`;
   const box = $("#h-classes");
   box.replaceChildren(...classes.map((c) => h("button", { class: "class-pick", "data-id": c.id, onclick: () => loadDetail(c.id) },
-    `${c.start.slice(0, 5)} · ${c.title} (${c.code}) · 참여 ${c.attended}명${c.live ? " · 진행 중" : ""}`)));
+    `${c.start.slice(0, 5)} · ${c.title} (${c.code}) · 참여 ${c.attended}명${c.questions ? ` · 질문 ${c.questions}건` : ""}${c.live ? " · 진행 중" : ""}`)));
   if (!classes.length) box.append(h("span", { class: "muted" }, "이 날짜에 연 수업이 없어요."));
   $("#h-detail").replaceChildren();
   const want = Number(params.get("class"));
@@ -242,6 +263,19 @@ async function loadDetail(id) {
     h("p", { class: "muted", style: "font-size:0.85rem;margin-bottom:0" },
       "접속 시간은 실제로 수업에 들어와 있던 시간의 합, 중간 이탈은 첫 접속부터 마지막 종료 사이에 나가 있던 시간이에요. "
       + "새로고침·인터넷 끊김도 모두 한 번의 나감·들어옴으로 기록되고, 연결이 끊긴 경우 나간 시각은 학생 기기에서 마지막으로 신호가 온 때예요.")));
+  loadClassQuestions(id);
+}
+
+/* 이 수업의 '선생님께 질문'과 답장 */
+async function loadClassQuestions(id) {
+  const { questions } = await api(`/api/live/history/${id}/questions`);
+  const replied = questions.filter((q) => q.reply).length;
+  $("#h-detail").append(h("section", { class: "card", style: "margin-top:12px" },
+    h("div", { class: "row" },
+      h("h2", { class: "grow", style: "margin:0" }, `💬 질문·답장 ${questions.length}건`),
+      questions.length ? h("a", { href: `/api/live/history/${id}/questions.csv`, class: "button" }, "📥 질문·답장 CSV") : null),
+    h("p", { class: "muted" }, questions.length ? `답장한 질문 ${replied}건 · 답장 없는 질문 ${questions.length - replied}건` : "이 수업에서 받은 질문이 없어요."),
+    h("div", { class: "people" }, questions.map((q) => qaItem(q, `${q.time.slice(0, 5)} · ${q.student_no} ${q.name}`)))));
 }
 
 boot().catch((err) => { document.body.prepend(h("p", { class: "error" }, err.message)); });

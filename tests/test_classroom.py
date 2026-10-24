@@ -351,3 +351,38 @@ def test_live_site_mode_root_goes_to_class(monkeypatch):
     monkeypatch.setattr(main, "APP_MODE", "live")
     r = c.get("/", follow_redirects=False)
     assert r.status_code in (302, 307) and r.headers["location"] == "/live"
+
+
+def test_questions_and_replies_are_kept():
+    t = teacher()
+    c = create(t, title="선거 제도")
+    code, cid = c["code"], c["class_id"]
+    a, b = student(1), student(2)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)
+        sa.send_json({"t": "question", "text": "비례대표제는 왜 필요한가요?"})
+        qid = state(tw, lambda m: m["questions"])["questions"][0]["id"]
+        tw.send_json({"t": "question_update", "id": qid, "reply": "사표를 줄이기 위해서예요.", "done": True})
+        state(sa, lambda m: m["my_questions"] and m["my_questions"][0]["reply"])
+    time.sleep(0.3)
+
+    # 서버 재시작 흉내: 진행 중인 수업에 다시 들어가도 질문·답장이 그대로
+    cr.classes.clear()
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        qs = state(tw)["questions"]
+        assert qs[0]["text"] == "비례대표제는 왜 필요한가요?" and qs[0]["reply"] == "사표를 줄이기 위해서예요." and qs[0]["done"]
+        assert qs[0]["name"] == "20301 학생1"
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    time.sleep(0.3)
+
+    # 수업이 끝나도 선생님 기록·CSV, 학생 본인 기록에 남는다
+    hist = t.get(f"/api/live/history/{cid}/questions").json()["questions"]
+    assert len(hist) == 1 and hist[0]["student_no"] == "20301" and hist[0]["reply"] and hist[0]["reply_time"]
+    csv_text = t.get(f"/api/live/history/{cid}/questions.csv").text
+    assert "비례대표제" in csv_text and "사표를 줄이기" in csv_text and "확인함" in csv_text
+    mine = a.get("/api/live/my-questions").json()["questions"]
+    assert mine[0]["class_title"] == "선거 제도" and mine[0]["reply"] == "사표를 줄이기 위해서예요."
+    assert b.get("/api/live/my-questions").json()["questions"] == []  # 다른 학생 것은 안 보임
+    assert a.get(f"/api/live/history/{cid}/questions").status_code == 403
+    assert teacher("other@gmail.com").get(f"/api/live/history/{cid}/questions").status_code == 404

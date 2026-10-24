@@ -14,6 +14,8 @@ import logging
 import os
 import random
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -156,9 +158,11 @@ async def get_class(code: str) -> Klass:
     row = await db.run(_load_class, code) if code.isalnum() and len(code) <= 8 else None
     if not row:
         raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요.")
+    saved_questions = await db.run(_load_questions, row.id)  # 서버가 다시 켜져도 질문·답장은 이어진다
     k = classes.get(code)  # 기다리는 사이 다른 요청이 먼저 살렸을 수 있다
     if not k:
         k = Klass(db_id=row.id, code=row.code, title=row.title, teacher_id=row.teacher_id, created=row.created_at)
+        k.questions = saved_questions
         classes[code] = k
     return k
 
@@ -258,6 +262,41 @@ async def heartbeat_loop() -> None:
             except Exception:
                 log.warning("출결 갱신 실패", exc_info=True)
         prune_classes()
+
+
+# 질문 저장은 한 줄로 세운 스레드 하나가 순서대로 처리한다(답장이 질문보다 먼저 저장되는 일이 없도록)
+_question_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="question-writer")
+
+
+def write_question(fn, *args) -> None:
+    fut = _question_writer.submit(fn, *args)
+    fut.add_done_callback(lambda f: f.exception() and log.warning("질문 저장 실패: %s", f.exception()))
+
+
+def _question_insert(class_id: int, user_id: int, q: dict) -> None:
+    with db.engine.begin() as c:
+        c.execute(insert(db.questions).values(
+            uid=q["id"], class_id=class_id, user_id=user_id, text=q["text"],
+            reply="", done=0, created_at=q["ts"]))
+
+
+def _question_update(uid: str, values: dict) -> None:
+    with db.engine.begin() as c:
+        c.execute(update(db.questions).where(db.questions.c.uid == uid).values(**values))
+
+
+def _load_questions(class_id: int) -> list[dict]:
+    with db.engine.connect() as c:
+        rows = c.execute(
+            select(db.questions, db.users).join(db.users, db.users.c.id == db.questions.c.user_id)
+            .where(db.questions.c.class_id == class_id).order_by(db.questions.c.created_at)
+        ).all()
+    out = []
+    for r in rows:
+        m = dict(r._mapping)
+        out.append({"id": m["uid"], "sid": str(m["user_id"]), "name": display_name(m), "text": m["text"],
+                    "ts": m["created_at"], "done": bool(m["done"]), "reply": m["reply"] or ""})
+    return out[-300:]
 
 
 def save_activity(k: Klass, a: dict | None) -> None:
@@ -798,9 +837,11 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
     elif t == "question":
         text = clean(m.get("text"))
         if text:
-            k.questions.append({"id": k.next_id(), "sid": s.id, "name": s.name, "text": text,
-                                "ts": time.time(), "done": False, "reply": ""})
-            del k.questions[:-300]
+            q = {"id": uuid.uuid4().hex, "sid": s.id, "name": s.name, "text": text,
+                 "ts": time.time(), "done": False, "reply": ""}
+            k.questions.append(q)
+            del k.questions[:-300]  # 화면에는 최근 300개만 (DB에는 모두 보관)
+            write_question(_question_insert, k.db_id, int(s.id), dict(q))
     elif t == "answer":
         a = k.activity
         if not a or not a["open"] or m.get("id") != a["id"]:
@@ -875,10 +916,15 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "question_update":
         for q in k.questions:
             if q["id"] == m.get("id"):
+                values = {}
                 if "done" in m:
                     q["done"] = bool(m["done"])
+                    values["done"] = int(q["done"])
                 if "reply" in m:
                     q["reply"] = clean(m["reply"])
+                    values.update(reply=q["reply"], replied_at=time.time())
+                if values:
+                    write_question(_question_update, q["id"], values)
     elif t == "activity_start":
         start_activity(k, m)
     elif t == "activity_close" and k.activity:

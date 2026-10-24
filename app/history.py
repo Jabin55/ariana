@@ -71,14 +71,17 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                 db.classes.c.teacher_id == t["id"],
                 db.classes.c.created_at >= start, db.classes.c.created_at < end,
             ).order_by(db.classes.c.created_at)).all()
-            counts = {}
+            counts, qcounts = {}, {}
             for r in rows:
                 counts[r.id] = len(set(c.execute(select(db.attendance.c.user_id)
                                                  .where(db.attendance.c.class_id == r.id)).scalars()))
-            return rows, counts
+                qcounts[r.id] = len(c.execute(select(db.questions.c.id)
+                                              .where(db.questions.c.class_id == r.id)).all())
+            return rows, counts, qcounts
 
-    rows, counts = await db.run(run)
-    return {"classes": [{**class_row(r), "attended": counts[r.id], "start": kst(r.created_at)} for r in rows]}
+    rows, counts, qcounts = await db.run(run)
+    return {"classes": [{**class_row(r), "attended": counts[r.id], "questions": qcounts[r.id],
+                         "start": kst(r.created_at)} for r in rows]}
 
 
 def _owned_class(class_id: int, teacher_id: int):
@@ -222,6 +225,57 @@ async def attendance_log_csv(class_id: int, request: Request):
             rows.append([day, cls.title, p["student_no"], p["name"], i, x["joined"], x["left"], x["reason_text"],
                          x["minutes"], "" if x["gap_before"] is None else x["gap_before"]])
     return csv_response(rows, f"attendance-log-{day}-{cls.code}.csv")
+
+
+def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
+    """수업 중 '선생님께 질문'과 답장. user_id 를 주면 그 학생 것만."""
+    with db.engine.connect() as c:
+        q = (select(db.questions, db.users, db.classes.c.title, db.classes.c.code,
+                    db.classes.c.created_at.label("class_created"))
+             .join(db.users, db.users.c.id == db.questions.c.user_id)
+             .join(db.classes, db.classes.c.id == db.questions.c.class_id))
+        q = q.where(db.questions.c.class_id == class_id) if class_id else q.where(db.questions.c.user_id == user_id)
+        rows = c.execute(q.order_by(db.questions.c.created_at)).all()
+    out = []
+    for r in rows:
+        m = r._mapping
+        out.append({
+            "student_no": student_no(m), "name": m["name"] or m["google_name"],
+            "class_title": m["title"], "class_code": m["code"],
+            "date": datetime.fromtimestamp(m["class_created"], KST).strftime("%Y-%m-%d"),
+            "time": kst(m["created_at"]), "text": m["text"], "reply": m["reply"] or "",
+            "reply_time": kst(m["replied_at"]), "done": bool(m["done"]),
+        })
+    return out
+
+
+@router.get("/api/live/history/{class_id}/questions")
+async def class_questions(class_id: int, request: Request):
+    t = await require_user(request, "teacher")
+    await db.run(_owned_class, class_id, t["id"])
+    return {"questions": await db.run(_questions, class_id)}
+
+
+@router.get("/api/live/history/{class_id}/questions.csv")
+async def class_questions_csv(class_id: int, request: Request):
+    t = await require_user(request, "teacher")
+    cls = await db.run(_owned_class, class_id, t["id"])
+    qs = await db.run(_questions, class_id)
+    day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
+    rows = [["날짜", "수업", "학번", "이름", "질문 시각", "질문", "답장 시각", "답장", "확인"]]
+    for q in qs:
+        rows.append([day, cls.title, q["student_no"], q["name"], q["time"], q["text"],
+                     q["reply_time"], q["reply"], "확인함" if q["done"] else ""])
+    return csv_response(rows, f"questions-{day}-{cls.code}.csv")
+
+
+@router.get("/api/live/my-questions")
+async def my_questions(request: Request):
+    """학생: 지난 수업들에서 선생님께 한 질문과 받은 답장"""
+    u = await require_user(request, "student")
+    qs = await db.run(_questions, 0, u["id"])
+    return {"questions": [{k: q[k] for k in ("class_title", "date", "time", "text", "reply", "reply_time")}
+                          for q in reversed(qs[-100:])]}
 
 
 @router.get("/api/live/history/{class_id}/results.csv")
