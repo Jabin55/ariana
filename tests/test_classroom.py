@@ -538,3 +538,20 @@ def test_instructor_can_be_outside_school_list(monkeypatch):
     # 학생은 여전히 목록에 있는 학교만
     s = login("kid2@s.school.kr")
     assert s.post("/api/me/profile", json={"name": "학생", "school": "아무학교", "grade": 1, "class_no": 1, "number": 1}).status_code == 400
+
+
+def test_instructor_without_affiliation(monkeypatch):
+    # 지금은 학교에 소속되지 않은 강사(예: 전 기간제 교사)가 개인 구글 계정으로 강의
+    monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "freelancer@gmail.com"})
+    t = login("freelancer@gmail.com", name="이강사")  # 소속 없이 이름만
+    me = t.get("/api/me").json()["user"]
+    assert me["role"] == "teacher" and me["school"] == "" and not me["needs_profile"]
+    cid = t.post("/api/courses", json={"title": "정치와 법", "instructor": "이강사", "hub_school": "가나고등학교",
+                                       "start_date": "2026-03-02", "end_date": "2099-12-18"}).json()["id"]
+    a = student(1)
+    a.post(f"/api/courses/{cid}/enroll")
+    uid = t.get(f"/api/courses/{cid}/enrollments").json()["enrollments"][0]["user_id"]
+    t.post(f"/api/courses/{cid}/enrollments/{uid}", json={"status": "approved"})
+    code = create(t, title="1주차", course_id=cid)["code"]
+    assert a.get("/api/courses/live-now").json()["classes"][0]["code"] == code
+    assert a.post(f"/api/live/classes/{code}/join").status_code == 200
