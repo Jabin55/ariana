@@ -206,7 +206,7 @@ label.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .ai-msg .text :is(ul, ol) { margin: 0.3em 0; padding-left: 1.3em; }
 .ai-msg .text table { border-collapse: collapse; font-size: 0.85rem; }
 .ai-msg .text :is(td, th) { border: 1px solid var(--border); padding: 2px 6px; }
-.pending::after { content: "생각하는 중…"; color: var(--muted); }
+.ai-msg .text.pending::after { content: "생각하는 중…"; color: var(--muted); }
 
 /* ───── 활동(퀴즈·투표) ───── */
 .activity { background: var(--surface); border: 2px solid var(--accent); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; }
@@ -342,3 +342,9 @@ details.card > summary { cursor: pointer; }
 .course-info { font-size: 0.85rem; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .course-form .period .row { flex-wrap: nowrap; }
 .course-form .period input { flex: 1; min-width: 0; }
+.approve-form { display: grid; gap: 6px; margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.approve-form .row { font-size: 0.9rem; }
+.course-form label.pledge { display: grid; gap: 4px; background: var(--surface-2); padding: 8px 10px; border-radius: 8px; }
+.course-form label.pledge span { color: var(--text); }
+.course-form label.pledge .muted { font-size: 0.85rem; color: var(--muted); }
+.course-form textarea { color: var(--text); }

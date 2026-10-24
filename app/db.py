@@ -41,6 +41,23 @@ users = Table(
     Column("last_login", Float),
 )
 
+instructors = Table(
+    "instructors", metadata,  # 강사 등록 신청과 관리자 승인
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False, unique=True),
+    Column("status", String(10), nullable=False),  # pending(대기) approved(승인) rejected(거절) revoked(해제)
+    Column("kind", String(15), nullable=False, default=""),  # regular(정규 강사) supplementary(보충수업 강사)
+    Column("contact", String(100), nullable=False, default=""),
+    Column("message", String(500), nullable=False, default=""),
+    Column("valid_from", String(10), nullable=False, default=""),  # 활동 기간 (YYYY-MM-DD, 비우면 제한 없음)
+    Column("valid_until", String(10), nullable=False, default=""),
+    Column("pledge_at", Float),  # 개인정보 보호 서약에 동의한 시각
+    Column("requested_at", Float, nullable=False),
+    Column("decided_at", Float),
+    Column("decided_by", Integer),
+    Column("admin_note", String(300), nullable=False, default=""),
+)
+
 courses = Table(
     "courses", metadata,  # 학기 초에 선생님이 여는 강좌. 학생은 수강신청하고 선생님이 승인한다.
     Column("id", Integer, primary_key=True),

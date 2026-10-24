@@ -1,14 +1,20 @@
-"""학교 구글 계정 로그인과 학생·선생님 정보.
+"""구글 계정 로그인과 역할(학생·강사·관리자).
 
-- 학생: ALLOWED_DOMAINS(학교 구글 계정 도메인) 계정만 로그인할 수 있다. 처음 로그인하면 학교·학년·반·번호·이름을 입력한다.
-- 선생님: TEACHER_EMAILS 에 적힌 계정이면 도메인과 상관없이 선생님으로 로그인한다.
-- 비밀번호를 저장하지 않는다. 로그인 상태는 서명된 쿠키(SECRET_KEY)로 유지한다.
+역할은 매 요청마다 다시 판단한다(권한을 빼거나 기간이 끝나면 바로 반영).
+- 관리자: ADMIN_EMAILS 에 적힌 계정. 강사 등록 신청을 승인한다. 강사 기능도 모두 쓸 수 있다.
+- 강사(teacher): ADMIN_EMAILS·TEACHER_EMAILS 에 적힌 계정, 또는 관리자가 승인했고 활동 기간 안인 계정.
+  학교 밖 사람(대학교수, 보충수업 강사 등)도 개인 구글 계정으로 신청할 수 있다.
+- 학생: ALLOWED_DOMAINS(학교 구글 계정 도메인) 계정. 처음 로그인하면 학교·학년·반·번호·이름을 입력한다.
+- 손님(guest): 그 밖의 계정. 강사 등록 신청만 할 수 있다.
+비밀번호를 저장하지 않는다. 로그인 상태는 서명된 쿠키(SECRET_KEY)로 유지한다.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -21,6 +27,12 @@ router = APIRouter()
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in os.environ.get("ALLOWED_DOMAINS", "").split(",") if d.strip()}
 TEACHER_EMAILS = {e.strip().lower() for e in os.environ.get("TEACHER_EMAILS", "").split(",") if e.strip()}
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+KST = ZoneInfo("Asia/Seoul")
+
+
+def today_kst() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d")
 SCHOOLS = [s.strip() for s in os.environ.get("SCHOOLS", "").split(",") if s.strip()]
 # 로컬 개발·자동 테스트 전용 로그인. 배포 서버에서는 절대 켜지 말 것.
 DEV_LOGIN = os.environ.get("DEV_LOGIN") == "1"
@@ -32,7 +44,37 @@ def public_user(u) -> dict:
         "id": d["id"], "email": d["email"], "role": d["role"], "name": d["name"],
         "school": d["school"], "grade": d["grade"], "class_no": d["class_no"], "number": d["number"],
         "student_no": student_no(d), "display": display_name(d), "needs_profile": needs_profile(d),
+        "is_admin": bool(d.get("is_admin")), "instructor": d.get("instructor"),
     }
+
+
+def instructor_active(inst: dict | None) -> bool:
+    if not inst or inst["status"] != "approved":
+        return False
+    today = today_kst()
+    return (not inst["valid_from"] or inst["valid_from"] <= today) and \
+        (not inst["valid_until"] or today <= inst["valid_until"])
+
+
+def effective_role(email: str, inst: dict | None) -> str:
+    email = email.lower()
+    if email in ADMIN_EMAILS or email in TEACHER_EMAILS or instructor_active(inst):
+        return "teacher"
+    domain = email.rsplit("@", 1)[-1]
+    if not ALLOWED_DOMAINS or domain in ALLOWED_DOMAINS:
+        return "student"
+    return "guest"
+
+
+def instructor_view(inst: dict | None) -> dict | None:
+    if not inst:
+        return None
+    status = inst["status"]
+    if status == "approved" and not instructor_active(inst):
+        status = "expired" if inst["valid_until"] and inst["valid_until"] < today_kst() else "scheduled"
+    return {"status": status, "kind": inst["kind"], "valid_from": inst["valid_from"],
+            "valid_until": inst["valid_until"], "contact": inst["contact"], "message": inst["message"],
+            "admin_note": inst["admin_note"]}
 
 
 def student_no(u: dict) -> str:
@@ -49,6 +91,8 @@ def display_name(u: dict) -> str:
 
 
 def needs_profile(u: dict) -> bool:
+    if u.get("role") == "guest":
+        return False  # 손님은 강사 등록 신청서에서 이름을 적는다
     if not u.get("name"):
         return True
     if u.get("role") == "student":
@@ -61,18 +105,29 @@ def _get_user(uid: int):
         return c.execute(select(db.users).where(db.users.c.id == uid)).first()
 
 
+def _load_with_role(uid: int) -> dict | None:
+    """사용자 + 강사 신청 정보를 읽고, 지금 역할을 판단한다(바뀌었으면 저장해 둔다)."""
+    with db.engine.begin() as c:
+        row = c.execute(select(db.users).where(db.users.c.id == uid)).first()
+        if not row:
+            return None
+        u = dict(row._mapping)
+        inst = c.execute(select(db.instructors).where(db.instructors.c.user_id == uid)).first()
+        inst = dict(inst._mapping) if inst else None
+        role = effective_role(u["email"], inst)
+        if role != u["role"]:
+            c.execute(update(db.users).where(db.users.c.id == uid).values(role=role))
+            u["role"] = role
+    u["is_admin"] = u["email"].lower() in ADMIN_EMAILS
+    u["instructor"] = instructor_view(inst)
+    return u
+
+
 async def current_user(request_or_ws) -> dict | None:
     uid = request_or_ws.session.get("uid")
     if not uid:
         return None
-    row = await db.run(_get_user, uid)
-    if not row:
-        return None
-    u = dict(row._mapping)
-    # 선생님 목록에서 빠지면 바로 권한을 잃도록 매번 확인
-    if u["role"] == "teacher" and u["email"].lower() not in TEACHER_EMAILS:
-        return None
-    return u
+    return await db.run(_load_with_role, uid)
 
 
 async def require_user(request: Request, role: str | None = None, profile: bool = True) -> dict:
@@ -84,6 +139,10 @@ async def require_user(request: Request, role: str | None = None, profile: bool 
     if profile and needs_profile(u):
         raise HTTPException(409, "먼저 내 정보를 입력해 주세요.")
     return u
+
+
+PLEDGE = ("나는 이 플랫폼에서 알게 된 학생의 개인정보(이름·학번·출결·답안·질문 등)를 수업 목적으로만 쓰고, "
+          "외부에 제공하거나 유출하지 않으며, 강의가 끝나면 따로 내려받은 자료를 지체 없이 파기하겠습니다.")
 
 
 def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
@@ -101,18 +160,12 @@ def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
 
 
 async def login_with_identity(request: Request, sub: str, email: str, gname: str, hd: str | None) -> dict:
+    # 누구나 로그인은 된다. 학교 계정이 아니고 강사로 승인되지 않았으면 '손님'으로 강사 등록 신청만 할 수 있다.
     email = email.lower()
-    if email in TEACHER_EMAILS:
-        role = "teacher"
-    else:
-        domain = (hd or "").lower()
-        if ALLOWED_DOMAINS and domain not in ALLOWED_DOMAINS:
-            raise HTTPException(403, "학교에서 받은 구글 계정으로만 로그인할 수 있어요.")
-        role = "student"
-    uid = await db.run(_upsert_user, sub, email, gname, role)
+    uid = await db.run(_upsert_user, sub, email, gname, effective_role(email, None))
     request.session.clear()
     request.session["uid"] = uid
-    return public_user(await db.run(_get_user, uid))
+    return public_user(await db.run(_load_with_role, uid))
 
 
 class GoogleLogin(BaseModel):
@@ -144,8 +197,7 @@ class DevLogin(BaseModel):
 async def dev_login(req: DevLogin, request: Request):
     if not DEV_LOGIN:
         raise HTTPException(404)
-    domain = req.email.split("@")[-1]
-    return await login_with_identity(request, f"dev:{req.email}", req.email, req.name, domain)
+    return await login_with_identity(request, f"dev:{req.email}", req.email, req.name, req.email.split("@")[-1])
 
 
 @router.post("/api/auth/logout")
@@ -160,7 +212,7 @@ async def me(request: Request):
     return {
         "user": public_user(u) if u else None,
         "google_client_id": GOOGLE_CLIENT_ID, "dev_login": DEV_LOGIN,
-        "schools": SCHOOLS, "domains": sorted(ALLOWED_DOMAINS),
+        "schools": SCHOOLS, "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
     }
 
 
@@ -191,4 +243,4 @@ async def save_profile(p: Profile, request: Request):
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**values))
 
     await db.run(save)
-    return public_user(await db.run(_get_user, u["id"]))
+    return public_user(await db.run(_load_with_role, u["id"]))

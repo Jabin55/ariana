@@ -51,6 +51,23 @@
       </form>
     </section>
 
+    <!-- 손님: 강사 등록 신청 -->
+    <section class="card narrow" id="guest-view" hidden>
+      <h2>강사 등록 신청</h2>
+      <div id="apply-status"></div>
+      <p class="muted" style="font-size:0.9rem;margin:0 0 10px">학교 소속이 아니어도(대학교수, 보충수업 강사 등) 신청할 수 있어요. 관리자가 승인하면 강좌를 개설하고 수업을 열 수 있어요.<br>
+        <strong>학생이라면</strong> 오른쪽 위 <strong>로그아웃</strong>을 누르고 학교에서 받은 구글 계정으로 다시 로그인하세요.</p>
+      <form id="apply" class="course-form">
+        <label>이름 <input id="a-name" maxlength="30" required></label>
+        <label>소속 (선택 — 없으면 비워 두세요) <input id="a-aff" maxlength="60" placeholder="예: 한국대학교 / 전 가나고 기간제 교사"></label>
+        <label class="wide">연락처 (관리자만 봐요) <input id="a-contact" maxlength="100" required placeholder="전화번호 또는 이메일"></label>
+        <label class="wide">강의 계획·하고 싶은 말 (선택) <textarea id="a-msg" maxlength="500" rows="3" placeholder="예: 겨울방학 정치 보충수업 (1~2월, 주 2회)"></textarea></label>
+        <label class="wide pledge"><span><input type="checkbox" id="a-pledge" required> <strong>개인정보 보호 서약</strong></span><span id="pledge-text" class="muted"></span></label>
+        <button class="primary wide" type="submit" id="apply-btn">신청하기</button>
+      </form>
+      <p class="error" id="apply-error"></p>
+    </section>
+
     <!-- 학생 -->
     <section id="student-view" hidden>
       <section class="card narrow">
@@ -92,6 +109,7 @@
         <button data-tab="classes" class="active">수업</button>
         <button data-tab="courses">강좌·수강생 <span class="badge" id="pending-badge" hidden></span></button>
         <button data-tab="history">출결 기록</button>
+        <button data-tab="admin" id="admin-tab" hidden>관리자 <span class="badge" id="admin-badge" hidden></span></button>
       </nav>
 
       <div data-panel="classes" class="cards">
@@ -135,6 +153,11 @@
           <p class="error" id="course-error"></p>
         </section>
         <div id="course-list"></div>
+      </div>
+
+      <div data-panel="admin" hidden>
+        <p class="muted">강사 등록 신청을 승인하면 그 계정으로 강좌를 개설하고 수업을 열 수 있어요. 활동 기간이 끝나면 강사 권한이 자동으로 꺼지고, 수업 기록은 남아요.</p>
+        <div id="admin-list"></div>
       </div>
 
       <div data-panel="history" hidden>

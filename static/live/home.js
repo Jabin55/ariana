@@ -3,7 +3,7 @@ const params = new URLSearchParams(location.search);
 let ME = null;
 let CONFIG = null;
 
-const views = ["login-view", "profile-view", "student-view", "teacher-view"];
+const views = ["login-view", "profile-view", "guest-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
   $("#student-questions").hidden = true;
@@ -25,8 +25,10 @@ async function boot() {
   ME = CONFIG.user;
   $("#logout").hidden = !ME;
   $("#edit-profile").hidden = !ME || ME.needs_profile;
-  $("#who").textContent = ME ? `${ME.display} (${ME.role === "teacher" ? "강사" : "학생"})` : "";
+  const roleName = ME?.is_admin ? "관리자" : { teacher: "강사", student: "학생", guest: "강사 신청" }[ME?.role];
+  $("#who").textContent = ME ? `${ME.display || ME.email} (${roleName})` : "";
   if (!ME) return showLogin();
+  if (ME.role === "guest") return showGuest();
   if (ME.needs_profile) return showProfile();
   if (ME.role === "teacher") return showTeacher();
   return showStudent();
@@ -36,7 +38,9 @@ async function boot() {
 
 function showLogin() {
   show("login-view");
-  if (CONFIG.domains.length) $("#login-hint").textContent = `학교에서 받은 구글 계정(@${CONFIG.domains.join(", @")})으로 로그인하세요.`;
+  if (CONFIG.domains.length) {
+    $("#login-hint").textContent = `학생은 학교에서 받은 구글 계정(@${CONFIG.domains.join(", @")})으로 로그인하세요. 강사는 아무 구글 계정으로 로그인해 등록을 신청할 수 있어요.`;
+  }
   $("#dev-login").hidden = !CONFIG.dev_login;
   if (!CONFIG.google_client_id) {
     if (!CONFIG.dev_login) $("#login-error").textContent = "서버에 GOOGLE_CLIENT_ID 가 설정되지 않았어요. 선생님께 알려 주세요.";
@@ -134,6 +138,49 @@ $("#profile").addEventListener("submit", async (e) => {
   } catch (err) { $("#profile-error").textContent = err.message; }
 });
 $("#edit-profile").addEventListener("click", showProfile);
+
+/* ───── 손님: 강사 등록 신청 ───── */
+
+const APPLY_STATUS = {
+  pending: ["status pending", "승인 대기 중", "관리자가 확인하면 강사 기능을 쓸 수 있어요. 아래 내용을 고쳐서 다시 보낼 수도 있어요."],
+  rejected: ["status rejected", "승인되지 않았어요", "내용을 고쳐 다시 신청할 수 있어요."],
+  revoked: ["status rejected", "강사 권한이 해제됐어요", "다시 강의하려면 다시 신청해 주세요."],
+  expired: ["status rejected", "활동 기간이 끝났어요", "다시 강의하려면 다시 신청해 주세요."],
+  scheduled: ["status pending", "승인됨 · 활동 시작 전", "활동 기간이 시작되면 강사 기능이 켜져요."],
+};
+
+function showGuest() {
+  show("guest-view");
+  $("#lead").hidden = true;
+  $("#pledge-text").textContent = CONFIG.pledge;
+  const inst = ME.instructor;
+  $("#a-name").value = ME.name || "";
+  $("#a-aff").value = ME.school || "";
+  $("#a-contact").value = inst?.contact || "";
+  $("#a-msg").value = inst?.message || "";
+  const box = $("#apply-status");
+  box.replaceChildren();
+  if (inst && APPLY_STATUS[inst.status]) {
+    const [cls, title, desc] = APPLY_STATUS[inst.status];
+    box.append(h("div", { class: "banner warn", style: "margin-bottom:10px" }, h("span", { class: cls }, title), h("span", {}, desc),
+      inst.admin_note ? h("div", { style: "width:100%" }, `관리자 메모: ${inst.admin_note}`) : null,
+      inst.valid_from || inst.valid_until ? h("div", { style: "width:100%" }, `활동 기간: ${fmtDate(inst.valid_from) || "제한 없음"} ~ ${fmtDate(inst.valid_until) || "제한 없음"}`) : null));
+    $("#apply-btn").textContent = inst.status === "pending" ? "고쳐서 다시 보내기" : "다시 신청하기";
+  }
+}
+
+$("#apply").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#apply-error").textContent = "";
+  try {
+    await api("/api/instructor/apply", {
+      name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value,
+      message: $("#a-msg").value, pledge: $("#a-pledge").checked,
+    });
+    toast("신청했어요. 관리자가 승인하면 이 화면이 강사 화면으로 바뀌어요.");
+    boot();
+  } catch (err) { $("#apply-error").textContent = err.message; }
+});
 
 /* ───── 학생 ───── */
 
@@ -259,6 +306,9 @@ function showTeacher() {
   $("#h-date").value = params.get("date") || today();
   loadLive();
   loadTeacherCourses();
+  $("#admin-tab").hidden = !ME.is_admin;
+  if (ME.is_admin) loadAdmin();
+  if (params.get("tab") === "admin" && ME.is_admin) showHomeTab("admin");
   if (params.get("tab") === "history" || params.get("class")) showHomeTab("history");
 }
 
@@ -267,6 +317,7 @@ function showHomeTab(name) {
   for (const p of document.querySelectorAll("#teacher-view [data-panel]")) p.hidden = p.dataset.panel !== name;
   if (name === "history") loadHistory();
   if (name === "courses") loadTeacherCourses();
+  if (name === "admin") loadAdmin();
 }
 $("#home-tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
@@ -426,6 +477,55 @@ async function renderMembers(c, box) {
     group("rejected", "거절함", [["승인", "approved"], ["삭제", "removed"]]),
   ].filter(Boolean));
   if (!enrollments.length) box.append(h("p", { class: "muted" }, "아직 수강신청한 학생이 없어요."));
+}
+
+/* ───── 관리자: 강사 등록 승인 ───── */
+
+async function loadAdmin() {
+  const data = await api("/api/admin/instructors");
+  const list = data.instructors;
+  const pending = list.filter((x) => x.status === "pending");
+  $("#admin-badge").textContent = pending.length;
+  $("#admin-badge").hidden = !pending.length;
+  const decide = async (x, body) => {
+    try {
+      await api(`/api/admin/instructors/${x.user_id}`, body);
+      toast({ approve: "승인했어요.", reject: "거절했어요.", revoke: "권한을 해제했어요." }[body.action]);
+      loadAdmin();
+    } catch (err) { toast(err.message); }
+  };
+  const approveForm = (x, label) => {
+    const kind = h("select", {}, h("option", { value: "regular", selected: x.kind !== "supplementary" }, "정규 강사"),
+      h("option", { value: "supplementary", selected: x.kind === "supplementary" }, "보충수업 강사"));
+    const from = h("input", { type: "date", value: x.valid_from || data.today });
+    const until = h("input", { type: "date", value: x.valid_until || "" });
+    const note = h("input", { class: "grow", maxlength: 300, placeholder: "메모 (거절·해제 사유 등, 신청자에게 보여요)", value: x.admin_note || "" });
+    return h("div", { class: "approve-form" },
+      h("div", { class: "row" }, "구분", kind, "활동 기간", from, "~", until, h("span", { class: "muted", style: "font-size:0.8rem" }, "(끝나는 날을 비우면 제한 없음)")),
+      h("div", { class: "row" }, note,
+        h("button", { class: "primary", onclick: () => decide(x, { action: "approve", kind: kind.value, valid_from: from.value, valid_until: until.value, note: note.value }) }, label),
+        x.status === "pending" ? h("button", { class: "danger", onclick: () => decide(x, { action: "reject", note: note.value }) }, "거절") : null,
+        ["approved", "expired", "scheduled"].includes(x.status) ? h("button", { class: "danger", onclick: () => {
+          if (confirm(`${x.name} 강사의 권한을 해제할까요? 수업 기록은 남아요.`)) decide(x, { action: "revoke", note: note.value });
+        } }, "권한 해제") : null));
+  };
+  const statusLabel = { pending: "승인 대기", approved: "활동 중", scheduled: "활동 시작 전", expired: "기간 끝남", rejected: "거절됨", revoked: "해제됨" };
+  const card = (x) => h("div", { class: "box", style: "margin-bottom:10px" },
+    h("div", { class: "row" }, h("strong", {}, x.name), h("span", { class: `status ${x.status === "approved" ? "approved" : x.status === "pending" || x.status === "scheduled" ? "pending" : "rejected"}` }, statusLabel[x.status]),
+      x.kind_name && x.status !== "pending" ? h("span", { class: "muted" }, x.kind_name) : null,
+      h("span", { class: "grow" }), h("span", { class: "muted", style: "font-size:0.8rem" }, `신청 ${new Date(x.requested_at * 1000).toLocaleDateString("ko-KR")}`)),
+    h("div", { class: "muted", style: "font-size:0.9rem" }, `${x.email} · 소속 ${x.affiliation || "없음"} · 연락처 ${x.contact} · 개인정보 서약 ${x.pledged ? "동의함" : "없음"}`),
+    x.message ? h("div", { style: "font-size:0.9rem;white-space:pre-wrap" }, x.message) : null,
+    x.status !== "pending" && (x.valid_from || x.valid_until) ? h("div", { class: "muted", style: "font-size:0.85rem" }, `활동 기간 ${fmtDate(x.valid_from) || "제한 없음"} ~ ${fmtDate(x.valid_until) || "제한 없음"}`) : null,
+    approveForm(x, x.status === "pending" ? "승인" : ["rejected", "revoked", "expired"].includes(x.status) ? "다시 승인" : "기간·구분 고치기"));
+  const section = (title, items) => items.length ? [h("h3", { class: "section-title", style: "margin:14px 0 8px" }, `${title} ${items.length}명`), ...items.map(card)] : [];
+  $("#admin-list").replaceChildren(
+    ...section("승인 대기", pending),
+    ...section("강사", list.filter((x) => ["approved", "scheduled", "expired"].includes(x.status))),
+    ...section("거절·해제", list.filter((x) => ["rejected", "revoked"].includes(x.status))),
+    ...(list.length ? [] : [h("p", { class: "muted" }, "아직 강사 등록 신청이 없어요.")]),
+    h("p", { class: "muted", style: "font-size:0.85rem;margin-top:16px" },
+      `서버 설정(ADMIN_EMAILS·TEACHER_EMAILS)으로 등록된 계정은 신청 없이 항상 강사예요: ${[...data.admins, ...data.env_teachers].join(", ") || "없음"}`));
 }
 
 /* 출결 기록 */

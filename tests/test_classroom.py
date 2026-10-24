@@ -17,6 +17,8 @@ from app import db
 from app.main import app
 
 SCHOOL = "가나중학교"
+COURSE = {"title": "강좌", "instructor": "강사", "hub_school": "가나고등학교",
+          "start_date": "2026-03-02", "end_date": "2099-12-18"}
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +72,9 @@ def state(ws, pred=lambda m: True):
 
 def test_login_rules():
     c = TestClient(app)
-    assert c.post("/api/auth/dev", json={"email": "kid@gmail.com"}).status_code == 403  # 학교 계정 아님
+    # 학교 계정이 아니면 '손님': 강사 등록 신청만 할 수 있고 수업·강좌는 못 쓴다
+    assert c.post("/api/auth/dev", json={"email": "kid@gmail.com"}).json()["role"] == "guest"
+    assert c.get("/api/courses/available").status_code == 403
     s = login("kid@s.school.kr")
     me = s.get("/api/me").json()["user"]
     assert me["role"] == "student" and me["needs_profile"]
@@ -526,8 +530,10 @@ def test_course_enrollment_join_without_code():
 def test_instructor_can_be_outside_school_list(monkeypatch):
     monkeypatch.setattr(auth, "SCHOOLS", [SCHOOL])
     # 대학교수: 학교 목록에 없는 소속도 저장되고, 거점학교는 소속과 다르게 적을 수 있다
-    # 강사 목록(TEACHER_EMAILS)에 없는 대학 계정은 학교 계정이 아니라서 로그인 불가
-    assert TestClient(app).post("/api/auth/dev", json={"email": "prof@univ.ac.kr"}).status_code == 403
+    # 강사 목록에 없고 승인도 안 된 대학 계정은 '손님' (강사 기능 없음)
+    guest = TestClient(app)
+    assert guest.post("/api/auth/dev", json={"email": "prof@univ.ac.kr"}).json()["role"] == "guest"
+    assert guest.post("/api/courses", json=COURSE).status_code == 403
     monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "prof@univ.ac.kr"})
     prof = login("prof@univ.ac.kr", name="김교수", school="한국대학교 정치외교학과")
     assert prof.get("/api/me").json()["user"]["school"] == "한국대학교 정치외교학과"
@@ -555,3 +561,52 @@ def test_instructor_without_affiliation(monkeypatch):
     code = create(t, title="1주차", course_id=cid)["code"]
     assert a.get("/api/courses/live-now").json()["classes"][0]["code"] == code
     assert a.post(f"/api/live/classes/{code}/join").status_code == 200
+
+
+def test_instructor_application_and_admin_approval(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    admin = login("admin@gmail.com", name="관리자")
+    assert admin.get("/api/me").json()["user"]["is_admin"]
+    # 1) 학교 밖 사람이 개인 계정으로 로그인 → 손님 → 강사 등록 신청 (서약 필수)
+    g = TestClient(app)
+    assert g.post("/api/auth/dev", json={"email": "sub@gmail.com"}).json()["role"] == "guest"
+    form = {"name": "정보충", "affiliation": "", "contact": "010-0000-0000", "message": "방학 보충수업", "pledge": False}
+    assert g.post("/api/instructor/apply", json=form).status_code == 400
+    assert g.post("/api/instructor/apply", json={**form, "pledge": True}).status_code == 200
+    me = g.get("/api/me").json()["user"]
+    assert me["role"] == "guest" and me["instructor"]["status"] == "pending"
+    assert g.post("/api/courses", json=COURSE).status_code == 403  # 아직 강사 아님
+    # 2) 관리자만 신청 목록을 보고 승인 (강사·학생은 불가)
+    assert teacher().get("/api/admin/instructors").status_code == 403
+    assert student(1).get("/api/admin/instructors").status_code == 403
+    apps = admin.get("/api/admin/instructors").json()["instructors"]
+    assert apps[0]["name"] == "정보충" and apps[0]["status"] == "pending" and apps[0]["pledged"]
+    uid = apps[0]["user_id"]
+    # 보충수업 강사는 끝나는 날 필수
+    assert admin.post(f"/api/admin/instructors/{uid}", json={"action": "approve", "kind": "supplementary"}).status_code == 400
+    assert admin.post(f"/api/admin/instructors/{uid}", json={
+        "action": "approve", "kind": "supplementary", "valid_from": "2026-01-01", "valid_until": "2099-02-28"}).status_code == 200
+    # 3) 승인되면 바로 강사: 강좌 개설 → 학생 수강신청 승인
+    me = g.get("/api/me").json()["user"]
+    assert me["role"] == "teacher" and me["instructor"]["kind"] == "supplementary"
+    cid = g.post("/api/courses", json={"title": "방학 보충", "instructor": "정보충", "hub_school": "가나고등학교",
+                                       "start_date": "2026-01-05", "end_date": "2099-02-20"}).json()["id"]
+    s1 = student(1)
+    s1.post(f"/api/courses/{cid}/enroll")
+    sid = g.get(f"/api/courses/{cid}/enrollments").json()["enrollments"][0]["user_id"]
+    assert g.post(f"/api/courses/{cid}/enrollments/{sid}", json={"status": "approved"}).status_code == 200
+    # 4) 활동 기간이 끝나면 자동으로 강사 권한이 꺼진다
+    assert admin.post(f"/api/admin/instructors/{uid}", json={
+        "action": "approve", "kind": "supplementary", "valid_from": "2020-01-01", "valid_until": "2020-12-31"}).status_code == 200
+    me = g.get("/api/me").json()["user"]
+    assert me["role"] == "guest" and me["instructor"]["status"] == "expired"
+    assert g.get(f"/api/courses/{cid}/enrollments").status_code == 403
+    # 5) 다시 승인 → 강사, 해제 → 손님 (해제 사유가 보임)
+    admin.post(f"/api/admin/instructors/{uid}", json={"action": "approve", "kind": "regular"})
+    assert g.get("/api/me").json()["user"]["role"] == "teacher"
+    admin.post(f"/api/admin/instructors/{uid}", json={"action": "revoke", "note": "보충수업 종료"})
+    me = g.get("/api/me").json()["user"]
+    assert me["role"] == "guest" and me["instructor"]["status"] == "revoked" and me["instructor"]["admin_note"] == "보충수업 종료"
+    # 거절·해제 뒤 다시 신청하면 대기 상태로
+    g.post("/api/instructor/apply", json={**form, "pledge": True})
+    assert g.get("/api/me").json()["user"]["instructor"]["status"] == "pending"

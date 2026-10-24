@@ -37,8 +37,10 @@ services:
         sync: false
       - key: ALLOWED_DOMAINS
         sync: false
+      - key: ADMIN_EMAILS
+        sync: false  # 강사 등록을 승인할 관리자 이메일 (쉼표로 여러 개)
       - key: TEACHER_EMAILS
-        sync: false
+        sync: false  # (선택) 신청 없이 바로 강사가 되는 이메일
       - key: SCHOOLS
         sync: false
       - key: DATABASE_URL
