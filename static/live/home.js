@@ -653,6 +653,22 @@ async function drawCreateForm() {
   } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); }
 }
 
+/** 강좌 카드의 '수업 열기': 이미 열린 수업이 있으면 거기로, 없으면 새로 연다 */
+async function openCourseClass(c) {
+  try {
+    const { classes } = await api("/api/live/my-classes");
+    const open = classes.find((x) => x.course_id === c.id);
+    if (open && confirm(`'${c.title}' 수업(${open.title})이 이미 열려 있어요. 그 수업으로 들어갈까요?\n(취소를 누르면 새 수업을 하나 더 열어요)`)) {
+      location.href = `/live/teacher/${open.code}`;
+      return;
+    }
+    const title = prompt(`'${c.title}' 수업을 열어요. 수업 이름 (예: 3차시 헌법과 기본권, 비워도 돼요)`, "");
+    if (title === null) return;
+    const res = await api("/api/live/classes", { title: title.trim() || c.title, course_id: c.id });
+    location.href = `/live/teacher/${res.code}`;
+  } catch (err) { toast(err.message); }
+}
+
 function renderCourseList() {
   const box = $("#course-list");
   box.replaceChildren(...teacherCourses.map((c) => {
@@ -672,6 +688,9 @@ function renderCourseList() {
       c.locked ? h("p", { class: "error", style: "margin:4px 0" },
         `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '다른 거점학교·역할 신청'으로 다시 신청하세요. 학생 개인정보 보호를 위해 이 강좌의 지난 수업 기록도 볼 수 없어요(다시 승인받으면 보여요).`) : null,
       c.locked ? null : editing.has(c.id) ? courseEditForm(c) : null,
+      c.locked || c.archived ? null : h("div", { class: "row", style: "margin-top:8px" },
+        h("button", { class: "primary", onclick: () => openCourseClass(c) }, "▶ 수업 열기"),
+        h("span", { class: "muted", style: "font-size:0.85rem" }, "수강 확정된 학생은 마이페이지에서 바로 들어와요")),
       c.locked ? null : h("div", { class: "row", style: "margin-top:6px" },
         !c.archived ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: c.open, onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
         h("button", { class: "small", onclick: () => { if (openCourse.has(c.id)) openCourse.delete(c.id); else openCourse.add(c.id); renderCourseList(); } },
