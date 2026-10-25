@@ -347,23 +347,20 @@ async def courses_page():
     const shown = list.filter((c) => (!q || [c.title, c.instructor, c.hub_school, c.description, c.subject_area, c.subject_group].join(" ").includes(q))
       && (!g || !c.grades.length || c.grades.includes(g)));
     box.innerHTML = shown.length ? shown.map((c) => {
+      // 대상학년 · 학기 · 강좌명 · 학점 · 인원 · 거점학교 · 성취도 · 평가방식만
+      const grade = c.grades.length ? `${c.grades.join("·")}학년` : "전 학년";
+      const term = c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : "";
       const facts = [
-        c.subject_area || c.subject_type ? ["과목", [c.subject_area, c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")] : null,
-        c.term ? ["학기", `${c.school_year || ""}학년도 ${c.term}`] : null,
-        c.credits ? ["학점", `${c.credits}학점 (${c.hours}시간)`] : null,
-        c.achievement_text ? ["성취도", c.achievement_text] : null,
-        c.exam_ratio != null && c.perf_ratio != null ? ["평가", `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%`] : null,
-        c.recruit_start ? ["모집", `${d(c.recruit_start)} ~ ${d(c.recruit_end)}`] : null,
-        c.capacity ? ["인원", `${c.capacity}명`] : null,
-        c.team_teaching ? ["팀티칭", "예"] : null,
-      ].filter(Boolean);
+        ["학점", c.credits ? `${c.credits}학점` : "-"],
+        ["인원", c.capacity ? `${c.capacity}명` : "제한 없음"],
+        ["거점학교", c.hub_school || "-"],
+        ["성취도", c.achievement_text || "-"],
+        ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
+      ];
       return `<article class="course-tile with-thumb">${window.courseThumb(c)}<div class="ct-body">
-      <div class="ct-top"><span class="tag">${esc(c.hub_school)}</span>${c.grades.length ? `<span class="tag soft">${c.grades.join("·")}학년</span>` : '<span class="tag soft">전 학년</span>'}</div>
+      <div class="ct-top"><span class="tag soft">${esc(grade)}</span>${term ? `<span class="tag soft">${esc(term)}</span>` : ""}</div>
       <h3>${esc(c.title)}</h3>
-      <p class="muted">강사 ${esc(c.instructor)} · 수업 ${d(c.start_date)} ~ ${d(c.end_date)}</p>
-      ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
-      ${c.description ? `<p class="ct-desc">${esc(c.description)}</p>` : ""}
-      ${c.syllabus ? `<p><a href="${c.syllabus.url}" target="_blank">📄 수업계획서 (${esc(c.syllabus.name)})</a></p>` : ""}
+      <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
     </div></article>`;
     }).join("") : '<p class="muted">조건에 맞는 강좌가 없어요.</p>';
   };
