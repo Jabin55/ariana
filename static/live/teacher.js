@@ -1,6 +1,8 @@
 /* 선생님 화면 */
-api("/api/me").then(({ user }) => {
-  if (!user || user.role !== "teacher") location.replace("/live");
+let CFG = null; // /api/me 설정 (구글 드라이브 연결 등)
+api("/api/me").then((cfg) => {
+  CFG = cfg;
+  if (!cfg.user || cfg.user.role !== "teacher") location.replace("/live");
 }).catch(() => {});
 
 let S = null;
@@ -542,42 +544,159 @@ function openFiles() {
     h("div", { class: "card" },
       h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, "📄 발표 자료"), h("button", { class: "small", onclick: close }, "닫기")),
       list.length ? h("div", { class: "people" }, list) : h("p", { class: "muted", style: "margin:0" }, "아직 올린 자료가 없어요."),
-      h("button", { class: "primary", onclick: () => { close(); $("#file-input").click(); } }, "＋ PDF 올리기"),
+      h("div", { class: "row" },
+        h("button", { class: "primary", onclick: () => { close(); $("#file-input").click(); } }, "＋ 내 컴퓨터에서 PDF 올리기"),
+        CFG?.drive_picker ? h("button", { onclick: () => { close(); openFromDrive(); } }, "📁 구글 드라이브에서 열기") : null),
+      CFG?.drive_picker ? h("p", { class: "muted", style: "margin:0;font-size:0.85rem" },
+        "드라이브에서는 PDF뿐 아니라 PowerPoint·구글 프레젠테이션도 고를 수 있어요(PDF로 바꿔서 띄워요). 고른 파일 하나만 열 수 있는 권한이고, 서버는 드라이브에 접근하지 않아요.") : null,
       h("p", { class: "muted", style: "margin:0;font-size:0.85rem" },
-        "PowerPoint(PPT)는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. ",
+        CFG?.drive_picker ? "내 컴퓨터의 PowerPoint는 PDF로 저장해서 올리거나, 드라이브에 올려 두고 드라이브에서 열어 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. "
+          : "PowerPoint(PPT)는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. ",
         "올린 자료와 판서는 수업이 끝나도 남아서, 수업을 못 들은 학생도 첫 화면 '지난 수업 자료'에서 다시 볼 수 있어요.")));
   document.body.append(dlg);
 }
 
 $("#present-btn").addEventListener("click", () => {
   if (S?.present?.mode === "slides") return openFiles();
-  if (S?.files.length) openFiles(); else $("#file-input").click();
+  if (S?.files.length || CFG?.drive_picker) openFiles(); else $("#file-input").click(); // 드라이브를 쓸 수 있으면 고를 수 있게
 });
 $("#board-btn").addEventListener("click", () => {
   if (S?.present?.mode === "board") sock.send({ t: "present_close" });
   else sock.send({ t: "present_board", page: 1 });
 });
+/** PDF를 이 수업 자료로 올리고 바로 발표를 시작한다 */
+async function uploadPdf(blob, name) {
+  toast("자료를 올리는 중…", 20000);
+  const res = await fetch(`/api/live/classes/${CODE}/files?name=${encodeURIComponent(name)}`, {
+    method: "POST", headers: { "Content-Type": "application/pdf" }, body: blob,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `올리지 못했어요 (${res.status})`);
+  toast("올렸어요. 발표를 시작해요.");
+  await startSlides(data.id);
+}
+
 $("#file-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
   if (/\.pptx?$/i.test(file.name)) {
-    alert("PowerPoint 파일은 바로 띄울 수 없어요.\n\nPowerPoint에서 '파일 → 내보내기 → PDF/XPS 문서 만들기'(또는 '다른 이름으로 저장 → PDF')로 저장한 뒤 그 PDF를 올려 주세요.\n\n애니메이션·동영상이 꼭 필요하면 '🖥️ 화면 공유'로 PowerPoint 창을 공유하세요.");
+    alert("PowerPoint 파일은 바로 띄울 수 없어요.\n\nPowerPoint에서 '파일 → 내보내기 → PDF/XPS 문서 만들기'(또는 '다른 이름으로 저장 → PDF')로 저장한 뒤 그 PDF를 올려 주세요."
+      + (CFG?.drive_picker ? "\n\n또는 PowerPoint 파일을 구글 드라이브에 올려 두고 '📁 구글 드라이브에서 열기'로 고르면 바로 띄울 수 있어요." : "")
+      + "\n\n애니메이션·동영상이 꼭 필요하면 '🖥️ 화면 공유'로 PowerPoint 창을 공유하세요.");
     return;
   }
-  toast("자료를 올리는 중…", 20000);
-  try {
-    const res = await fetch(`/api/live/classes/${CODE}/files?name=${encodeURIComponent(file.name)}`, {
-      method: "POST", headers: { "Content-Type": "application/pdf" }, body: file,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || `올리지 못했어요 (${res.status})`);
-    toast("올렸어요. 발표를 시작해요.");
-    await startSlides(data.id);
-  } catch (err) {
-    toast(err.message, 6000);
-  }
+  try { await uploadPdf(file, file.name); } catch (err) { toast(err.message, 6000); }
 });
+
+/* ───── 구글 드라이브에서 열기 ─────
+ * 선생님 브라우저 안에서만 동작한다: 구글 파일 선택 창(Picker)으로 파일 하나를 고르면
+ * 그 파일만 읽을 수 있는 권한(drive.file)으로 PDF를 받아 이 수업 자료로 올린다. 서버는 구글 토큰을 받지도 저장하지도 않는다. */
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
+const MIME = {
+  pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ppt: "application/vnd.ms-powerpoint",
+  gslides: "application/vnd.google-apps.presentation",
+  gdoc: "application/vnd.google-apps.document",
+};
+const drive = { token: null, expires: 0 };
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)?.dataset.loaded) return resolve();
+    const el = h("script", { src, async: true });
+    el.onload = () => { el.dataset.loaded = "1"; resolve(); };
+    el.onerror = () => reject(new Error("구글 화면을 불러오지 못했어요. 인터넷 연결을 확인해 주세요."));
+    document.head.append(el);
+  });
+}
+
+async function driveToken() {
+  if (drive.token && Date.now() < drive.expires) return drive.token;
+  await loadScript("https://accounts.google.com/gsi/client");
+  return new Promise((resolve, reject) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: CFG.google_client_id, scope: DRIVE_SCOPE, hint: CFG.user?.email,
+      callback: (r) => {
+        if (r.error) return reject(new Error("구글 드라이브 사용 권한을 받지 못했어요."));
+        drive.token = r.access_token;
+        drive.expires = Date.now() + (Number(r.expires_in || 3600) - 60) * 1000;
+        resolve(r.access_token);
+      },
+      error_callback: (err) => reject(new Error(err?.type === "popup_closed" ? "구글 창을 닫았어요."
+        : "구글 창을 열지 못했어요. 브라우저의 팝업 차단을 풀어 주세요.")),
+    });
+    client.requestAccessToken({ prompt: "" });
+  });
+}
+
+async function pickDriveFile(token) {
+  await loadScript("https://apis.google.com/js/api.js");
+  await new Promise((resolve) => gapi.load("picker", resolve));
+  return new Promise((resolve) => {
+    const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setMimeTypes(Object.values(MIME).join(",")).setMode(google.picker.DocsViewMode.LIST).setIncludeFolders(true);
+    new google.picker.PickerBuilder()
+      .addView(view)
+      .setOAuthToken(token).setDeveloperKey(CFG.drive_picker.api_key).setAppId(CFG.drive_picker.app_id)
+      .setLocale("ko").setTitle("발표할 자료 고르기")
+      .setCallback((d) => {
+        if (d.action === google.picker.Action.PICKED) resolve(d.docs[0]);
+        else if (d.action === google.picker.Action.CANCEL) resolve(null);
+      })
+      .build().setVisible(true);
+  });
+}
+
+async function driveFetch(url, token, opts = {}) {
+  const res = await fetch(url, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) } });
+  if (!res.ok) {
+    let msg = "";
+    try { msg = (await res.json()).error?.message || ""; } catch { /* 본문 없음 */ }
+    if (/exportSizeLimitExceeded|too large/i.test(msg)) throw new Error("파일이 너무 커서 PDF로 바꿀 수 없어요(구글 제한 10MB). PDF로 저장해서 올려 주세요.");
+    throw new Error(`구글 드라이브에서 파일을 받지 못했어요 (${res.status}).`);
+  }
+  return res;
+}
+
+/** 고른 파일을 PDF로 받는다. PowerPoint는 잠시 구글 프레젠테이션으로 바꿔 PDF로 내보내고 그 사본은 지운다. */
+async function driveFileAsPdf(doc, token) {
+  const id = encodeURIComponent(doc.id);
+  const base = (doc.name || "자료").replace(/\.(pdf|pptx?)$/i, "");
+  if (doc.mimeType === MIME.pdf) {
+    return [await (await driveFetch(`${DRIVE_API}/${id}?alt=media&supportsAllDrives=true`, token)).blob(), `${base}.pdf`];
+  }
+  const exportPdf = async (fid) => (await driveFetch(`${DRIVE_API}/${encodeURIComponent(fid)}/export?mimeType=application/pdf`, token)).blob();
+  if (doc.mimeType === MIME.gslides || doc.mimeType === MIME.gdoc) return [await exportPdf(doc.id), `${base}.pdf`];
+  if (doc.mimeType === MIME.pptx || doc.mimeType === MIME.ppt) {
+    const copy = await (await driveFetch(`${DRIVE_API}/${id}/copy?supportsAllDrives=true`, token, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: `(임시·수업 자료 변환) ${base}`, mimeType: MIME.gslides }),
+    })).json();
+    try {
+      return [await exportPdf(copy.id), `${base}.pdf`];
+    } finally {
+      fetch(`${DRIVE_API}/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+        .catch(() => { /* 사본은 드라이브 휴지통에서 지울 수 있음 */ });
+    }
+  }
+  throw new Error("PDF, PowerPoint, 구글 프레젠테이션·문서만 띄울 수 있어요.");
+}
+
+async function openFromDrive() {
+  try {
+    const token = await driveToken();
+    const doc = await pickDriveFile(token);
+    if (!doc) return;
+    toast(doc.mimeType === MIME.pdf ? "드라이브에서 받는 중…" : "PDF로 바꾸는 중… (몇 초 걸려요)", 30000);
+    const [blob, name] = await driveFileAsPdf(doc, token);
+    await uploadPdf(blob, name);
+  } catch (err) {
+    toast(err.message, 7000);
+  }
+}
 
 const LEAVE_REASONS = {
   leave: "나가기 버튼", closed: "창 닫음·새로고침", network: "연결 끊김", kicked: "내보냄", ended: "수업 종료", server: "서버 재시작",

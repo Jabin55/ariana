@@ -173,6 +173,7 @@ Google Workspace for Education은 **만 18세 미만 학생이 관리자가 허�
 | `ANTHROPIC_API_KEY` | (선택) AI 조교용 Claude API 키. 비우면 AI 조교만 동작하지 않음 |
 | `MIC_LOCK` | (선택) `0`이면 새 수업에서 학생이 마이크를 자유롭게 켬. 기본은 선생님이 켜고 끔 |
 | `LOW_BANDWIDTH` | (선택) `0`이면 새 수업에서 데이터 절약 모드를 끈 채로 시작 |
+| `GOOGLE_API_KEY`, `GOOGLE_APP_ID` | (선택) 선생님이 발표 자료를 **구글 드라이브에서 열기**. 아래 '구글 드라이브에서 열기' 참고 |
 | `OPERATOR_NAME` | 개인정보 처리방침·이용약관·보호자 안내문에 들어갈 **운영 기관** (예: `가나고등학교`) |
 | `PRIVACY_OFFICER` | **개인정보 보호책임자** (예: `교감 홍길동`) |
 | `PRIVACY_CONTACT` | 개인정보 문의 연락처 (예: `02-123-4567`) |
@@ -180,6 +181,12 @@ Google Workspace for Education은 **만 18세 미만 학생이 관리자가 허�
 | `SERVER_REGION` | (선택) 서버 위치 문구. 기본: `독일 또는 핀란드 (EU)` — 서버를 만든 곳(예: `독일 뉘른베르크`)으로 바꾸세요 |
 
 데이터베이스 주소, 로그인 쿠키 서명 키, 화상 서버 키는 설치 스크립트가 만들어 자동으로 넣습니다.
+
+**(선택) 구글 드라이브에서 열기** — 선생님이 수업 중 '📄 자료 발표 → 📁 구글 드라이브에서 열기'로 드라이브의 PDF·PowerPoint·구글 프레젠테이션을 골라 바로 띄웁니다(PowerPoint·구글 프레젠테이션은 PDF로 바꿔서). 선생님이 **고른 파일 하나만** 여는 권한(`drive.file`)이라 **구글의 별도 앱 검토가 필요 없고**, 모든 과정이 선생님 브라우저 안에서 일어나 서버는 구글 토큰을 받지도 저장하지도 않습니다.
+1. 2)의 같은 Google Cloud 프로젝트에서 **API 및 서비스 → 라이브러리**에서 **Google Picker API** 와 **Google Drive API** 를 사용 설정합니다.
+2. **사용자 인증 정보 → API 키 만들기** → 키 제한: 애플리케이션 제한 **웹사이트**(`https://class.…/*`), API 제한 **Google Picker API**. 이 키를 `GOOGLE_API_KEY` 에.
+3. **Cloud 콘솔 첫 화면(대시보드)의 프로젝트 번호**(숫자)를 `GOOGLE_APP_ID` 에. 예: `live-config GOOGLE_API_KEY=AIza… GOOGLE_APP_ID=123456789012`
+4. 학교 워크스페이스 관리자가 외부 앱을 막아 둔 경우, 선생님 계정도 3)처럼 이 앱 허용이 필요할 수 있습니다.
 
 > **다른 방법:** 수업 사이트를 Render(`render.yaml` 의 `live-class`)에, 데이터베이스를 Neon(프랑크푸르트)에 두고 화상 서버만 Hetzner에 둘 수도 있습니다.
 > 이때는 위 값과 함께 `DATABASE_URL`, `SECRET_KEY`, `LIVEKIT_URL`·`LIVEKIT_API_KEY`·`LIVEKIT_API_SECRET` 를 Render 환경 변수에 넣어야 하고,

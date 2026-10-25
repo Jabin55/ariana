@@ -27,6 +27,10 @@ from app.policy import POLICY_VERSION, policy_ready
 router = APIRouter()
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+# (선택) 선생님이 구글 드라이브에서 발표 자료를 고르는 '드라이브에서 열기'용: API 키(웹사이트 주소로 제한)와 프로젝트 번호.
+# 선생님이 고른 파일만 여는 권한(drive.file)이라 구글의 별도 앱 검토가 필요 없다. 서버는 구글 토큰을 저장하지 않는다.
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
 ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in os.environ.get("ALLOWED_DOMAINS", "").split(",") if d.strip()}
 TEACHER_EMAILS = {e.strip().lower() for e in os.environ.get("TEACHER_EMAILS", "").split(",") if e.strip()}
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
@@ -234,6 +238,8 @@ async def me(request: Request):
     return {
         "user": public_user(u) if u else None,
         "google_client_id": GOOGLE_CLIENT_ID, "dev_login": DEV_LOGIN,
+        "drive_picker": {"api_key": GOOGLE_API_KEY, "app_id": GOOGLE_APP_ID}
+        if GOOGLE_CLIENT_ID and GOOGLE_API_KEY and GOOGLE_APP_ID else None,
         "schools": SCHOOLS, "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
         "policy_version": POLICY_VERSION, "policy_ready": policy_ready(),
     }

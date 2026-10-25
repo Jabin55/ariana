@@ -964,3 +964,12 @@ def test_course_materials_for_absent_students(monkeypatch, tmp_path):
     me = absent.get("/api/me").json()["user"]["id"]
     t.post(f"/api/courses/{cid}/enrollments/{me}", json={"status": "removed"})
     assert absent.get("/api/materials").json()["classes"] == []
+
+
+def test_drive_picker_config(monkeypatch):
+    c = TestClient(app)
+    assert c.get("/api/me").json()["drive_picker"] is None  # 설정하지 않으면 버튼이 안 보인다
+    monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "x.apps.googleusercontent.com")
+    monkeypatch.setattr(auth, "GOOGLE_API_KEY", "AIzaTEST")
+    monkeypatch.setattr(auth, "GOOGLE_APP_ID", "123")
+    assert c.get("/api/me").json()["drive_picker"] == {"api_key": "AIzaTEST", "app_id": "123"}
