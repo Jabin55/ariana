@@ -940,6 +940,9 @@ def test_policy_pages(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert "Anthropic" in c.get("/live/privacy").text and "AI 조교" in c.get("/live/terms").text
     assert c.get("/api/me").json()["policy_ready"] is True
+    assert "가나고등학교&lt;script&gt;장 귀하" in c.get("/live/notice").text  # 동의서 받는 곳: 기본은 운영 기관장
+    monkeypatch.setenv("CONSENT_TO", "울산광역시교육청")
+    assert "울산광역시교육청 귀하" in c.get("/live/notice").text
     # 강사 신청서의 동의는 이용약관 확인으로도 기록된다
     g = TestClient(app)
     g.post("/api/auth/dev", json={"email": "guest@gmail.com"})

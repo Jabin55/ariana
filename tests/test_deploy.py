@@ -79,6 +79,9 @@ def test_setup_generates_configs_and_keeps_keys(tmp_path):
     shown = subprocess.run([str(tmp_path / "bin" / "live-config")], env=cfg, capture_output=True, text=True).stdout
     assert "secret123456" not in shown and "123-abc" in shown  # API 키는 가려서 보여 준다
 
+    # 주소를 적지 않고 다시 실행해도(live-update) 같은 주소, 설정 이름이 늘어나도 live-config 가 따라온다
+    assert "https://class.49-12-34-56.sslip.io" in run_setup(tmp_path)
+    assert "CONSENT_TO" in (tmp_path / "bin" / "live-config").read_text()
     # 다시 실행해도(내 도메인으로 바꿔도) 키·비밀번호·선생님 설정은 그대로
     out2 = run_setup(tmp_path, "class.myschool.kr")
     assert "https://class.myschool.kr" in out2
@@ -88,3 +91,5 @@ def test_setup_generates_configs_and_keeps_keys(tmp_path):
     assert auto2["LIVEKIT_URL"] == "wss://rtc.class.myschool.kr"
     assert auto2["SECRET_KEY"] == auto["SECRET_KEY"] and auto2["DATABASE_URL"] == auto["DATABASE_URL"]
     assert env_dict(live / "app.env")["GOOGLE_CLIENT_ID"] == "123-abc.apps.googleusercontent.com"
+    # 도메인을 한 번 바꾸면 그다음 실행(live-update)에서도 그 도메인을 쓴다
+    assert "https://class.myschool.kr" in run_setup(tmp_path)

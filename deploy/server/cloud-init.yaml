@@ -47,10 +47,13 @@ write_files:
       rand() { openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
 
       IP="${SERVER_IP:-$(curl -4 -fsS --max-time 10 https://api.ipify.org || hostname -I | awk '{print $1}')}"
-      SITE="${1:-class.${IP//./-}.sslip.io}"
+      # 주소: 적으면 그 도메인, 안 적으면 지난번 주소(없으면 무료 주소) — 다시 실행해도 내 도메인이 풀리지 않게
+      SAVED_SITE="$(cat "$DIR/site" 2>/dev/null || true)"
+      SITE="${1:-${SAVED_SITE:-class.${IP//./-}.sslip.io}}"
       RTC="rtc.$SITE"
       TURN="turn.$SITE"
       mkdir -p "$DIR" "$DIR/backups" "$DIR/slides" "$DIR/files"
+      echo "$SITE" > "$DIR/site"
       chmod 700 "$DIR" "$DIR/backups"  # 학생 개인정보(백업)가 들어 있으므로 관리자만
 
       # ── 키·비밀번호: 처음 한 번 만들고 계속 같은 것을 쓴다
@@ -68,7 +71,7 @@ write_files:
       fi
 
       # ── 선생님이 바꾸는 설정 (처음 한 번만 만든다. 이후에는 live-config 로 고친다)
-      SETTING_NAMES="GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY LOW_BANDWIDTH MIC_LOCK OPERATOR_NAME PRIVACY_OFFICER PRIVACY_CONTACT RETENTION SERVER_REGION GOOGLE_API_KEY GOOGLE_APP_ID ALLOW_RECORDING"
+      SETTING_NAMES="GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY LOW_BANDWIDTH MIC_LOCK OPERATOR_NAME PRIVACY_OFFICER PRIVACY_CONTACT RETENTION SERVER_REGION GOOGLE_API_KEY GOOGLE_APP_ID ALLOW_RECORDING CONSENT_TO"
       if [ ! -f "$DIR/app.env" ]; then
         {
           echo "# 수업 사이트 설정. 바꾸려면 콘솔에서:  live-config 이름=값   (예: live-config ADMIN_EMAILS=me@gmail.com)"
@@ -302,11 +305,13 @@ write_files:
       cat > "$BIN/live-update" <<EOF
       #!/usr/bin/env bash
       # 수업 사이트를 GitHub의 최신 버전으로 올린다 (수업이 없는 시간에 실행할 것)
+      # 설정 파일·관리 명령도 새 버전에 맞춰 다시 만든다 (키·주소·선생님 설정은 그대로)
       set -euo pipefail
       cd "$DIR"
       git -C src pull --ff-only
+      LIVE_DIR="$DIR" LIVE_BIN="$BIN" SKIP_SYSTEM=1 bash src/deploy/server/setup.sh >/dev/null
       docker compose build app
-      docker compose up -d app
+      docker compose up -d
       echo "✅ 최신 버전으로 올렸어요."
       EOF
 

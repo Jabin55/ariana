@@ -34,6 +34,8 @@ def settings() -> dict:
         "contact": setting("PRIVACY_CONTACT", MISSING),
         "retention": setting("RETENTION", "수강한 학년도가 끝난 날부터 1년"),
         "region": setting("SERVER_REGION", "독일 또는 핀란드 (EU)"),
+        # 보호자 동의서를 받는 곳 (예: 울산광역시교육청). 비우면 '운영 기관장'
+        "consent_to": setting("CONSENT_TO", f"{setting('OPERATOR_NAME', MISSING)}장"),
         "ai": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "rec": os.environ.get("ALLOW_RECORDING", "1") != "0",
     }
@@ -232,6 +234,6 @@ async def notice():
 <tr><td>보호자</td><td>이름 ______________ (서명) &nbsp; 학생과의 관계 ________</td></tr>
 <tr><td>날짜</td><td>20____년 ____월 ____일</td></tr>
 </tbody></table>
-<p style="text-align:right">{op} 장 귀하</p>
+<p style="text-align:right">{e(s['consent_to'])} 귀하</p>
 </div>
 """, printable=True)
