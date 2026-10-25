@@ -1158,10 +1158,10 @@ img.me-avatar { object-fit: cover; }
 .site-header .grow { flex: 1; }
 .brand { font-size: 1.8rem; }
 .brand-mark { width: 36px; height: 36px; border-radius: 10px; margin-right: 9px; }
-.site-menu { position: sticky; top: 0; z-index: 30; background: #fbf3d9; /* 연노랑·아이보리 */
-  border-top: 1px solid #efe2bb; border-bottom: 1px solid #efe2bb; }
-.site-menu .site-nav a:hover { background: #f4e7bf; }
-@media (prefers-color-scheme: dark) { .site-menu { background: #2a2618; border-color: #3a3422; } .site-menu .site-nav a:hover { background: #3a3422; } }
+.site-menu { position: sticky; top: 0; z-index: 30; background: #f5f1ea; /* 따뜻한 미색: 초록·주황 어느 쪽과도 어울리게 */
+  border-top: 1px solid #e6dfd3; border-bottom: 1px solid #e6dfd3; }
+.site-menu .site-nav a:hover { background: rgba(120, 100, 70, 0.08); }
+@media (prefers-color-scheme: dark) { .site-menu { background: #1d1b18; border-color: #2e2a24; } .site-menu .site-nav a:hover { background: #2e2a24; } }
 .site-menu-in { max-width: 1160px; margin: 0 auto; padding: 8px 12px; }
 .site-menu .site-nav { display: flex; gap: 6px; overflow-x: auto; }
 .site-menu .site-nav a { flex: 1; text-align: center; padding: 10px 12px; border-radius: 999px; color: var(--text);
