@@ -304,7 +304,7 @@ async def save_profile(p: Profile, request: Request):
     values = {"name": name, "school": school}
     if needs_terms(u):
         if not p.agree:
-            raise HTTPException(400, "이용약관과 개인정보 처리방침을 확인하고 동의해 주세요.")
+            raise HTTPException(400, "먼저 이용약관과 개인정보 수집·이용에 동의해 주세요.")
         values.update(terms_version=POLICY_VERSION, terms_at=time.time())
     if u["role"] == "student":
         values["self_role"] = "student"  # 학생 정보를 적었으면 학생을 고른 것
@@ -315,6 +315,26 @@ async def save_profile(p: Profile, request: Request):
     def save():
         with db.engine.begin() as c:
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**values))
+
+    await db.run(save)
+    return public_user(await db.run(_load_with_role, u["id"]))
+
+
+class Consent(BaseModel):
+    terms: bool = False  # 이용약관 동의 (필수)
+    privacy: bool = False  # 개인정보 수집·이용 동의 (필수)
+
+
+@router.post("/api/me/consent")
+async def consent(req: Consent, request: Request):
+    """회원가입 첫 단계: 학생·선생님 모두 이용약관과 개인정보 수집·이용에 동의해야 다음으로 간다."""
+    u = await require_user(request, profile=False)
+    if not (req.terms and req.privacy):
+        raise HTTPException(400, "이용약관과 개인정보 수집·이용에 모두 동의해야 가입할 수 있어요.")
+
+    def save():
+        with db.engine.begin() as c:
+            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(terms_version=POLICY_VERSION, terms_at=time.time()))
 
     await db.run(save)
     return public_user(await db.run(_load_with_role, u["id"]))

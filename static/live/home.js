@@ -3,7 +3,7 @@ const params = new URLSearchParams(location.search);
 let ME = null;
 let CONFIG = null;
 
-const views = ["login-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
+const views = ["login-view", "consent-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
   $("#mypage-bar").hidden = id === "login-view"; // 로그인 전에는 첫 화면(소개·시작하기)만
@@ -28,6 +28,7 @@ async function boot() {
   ME = CONFIG.user;
   window.WaesolHeader?.render(ME); // 이름·내 정보·로그아웃은 맨 위 머리글에만
   if (!ME) return showLogin();
+  if (ME.needs_terms) return showConsent(); // 회원가입 첫 단계: 학생·선생님 모두 약관 동의부터
   if (params.get("profile") && !ME.role_choice) return showProfile();
   if (ME.role_choice) {
     // 학교 계정으로 처음 들어옴: 첫 화면에서 고른 것(학생/선생님)이 있으면 그대로, 없으면 물어본다
@@ -43,6 +44,41 @@ async function boot() {
   if (ME.role === "teacher") return showTeacher();
   return showStudent();
 }
+
+/* ───── 회원가입 1단계: 이용약관 · 개인정보 수집·이용 동의 ───── */
+
+async function showConsent() {
+  show("consent-view");
+  $("#lead").hidden = true;
+  for (const id of ["#c-all", "#c-terms", "#c-privacy"]) $(id).checked = false;
+  $("#c-next").disabled = true;
+  try {
+    const t = await api("/api/consent");
+    $("#c-terms-text").innerHTML = t.terms; // 서버가 만든 약관 문서
+    $("#c-privacy-text").innerHTML = t.privacy;
+  } catch (err) { $("#consent-error").textContent = err.message; }
+}
+function consentChanged() {
+  const ok = $("#c-terms").checked && $("#c-privacy").checked;
+  $("#c-all").checked = ok;
+  $("#c-next").disabled = !ok;
+}
+document.querySelectorAll(".c-one").forEach((c) => c.addEventListener("change", consentChanged));
+$("#c-all").addEventListener("change", (e) => {
+  $("#c-terms").checked = $("#c-privacy").checked = e.target.checked;
+  consentChanged();
+});
+$("#c-cancel").addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  location.href = "/live/home";
+});
+$("#c-next").addEventListener("click", async () => {
+  $("#consent-error").textContent = "";
+  try {
+    await api("/api/me/consent", { terms: $("#c-terms").checked, privacy: $("#c-privacy").checked });
+    boot();
+  } catch (err) { $("#consent-error").textContent = err.message; }
+});
 
 /* ───── 로그인 ───── */
 
@@ -166,10 +202,9 @@ function showProfile() {
   } else {
     $("#p-school").value = ME.school || "";
   }
-  // 처음 로그인했거나 약관이 바뀌었으면 확인(동의)을 함께 받는다
-  $("#p-agree-wrap").hidden = !ME.needs_terms;
-  $("#p-agree").required = !!ME.needs_terms;
-  $("#p-agree").checked = false;
+  // 처음 가입할 때(정보를 아직 안 적음): 가입 단계 표시와 안내
+  $("#profile-steps").hidden = !ME.needs_profile;
+  $("#p-agree-note").hidden = !ME.needs_profile;
   $("#p-agree-note").textContent = student
     ? "수업 영상은 녹화하지 않아요. 수업 화면을 녹화·캡처해 올리지 말아 주세요. 만 14세 미만 학생은 학교가 보호자 동의를 받은 뒤 이용할 수 있어요."
     : "수업에서 알게 된 학생 개인정보는 수업 목적으로만 쓰고, 내려받은 자료는 강의가 끝나면 지체 없이 지워 주세요.";
@@ -192,7 +227,6 @@ $("#profile").addEventListener("submit", async (e) => {
   const body = {
     name: $("#p-name").value.trim(),
     school: ME.role === "student" && CONFIG.schools.length ? $("#p-school-select").value : $("#p-school").value.trim(),
-    agree: $("#p-agree").checked,
   };
   if (ME.role === "student") {
     Object.assign(body, { grade: Number($("#p-grade").value), class_no: Number($("#p-class").value), number: Number($("#p-number").value) });
@@ -268,6 +302,7 @@ async function showGuest(fromTeacher = false) {
   show("guest-view");
   $("#lead").hidden = true;
   $("#apply-back").hidden = !fromTeacher;
+  $("#guest-steps").hidden = fromTeacher || ME.memberships.length > 0;
   $("#guest-hint").hidden = fromTeacher;
   $("#to-student").hidden = fromTeacher || !ME.can_be_student;
   if (sessionGet("signup_as") === "student" && !ME.can_be_student) {

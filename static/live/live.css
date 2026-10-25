@@ -985,3 +985,22 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .notice-editor input:not([type=checkbox]), .notice-editor textarea { width: 100%; }
 #notice-tools { display: inline-flex; gap: 6px; }
 .site-main > #notice-tools, #notice-tools:has(.notice-editor) { display: block; }
+
+/* 회원가입: 단계 표시와 약관 동의 */
+.join-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 12px; counter-reset: step; flex-wrap: wrap; }
+.join-steps li { counter-increment: step; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+.join-steps li::before { content: counter(step); display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--surface-2, #eef0f3); font-weight: 700; font-size: 0.8rem; }
+.join-steps li:not(:last-child)::after { content: "›"; margin-left: 4px; color: var(--border); }
+.join-steps li.done::before { content: "✓"; background: var(--accent-soft); color: var(--accent); }
+.join-steps li.now { color: var(--text, #222); font-weight: 700; }
+.join-steps li.now::before { background: var(--accent); color: #fff; }
+.consent-card .consent-all { display: flex; padding: 12px; border: 2px solid var(--accent); border-radius: 10px; margin-bottom: 10px; font-size: 1.02rem; }
+.consent-item { margin-bottom: 12px; }
+.consent-item > .switch { display: flex; margin-bottom: 6px; }
+.consent-text { max-height: 190px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 0.85rem;
+  line-height: 1.7; background: var(--surface-2, #f7f8fa); }
+.consent-text h2 { font-size: 0.92rem; margin: 10px 0 4px; }
+.consent-text p, .consent-text ul { margin: 4px 0; }
+.consent-table th { white-space: nowrap; text-align: left; vertical-align: top; width: 7.5em; }
+.req { color: #c0392b; font-size: 0.85rem; }

@@ -1584,3 +1584,22 @@ def test_ulsan_school_list_is_built_in(monkeypatch):
                                             "agree": True}).status_code == 400
     assert st.post("/api/me/profile", json={"name": "학생", "school": "신정고등학교", "grade": 1, "class_no": 1, "number": 1,
                                             "agree": True}).status_code == 200
+
+
+def test_signup_starts_with_two_required_consents():
+    """회원가입 첫 단계: 학생·선생님 모두 이용약관과 개인정보 수집·이용에 동의해야 다음으로"""
+    texts = TestClient(app).get("/api/consent").json()
+    assert "이용약관" not in texts["privacy"] and "수집·이용 목적" in texts["privacy"] and "거부할 권리" in texts["privacy"]
+    assert "제1조" in texts["terms"]
+    for email in ("st1@s.school.kr", "guest@gmail.com"):
+        c = login(email)
+        assert c.get("/api/me").json()["user"]["needs_terms"]
+        assert c.post("/api/me/consent", json={"terms": True}).status_code == 400  # 하나만은 안 됨
+        assert c.post("/api/me/consent", json={"terms": True, "privacy": False}).status_code == 400
+        me = c.post("/api/me/consent", json={"terms": True, "privacy": True}).json()
+        assert me["needs_terms"] is False
+    # 동의한 뒤에는 정보 입력에 동의 칸이 필요 없다
+    st = login("st1@s.school.kr")
+    st.post("/api/me/self-role", json={"role": "student"})
+    assert st.post("/api/me/profile", json={"name": "학생", "school": SCHOOL, "grade": 1, "class_no": 1, "number": 1}).status_code == 200
+    assert TestClient(app).post("/api/me/consent", json={"terms": True, "privacy": True}).status_code == 401
