@@ -1191,3 +1191,15 @@ img.me-avatar { object-fit: cover; }
 .notice-files a { font-weight: 600; word-break: break-all; color: var(--brand); text-decoration: none; }
 .notice-files a:hover { text-decoration: underline; }
 .notice-attach { display: grid; gap: 4px; margin: 8px 0; }
+/* 참여학교 담당: 학생 × 과목 표 — 칸을 가운데로 맞추고, 학생 칸은 묶어서 */
+table.att.school-table { table-layout: fixed; min-width: 860px; }
+table.att.school-table th, table.att.school-table td { text-align: center; vertical-align: middle; white-space: normal; min-width: 0; }
+table.att.school-table th:nth-child(1) { width: 40px; }
+table.att.school-table th:nth-child(2) { width: 14%; }
+table.att.school-table th:nth-child(3), table.att.school-table th:nth-child(4) { width: 7%; }
+table.att.school-table th:nth-child(5) { width: 10%; }
+table.att.school-table th:nth-child(6) { width: 14%; }
+table.att.school-table th:nth-child(7) { width: 18%; }
+table.att.school-table th:nth-child(8) { width: 10%; }
+table.att.school-table tr.cont-row td { border-top: 1px dashed var(--border); }
+table.att.school-table .quit-cell { justify-content: center; flex-wrap: wrap; }

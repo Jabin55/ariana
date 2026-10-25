@@ -753,10 +753,9 @@ function hubStudents(ov, classes) {
 
 let schoolData = null; // 참여학교 담당: 우리 학교 학생
 const schoolPick = new Set(); // 체크한 학생 id
-const schoolOpen = new Set(); // 수강 강좌를 펼친 학생
 const schoolQ = {};
 
-/** 참여학교 담당 = 수강생 관리: 수업신청자 관리와 같은 검색 칸 + 학생 목록(이름을 누르면 들은 강좌) + 탈퇴 승인 */
+/** 참여학교 담당 = 수강생 관리: 수업신청자 관리와 같은 검색 칸 + 학생·과목 목록 + 탈퇴 승인 */
 async function loadSchool() {
   const box = $("#school-list");
   if (!schoolData) fill(box, h("p", { class: "muted" }, "불러오는 중…"));
@@ -818,6 +817,17 @@ async function loadSchool() {
 }
 
 /** 검색 조건에 맞는 강좌가 있는 학생 (강좌 조건이 없으면 모든 학생) */
+/** 검색 칸의 과목 조건 (조건이 없으면 null) */
+function schoolCourseFilter() {
+  const q = schoolQ;
+  const has = (v, w) => !w || (v || "").includes(w);
+  const courseCond = q.term || q.subject || (q.status && q.status !== "none") || q.teacher || q.from || q.to;
+  if (!courseCond) return null;
+  return (c) => (!q.term || c.term === q.term) && (has(c.subject, q.subject) || has(c.title, q.subject))
+    && (!q.status || q.status === "none" || c.status === q.status) && has(c.instructor, q.teacher)
+    && (!q.from || kstDate(c.requested_at) >= q.from) && (!q.to || kstDate(c.requested_at) <= q.to);
+}
+
 function filteredSchool() {
   const q = schoolQ;
   const has = (v, w) => !w || (v || "").includes(w);
@@ -861,14 +871,19 @@ function drawSchoolResult(box) {
     toast(action === "approve" ? `${ok}명의 탈퇴를 승인했어요.` : `${ok}명의 탈퇴 신청을 반려했어요.`);
     loadSchool();
   };
+  // 한 줄 = 학생 한 명의 과목 하나 (과목이 없으면 한 줄). 과목 조건으로 찾았으면 맞는 과목만
+  const pick = schoolCourseFilter();
+  const coursesOf = (x) => koSort(pick ? x.courses.filter(pick) : x.courses, (c) => `${c.term} ${c.subject}`);
+  const quitText = (x) => (x.gone ? `탈퇴 완료 (${kstDate(x.approved_at)})` : x.withdraw ? "탈퇴 신청" : "-");
+  const HEAD = ["소속학교", "학년", "반", "이름", "거점학교", "과목명", "승인여부", "탈퇴여부"];
   const csv = () => {
-    const head = ["번호", "학생이름", "학번", "학년", "반", "소속학교", "학기", "과목", "거점학교", "담당교사", "신청일", "신청상태", "탈퇴"];
-    const lines = list.flatMap((x, i) => (x.courses.length ? x.courses : [null]).map((c) => [list.length - i, x.name, x.student_no,
-      x.grade || "", x.class_no || "", x.school, c?.term || "", c?.subject || "", c?.hub || "", c?.instructor || "",
-      c ? kstDate(c.requested_at) : "", c ? ENROLL_NAME[c.status] || c.status : x.gone ? "-" : "수강신청 없음",
-      x.gone ? `탈퇴 완료 (${kstDate(x.approved_at)})` : x.withdraw ? "신청" : ""]));
+    const lines = list.flatMap((x) => {
+      const cs = coursesOf(x);
+      return (cs.length ? cs : [null]).map((c) => [x.school, x.grade ? `${x.grade}학년` : "", x.class_no ? `${x.class_no}반` : "", x.name,
+        c?.hub || "", c?.subject || "", c ? ENROLL_NAME[c.status] || c.status : "", quitText(x)]);
+    });
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
-    const text = "﻿" + [head, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
+    const text = "\ufeff" + [HEAD, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
     const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: `우리학교_수강생_${today()}.csv` });
     document.body.append(a);
     a.click();
@@ -878,49 +893,34 @@ function drawSchoolResult(box) {
     for (const x of list) { if (x.gone) continue; if (e.target.checked) schoolPick.add(x.user_id); else schoolPick.delete(x.user_id); }
     box.querySelectorAll("tbody input[type=checkbox]").forEach((c) => { c.checked = e.target.checked; });
   } });
-  const COLS = 10;
-  const rows = list.flatMap((x, i) => {
-    const open = schoolOpen.has(x.user_id);
-    const w = quitsById.get(x.user_id);
-    if (x.gone) {
-      return [h("tr", { class: "gone-row", title: x.approved_by ? `${x.approved_by} 선생님이 탈퇴 승인` : "" },
-        h("td", {}), h("td", { class: "num" }, list.length - i), h("td", {}, x.name), h("td", {}, x.student_no || "-"),
-        h("td", { class: "num" }, x.grade ? `${x.grade}학년` : "-"), h("td", { class: "num" }, x.class_no ? `${x.class_no}반` : "-"),
-        h("td", {}, x.school || "-"), h("td", { class: "num" }, "-"), h("td", { class: "num" }, "-"),
-        h("td", {}, h("span", { class: "status rejected", title: x.reason ? `사유: ${x.reason}` : "" }, `탈퇴 완료 (${kstDate(x.approved_at)})`)))];
-    }
-    const main = h("tr", { class: open ? "open-row" : "" },
-      h("td", {}, h("input", { type: "checkbox", checked: schoolPick.has(x.user_id), onchange: (e) => {
-        if (e.target.checked) schoolPick.add(x.user_id); else schoolPick.delete(x.user_id);
-      } })),
-      h("td", { class: "num" }, list.length - i),
-      h("td", {}, h("button", { class: "link-btn name-btn", title: "들은 강좌 보기", onclick: () => {
-        if (open) schoolOpen.delete(x.user_id); else schoolOpen.add(x.user_id);
-        drawSchoolResult(box);
-      } }, `${open ? "▾" : "▸"} ${x.name}`)),
-      h("td", {}, x.student_no || "-"),
-      h("td", { class: "num" }, x.grade ? `${x.grade}학년` : "-"), h("td", { class: "num" }, x.class_no ? `${x.class_no}반` : "-"),
-      h("td", {}, x.school || "-"),
-      h("td", { class: "num" }, `${x.courses.filter((c) => c.status === "approved").length}개`),
-      h("td", { class: "num" }, `${x.courses.filter((c) => c.status === "pending").length || "-"}`),
-      h("td", {}, x.withdraw ? h("div", { class: "quit-cell" },
+  const COLS = HEAD.length + 1;
+  const rows = list.flatMap((x) => {
+    const cs = coursesOf(x);
+    const span = Math.max(1, cs.length);
+    const quit = x.gone
+      ? h("span", { class: "status rejected", title: x.approved_by ? `${x.approved_by} 선생님이 탈퇴 승인` : "" }, quitText(x))
+      : x.withdraw ? h("div", { class: "quit-cell" },
         h("span", { class: "status pending", title: x.withdraw_reason ? `사유: ${x.withdraw_reason}` : "" },
           `탈퇴 신청${x.withdraw_at ? ` (${kstDate(x.withdraw_at)})` : ""}`),
         h("button", { class: "small danger", onclick: () => decide("approve", x) }, "승인"),
-        h("button", { class: "small", onclick: () => decide("reject", x) }, "반려")) : "-"));
-    if (!open) return [main];
-    const detail = h("tr", { class: "detail-row" }, h("td", { colspan: COLS },
-      w ? h("div", { class: "banner warn", style: "margin:0 0 8px" },
-        `🚪 ${kstDate(w.requested_at)} 탈퇴 신청${w.reason ? ` · 사유: ${w.reason}` : ""}`,
-        w.studying.length ? ` · ⚠️ 아직 수강 중: ${w.studying.join(", ")}` : "") : null,
-      x.courses.length ? h("table", { class: "att inner-table" },
-        h("thead", {}, h("tr", {}, ["학기", "과목", "거점학교", "담당교사", "신청일", "상태"].map((t) => h("th", {}, t)))),
-        h("tbody", {}, koSort(x.courses, (c) => `${c.term} ${c.subject}`).map((c) => h("tr", {},
-          h("td", {}, c.term || "-"), h("td", {}, c.subject, c.archived ? h("span", { class: "muted" }, " (끝남)") : null),
-          h("td", {}, c.hub || "-"), h("td", {}, c.instructor || "-"), h("td", {}, kstDate(c.requested_at)),
-          h("td", {}, h("span", { class: `status ${c.status}` }, ENROLL_NAME[c.status] || c.status))))))
-        : h("p", { class: "muted", style: "margin:4px 0" }, "아직 수강신청한 강좌가 없어요.")));
-    return [main, detail];
+        h("button", { class: "small", onclick: () => decide("reject", x) }, "반려")) : "-";
+    // 학생 칸(체크·소속학교·학년·반·이름)과 탈퇴여부는 그 학생의 과목 줄을 묶어 한 칸으로
+    const who = [
+      h("td", { rowspan: span }, x.gone ? null : h("input", { type: "checkbox", checked: schoolPick.has(x.user_id), onchange: (e) => {
+        if (e.target.checked) schoolPick.add(x.user_id); else schoolPick.delete(x.user_id);
+      } })),
+      h("td", { rowspan: span }, x.school || "-"),
+      h("td", { rowspan: span }, x.grade ? `${x.grade}학년` : "-"),
+      h("td", { rowspan: span }, x.class_no ? `${x.class_no}반` : "-"),
+      h("td", { rowspan: span }, h("strong", {}, x.name)),
+    ];
+    const courseCells = (c) => c ? [h("td", {}, c.hub || "-"), h("td", {}, c.subject, c.archived ? h("span", { class: "muted" }, " (끝남)") : null),
+      h("td", {}, h("span", { class: `status ${c.status}` }, ENROLL_NAME[c.status] || c.status))]
+      : [h("td", {}, "-"), h("td", { class: "muted" }, x.gone ? "-" : "수강신청 없음"), h("td", {}, "-")];
+    const cls = x.gone ? "gone-row" : "";
+    if (!cs.length) return [h("tr", { class: cls }, ...who, ...courseCells(null), h("td", {}, quit))];
+    return cs.map((c, i) => h("tr", { class: `${cls} ${i ? "cont-row" : ""}` },
+      ...(i ? [] : who), ...courseCells(c), ...(i ? [] : [h("td", { rowspan: span }, quit)])));
   });
   fill(box,
     h("div", { class: "row", style: "margin-bottom:8px" },
@@ -930,8 +930,8 @@ function drawSchoolResult(box) {
       h("button", { class: "small", onclick: () => decide("reject") }, "탈퇴 반려"),
       h("span", { class: "grow" }),
       h("button", { class: "small", onclick: csv, disabled: !list.length }, "📥 엑셀 다운로드")),
-    h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["번호", "학생이름", "학번", "학년", "반", "소속학교", "수강 확정", "승인 대기", "탈퇴"].map((t) => h("th", {}, t)))),
+    h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table school-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, all), HEAD.map((t) => h("th", {}, t)))),
       h("tbody", {}, rows.length ? rows
         : h("tr", {}, h("td", { colspan: COLS, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 학생이 없어요."))))));
 }
