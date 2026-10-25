@@ -1,9 +1,10 @@
-/* 선생님 마이페이지: [특강/회의] [강좌 개설] [수강생 관리] [강좌 운영] [거점학교 운영] (+ 전체 관리) */
+/* 선생님 마이페이지: [특강/회의] [강좌 개설] [수강생 관리] [강좌 운영] [거점학교 운영] [참여학교 운영] (+ 전체 관리) */
 
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 강좌 운영에서 연 강좌
-let runSub = "notice"; // 그 강좌 안의 칸: notice(공지사항) open(수업 열기) record(수업 기록)
+let runSub = "notice"; // 그 강좌 안의 칸: notice(공지사항) open(수업 열기) record(수업 기록) activity(활동 관리)
+let hubSub = "approve"; // 거점학교 운영 안의 칸: approve(강의교사 승인) students(학생 관리)
 let detailTarget = null; // 수업 기록(출결·채점)을 그릴 자리
 function detailEl() { return detailTarget || $("#run-detail"); }
 
@@ -12,17 +13,21 @@ function today() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/* 권한: 거점학교 관리교사는 [거점학교 운영]만, 강사는 [거점학교 운영] 빼고 모두. 전체 관리자는 모두 */
 /** replaceChildren에 null·false가 섞여도 글자로 찍히지 않게 */
 function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "")); }
 
-function canTeach() {
-  return ME.is_admin || ME.lead_hubs.length > 0 || ME.teach_hubs.length > 0 || !ME.coordinator_hubs.length;
-}
+/* 권한: 강의교사는 [특강/회의]~[강좌 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 교사는 [참여학교 운영].
+   역할이 여럿이면 그 탭들이 모두 열리고, 전체 관리자는 모두 열린다. 권한이 없는 탭은 '권한이 없습니다.' */
 function canHub() { return ME.is_admin || ME.coordinator_hubs.length > 0; }
+function canSchool() { return ME.is_admin || (ME.participant_schools || []).length > 0; }
+function canTeach() {
+  // 설정으로 등록한 강사(거점학교 등록 없이)도 강의한다: 다른 역할만 가진 게 아니면 강의교사로 본다
+  return ME.is_admin || ME.lead_hubs.length > 0 || ME.teach_hubs.length > 0 || !(canHub() || canSchool());
+}
 function allowed(tab) {
   if (tab === "admin") return ME.is_admin;
   if (tab === "hub") return canHub();
+  if (tab === "school") return canSchool();
   return canTeach();
 }
 
@@ -32,10 +37,11 @@ function showTeacher() {
   $("#admin-tab").hidden = !ME.is_admin;
   const want = params.get("tab") === "courses" || params.get("tab") === "history" ? "run" : params.get("tab");
   if (params.get("course")) runCourseId = Number(params.get("course"));
-  const first = canTeach() ? "run" : "hub";
+  const first = canTeach() ? "run" : canHub() ? "hub" : "school";
   showHomeTab(want && document.querySelector(`#home-tabs [data-tab="${want}"]`) && allowed(want) ? want : first);
   if (canTeach()) loadTeacherCourses();
   if (canHub()) loadHub();
+  if (canSchool()) loadSchool();
   if (ME.is_admin) loadAdmin();
 }
 
@@ -51,6 +57,7 @@ function showHomeTab(name) {
   if (name === "run") renderRun();
   if (name === "admin") loadAdmin();
   if (name === "hub") loadHub();
+  if (name === "school") loadSchool();
 }
 $("#home-tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
@@ -60,7 +67,7 @@ $("#home-tabs").addEventListener("click", (e) => {
 async function loadTeacherCourses() {
   ({ courses: teacherCourses } = await api("/api/courses/mine"));
   const active = teacherCourses.filter((c) => !c.archived && !c.locked);
-  const pending = active.reduce((n, c) => n + c.pending + (c.can_finalize ? c.waiting : 0), 0);
+  const pending = active.reduce((n, c) => n + c.pending, 0);
   $("#pending-badge").textContent = pending;
   $("#pending-badge").hidden = !pending;
   if (!$('[data-panel="students"]').hidden) renderStudents();
@@ -183,7 +190,7 @@ function renderStudents() {
       h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, c.title),
         h("span", {}, `수강 확정 ${c.approved}명`),
         c.pending ? h("span", { class: "status pending" }, `내 승인 대기 ${c.pending}`) : null,
-        c.waiting ? h("span", { class: "status pending" }, `관리교사 승인 대기 ${c.waiting}`) : null,
+        approvalBadge(c),
         !c.lead ? null : h("label", { class: "switch", style: "font-size:0.9rem" }, h("input", { type: "checkbox", checked: c.open,
           onchange: async (e) => { await api(`/api/courses/${c.id}`, { open: e.target.checked }); loadTeacherCourses(); } }), "수강신청 받기")),
       courseInfo(c), members);
@@ -192,6 +199,18 @@ function renderStudents() {
 }
 
 /* ───────────────────────── 강좌 운영 ───────────────────────── */
+
+const APPROVAL = { pending: ["pending", "개설 승인 대기"], rejected: ["rejected", "개설 반려"] };
+function approvalBadge(c) {
+  const a = APPROVAL[c.approval];
+  return a ? h("span", { class: `status ${a[0]}` }, a[1]) : null;
+}
+/** 강좌 개설 승인 안내 (승인 전·반려) */
+function approvalNote(c) {
+  if (c.approval === "pending") return h("div", { class: "banner warn" }, "⏳ 거점학교 관리교사가 강좌 개설을 승인하면 학생들이 수강신청할 수 있고 수업을 열 수 있어요.");
+  if (c.approval === "rejected") return h("div", { class: "banner warn" }, `↩ 강좌 개설이 반려됐어요: ${c.approval_note || "사유 없음"} — '정보 수정'으로 고치면 다시 승인 대기가 돼요.`);
+  return null;
+}
 
 function thumbOf(c) {
   if (!window.courseThumb) return null;
@@ -210,13 +229,14 @@ function renderRun() {
     thumbOf(x),
     h("strong", {}, x.title),
     h("span", { class: "muted" }, `${x.hub_school || ""} · 수강 확정 ${x.approved}명`),
-    x.pending || x.waiting ? h("span", { class: "status pending" }, `승인 대기 ${x.pending + x.waiting}`) : null,
+    approvalBadge(x),
+    x.pending ? h("span", { class: "status pending" }, `수강 승인 대기 ${x.pending}`) : null,
     x.lead ? null : h("span", { class: "status pending" }, "팀티칭"));
   const active = teacherCourses.filter((x) => !x.archived);
   const archived = teacherCourses.filter((x) => x.archived);
   const grid = (items) => h("div", { class: "run-tiles" }, items.map(tile));
   fill($("#run-list"), 
-    h("p", { class: "muted", style: "margin:0 0 10px" }, "강좌를 누르면 공지사항·수업 열기·수업 기록을 볼 수 있어요."),
+    h("p", { class: "muted", style: "margin:0 0 10px" }, "강좌를 누르면 공지사항·수업 열기·수업 기록·활동 관리를 볼 수 있어요."),
     active.length ? grid(active) : h("p", { class: "muted" }, "아직 개설한 강좌가 없어요. '강좌 개설'에서 먼저 강좌를 만들어 주세요."),
     archived.length ? h("details", { style: "margin-top:16px" }, h("summary", { class: "muted" }, `보관한 강좌 ${archived.length}개`), grid(archived)) : null);
 }
@@ -224,7 +244,7 @@ function renderRun() {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 공지사항"], ["open", "▶ 수업 열기"], ["record", "📋 수업 기록"]];
+  const subs = [["notice", "📢 공지사항"], ["open", "▶ 수업 열기"], ["record", "📋 수업 기록"], ["activity", "📝 활동 관리"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 강좌 목록"),
@@ -234,6 +254,7 @@ function renderRunCourse(c) {
         if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
       } }, c.archived ? "보관 해제" : "보관 (학기 끝)") : null),
     courseInfo(c),
+    approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
     c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '강좌 개설' 탭의 '다른 거점학교·역할 신청'으로 다시 신청하세요.`) : null,
     editing.has(c.id) && !c.locked ? courseEditForm(c) : h("details", { class: "course-more" }, h("summary", {}, "강좌 정보 자세히"), courseFacts(c),
@@ -244,6 +265,7 @@ function renderRunCourse(c) {
   if (c.locked) return;
   if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "open") renderOpenClass(c, subBox);
+  else if (runSub === "activity") renderCourseAssignments(c, subBox);
   else renderRecords(c, subBox);
 }
 
@@ -296,7 +318,11 @@ async function renderOpenClass(c, box) {
   const t = today();
   const next = (c.sessions || []).find((s) => s.date >= t);
   const name = h("input", { maxlength: 60, value: next ? `${next.no}회차${next.topic && next.topic !== `${next.no}회차` ? ` · ${next.topic}` : ""}` : "", placeholder: "수업 이름 (예: 3차시 헌법과 기본권)" });
-  const notYet = (c.pending || 0) + (c.waiting || 0);
+  const notYet = c.pending || 0;
+  if (c.approval !== "approved") {
+    fill(box, approvalNote(c));
+    return;
+  }
   fill(box, 
     open.length ? h("div", { class: "banner ok" }, h("strong", {}, "진행 중인 수업"), ...open.map((x) =>
       h("a", { class: "button small primary", href: `/live/teacher/${x.code}` }, `▶ ${x.title} 들어가기`))) : null,
@@ -315,17 +341,183 @@ async function renderOpenClass(c, box) {
     courseFacts({ sessions: c.sessions }));
 }
 
-/* 수업 기록: 출결(수업별) · 과제 */
+/* 수업 기록: 연 수업을 연번을 달아 세로로 죽 나열. 누르면 그 수업 출결·채점·질문 */
 async function renderRecords(c, box) {
-  const recBox = h("div");
   const detail = h("div");
-  const assignBox = h("div", { class: "assign-box" });
-  fill(box, 
-    h("h3", { class: "section-title" }, "🕒 출결 기록 (수업별)"), recBox, detail,
-    h("div", { style: "margin-top:20px" }), assignBox);
-  renderCourseAssignments(c, assignBox);
   const { classes } = await api(`/api/courses/${c.id}/classes`);
-  fill(recBox, ...classes.map((x) => h("button", { class: "class-pick", "data-id": x.id, onclick: () => { detailTarget = detail; loadDetail(x.id); } },
-    `${x.date.replaceAll("-", ".")} ${x.start.slice(0, 5)} · ${x.title} · 참여 ${x.attended}명${x.live ? " · 진행 중" : ""}`)));
-  if (!classes.length) recBox.append(h("p", { class: "muted" }, "아직 연 수업이 없어요."));
+  if (!classes.length) { fill(box, h("p", { class: "muted" }, "아직 연 수업이 없어요.")); return; }
+  const n = classes.length;
+  const rows = classes.map((x, i) => {
+    const tr = h("tr", { class: "pick-row", "data-id": x.id, onclick: () => {
+      for (const r of tr.parentNode.children) r.classList.toggle("on", r === tr);
+      detailTarget = detail;
+      loadDetail(x.id);
+      detail.scrollIntoView({ behavior: "smooth", block: "start" });
+    } },
+    h("td", { class: "num" }, n - i), h("td", {}, fmtDate(x.date)),
+    h("td", {}, `${x.start.slice(0, 5)} ~ ${x.ended_at ? fmtTime(x.ended_at) : x.live ? "진행 중" : ""}`),
+    h("td", {}, x.title), h("td", { class: "num" }, `${x.attended}명`),
+    h("td", {}, h("span", { class: "link" }, "출결 보기")));
+    return tr;
+  });
+  fill(box, h("p", { class: "muted", style: "margin:0 0 8px" }, `모두 ${n}번 수업했어요. 줄을 누르면 그 수업의 출결·퀴즈 채점·질문이 아래에 나와요.`),
+    h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 이름", "참여", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows))),
+    detail);
+}
+
+/* ───────────────────────── 거점학교 운영: [강의교사 승인] [학생 관리] ───────────────────────── */
+
+async function loadHub() {
+  const [inst, part, ov, log, { requests: wishes }] = await Promise.all([
+    api("/api/staff/applications?role=instructor"), api("/api/staff/applications?role=participant"),
+    api("/api/hub/overview"), api("/api/hub/class-log"), api("/api/hub/course-requests")]);
+  inst.applications.forEach((x) => { x.role = "instructor"; });
+  part.applications.forEach((x) => { x.role = "participant"; });
+  const waitCourses = ov.courses.filter((c) => c.approval === "pending");
+  const waitStaff = [...inst.applications, ...part.applications].filter((x) => x.status === "pending").length;
+  const badge = waitCourses.length + waitStaff;
+  $("#hub-badge").textContent = badge;
+  $("#hub-badge").hidden = !badge;
+  const box = h("div");
+  const subs = [["approve", `강의교사 승인${badge ? ` (${badge})` : ""}`], ["students", "학생 관리"]];
+  fill($("#hub-list"),
+    h("nav", { class: "tabs sub-tabs" }, subs.map(([k, label]) => h("button", { class: hubSub === k ? "active" : "",
+      onclick: () => { hubSub = k; loadHub(); } }, label))),
+    box);
+  if (hubSub === "approve") fill(box, ...hubApprove(ov, inst, part));
+  else fill(box, ...hubStudents(ov, log.classes, wishes));
+}
+
+/** 강의교사 승인: 강좌 개설 신청 · 강의교사 등록 · 참여학교 교사 등록 */
+function hubApprove(ov, inst, part) {
+  const decide = async (c, action) => {
+    let note = "";
+    if (action === "reject") {
+      note = prompt(`'${c.title}' 강좌 개설을 반려하는 사유 (강사에게 보여요)`, "");
+      if (note === null) return;
+    } else if (!confirm(`'${c.title}' 강좌 개설을 승인할까요? 승인하면 모집 기간에 학생들이 수강신청할 수 있어요.`)) return;
+    try {
+      await api(`/api/hub/courses/${c.id}/approval`, { action, note });
+      toast(action === "approve" ? "강좌 개설을 승인했어요." : "반려했어요. 강사가 고치면 다시 올라와요.");
+      loadHub();
+    } catch (err) { toast(err.message); }
+  };
+  const courseCard = (c) => h("div", { class: "box", style: "margin-bottom:10px" },
+    h("div", { class: "row" }, h("strong", { class: "grow" }, c.title), approvalBadge(c) || h("span", { class: "status approved" }, "개설 승인")),
+    courseInfo(c), courseFacts(c),
+    c.description ? h("details", { class: "course-more" }, h("summary", {}, "수업 소개"), h("p", { style: "white-space:pre-wrap" }, c.description)) : null,
+    c.approval === "rejected" && c.approval_note ? h("p", { class: "muted", style: "font-size:0.9rem" }, `반려 사유: ${c.approval_note}`) : null,
+    h("div", { class: "row", style: "margin-top:6px" },
+      c.approval !== "approved" ? h("button", { class: "primary", onclick: () => decide(c, "approve") }, "개설 승인") : null,
+      c.approval !== "rejected" ? h("button", { class: c.approval === "approved" ? "small" : "", onclick: () => decide(c, "reject") },
+        c.approval === "approved" ? "승인 취소(반려)" : "반려") : null));
+  const pending = ov.courses.filter((c) => c.approval === "pending");
+  const done = ov.courses.filter((c) => c.approval !== "pending");
+  return [
+    h("h2", { style: "margin:8px 0" }, `📋 강좌 개설 신청${pending.length ? ` (${pending.length}건 대기)` : ""}`),
+    pending.length ? pending.map(courseCard) : h("p", { class: "muted" }, "승인을 기다리는 강좌가 없어요."),
+    done.length ? h("details", {}, h("summary", { class: "muted" }, `처리한 강좌 ${done.length}개`), done.map(courseCard)) : null,
+    h("h2", { style: "margin:24px 0 0" }, "👩‍🏫 강의교사 등록"),
+    staffSections(inst.applications, inst.today, loadHub, "강의교사"),
+    h("h2", { style: "margin:24px 0 0" }, "🏫 참여학교 교사 등록"),
+    h("p", { class: "muted", style: "font-size:0.9rem;margin:4px 0" }, "참여학교 교사는 자기 학교 학생의 수강 현황을 보고 학생 탈퇴를 승인해요. 그 학교 선생님이 맞는지 확인하고 승인해 주세요."),
+    staffSections(part.applications, part.today, loadHub, "참여학교 교사"),
+  ];
+}
+
+/** 학생 관리: 강좌별 수강생과 수업 기록(언제 수업했는지) + 학생들이 듣고 싶은 과목 */
+function hubStudents(ov, classes, wishes) {
+  const byCourse = new Map();
+  for (const x of classes) {
+    if (!byCourse.has(x.course_id)) byCourse.set(x.course_id, []);
+    byCourse.get(x.course_id).push(x);
+  }
+  const courses = ov.courses.filter((c) => c.approval === "approved");
+  const card = (c) => {
+    const ok = ov.enrollments.filter((e) => e.course_id === c.id && e.status === "approved");
+    const log = byCourse.get(c.id) || [];
+    return h("details", { class: "box", style: "margin-bottom:10px" },
+      h("summary", {}, h("strong", {}, c.title), h("span", { class: "muted" }, ` · 강사 ${c.instructor} · ${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}`),
+        h("span", {}, ` · 수강 ${ok.length}명 · 수업 ${log.length}회`), c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
+      h("h3", { class: "section-title", style: "margin:10px 0 6px" }, `🕒 수업 기록 ${log.length}회`),
+      log.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+        h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "길이", "수업 이름", "참여"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, log.map((x, i) => h("tr", {},
+          h("td", { class: "num" }, log.length - i), h("td", {}, fmtDate(x.date)),
+          h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "")}`),
+          h("td", { class: "num" }, x.minutes != null ? `${x.minutes}분` : "-"),
+          h("td", {}, x.title), h("td", { class: "num" }, `${x.attended}명`)))))) : h("p", { class: "muted" }, "아직 연 수업이 없어요."),
+      h("h3", { class: "section-title", style: "margin:12px 0 6px" }, `🎒 수강생 ${ok.length}명`),
+      ok.length ? h("div", { class: "muted", style: "font-size:0.9rem" },
+        ok.map((e) => `${e.student_no || "-"} ${e.name}${e.school ? `(${e.school})` : ""}`).join(", ")) : h("p", { class: "muted" }, "아직 수강생이 없어요."));
+  };
+  return [
+    h("h2", { style: "margin:8px 0" }, "📚 강좌별 수업 기록·수강생"),
+    courses.length ? courses.map(card) : h("p", { class: "muted" }, "아직 개설 승인한 강좌가 없어요."),
+    h("h2", { style: "margin:24px 0 8px" }, "🙋 학생들이 듣고 싶은 과목"),
+    wishes.length ? h("table", { class: "wish-table" },
+      h("tr", {}, h("th", {}, "과목"), h("th", {}, "요청"), h("th", {}, "학년"), h("th", {}, "학교"), h("th", {}, "하고 싶은 말")),
+      wishes.map((w) => h("tr", {},
+        h("td", {}, h("strong", {}, w.subject), w.in_curriculum ? null : h("div", { class: "muted", style: "font-size:0.75rem" }, "고시외 과목")),
+        h("td", {}, `${w.count}명`),
+        h("td", {}, Object.entries(w.grades).map(([g, n]) => `${g}학년 ${n}`).join(", ") || "-"),
+        h("td", { style: "font-size:0.85rem" }, Object.entries(w.schools).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([s, n]) => `${s} ${n}`).join(", ") + (Object.keys(w.schools).length > 3 ? " 외" : "")),
+        h("td", { class: "muted", style: "font-size:0.85rem" }, w.notes.join(" / "))))) : h("p", { class: "muted" }, "아직 요청이 없어요."),
+  ];
+}
+
+/* ───────────────────────── 참여학교 운영: 우리 학교 수강생 관리 · 탈퇴 승인 ───────────────────────── */
+
+async function loadSchool() {
+  const ov = await api("/api/school/overview");
+  $("#school-badge").textContent = ov.withdrawals.length;
+  $("#school-badge").hidden = !ov.withdrawals.length;
+  const search = h("input", { placeholder: "이름·학번·강좌로 찾기", style: "max-width:260px" });
+  const many = new Set(ov.students.map((x) => x.school)).size > 1;
+  const STATUS = { approved: "수강 확정", pending: "강사 승인 대기" };
+  const tbody = h("tbody");
+  const draw = () => {
+    const q = search.value.trim();
+    const list = ov.students.filter((x) => !q || [x.name, x.student_no, x.school, ...x.courses.map((c) => c.title)].join(" ").includes(q));
+    fill(tbody, list.map((x, i) => h("tr", {},
+      h("td", { class: "num" }, i + 1),
+      many ? h("td", {}, x.school || "-") : null,
+      h("td", {}, x.student_no || "-"), h("td", {}, x.name, x.withdraw ? h("span", { class: "status pending" }, " 탈퇴 신청") : null),
+      h("td", {}, x.courses.length ? x.courses.map((c) => h("div", {}, c.title,
+        h("span", { class: "muted", style: "font-size:0.8rem" }, ` · ${c.instructor} · ${STATUS[c.status]}${c.archived ? " · 끝남" : ""}`)))
+        : h("span", { class: "muted" }, "수강 강좌 없음")))));
+    if (!list.length) tbody.append(h("tr", {}, h("td", { colspan: many ? 5 : 4, class: "muted" }, q ? "찾는 학생이 없어요." : "아직 가입한 학생이 없어요.")));
+  };
+  search.addEventListener("input", draw);
+  draw();
+  fill($("#school-list"),
+    h("p", { class: "muted" }, ME.is_admin && !ov.schools.length ? "전체 관리자: 모든 학교 학생이 보여요."
+      : `${ov.schools.join(", ")} 학생만 보여요 (학생이 가입할 때 고른 소속 학교 기준).`),
+    h("h2", { style: "margin:8px 0" }, `🚪 탈퇴 신청${ov.withdrawals.length ? ` (${ov.withdrawals.length}명)` : ""}`),
+    ov.withdrawals.length ? h("div", { class: "people" }, ov.withdrawals.map(withdrawRow)) : h("p", { class: "muted" }, "탈퇴 신청한 학생이 없어요."),
+    h("div", { class: "row", style: "margin:24px 0 8px" }, h("h2", { class: "grow", style: "margin:0" }, `🎒 수강생 관리 · 우리 학교 학생 ${ov.students.length}명`), search),
+    h("div", { class: "table-wrap" }, h("table", { class: "att" },
+      h("thead", {}, h("tr", {}, ["연번", ...(many ? ["학교"] : []), "학번", "이름", "수강 강좌"].map((t) => h("th", {}, t)))), tbody)));
+}
+
+function withdrawRow(q) {
+  const decide = async (action) => {
+    let note = "";
+    if (action === "approve" && !confirm(`${q.name} 학생의 탈퇴를 승인할까요?\n출결·활동·점수 등 이 학생의 기록이 모두 지워지고 되살릴 수 없어요.`)) return;
+    if (action === "reject") { note = prompt(`${q.name} 학생의 탈퇴 신청을 반려하는 사유 (학생에게 보여요)`, ""); if (note === null) return; }
+    try {
+      await api(`/api/school/withdrawals/${q.user_id}`, { action, note });
+      toast(action === "approve" ? "탈퇴를 승인했어요." : "반려했어요.");
+      loadSchool();
+    } catch (err) { toast(err.message); }
+  };
+  return h("div", { class: "person", style: "flex-wrap:wrap" }, h("span", { class: "dot" }),
+    h("span", { class: "grow" }, `${q.student_no || "-"} ${q.name} `, h("span", { class: "muted", style: "font-size:0.8rem" }, `${q.school} · ${new Date(q.requested_at * 1000).toLocaleDateString("ko-KR")} 신청`),
+      q.reason ? h("div", { style: "font-size:0.85rem" }, `사유: ${q.reason}`) : null,
+      h("div", { class: "muted", style: "font-size:0.8rem" }, q.courses.length ? `신청한 강좌: ${q.courses.join(", ")}` : "수강신청한 강좌 없음"),
+      q.studying.length ? h("div", { class: "status pending", style: "font-size:0.8rem" }, `⚠️ 아직 수강 중: ${q.studying.join(", ")} — 승인하면 이 강좌 출결·활동 기록도 지워져요`) : null),
+    h("span", { class: "acts" }, h("button", { class: "danger", onclick: () => decide("approve") }, "탈퇴 승인"),
+      h("button", { onclick: () => decide("reject") }, "반려")));
 }

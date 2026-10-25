@@ -6,6 +6,8 @@
 - 강사 신청: 등록된 거점학교 하나를 고르고 희망 기간을 적는다. 그 거점학교 관리교사(또는 전체 관리자)가
   활동 기간(희망 기간이 미리 채워짐, 끝나는 날 필수)을 정해 승인한다.
 - 활동 기간이 지나거나 해제되면 바로 권한이 꺼진다(그 거점학교 강좌 관리·수업 열기도 막힌다. 기록은 남는다).
+- 참여학교 교사 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 거점학교 관리교사(또는 전체 관리자)가 승인하면 그 학교 학생의
+  수강 현황을 보고 탈퇴를 승인한다.
 - 한 사람이 여러 거점학교·역할을 가질 수 있다(예: A고 관리교사이면서 B고 강사).
 """
 
@@ -30,7 +32,7 @@ from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
 
 router = APIRouter()
-ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사"}
+ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사", "participant": "참여학교 교사"}
 
 
 async def login_required(request: Request) -> dict:
@@ -41,9 +43,12 @@ async def login_required(request: Request) -> dict:
 
 
 def can_manage(u: dict, m) -> bool:
-    """관리교사 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자가 처리한다."""
+    """관리교사 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자,
+    참여학교 교사 신청은 거점학교 관리교사(어느 학교든)나 전체 관리자가 처리한다."""
     if u["is_admin"]:
         return True
+    if m.role == "participant":
+        return bool(u["coordinator_hubs"])
     return m.role == "instructor" and m.hub_id in {h["id"] for h in u["coordinator_hubs"]}
 
 
@@ -62,8 +67,8 @@ async def list_hubs(request: Request):
 
 
 class ApplyReq(BaseModel):
-    role: str = Field(pattern="^(coordinator|instructor)$")
-    hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명
+    role: str = Field(pattern="^(coordinator|instructor|participant)$")
+    hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 교사: 소속 학교
     hub_id: int | None = None  # 강사: 거점학교 고르기
     name: str = Field(min_length=1, max_length=30)
     affiliation: str = Field(default="", max_length=60)  # 소속 학교·대학·기관 (없으면 비움)
@@ -97,12 +102,13 @@ async def apply(req: ApplyReq, request: Request):
     if not req.pledge:
         raise HTTPException(400, "개인정보 보호 서약에 동의해야 신청할 수 있어요.")
     hub_name = req.hub_name.strip()
-    if req.role == "coordinator":
+    if req.role in ("coordinator", "participant"):
+        what = "거점학교" if req.role == "coordinator" else "소속 학교"
         if not hub_name:
-            raise HTTPException(400, "거점학교를 골라 주세요.")
-        schools = await db.run(get_schools)  # 거점학교는 울산 시내 학교 목록에서만
+            raise HTTPException(400, f"{what}를 골라 주세요.")
+        schools = await db.run(get_schools)  # 울산 시내 학교 목록에서만
         if schools and hub_name not in schools:
-            raise HTTPException(400, "거점학교는 목록에 있는 학교 중에서 골라 주세요.")
+            raise HTTPException(400, f"{what}는 목록에 있는 학교 중에서 골라 주세요.")
     if req.affil_type:  # 새 신청서: 소속 구분에 따라 필요한 칸
         if req.affil_type == "school" and not (req.office and req.affiliation.strip()):
             raise HTTPException(400, "소속 교육청과 소속 학교를 적어 주세요.")
@@ -163,7 +169,7 @@ async def apply(req: ApplyReq, request: Request):
                 c.execute(insert(db.memberships).values(
                     user_id=u["id"], role=req.role, status="pending", requested_at=now,
                     hub_id=hub_id if req.role == "instructor" else None,
-                    hub_name=hub_name if req.role == "coordinator" else "", **values))
+                    hub_name=hub_name if req.role != "instructor" else "", **values))
 
     await db.run(run)
     return {"ok": True}
@@ -179,7 +185,7 @@ async def applications(role: str, request: Request):
     if role not in ROLES:
         raise HTTPException(400)
     hubs = {h["id"] for h in u["coordinator_hubs"]}
-    if not (u["is_admin"] or (role == "instructor" and hubs)):
+    if not (u["is_admin"] or (role in ("instructor", "participant") and hubs)):
         raise HTTPException(403, "관리 권한이 없어요.")
 
     def run():
@@ -187,7 +193,7 @@ async def applications(role: str, request: Request):
         with db.engine.connect() as c:
             q = (select(db.memberships, db.users.c.name, db.users.c.email, db.users.c.school, db.users.c.google_name)
                  .join(db.users, db.users.c.id == m.user_id).where(m.role == role))
-            if not u["is_admin"]:
+            if not u["is_admin"] and role == "instructor":
                 q = q.where(m.hub_id.in_(hubs))
             rows = c.execute(q.order_by(m.requested_at.desc())).all()
             names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
@@ -235,7 +241,11 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
             values = {"status": status, "decided_at": time.time(), "decided_by": u["id"], "admin_note": req.note.strip()}
             if req.action == "approve":
                 values.update(valid_from=req.valid_from, valid_until=req.valid_until)
-                if row.role == "instructor":
+                if row.role == "participant":
+                    values.update(hub_name=(req.hub_name or row.hub_name).strip())
+                    if not values["hub_name"]:
+                        raise HTTPException(400, "소속 학교를 정해 주세요.")
+                elif row.role == "instructor":
                     if not req.valid_until:  # 기간이 끝나면 저절로 권한이 꺼지도록 강사는 끝나는 날이 꼭 있어야 한다
                         raise HTTPException(400, "강사는 활동 기간이 끝나는 날을 정해 주세요.")
                 else:  # 관리교사: 거점학교를 찾거나 새로 만든다

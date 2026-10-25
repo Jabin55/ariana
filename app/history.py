@@ -15,7 +15,7 @@ from sqlalchemy import and_, or_, select
 
 from app import db
 from app.auth import require_user, student_no
-from app.courses import course_roster, hub_locked, taught_course_ids, taught_filter
+from app.courses import course_roster, hub_locked, managed_hubs, taught_course_ids, taught_filter
 from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
 
 router = APIRouter()
@@ -133,6 +133,36 @@ async def meetings_history(request: Request):
     rows, counts = await db.run(run)
     return {"classes": [{**class_row(r), "attended": counts[r.id], "start": kst(r.created_at),
                          "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d")} for r in rows]}
+
+
+@router.get("/api/hub/class-log")
+async def hub_class_log(request: Request):
+    """거점학교 관리교사: 내 거점학교 강좌에서 언제 수업했는지 (수업 날짜·시각·길이·참여 인원)"""
+    u = await require_user(request)
+    hubs = managed_hubs(u)
+
+    def run():
+        co, cl = db.courses.c, db.classes.c
+        with db.engine.connect() as c:
+            q = select(db.courses).where(co.hub_id.is_not(None))
+            if hubs is not None:
+                q = q.where(co.hub_id.in_(hubs))
+            courses = {x.id: x for x in c.execute(q).all()}
+            rows = c.execute(select(db.classes).where(cl.course_id.in_(list(courses) or [-1]))
+                             .order_by(cl.created_at.desc()).limit(500)).all()
+            return courses, rows, _counts(c, rows)
+
+    courses, rows, counts = await db.run(run)
+    out = []
+    for r in rows:
+        co = courses[r.course_id]
+        end = r.ended_at
+        out.append({"id": r.id, "course_id": r.course_id, "course_title": co.title, "instructor": co.instructor,
+                    "title": r.title, "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
+                    "start": kst(r.created_at)[:5], "end": kst(end)[:5] if end else "",
+                    "minutes": round((end - r.created_at) / 60) if end else None,
+                    "live": class_row(r)["live"], "attended": counts[r.id]})
+    return {"classes": out}
 
 
 def my_class_filter(c, t: dict):

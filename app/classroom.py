@@ -738,6 +738,8 @@ async def create_class(req: CreateReq, request: Request):
         course = await db.run(owned_course, req.course_id, t)
         if course.archived:
             raise HTTPException(409, "보관된 강좌에는 수업을 열 수 없어요.")
+        if (course.approval or "approved") != "approved":
+            raise HTTPException(409, "거점학교 관리교사가 강좌 개설을 승인해야 수업을 열 수 있어요.")
     prune_classes()
     code = await new_code()
     title = clean(req.title, 60) or "실시간 수업"

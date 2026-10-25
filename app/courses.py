@@ -95,9 +95,10 @@ def course_row(r, counts: dict | None = None) -> dict:
            "instructor": r.instructor, "hub_school": r.hub_school,
            "start_date": r.start_date, "end_date": r.end_date, "hub_id": r.hub_id, "grades": course_grades(r),
            "finished": bool(r.end_date and r.end_date < today_kst()),  # 강의기간이 지남
+           "approval": r.approval or "approved", "approval_note": r.approval_note or "",
            **subject_info(r)}
     if counts is not None:
-        out.update(counts.get(r.id, {"approved": 0, "pending": 0, "waiting": 0}))
+        out.update(counts.get(r.id, {"approved": 0, "pending": 0}))
     return out
 
 
@@ -139,6 +140,11 @@ def sessions_of(c, course_ids) -> dict:
                        .order_by(db.course_sessions.c.course_id, db.course_sessions.c.no)):
         out.setdefault(x.course_id, []).append({"no": x.no, "date": x.date, "start": x.start, "end": x.end, "topic": x.topic})
     return out
+
+
+def sessions_by_course(course_ids) -> dict:
+    with db.engine.connect() as c:
+        return sessions_of(c, course_ids)
 
 
 def save_sessions(c, course_id: int, sessions: list) -> None:
@@ -383,8 +389,8 @@ async def my_courses(request: Request):
             for cid, status, n in c.execute(
                     select(e.course_id, e.status, func.count()).where(e.course_id.in_([r.id for r in rows] or [-1]))
                     .group_by(e.course_id, e.status)):
-                counts.setdefault(cid, {"approved": 0, "pending": 0, "waiting": 0})
-                key = {"approved": "approved", "pending": "pending", "instructor_ok": "waiting"}.get(status)
+                counts.setdefault(cid, {"approved": 0, "pending": 0})
+                key = {"approved": "approved", "pending": "pending"}.get(status)
                 if key:
                     counts[cid][key] = n
             return rows, counts, names, sessions_of(c, [r.id for r in rows])
@@ -392,7 +398,6 @@ async def my_courses(request: Request):
     rows, counts, names, sess = await db.run(run)
     return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t), "description": r.description,
                          "lead": r.teacher_id == t["id"], "owner_name": names.get(r.teacher_id, ""),
-                         "can_finalize": bool(r.hub_id) and can_finalize(r, t),
                          "sessions": sess.get(r.id, []), "show_email": bool(r.show_email), "show_phone": bool(r.show_phone),
                          "contact_email": r.contact_email, "contact_phone": r.contact_phone,
                          "co_teachers": [{"id": i, "name": names.get(i, "")} for i in co_teacher_ids(r)]}
@@ -437,7 +442,7 @@ async def create_course(req: CourseReq, request: Request):
                 instructor=req.instructor.strip(), hub_school=name, hub_id=hub_id,
                 start_date=req.start_date, end_date=req.end_date, grades=grades_text(req.grades),
                 school=t["school"] or "", open=1, archived=0, created_at=time.time(),
-                co_teachers=co_teachers, **extra)).inserted_primary_key[0]
+                co_teachers=co_teachers, approval=new_approval(hub_id, t), **extra)).inserted_primary_key[0]
             if req.sessions:
                 save_sessions(c, new_id, req.sessions)
             return new_id
@@ -539,6 +544,12 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
     check_period(values.get("start_date", cur.start_date), values.get("end_date", cur.end_date))
     if req.archived:
         values["open"] = 0  # 보관하면 수강신청도 닫는다
+    edited = any(data[k] is not None for k in data if k not in ("open", "archived"))
+    if "hub_id" in values and values["hub_id"] != cur.hub_id:
+        # 다른 거점학교로 옮기면 그 학교 관리교사가 다시 승인한다
+        values.update(approval=new_approval(values["hub_id"], t), approval_note="")
+    elif edited and cur.approval == "rejected":
+        values.update(approval="pending", approval_note="")  # 반려된 강좌를 고치면 다시 승인 대기
 
     def run():
         with db.engine.begin() as c:
@@ -663,22 +674,22 @@ class DecideReq(BaseModel):
     note: str = Field(default="", max_length=300)  # 거절 사유 (학생에게 보임)
 
 
-def can_finalize(course, t: dict) -> bool:
-    """이 사람이 그 거점학교의 최종 승인 권한(관리교사·전체 관리자)도 가졌는지"""
-    return bool(t["is_admin"] or course.hub_id in {h["id"] for h in t["coordinator_hubs"]})
+def new_approval(hub_id: int | None, t: dict) -> str:
+    """새 강좌: 거점학교 관리교사가 승인해야 열린다. 전체 관리자·그 거점학교 관리교사가 직접 만든 강좌,
+    거점학교 밖(설정으로 등록한 강사) 강좌는 바로 승인."""
+    if hub_id is None or t["is_admin"] or hub_id in {h["id"] for h in t["coordinator_hubs"]}:
+        return "approved"
+    return "pending"
 
 
-def after_instructor_ok(course, t: dict) -> dict:
-    """강사가 승인한 뒤 상태: 거점학교 강좌면 관리교사 최종 승인 대기, 아니면 바로 확정.
-    승인한 강사가 그 거점학교 관리교사(또는 전체 관리자)이기도 하면 두 번 승인할 필요 없이 바로 확정."""
-    if course.hub_id and not can_finalize(course, t):
-        return {"status": "instructor_ok"}
-    return {"status": "approved", "coordinator_by": t["id"] if course.hub_id else None}
+def course_approved(course) -> bool:
+    """거점학교 관리교사가 강좌 개설을 승인했는지 (승인돼야 수강신청을 받고 수업을 연다)"""
+    return (course.approval or "approved") == "approved"
 
 
 @router.post("/api/courses/{course_id}/enrollments/{user_id}")
 async def decide(course_id: int, user_id: int, req: DecideReq, request: Request):
-    """강사의 1차 승인·거절·빼기"""
+    """강사의 승인·거절·빼기 (강사 승인만으로 수강 확정)"""
     t = await require_user(request, "teacher")
     course = await db.run(owned_course, course_id, t)
 
@@ -694,12 +705,9 @@ async def decide(course_id: int, user_id: int, req: DecideReq, request: Request)
             elif req.status == "rejected":
                 c.execute(update(db.enrollments).where(cond).values(
                     status="rejected", decided_at=time.time(), instructor_by=t["id"], note=req.note.strip()))
-            elif row.status in ("pending", "rejected"):
+            elif row.status != "approved":
                 c.execute(update(db.enrollments).where(cond).values(
-                    **after_instructor_ok(course, t), decided_at=time.time(), instructor_by=t["id"], note=""))
-            elif row.status == "instructor_ok" and can_finalize(course, t):  # 관리교사이기도 하면 여기서 최종 승인
-                c.execute(update(db.enrollments).where(cond).values(
-                    status="approved", decided_at=time.time(), coordinator_by=t["id"]))
+                    status="approved", decided_at=time.time(), instructor_by=t["id"], note=""))
 
     await db.run(run)
     return {"ok": True}
@@ -708,18 +716,13 @@ async def decide(course_id: int, user_id: int, req: DecideReq, request: Request)
 @router.post("/api/courses/{course_id}/approve-all")
 async def approve_all(course_id: int, request: Request):
     t = await require_user(request, "teacher")
-    course = await db.run(owned_course, course_id, t)
+    await db.run(owned_course, course_id, t)
 
     def run():
         e = db.enrollments.c
         with db.engine.begin() as c:
-            n = c.execute(update(db.enrollments).where(e.course_id == course_id, e.status == "pending")
-                          .values(**after_instructor_ok(course, t), decided_at=time.time(),
-                                  instructor_by=t["id"])).rowcount
-            if can_finalize(course, t):  # 관리교사이기도 하면 최종 승인 대기 학생도 함께 확정
-                n += c.execute(update(db.enrollments).where(e.course_id == course_id, e.status == "instructor_ok")
-                               .values(status="approved", decided_at=time.time(), coordinator_by=t["id"])).rowcount
-            return n
+            return c.execute(update(db.enrollments).where(e.course_id == course_id, e.status == "pending")
+                             .values(status="approved", decided_at=time.time(), instructor_by=t["id"])).rowcount
 
     return {"approved": await db.run(run)}
 
@@ -739,7 +742,7 @@ async def available_courses(request: Request):
             rows = c.execute(
                 select(db.courses, db.users.c.name.label("teacher_name"))
                 .join(db.users, db.users.c.id == co.teacher_id)
-                .where(co.archived == 0)
+                .where(co.archived == 0, co.approval == "approved")
                 .order_by(co.start_date.desc(), co.title)).all()
             mine = {e.course_id: (e.status, e.note) for e in c.execute(
                 select(db.enrollments).where(db.enrollments.c.user_id == u["id"]))}
@@ -767,10 +770,10 @@ async def enroll(course_id: int, request: Request):
         e = db.enrollments.c
         with db.engine.begin() as c:
             co = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
-            if not co or co.archived:
+            if not co or co.archived or not course_approved(co):
                 raise HTTPException(404, "강좌를 찾을 수 없어요.")
             row = c.execute(select(db.enrollments).where(e.course_id == course_id, e.user_id == u["id"])).first()
-            if row and row.status in ("approved", "pending", "instructor_ok"):
+            if row and row.status in ("approved", "pending"):
                 return row.status
             state = recruit_state(co)
             if state == "before":
@@ -779,7 +782,7 @@ async def enroll(course_id: int, request: Request):
                 raise HTTPException(409, "수강신청이 마감된 강좌예요.")
             if co.capacity:
                 n = c.execute(select(func.count()).select_from(db.enrollments).where(
-                    e.course_id == course_id, e.status.in_(["pending", "instructor_ok", "approved"]))).scalar()
+                    e.course_id == course_id, e.status.in_(["pending", "approved"]))).scalar()
                 if n >= co.capacity:
                     raise HTTPException(409, f"수강 인원({co.capacity}명)이 다 찼어요.")
             joined = [x for x in (co.schools or "").split("\n") if x]
@@ -807,7 +810,7 @@ async def cancel_enroll(course_id: int, request: Request):
         e = db.enrollments.c
         with db.engine.begin() as c:
             c.execute(delete(db.enrollments).where(e.course_id == course_id, e.user_id == u["id"],
-                                                   e.status.in_(["pending", "instructor_ok", "approved"])))
+                                                   e.status.in_(["pending", "approved"])))
 
     await db.run(run)
     return {"ok": True}
@@ -827,7 +830,7 @@ async def live_now(request: Request):
                        e.status)
                 .join(db.courses, co.id == cl.course_id)
                 .join(db.enrollments, and_(e.course_id == cl.course_id, e.user_id == u["id"],
-                                           e.status.in_(["approved", "pending", "instructor_ok"])))
+                                           e.status.in_(["approved", "pending"])))
                 .where(cl.ended_at.is_(None), cl.created_at > time.time() - LIVE_LIMIT)
                 .order_by(cl.created_at.desc())).all()
 
@@ -847,7 +850,7 @@ def course_roster(course_id: int) -> list:
                          .where(db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved")).all()
 
 
-# ───────────────────────── 거점학교 관리교사: 최종 승인 ─────────────────────────
+# ───────────────────────── 거점학교 관리교사 ─────────────────────────
 
 
 def managed_hubs(u: dict) -> set[int] | None:
@@ -862,7 +865,7 @@ def managed_hubs(u: dict) -> set[int] | None:
 
 @router.get("/api/hub/overview")
 async def hub_overview(request: Request):
-    """관리교사: 내 거점학교의 강좌와 수강신청(강사 승인 상태 포함)"""
+    """관리교사: 내 거점학교의 강좌(개설 승인 상태 포함)와 수강생"""
     u = await require_user(request)
     hubs = managed_hubs(u)
 
@@ -891,95 +894,76 @@ async def hub_overview(request: Request):
     enrollments.sort(key=lambda x: (x["course_title"], x["student_no"] or "~", x["name"]))
     counts: dict = {}
     for x in enrollments:
-        k = counts.setdefault(x["course_id"], {"approved": 0, "pending": 0, "waiting": 0})
-        key = {"approved": "approved", "pending": "pending", "instructor_ok": "waiting"}.get(x["status"])
+        k = counts.setdefault(x["course_id"], {"approved": 0, "pending": 0})
+        key = {"approved": "approved", "pending": "pending"}.get(x["status"])
         if key:
             k[key] += 1
-    return {"courses": [course_row(x, counts) for x in courses], "enrollments": enrollments}
+    sess = await db.run(lambda: sessions_by_course([x.id for x in courses]))
+    return {"courses": [{**course_row(x, counts), "sessions": sess.get(x.id, []), "teacher_id": x.teacher_id}
+                        for x in courses], "enrollments": enrollments}
 
 
-class FinalReq(BaseModel):
-    status: str = Field(pattern="^(approved|rejected|removed)$")
-    note: str = Field(default="", max_length=300)
+# ───────────────────────── 거점학교 관리교사: 강좌 개설 승인 ─────────────────────────
 
 
-@router.post("/api/hub/enrollments/{enrollment_id}")
-async def final_decide(enrollment_id: int, req: FinalReq, request: Request):
-    """관리교사의 최종 승인: 강사가 먼저 승인한 학생만 최종 승인할 수 있다."""
+class ApprovalReq(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = Field(default="", max_length=300)  # 반려 사유 (강사에게 보임)
+
+
+@router.post("/api/hub/courses/{course_id}/approval")
+async def course_approval(course_id: int, req: ApprovalReq, request: Request):
+    """관리교사: 강사가 낸 강좌 개설 신청을 승인하거나 반려한다."""
     u = await require_user(request)
     hubs = managed_hubs(u)
 
     def run():
-        e = db.enrollments.c
         with db.engine.begin() as c:
-            row = c.execute(select(db.enrollments, db.courses.c.hub_id)
-                            .join(db.courses, db.courses.c.id == e.course_id).where(e.id == enrollment_id)).first()
-            if not row or row.hub_id is None or (hubs is not None and row.hub_id not in hubs):
-                raise HTTPException(404, "수강신청을 찾을 수 없어요.")
-            cond = e.id == enrollment_id
-            if req.status == "removed":
-                c.execute(delete(db.enrollments).where(cond))
-            elif req.status == "rejected":
-                c.execute(update(db.enrollments).where(cond).values(
-                    status="rejected", decided_at=time.time(), coordinator_by=u["id"], note=req.note.strip()))
-            else:
-                if row.status != "instructor_ok":
-                    raise HTTPException(409, "강사가 먼저 승인해야 최종 승인할 수 있어요.")
-                c.execute(update(db.enrollments).where(cond).values(
-                    status="approved", decided_at=time.time(), coordinator_by=u["id"]))
+            row = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
+            if not row or (hubs is not None and row.hub_id not in hubs):
+                raise HTTPException(404, "강좌를 찾을 수 없어요.")
+            if req.action == "reject" and not req.note.strip():
+                raise HTTPException(400, "반려 사유를 적어 주세요. 강사에게 보여요.")
+            c.execute(update(db.courses).where(db.courses.c.id == course_id).values(
+                approval="approved" if req.action == "approve" else "rejected",
+                approval_note=req.note.strip() if req.action == "reject" else "", approved_by=u["id"]))
 
     await db.run(run)
     return {"ok": True}
 
 
-class FinalAllReq(BaseModel):
-    course_id: int | None = None
+# ───────────────────────── 참여학교 교사: 우리 학교 학생 · 탈퇴 승인 ─────────────────────────
 
 
-@router.post("/api/hub/approve-all")
-async def final_approve_all(req: FinalAllReq, request: Request):
-    """관리교사: 강사 승인이 끝난 학생 모두 최종 승인 (강좌 하나 또는 내 거점학교 전체)"""
-    u = await require_user(request)
-    hubs = managed_hubs(u)
-
-    def run():
-        e, co = db.enrollments.c, db.courses.c
-        with db.engine.begin() as c:
-            q = select(co.id).where(co.hub_id.is_not(None))
-            if hubs is not None:
-                q = q.where(co.hub_id.in_(hubs))
-            if req.course_id:
-                q = q.where(co.id == req.course_id)
-            ids = list(c.execute(q).scalars())
-            return c.execute(update(db.enrollments).where(e.course_id.in_(ids or [-1]), e.status == "instructor_ok")
-                             .values(status="approved", decided_at=time.time(), coordinator_by=u["id"])).rowcount
-
-    return {"approved": await db.run(run)}
+def my_schools(u: dict) -> set[str] | None:
+    """참여학교 교사가 맡은 학교. 전체 관리자는 None(= 모든 학교)."""
+    if u["is_admin"]:
+        return None
+    schools = set(u.get("participant_schools") or [])
+    if not schools:
+        raise HTTPException(403, "참여학교 교사만 할 수 있어요.")
+    return schools
 
 
-# ───────────────────────── 학생 탈퇴 신청 (관리교사 승인) ─────────────────────────
-
-
-def withdraw_requests(hubs: set[int] | None, uid: int | None = None) -> list[dict]:
-    """탈퇴를 신청한 학생. 관리교사는 자기 거점학교 강좌에 수강신청한 적 있는 학생만,
-    전체 관리자는 모두(어느 거점학교와도 상관없는 학생 포함) 본다."""
+def withdraw_requests(schools: set[str] | None, uid: int | None = None) -> list[dict]:
+    """탈퇴를 신청한 학생. 참여학교 교사는 자기 학교 학생만, 전체 관리자는 모두 본다."""
     today = auth.today_kst()
     with db.engine.connect() as c:
         u = db.users.c
         q = select(db.users).where(u.withdraw_at.is_not(None), u.role == "student")
+        if schools is not None:
+            q = q.where(u.school.in_(schools))
         if uid is not None:
             q = q.where(u.id == uid)
         users = c.execute(q.order_by(u.withdraw_at)).all()
         ids = [x.id for x in users] or [-1]
         e, co = db.enrollments.c, db.courses.c
-        rows = c.execute(select(e.user_id, e.status, co.title, co.end_date, co.archived, co.hub_id)
+        rows = c.execute(select(e.user_id, e.status, co.title, co.end_date, co.archived)
                          .select_from(db.enrollments.join(db.courses, co.id == e.course_id))
                          .where(e.user_id.in_(ids))).all()
     out = []
     for x in users:
         mine = [r for r in rows if r.user_id == x.id]
-        if hubs is not None and not any(r.hub_id in hubs for r in mine):
-            continue
         studying = [r.title for r in mine if r.status == "approved" and not r.archived and not (r.end_date and r.end_date < today)]
         out.append({"user_id": x.id, "name": x.name, "school": x.school, "student_no": student_no(dict(x._mapping)),
                     "email": x.email, "reason": x.withdraw_reason, "requested_at": x.withdraw_at,
@@ -987,10 +971,37 @@ def withdraw_requests(hubs: set[int] | None, uid: int | None = None) -> list[dic
     return out
 
 
-@router.get("/api/hub/withdrawals")
-async def hub_withdrawals(request: Request):
+def school_students(schools: set[str] | None) -> list[dict]:
+    """우리 학교 학생과 수강신청한 강좌"""
+    with db.engine.connect() as c:
+        u = db.users.c
+        q = select(db.users).where(u.role == "student")
+        if schools is not None:
+            q = q.where(u.school.in_(schools))
+        users = c.execute(q).all()
+        e, co = db.enrollments.c, db.courses.c
+        rows = c.execute(select(e.user_id, e.status, co.id, co.title, co.instructor, co.hub_school, co.archived)
+                         .select_from(db.enrollments.join(db.courses, co.id == e.course_id))
+                         .where(e.user_id.in_([x.id for x in users] or [-1]))).all()
+    out = []
+    for x in users:
+        mine = [r for r in rows if r.user_id == x.id and r.status in ("approved", "pending")]
+        out.append({"user_id": x.id, "name": x.name or x.google_name, "school": x.school,
+                    "student_no": student_no(dict(x._mapping)), "withdraw": bool(x.withdraw_at),
+                    "courses": [{"id": r.id, "title": r.title, "instructor": r.instructor, "hub": r.hub_school,
+                                 "status": r.status, "archived": bool(r.archived)} for r in mine]})
+    out.sort(key=lambda x: (x["school"] or "", x["student_no"] or "~", x["name"] or ""))
+    return out
+
+
+@router.get("/api/school/overview")
+async def school_overview(request: Request):
+    """참여학교 교사: 우리 학교 학생의 수강 현황과 탈퇴 신청"""
     u = await require_user(request)
-    return {"requests": await db.run(withdraw_requests, managed_hubs(u))}
+    schools = my_schools(u)
+    return {"schools": sorted(schools) if schools is not None else [],
+            "students": await db.run(school_students, schools),
+            "withdrawals": await db.run(withdraw_requests, schools)}
 
 
 class WithdrawDecide(BaseModel):
@@ -998,12 +1009,12 @@ class WithdrawDecide(BaseModel):
     note: str = Field(default="", max_length=300)  # 반려 사유 (학생에게 보임)
 
 
-@router.post("/api/hub/withdrawals/{uid}")
-async def hub_withdraw_decide(uid: int, req: WithdrawDecide, request: Request):
-    """관리교사: 학생 탈퇴 승인(계정과 기록을 모두 지움) 또는 반려"""
+@router.post("/api/school/withdrawals/{uid}")
+async def school_withdraw_decide(uid: int, req: WithdrawDecide, request: Request):
+    """참여학교 교사: 우리 학교 학생 탈퇴 승인(계정과 기록을 모두 지움) 또는 반려"""
     u = await require_user(request)
-    hubs = managed_hubs(u)
-    if not await db.run(withdraw_requests, hubs, uid):
+    schools = my_schools(u)
+    if not await db.run(withdraw_requests, schools, uid):
         raise HTTPException(404, "탈퇴 신청을 찾을 수 없어요.")
     if req.action == "approve":
         await db.run(auth._withdraw, uid)

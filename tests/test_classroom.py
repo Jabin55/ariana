@@ -576,8 +576,8 @@ def test_instructor_without_affiliation(monkeypatch):
     assert a.post(f"/api/live/classes/{code}/join").status_code == 200
 
 
-def test_hub_structure_and_two_stage_enrollment(monkeypatch):
-    """전체 관리자 → 거점학교 관리교사 → 강사 → 학생(강사 1차 + 관리교사 최종 승인)"""
+def test_hub_structure_and_course_approval(monkeypatch):
+    """전체 관리자 → 거점학교 관리교사 → 강사(강좌 개설은 관리교사 승인) → 학생(강사 승인만으로 확정)"""
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
     admin = login("admin@gmail.com", name="전체관리자")
     pledge = {"contact": "010-0000-0000", "pledge": True}
@@ -627,40 +627,48 @@ def test_hub_structure_and_two_stage_enrollment(monkeypatch):
     assert prof.post("/api/courses", json={**base, "hub_id": 999}).status_code == 403
     cid = prof.post("/api/courses", json={**base, "hub_id": hub_id}).json()["id"]
 
-    # 4) 학생 수강신청 → 강사 1차 승인 → 관리교사 최종 승인
+    # 4) 강좌 개설은 거점학교 관리교사가 승인해야 열린다 (그 전엔 학생 목록에 없고 수업도 못 연다)
     s1, s2 = student(1), student(2)
+    mine = prof.get("/api/courses/mine").json()["courses"][0]
+    assert mine["approval"] == "pending"
+    assert s1.get("/api/courses/available").json()["courses"] == []
+    assert s1.post(f"/api/courses/{cid}/enroll").status_code == 404
+    assert prof.post("/api/live/classes", json={"title": "1주차", "course_id": cid}).status_code == 409
+    assert prof.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"}).status_code == 403  # 강사는 못 함
+    assert coord.post(f"/api/hub/courses/{cid}/approval", json={"action": "reject"}).status_code == 400  # 사유 필수
+    coord.post(f"/api/hub/courses/{cid}/approval", json={"action": "reject", "note": "수업계획서를 올려 주세요"})
+    mine = prof.get("/api/courses/mine").json()["courses"][0]
+    assert (mine["approval"], mine["approval_note"]) == ("rejected", "수업계획서를 올려 주세요")
+    prof.post(f"/api/courses/{cid}", json={"description": "고쳤어요"})  # 고치면 다시 승인 대기
+    assert prof.get("/api/courses/mine").json()["courses"][0]["approval"] == "pending"
+    ov = coord.get("/api/hub/overview").json()
+    assert [(x["title"], x["approval"]) for x in ov["courses"]] == [("정치 보충", "pending")]
+    assert coord.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"}).status_code == 200
+
+    # 5) 학생 수강신청 → 강사 승인만으로 수강 확정
     s1.post(f"/api/courses/{cid}/enroll")
     s2.post(f"/api/courses/{cid}/enroll")
     c = s1.get("/api/courses/available").json()["courses"][0]
     assert c["hub_school"] == "가나고등학교" and c["status"] == "pending"
     ens = {e["student_no"]: e for e in prof.get(f"/api/courses/{cid}/enrollments").json()["enrollments"]}
-    # 관리교사는 강사 승인 전에는 최종 승인 불가
-    assert coord.post(f"/api/hub/enrollments/{ens['20301']['id']}", json={"status": "approved"}).status_code == 409
+    code = create(prof, title="1주차", course_id=cid)["code"]
+    assert s1.post(f"/api/live/classes/{code}/join").status_code == 403  # 승인 전
     prof.post(f"/api/courses/{cid}/enrollments/{ens['20301']['user_id']}", json={"status": "approved"})
     prof.post(f"/api/courses/{cid}/enrollments/{ens['20302']['user_id']}", json={"status": "rejected", "note": "정원 초과"})
-    assert s1.get("/api/courses/available").json()["courses"][0]["status"] == "instructor_ok"
+    assert s1.get("/api/courses/available").json()["courses"][0]["status"] == "approved"
     rej = s2.get("/api/courses/available").json()["courses"][0]
     assert rej["status"] == "rejected" and rej["note"] == "정원 초과"
-    # 강사 승인만으로는 아직 수업에 못 들어온다
-    code = create(prof, title="1주차", course_id=cid)["code"]
-    assert s1.get("/api/courses/live-now").json()["classes"] == []
-    assert s1.post(f"/api/live/classes/{code}/join").status_code == 403
-    ov = coord.get("/api/hub/overview").json()
-    assert ov["courses"][0]["waiting"] == 1
-    waiting = [e for e in ov["enrollments"] if e["status"] == "instructor_ok"]
-    assert [e["student_no"] for e in waiting] == ["20301"]
-    assert coord.post(f"/api/hub/enrollments/{waiting[0]['id']}", json={"status": "approved"}).status_code == 200
-    # 최종 승인 뒤에야 수강 확정 → 코드 없이 입장
-    assert s1.get("/api/courses/available").json()["courses"][0]["status"] == "approved"
     assert s1.get("/api/courses/live-now").json()["classes"][0]["code"] == code
     assert s1.post(f"/api/live/classes/{code}/join").status_code == 200
-    # 관리교사 '모두 최종 승인'
     s3 = student(3)
     s3.post(f"/api/courses/{cid}/enroll")
-    prof.post(f"/api/courses/{cid}/approve-all")
-    assert coord.post("/api/hub/approve-all", json={"course_id": cid}).json()["approved"] == 1
+    assert prof.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
+    # 관리교사: 수업 기록(언제 수업했는지)
+    log = coord.get("/api/hub/class-log").json()["classes"]
+    assert [(x["course_title"], x["title"], x["attended"]) for x in log] == [("정치 보충", "1주차", 0)]
+    assert prof.get("/api/hub/class-log").status_code == 403
 
-    # 5) 관리교사 권한을 해제하면 관리 기능이 꺼지고, 강사 기간이 끝나면 강사 기능이 꺼진다
+    # 6) 관리교사 권한을 해제하면 관리 기능이 꺼지고, 강사 기간이 끝나면 강사 기능이 꺼진다
     admin.post(f"/api/staff/{capps[0]['id']}", json={"action": "revoke", "note": "임기 종료"})
     assert coord.get("/api/hub/overview").status_code in (403, 409)
     assert coord.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_until": "2099-12-31"}).status_code == 403
@@ -741,6 +749,7 @@ def test_instructor_moves_to_another_hub(monkeypatch):
     for i in ids.values():
         admin.post(f"/api/staff/{i}", json={"action": "approve", "valid_until": "2099-02-28"})
     cid = t.post("/api/courses", json={**COURSE, "hub_id": hubs["가나고"]}).json()["id"]
+    admin.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"})
     assert create(t, title="1주차", course_id=cid)["code"]
 
     # 가나고 강사 해제 → 다라고에서는 여전히 강사지만 가나고 강좌는 잠긴다
@@ -1104,65 +1113,75 @@ def test_signup_choice_schools_and_grades(monkeypatch):
 
 
 def test_withdraw(monkeypatch, tmp_path):
+    """학생 탈퇴는 그 학생 소속 학교의 참여학교 교사(없으면 전체 관리자)가 승인한다"""
     import app.assignments as asg
     monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
-    # 거점학교 두 곳: 가나고(관리교사 coord), 다라고(관리교사 other)
-    hubs = {}
-    for email, hub in (("coord@gmail.com", "가나고등학교"), ("coord2@gmail.com", "다라고등학교")):
+    # 참여학교 교사: 가나중(학생들 학교) p1, 다른 학교 p2
+    ps = {}
+    for email, school in (("p1@gmail.com", SCHOOL), ("p2@gmail.com", "마바중학교")):
         c = TestClient(app)
         c.post("/api/auth/dev", json={"email": email})
-        r = c.post("/api/staff/apply", json={"role": "coordinator", "name": "관리", "hub_name": hub, "contact": "010", "pledge": True})
+        r = c.post("/api/staff/apply", json={"role": "participant", "name": "담당", "hub_name": school,
+                                             "affiliation": school, "contact": "010", "pledge": True})
         assert r.status_code == 200, r.text
-        mid = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]["id"]
-        assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
-        hubs[hub] = c
-    coord, other = hubs["가나고등학교"], hubs["다라고등학교"]
-    hub_id = {h["name"]: h["id"] for h in boss.get("/api/hubs").json()["hubs"]}["가나고등학교"]
-    t = boss  # 전체 관리자가 가나고등학교 강좌를 연다 (강사 승인 → 관리교사 최종 승인)
-    cid = t.post("/api/courses", json={**COURSE, "hub_id": hub_id}).json()["id"]
+        apps = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"]
+        assert apps[0]["hub"] == school and apps[0]["status"] == "pending"
+        assert c.get("/api/staff/applications", params={"role": "participant"}).status_code == 403
+        assert boss.post(f"/api/staff/{apps[0]['id']}", json={"action": "approve"}).status_code == 200
+        me = c.get("/api/me").json()["user"]
+        assert me["role"] == "teacher" and me["participant_schools"] == [school]
+        assert not (me["teach_hubs"] or me["lead_hubs"] or me["coordinator_hubs"])
+        ps[school] = c
+    p1, p2 = ps[SCHOOL], ps["마바중학교"]
+    t = boss  # 전체 관리자가 연 강좌는 바로 개설 승인
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
     a, b = student(1), student(2)
     for s in (a, b):
         s.post(f"/api/courses/{cid}/enroll")
     t.post(f"/api/courses/{cid}/approve-all")
-    coord.post("/api/hub/approve-all", json={"course_id": cid})
     aid = t.post(f"/api/courses/{cid}/assignments", json={"title": "보고서"}).json()["id"]
     a.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF a", headers={"Content-Type": "application/pdf"})
     b.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF b", headers={"Content-Type": "application/pdf"})
+    # 참여학교 교사는 우리 학교 학생과 수강 강좌를 본다
+    ov = p1.get("/api/school/overview").json()
+    assert [(x["student_no"], [c["title"] for c in x["courses"]]) for x in ov["students"]] == [("20301", ["강좌"]), ("20302", ["강좌"])]
+    assert p2.get("/api/school/overview").json()["students"] == []
+    assert a.get("/api/school/overview").status_code == 403
     # 확인 글자가 없으면 안 되고, 강좌를 연 선생님은 바로 탈퇴할 수 없다
     assert a.post("/api/me/withdraw", json={"confirm": "네"}).status_code == 400
     assert t.post("/api/me/withdraw", json={"confirm": "탈퇴"}).status_code == 409
-    # 학생은 신청만 → 그 강좌 거점학교 관리교사·전체 관리자에게만 보인다
+    # 학생은 신청만 → 우리 학교 참여학교 교사·전체 관리자에게만 보인다
     r = a.post("/api/me/withdraw", json={"confirm": "탈퇴", "reason": "전학"}).json()
     assert r["requested"] and a.get("/api/me").json()["user"]["withdraw_requested"]
-    q = coord.get("/api/hub/withdrawals").json()["requests"]
+    q = p1.get("/api/school/overview").json()["withdrawals"]
     assert [x["student_no"] for x in q] == ["20301"] and q[0]["reason"] == "전학" and q[0]["studying"] == ["강좌"]
-    assert other.get("/api/hub/withdrawals").json()["requests"] == []
-    assert other.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 404
-    assert a.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 403
+    assert p2.get("/api/school/overview").json()["withdrawals"] == []
+    assert p2.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 404
+    assert a.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 403
     # 반려하면 사유가 학생에게 보이고, 다시 신청·취소할 수 있다
-    coord.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "reject", "note": "학기 끝나고 해요"})
+    p1.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "reject", "note": "학기 끝나고 해요"})
     me = a.get("/api/me").json()["user"]
     assert not me["withdraw_requested"] and me["withdraw_note"] == "학기 끝나고 해요"
     a.post("/api/me/withdraw", json={"confirm": "탈퇴"})
     a.post("/api/me/withdraw/cancel")
-    assert coord.get("/api/hub/withdrawals").json()["requests"] == []
+    assert p1.get("/api/school/overview").json()["withdrawals"] == []
     a.post("/api/me/withdraw", json={"confirm": "탈퇴"})
     # 승인하면 그 학생의 기록·파일만 모두 지워진다
-    assert coord.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 200
+    assert p1.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 200
     assert a.get("/api/me").json()["user"] is None
     subs = t.get(f"/api/assignments/{aid}/submissions").json()["submissions"]
     assert [s["student_no"] for s in subs] == ["20302"] and subs[0]["submitted"]
     assert len(list((tmp_path / "assignments" / str(aid)).iterdir())) == 1
     again = login("st1@s.school.kr")  # 같은 계정으로 다시 로그인하면 새로 가입
     assert again.get("/api/me").json()["user"]["needs_profile"]
-    # 어느 거점학교와도 상관없는 학생은 전체 관리자가 승인
-    c = student(5)
+    # 참여학교 교사가 없는 학교 학생은 전체 관리자가 승인
+    c = login("st9@s.school.kr", name="학생9", school="사아중학교", grade=1, class_no=1, number=9)
     c.post("/api/me/withdraw", json={"confirm": "탈퇴"})
-    assert coord.get("/api/hub/withdrawals").json()["requests"] == []
-    uid = boss.get("/api/hub/withdrawals").json()["requests"][0]["user_id"]
-    assert boss.post(f"/api/hub/withdrawals/{uid}", json={"action": "approve"}).status_code == 200
+    assert p1.get("/api/school/overview").json()["withdrawals"] == []
+    uid = boss.get("/api/school/overview").json()["withdrawals"][0]["user_id"]
+    assert boss.post(f"/api/school/withdrawals/{uid}", json={"action": "approve"}).status_code == 200
     # 학생이 아닌 사람(강사 신청만 한 사람)은 바로 탈퇴
     g = login("guest@gmail.com", name="손님")
     assert g.post("/api/me/withdraw", json={"confirm": "탈퇴"}).json()["requested"] is False
@@ -1221,6 +1240,7 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     r = prof.post("/api/courses", json={**course, "team_teaching": True, "co_teachers": [asst_id]})
     assert r.status_code == 200, r.text
     cid = r.json()["id"]
+    assert coord.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"}).status_code == 200
     c = prof.get("/api/courses/mine").json()["courses"][0]
     assert (c["subject_group"], c["subject_area"], c["subject_type"]) == ("사회(역사/도덕 포함)", "사회", "진로선택")
     assert c["credits"] == 3 and c["hours"] == 48 and c["achievement_text"] == "5단계 (A~E)" and c["recruit"] == "open"
@@ -1365,8 +1385,8 @@ def test_student_sees_why_cannot_enter():
     assert "코드를 다시" in a.post("/api/live/classes/ZZZZZZ/join").json()["detail"]
 
 
-def test_coordinator_who_teaches_approves_once(monkeypatch):
-    """거점학교 관리교사(또는 전체 관리자)가 직접 연 강좌는 강사 승인 한 번으로 바로 수강 확정"""
+def test_roles_are_separate_and_one_step_enrollment(monkeypatch):
+    """거점학교 관리교사는 강의하려면 강사로도 등록해야 한다. 수강신청은 강사 승인 한 번으로 확정."""
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
     coord = TestClient(app)
@@ -1374,23 +1394,28 @@ def test_coordinator_who_teaches_approves_once(monkeypatch):
     coord.post("/api/staff/apply", json={"role": "coordinator", "name": "한관리", "hub_name": "가나고등학교", "contact": "010", "pledge": True})
     mid = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]["id"]
     boss.post(f"/api/staff/{mid}", json={"action": "approve"})
-    hub_id = coord.get("/api/me").json()["user"]["coordinator_hubs"][0]["id"]
-    cid = coord.post("/api/courses", json={**COURSE, "hub_id": hub_id}).json()["id"]
-    assert coord.get("/api/courses/mine").json()["courses"][0]["can_finalize"]
+    me = coord.get("/api/me").json()["user"]
+    hub_id = me["coordinator_hubs"][0]["id"]
+    assert me["lead_hubs"] == [] and me["teach_hubs"] == []
+    assert coord.post("/api/courses", json={**COURSE, "hub_id": hub_id}).status_code == 403
+    # 참여학교 교사 신청은 거점학교 관리교사도 승인할 수 있다
+    p = TestClient(app)
+    p.post("/api/auth/dev", json={"email": "p@gmail.com"})
+    assert p.post("/api/staff/apply", json={"role": "participant", "name": "참여", "hub_name": SCHOOL, "contact": "010", "pledge": True}).status_code == 200
+    pid = coord.get("/api/staff/applications", params={"role": "participant"}).json()["applications"][0]["id"]
+    assert coord.post(f"/api/staff/{pid}", json={"action": "approve"}).status_code == 200
+    assert p.get("/api/me").json()["user"]["participant_schools"] == [SCHOOL]
+    assert p.get("/api/hub/overview").status_code == 403
+    # 전체 관리자가 연 강좌는 바로 개설 승인, 강사 승인 한 번이면 수강 확정
+    cid = boss.post("/api/courses", json={**COURSE, "title": "정치", "hub_id": hub_id}).json()["id"]
     a, b = student(1), student(2)
     for s in (a, b):
         s.post(f"/api/courses/{cid}/enroll")
     uid = a.get("/api/me").json()["user"]["id"]
-    coord.post(f"/api/courses/{cid}/enrollments/{uid}", json={"status": "approved"})
+    boss.post(f"/api/courses/{cid}/enrollments/{uid}", json={"status": "approved"})
     assert [c["status"] for c in a.get("/api/courses/available").json()["courses"]] == ["approved"]
-    coord.post(f"/api/courses/{cid}/approve-all")
+    boss.post(f"/api/courses/{cid}/approve-all")
     assert [c["status"] for c in b.get("/api/courses/available").json()["courses"]] == ["approved"]
-    # 전체 관리자도 등록된 거점학교에 강좌를 열 수 있고, 승인 한 번이면 확정
-    cid2 = boss.post("/api/courses", json={**COURSE, "title": "정치", "hub_id": hub_id}).json()["id"]
-    a.post(f"/api/courses/{cid2}/enroll")
-    boss.post(f"/api/courses/{cid2}/enrollments/{uid}", json={"status": "approved"})
-    assert {c["title"]: c["status"] for c in a.get("/api/courses/available").json()["courses"]}["정치"] == "approved"
-
 
 
 def test_instructor_applies_to_any_ulsan_school(monkeypatch):

@@ -121,9 +121,9 @@ memberships = Table(
     "memberships", metadata,  # 관리교사·강사 등록 신청과 승인 (한 사람이 여러 거점학교·역할을 가질 수 있음)
     Column("id", Integer, primary_key=True),
     Column("user_id", Integer, nullable=False, index=True),
-    Column("role", String(12), nullable=False),  # coordinator(거점학교 관리교사) instructor(강사)
+    Column("role", String(12), nullable=False),  # coordinator(거점학교 관리교사) instructor(강사) participant(참여학교 교사)
     Column("hub_id", Integer, index=True),  # 강사: 신청한 거점학교 / 관리교사: 승인 때 정해짐
-    Column("hub_name", String(60), nullable=False, default=""),  # 관리교사가 신청서에 적은 거점학교명
+    Column("hub_name", String(60), nullable=False, default=""),  # 관리교사: 신청한 거점학교명 / 참여학교 교사: 소속 학교
     Column("status", String(10), nullable=False),  # pending(대기) approved(승인) rejected(거절) revoked(해제)
     Column("kind", String(15), nullable=False, default=""),  # (더 이상 쓰지 않음: 예전 정규·보충수업 구분)
     Column("contact", String(100), nullable=False, default=""),
@@ -189,6 +189,10 @@ courses = Table(
     Column("class_end", String(5), nullable=False, default=""),
     Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
     Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
+    # 강좌 개설 승인 (거점학교 관리교사): pending(대기) approved(승인) rejected(반려). 승인돼야 수강신청·수업을 받는다
+    Column("approval", String(10), nullable=False, default="approved"),
+    Column("approval_note", String(300), nullable=False, default=""),  # 반려 사유 (강사에게 보임)
+    Column("approved_by", Integer),
     Column("created_at", Float, nullable=False),
 )
 
@@ -197,7 +201,7 @@ enrollments = Table(
     Column("id", Integer, primary_key=True),
     Column("course_id", Integer, nullable=False, index=True),
     Column("user_id", Integer, nullable=False, index=True),
-    # pending(강사 승인 대기) instructor_ok(강사 승인 → 관리교사 최종 승인 대기) approved(수강 확정) rejected(거절)
+    # pending(강사 승인 대기) approved(수강 확정) rejected(거절). (instructor_ok: 예전 관리교사 최종 승인 대기 → approved로 바꿔 둠)
     Column("status", String(15), nullable=False),
     Column("requested_at", Float, nullable=False),
     Column("decided_at", Float),
@@ -388,7 +392,10 @@ def init() -> None:
              ("memberships", "affil_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "office", "VARCHAR(30) NOT NULL DEFAULT ''"),
              ("memberships", "license", "VARCHAR(100) NOT NULL DEFAULT ''"),
-             ("memberships", "email", "VARCHAR(200) NOT NULL DEFAULT ''")]
+             ("memberships", "email", "VARCHAR(200) NOT NULL DEFAULT ''"),
+             ("courses", "approval", "VARCHAR(10) NOT NULL DEFAULT 'approved'"),
+             ("courses", "approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("courses", "approved_by", "INTEGER")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:
@@ -396,6 +403,9 @@ def init() -> None:
     if engine.dialect.name == "postgresql":  # 수업 소개를 길게 쓸 수 있도록 (예전: 300자)
         with engine.begin() as c:
             c.execute(text("ALTER TABLE courses ALTER COLUMN description TYPE TEXT"))
+    # 수강신청은 강사 승인만으로 확정된다 (예전 '관리교사 최종 승인 대기'는 확정으로)
+    with engine.begin() as c:
+        c.execute(update(enrollments).where(enrollments.c.status == "instructor_ok").values(status="approved"))
     # 서버가 갑자기 꺼져 '접속 중'으로 남은 기록은 마지막 확인 시각에 나간 것으로 정리
     with engine.begin() as c:
         c.execute(update(attendance).where(attendance.c.left_at.is_(None))

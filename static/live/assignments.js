@@ -1,4 +1,4 @@
-/* 과제: 선생님(강좌 카드의 📝 과제)과 학생(첫 화면 📝 과제) */
+/* 활동(예전 과제): 선생님(강좌 운영 → 활동 관리)과 학생(마이페이지 📝 활동) */
 const openAssign = new Set(); // 과제 칸을 펼친 강좌
 const openSubs = new Set(); // 제출 현황을 펼친 과제
 
@@ -26,7 +26,7 @@ async function renderCourseAssignments(c, box) {
   let data;
   try { data = await api(`/api/courses/${c.id}/assignments`); } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
   const reload = () => renderCourseAssignments(c, box);
-  const title = h("input", { maxlength: 80, placeholder: "과제 제목 (예: 선거 제도 비교 보고서)", required: true });
+  const title = h("input", { maxlength: 80, placeholder: "활동 제목 (예: 선거 제도 비교 토론 준비)", required: true });
   const desc = h("textarea", { rows: 3, maxlength: 5000, placeholder: "안내 (분량, 형식, 평가 기준 등)" });
   const due = h("input", { type: "datetime-local" });
   const late = h("input", { type: "checkbox", checked: true });
@@ -34,14 +34,14 @@ async function renderCourseAssignments(c, box) {
     e.preventDefault();
     try {
       await api(`/api/courses/${c.id}/assignments`, { title: title.value, description: desc.value, due: due.value, allow_late: late.checked });
-      toast("과제를 냈어요. 수강생 첫 화면에 바로 보여요.");
+      toast("활동을 올렸어요. 수강생 마이페이지에 바로 보여요.");
       reload();
     } catch (err) { toast(err.message); }
   } },
-    h("strong", {}, "새 과제"), title, desc,
+    h("strong", {}, "새 활동"), title, desc,
     h("div", { class: "row" }, h("span", { class: "muted" }, "마감"), due,
       h("label", { class: "switch" }, late, "마감 뒤에도 받기(지각 표시)")),
-    h("button", { class: "primary", type: "submit" }, "과제 내기"));
+    h("button", { class: "primary", type: "submit" }, "활동 올리기"));
 
   const items = data.assignments.map((a) => {
     const subsBox = h("div");
@@ -68,7 +68,7 @@ async function renderCourseAssignments(c, box) {
         h("button", { class: "small", onclick: async () => { await api(`/api/assignments/${a.id}`, { closed: !a.closed }); reload(); } },
           a.closed ? "다시 받기" : "제출 마감"),
         h("button", { class: "small danger", onclick: async () => {
-          if (!confirm(`'${a.title}' 과제를 지울까요? 학생들이 낸 파일도 모두 지워져요.`)) return;
+          if (!confirm(`'${a.title}' 활동을 지울까요? 학생들이 낸 파일도 모두 지워져요.`)) return;
           await api(`/api/assignments/${a.id}/delete`, {});
           reload();
         } }, "지우기")),
@@ -76,8 +76,8 @@ async function renderCourseAssignments(c, box) {
     if (openSubs.has(a.id)) renderSubmissions(a, subsBox, reload);
     return card;
   });
-  box.replaceChildren(h("h3", { class: "section-title", style: "margin:12px 0 6px" }, "📝 과제"), form,
-    ...(items.length ? items : [h("p", { class: "muted" }, "아직 낸 과제가 없어요.")]));
+  box.replaceChildren(h("h3", { class: "section-title", style: "margin:12px 0 6px" }, "📝 활동"), form,
+    ...(items.length ? items : [h("p", { class: "muted" }, "아직 올린 활동이 없어요.")]));
 }
 
 async function renderSubmissions(a, box, reload) {

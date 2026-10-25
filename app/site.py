@@ -93,7 +93,8 @@ async def about():
   <ul class="role-list">
     <li><strong>학생</strong> — 울산 지역 고등학생. 학교 구글 계정으로 가입하고 강좌를 수강신청해요.</li>
     <li><strong>강사</strong> — 거점학교에서 강의하는 선생님(학교 교사, 대학교수 등). 등록을 신청해 승인받아요.</li>
-    <li><strong>거점학교 관리교사</strong> — 강사 등록과 학생 수강을 최종 승인해요.</li>
+    <li><strong>거점학교 관리교사</strong> — 강사 등록과 강좌 개설을 승인하고, 수업 기록을 살펴봐요.</li>
+    <li><strong>참여학교 교사</strong> — 우리 학교 학생의 수강 현황을 보고, 학생 탈퇴를 승인해요.</li>
   </ul>
 </section>
 <section class="cta-row">
@@ -173,12 +174,12 @@ async def guide():
             + pin(1, "4%", "2%") + pin(2, "-1%", "93%") + pin(3, "40%", "2%"))),
         step(3, "수강 신청", [
             "로그인한 뒤 <b>[마이페이지] → 수강신청</b>에서 원하는 강좌의 <b>[수강신청]</b>을 눌러요.",
-            "<b>강사 선생님 승인</b> → <b>거점학교 관리교사 최종 승인</b>을 거치면 <b>수강 확정</b>! 진행 상황은 마이페이지 '내 강좌'에서 보여요.",
+            "<b>강사 선생님이 승인</b>하면 바로 <b>수강 확정</b>! 진행 상황은 마이페이지 '내 강좌'에서 보여요.",
             "승인 전에는 언제든 신청을 취소할 수 있어요. 정원이 차거나 모집 기간이 끝나면 신청할 수 없어요.",
         ], mock("class…/live (마이페이지)", """
 <div class="m-line"><div><b>인공지능 기초</b><small>강사 김○○ · △△고등학교 · 1·2학년 · 4학점</small></div><span class="m-btn">수강신청</span></div>
-<div class="m-flow"><span class="done">신청</span><i>›</i><span class="done">강사 승인</span><i>›</i><span class="now">관리교사 승인</span><i>›</i><span>수강 확정</span></div>
-<div class="m-line"><div><b>법과 사회</b><small>관리교사 승인 대기</small></div><span class="m-btn ghost">신청 취소</span></div>"""
+<div class="m-flow"><span class="done">신청</span><i>›</i><span class="now">강사 승인</span><i>›</i><span>수강 확정</span></div>
+<div class="m-line"><div><b>법과 사회</b><small>강사 승인 대기</small></div><span class="m-btn ghost">신청 취소</span></div>"""
             + pin(1, "10%", "2%") + pin(2, "42%", "2%") + pin(3, "72%", "2%"))),
         step(4, "실시간 수업 듣기", [
             "수업 시간이 되면 마이페이지 <b>[지금 들어갈 수 있는 수업]</b>에 강좌가 떠요. <b>[들어가기]</b>만 누르면 돼요. 수업 코드는 필요 없어요.",
@@ -308,7 +309,7 @@ async def catalog():
     def run():
         with db.engine.connect() as c:
             co = db.courses.c
-            return c.execute(select(db.courses).where(co.archived == 0, co.open == 1)
+            return c.execute(select(db.courses).where(co.archived == 0, co.open == 1, co.approval == "approved")
                              .order_by(co.hub_school, co.title)).all()
 
     def sess(ids):
@@ -392,9 +393,9 @@ async def help_page():
   <details><summary>수업 중 '🔴 녹화 중'이 보여요</summary>
     <p>선생님이 복습 자료 등 수업 목적으로 녹화하고 있다는 뜻이에요. 녹화본은 선생님 컴퓨터에만 저장돼요. 카메라를 꺼 두면 얼굴은 녹화되지 않아요.</p></details>
   <details><summary>선생님(강사)으로 강의하고 싶어요</summary>
-    <p>마이페이지에서 '선생님으로 시작하기'로 로그인한 뒤, 강의할 거점학교와 희망 기간을 적어 강사 등록을 신청하세요. 거점학교 관리교사가 승인하면 강좌를 열 수 있어요.</p></details>
+    <p>마이페이지에서 '선생님으로 시작하기'로 로그인한 뒤, 강의할 거점학교와 희망 기간을 적어 강사 등록을 신청하세요. 거점학교 관리교사가 승인하면 강좌 개설을 신청할 수 있고, 관리교사가 강좌 개설을 승인하면 학생들이 수강신청해요.</p></details>
   <details><summary>탈퇴하고 싶어요</summary>
-    <p>마이페이지 → <b>내 정보</b> 맨 아래 <b>'회원 탈퇴'</b>에서 신청해요. 학생은 수강한 강좌의 <b>거점학교 관리교사 선생님이 승인</b>하면 탈퇴되고, 그때 출결·과제 등 내 기록이 모두 지워져요. 승인 전에는 신청을 취소할 수 있어요.</p></details>
+    <p>마이페이지 → <b>내 정보</b> 맨 아래 <b>'회원 탈퇴'</b>에서 신청해요. 학생은 <b>우리 학교 참여학교 담당 선생님이 승인</b>하면 탈퇴되고, 그때 출결·과제 등 내 기록이 모두 지워져요. 승인 전에는 신청을 취소할 수 있어요.</p></details>
   <details><summary>내 개인정보는 어떻게 쓰이나요</summary>
     <p><a href="/live/privacy">개인정보 처리방침</a>을 확인해 주세요. 수업 영상은 서버에 녹화·저장하지 않아요.</p></details>
 </section>
