@@ -1003,7 +1003,11 @@ async def live_socket(ws: WebSocket, code: str):
             s.sessions += 1
             log_event(k, s, "rejoin" if s.sessions > 1 else "join")
             try:
-                s.att_id = await db.run(_att_open, k.db_id, int(s.id))
+                att_id = await db.run(_att_open, k.db_id, int(s.id))
+                if classes.get(k.code) is k:
+                    s.att_id = att_id
+                else:  # 기록하는 사이에 선생님이 수업을 끝냈다
+                    await db.run(_att_close, att_id, time.time(), "ended")
             except Exception:
                 log.warning("출결 기록 실패", exc_info=True)
     else:
