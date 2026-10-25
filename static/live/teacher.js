@@ -222,24 +222,28 @@ function renderMain(room) {
   const sc = screenItem(room, lp);
   prefs.screen = !!lp.getTrackPublication(Track.Source.ScreenShare);
   const presenting = !!S?.present;
-  // 토론 화면이면 선생님 화면에도 두 학생을 크게 나란히
-  const duo = S?.layout?.mode === "debate" && !sc
-    ? (S.layout.pair || []).map((id) => room.remoteParticipants.get(`s-${id}`)).filter(Boolean).map((p) => cameraItem(room, p, { flag: "🗣️" }))
-    : [];
-  stage.hidden = (!sc && !duo.length) || presenting;
-  stage.classList.toggle("duo", duo.length === 2);
-  syncTiles(stage, presenting ? [] : sc ? [sc] : duo);
+  // 선생님이 고른 화면 구성을 선생님 화면에도 똑같이: teacher(선생님 크게) grid(모두 나열) debate(학생 둘 나란히)
+  const mode = S?.layout?.mode || "teacher";
+  const pair = mode === "debate" ? (S.layout.pair || []).map((id) => `s-${id}`) : [];
+  const duo = pair.map((id) => room.remoteParticipants.get(id)).filter(Boolean).map((p) => cameraItem(room, p, { flag: "🗣️" }));
+  const me = cameraItem(room, lp, { name: "선생님 (나)" });
+  const stageItems = presenting ? [] : sc ? [sc, { ...me, pip: true }] : duo.length ? duo : mode === "teacher" ? [me] : [];
+  stage.hidden = !stageItems.length;
+  stage.classList.toggle("duo", !sc && duo.length === 2);
+  syncTiles(stage, stageItems);
   const flags = new Map((S?.students || []).map((s) => [`s-${s.id}`, `${s.mic_req ? "🎙️" : ""}${s.hand ? "✋" : ""}`]));
   const students = [...room.remoteParticipants.values()].filter((p) => !isTeacher(p));
   // 발표 중에 '학생 화면 보기'를 끄면 영상을 받지 않는다(소리는 계속)
   const hideGrid = presenting && !showStudents;
+  const selfInStage = stageItems.some((x) => x.key === me.key);
   $("#grid").hidden = hideGrid;
-  syncTiles($("#grid"), hideGrid ? [] : [cameraItem(room, lp, { name: "선생님" }),
-    ...students.map((p) => cameraItem(room, p, { flag: flags.get(p.identity) || "" }))]);
+  $("#grid").classList.toggle("strip", selfInStage || duo.length > 0); // 크게 보이는 화면이 있으면 학생은 아래 작은 줄로
+  syncTiles($("#grid"), hideGrid ? [] : [...(selfInStage ? [] : [me]),
+    ...students.filter((p) => !pair.includes(p.identity)).map((p) => cameraItem(room, p, { flag: flags.get(p.identity) || "" }))]);
   // 학생 마이크·카메라가 켜졌는지는 화상 연결에서 알 수 있다 → 바뀌었을 때만 학생 목록을 다시 그린다
   const devSig = students.map((p) => `${p.identity}:${+p.isMicrophoneEnabled}${+p.isCameraEnabled}`).join(",");
   if (devSig !== lastDevSig) { lastDevSig = devSig; if (S) renderPeople(); }
-  $("#grid").classList.toggle("big", students.length < 9); // 학생이 적으면 타일을 크게
+  $("#grid").classList.toggle("big", students.length < 9 && !$("#grid").classList.contains("strip")); // 학생이 적으면 타일을 크게
   $("#grid-empty").hidden = students.length > 0;
   $("#sound").hidden = room.canPlaybackAudio;
   renderControls();
@@ -595,19 +599,14 @@ function renderBroadcast() {
 }
 $("#bo-voice").addEventListener("click", () => (broadcast ? stopBroadcast() : startBroadcast()));
 
+/** 모둠 활동: 시간 제한 없이, 시작한 뒤 지난 시간만 보여 준다 */
 function tickTimer() {
   const el = $("#bo-timer");
-  if (!S?.breakout || !S.ends_at) { el.textContent = S?.breakout ? "시간 제한 없음" : ""; el.classList.remove("over"); return; }
-  const r = fmtRemaining(S.ends_at);
-  el.textContent = r.over ? `⏰ 시간 끝 (${r.text})` : `⏱ ${r.text}`;
-  el.classList.toggle("over", r.over);
+  if (!S?.breakout || !S.breakout_at) { el.textContent = ""; return; }
+  const sec = Math.max(0, Math.floor(clock.now() - S.breakout_at));
+  el.textContent = `⏱ ${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, "0")}초 지남`;
 }
 setInterval(tickTimer, 1000);
-
-document.querySelectorAll("[data-add-min]").forEach((b) => b.addEventListener("click", () => {
-  const left = S.ends_at ? Math.max(0, S.ends_at - clock.now()) / 60 : 0;
-  sock.send({ t: "breakout_time", minutes: left + Number(b.dataset.addMin) });
-}));
 $("#bo-end").addEventListener("click", () => sock.send({ t: "breakout_end" }));
 $("#bo-broadcast").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -1206,44 +1205,57 @@ function renderGroups() {
   const sig = JSON.stringify([S.groups, S.breakout, S.students.map((s) => [s.id, s.name, s.group, s.online])]);
   if (sig === gSig) return;
   gSig = sig;
-  $("#bo-start").textContent = S.breakout ? "진행 중 (시간 다시 설정)" : "모둠 활동 시작";
+  $("#bo-start").textContent = S.breakout ? "모둠활동 진행 중" : "▶ 모둠활동 시작";
+  $("#bo-start").disabled = S.breakout;
   const box = $("#group-edit");
   box.replaceChildren();
-  if (!S.groups.length) return;
-
-  const select = (s) => h("select", { onchange: (e) => sock.send({ t: "breakout_assign", target: s.id, group: e.target.value || null }) },
-    h("option", { value: "" }, "미배정"),
-    koSort(S.groups, (g) => g.name).map((g) => h("option", { value: g.id, selected: s.group === g.id }, g.name)));
-  const chip = (s) => h("span", { class: "chip" }, `${s.online ? "" : "💤 "}${s.name}`, select(s));
-
-  for (const g of S.groups) {
-    const members = S.students.filter((s) => s.group === g.id);
-    box.append(h("div", { class: "g" },
-      h("strong", {}, `${g.name} (${members.length}명)`),
-      h("div", { class: "members" }, members.map(chip))));
+  if (!S.groups.length) {
+    box.append(h("p", { class: "muted", style: "font-size:0.9rem" }, "모둠 수를 정하고 '모둠 만들기'를 누르면 여기에 A모둠, B모둠… 칸이 생겨요."));
+    return;
   }
-  const none = S.students.filter((s) => !s.group || !S.groups.some((g) => g.id === s.group));
-  if (none.length) {
-    box.append(h("div", { class: "g" }, h("strong", {}, `미배정 (${none.length}명)`),
-      h("span", { class: "muted", style: "font-size:0.85rem" }, "활동을 시작하면 인원이 적은 모둠으로 자동 배정돼요."),
-      h("div", { class: "members" }, none.map(chip))));
+  const groups = koSort(S.groups, (g) => g.name);
+  const assign = (s, gid) => sock.send({ t: "breakout_assign", target: s.id, group: gid });
+  const short = (g) => g.name.replace("모둠", "");
+  const label = (s) => h("span", { class: "who" }, `${s.online ? "" : "💤 "}${s.name}`);
+  // 미배정 학생: 모둠 글자 버튼을 눌러 바로 보낸다
+  const none = koSort(S.students.filter((s) => !s.group || !S.groups.some((g) => g.id === s.group)), (s) => s.name);
+  box.append(h("div", { class: "g unassigned" },
+    h("strong", {}, `미배정 ${none.length}명`),
+    none.length ? h("div", { class: "members" }, none.map((s) => h("div", { class: "pick" }, label(s),
+      h("span", { class: "letters" }, groups.map((g) => h("button", { class: "small", title: `${g.name}으로`, onclick: () => assign(s, g.id) }, short(g)))))))
+      : h("span", { class: "muted", style: "font-size:0.85rem" }, "모든 학생이 모둠에 들어갔어요.")));
+  // 모둠별 칸: 이름 옆 ✕ 로 빼면 미배정으로 돌아간다
+  const board = h("div", { class: "group-board" });
+  for (const g of groups) {
+    const members = koSort(S.students.filter((s) => s.group === g.id), (s) => s.name);
+    board.append(h("div", { class: "g" },
+      h("strong", {}, `${g.name} `, h("span", { class: "muted" }, `${members.length}명`)),
+      h("div", { class: "members" }, members.length ? members.map((s) => h("div", { class: "pick" }, label(s),
+        h("button", { class: "small", title: "모둠에서 빼기", onclick: () => assign(s, null) }, "✕")))
+        : h("span", { class: "muted", style: "font-size:0.85rem" }, "비어 있어요"))));
+  }
+  box.append(board);
+  if (none.length && !S.breakout) {
+    box.append(h("p", { class: "muted", style: "font-size:0.85rem;margin:6px 0 0" }, "미배정 학생은 시작할 때 인원이 적은 모둠으로 들어가요."));
   }
 }
 
-/** 모둠 수로 나눌지, 모둠당 인원으로 나눌지 */
+/** 모둠 수 */
 function groupPlan() {
-  const v = Math.max(1, Number($("#bo-n").value) || 4);
-  return $("#bo-by").value === "size" ? { size: v } : { n: Math.min(12, v) };
+  return { n: Math.min(12, Math.max(1, Number($("#bo-n").value) || 4)) };
 }
 
+$("#bo-setup").addEventListener("click", () => {
+  if (S.breakout && !confirm("모둠 활동 중이에요. 모둠 수를 바꾸면 없어지는 모둠의 학생은 미배정이 돼요. 계속할까요?")) return;
+  sock.send({ t: "breakout_setup", ...groupPlan() });
+});
 $("#bo-plan").addEventListener("click", () => {
-  if (S.breakout && !confirm("모둠 활동 중이에요. 다시 무작위로 나누면 학생들이 바로 이동해요. 계속할까요?")) return;
+  const assigned = S.students.some((s) => s.group);
+  if ((S.breakout || assigned) && !confirm("지금 배정을 지우고 무작위로 다시 나눌까요?" + (S.breakout ? " 학생들이 바로 이동해요." : ""))) return;
   sock.send({ t: "breakout_plan", ...groupPlan() });
 });
 $("#bo-start").addEventListener("click", () => {
-  const minutes = Number($("#bo-min").value) || null;
-  if (S.breakout) sock.send({ t: "breakout_time", minutes });
-  else sock.send({ t: "breakout_start", minutes, ...groupPlan() });
+  if (!S.breakout) sock.send({ t: "breakout_start", ...groupPlan() });
 });
 
 /* ───── 탭·기타 ───── */

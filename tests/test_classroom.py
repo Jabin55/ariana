@@ -143,9 +143,19 @@ def test_breakout_tokens_chat_and_broadcast():
             for ws in socks:
                 ws.__enter__()
             state(tw, lambda m: sum(s["online"] for s in m["students"]) == 6)
+            # 모둠만 만들면 배정은 비어 있다 → 직접 고르기
+            tw.send_json({"t": "breakout_setup", "n": 3})
+            ts = state(tw, lambda m: len(m["groups"]) == 3)
+            assert [g["name"] for g in ts["groups"]] == ["A모둠", "B모둠", "C모둠"]
+            assert all(s["group"] is None for s in ts["students"])
+            first = ts["students"][0]["id"]
+            tw.send_json({"t": "breakout_assign", "target": first, "group": "g3"})
+            assert state(tw, lambda m: m["students"][0]["group"] == "g3")
+            # 무작위 배정 후 시간 제한 없이 시작
             tw.send_json({"t": "breakout_plan", "n": 3})
-            tw.send_json({"t": "breakout_start", "minutes": 5})
+            tw.send_json({"t": "breakout_start"})
             ts = state(tw, lambda m: m["breakout"])
+            assert ts["ends_at"] is None and ts["breakout_at"]
             sizes = [sum(s["group"] == g["id"] for s in ts["students"]) for g in ts["groups"]]
             assert sizes == [2, 2, 2]
             st0 = state(socks[0], lambda m: m["room"] != "main")

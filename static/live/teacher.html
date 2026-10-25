@@ -28,7 +28,7 @@
         <div class="banner" id="debate-bar" hidden>
           <strong>🗣️ 토론 화면</strong>
           <select id="debate-a"></select> <span>vs</span> <select id="debate-b"></select>
-          <button class="small primary" id="debate-apply" type="button">학생 화면에 띄우기</button>
+          <button class="small primary" id="debate-apply" type="button">모두의 화면에 띄우기</button>
         </div>
         <div class="banner warn" id="rtc-warn" hidden></div>
         <div id="activity-mini"></div>
@@ -44,8 +44,6 @@
           <div class="monitor-head">
             <strong>👥 모둠 활동 중</strong>
             <span class="timer" id="bo-timer"></span>
-            <button class="small" data-add-min="2">+2분</button>
-            <button class="small" data-add-min="5">+5분</button>
             <span class="grow"></span>
             <span class="muted" style="font-size:0.85rem">🎧 여러 모둠을 동시에 들을 수 있어요 · 이어폰 권장</span>
             <button class="danger" id="bo-voice">📢 모든 모둠에 말하기</button>
@@ -117,15 +115,12 @@
           <div class="box">
             <h4>모둠 나누기</h4>
             <div class="row">
-              <input id="bo-n" type="number" min="1" max="60" value="4" style="width:5em">
-              <select id="bo-by"><option value="n">개 모둠으로</option><option value="size">명씩 (모둠당 인원)</option></select>
-              <button id="bo-plan">무작위 배정</button>
+              <input id="bo-n" type="number" min="1" max="12" value="4" style="width:4.5em"> 개 모둠
+              <button id="bo-setup">모둠 만들기</button>
+              <button id="bo-plan">🎲 무작위 배정</button>
             </div>
-            <div class="row">
-              <input id="bo-min" type="number" min="1" max="120" value="10" style="width:5em"> 분 동안
-              <button class="primary" id="bo-start">모둠 활동 시작</button>
-            </div>
-            <p class="muted" style="margin:0;font-size:0.85rem">'명씩'을 고르면 접속한 학생 수에 맞춰 모둠 수가 정해져요 (예: 20명을 4명씩 → 5개 모둠). 배정 후 아래에서 학생마다 모둠을 직접 바꿀 수 있어요. 활동 중에 옮기면 학생 화면이 바로 이동해요.</p>
+            <p class="muted" style="margin:0;font-size:0.85rem">모둠을 만든 뒤 아래에서 학생 옆 <b>A·B·C</b> 버튼으로 직접 고르거나, <b>무작위 배정</b>을 누르세요. 시간은 정하지 않아요 — 보고 있다가 '모두 전체 교실로 돌아오기'로 끝내요.</p>
+            <button class="primary big" id="bo-start" style="width:100%;margin-top:8px">▶ 모둠활동 시작</button>
           </div>
           <div class="group-edit" id="group-edit"></div>
         </section>
@@ -139,7 +134,7 @@
       <button id="screen">🖥️ 화면 공유</button>
       <button id="present-btn" title="PDF 자료를 띄우고 그 위에 판서하며 설명">📄 자료 발표</button>
       <button id="board-btn" title="빈 화이트보드에 그리며 설명">🖊️ 화이트보드</button>
-      <label class="layout-pick" title="학생들 화면에 얼굴이 어떻게 보일지">🖼️ 학생 화면
+      <label class="layout-pick" title="선생님·학생 모두의 화면에 얼굴이 어떻게 보일지">🖼️ 화면 구성
         <select id="layout-sel">
           <option value="teacher">선생님 크게</option>
           <option value="grid">모두 나열</option>

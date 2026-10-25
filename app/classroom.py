@@ -141,6 +141,7 @@ class Klass:
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
     ends_at: float | None = None
+    breakout_at: float | None = None  # 모둠 활동을 시작한 시각 (지난 시간 표시용)
     announce: dict | None = None
     listening: list[str] = field(default_factory=list)  # 선생님이 듣고 있는 모둠
     talking: str | None = None  # 선생님이 말하고 있는 모둠
@@ -485,7 +486,7 @@ def teacher_state(k: Klass) -> dict:
         "course_id": k.course_id,
         "settings": k.settings, "livekit": livekit_ready(), "layout": k.layout,
         "students": roster_rows(k),
-        "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at,
+        "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at,
         "present": present_view(k), "files": k.files, "recording": k.recording,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
@@ -1170,9 +1171,24 @@ def groups_needed(k: Klass, m: dict) -> int:
     return n if isinstance(n, int) and n >= 1 else 4
 
 
-def plan_groups(k: Klass, n: int) -> None:
+def group_name(i: int) -> str:
+    return f"{chr(64 + i)}모둠"  # 1 → A모둠, 2 → B모둠 …
+
+
+def setup_groups(k: Klass, n: int) -> None:
+    """모둠 수만 정한다 (배정은 그대로 두고, 없어진 모둠에 있던 학생은 미배정으로)."""
     n = max(1, min(MAX_GROUPS, n))
-    k.groups = [{"id": f"g{i}", "name": f"{i}모둠"} for i in range(1, n + 1)]
+    k.groups = [{"id": f"g{i}", "name": group_name(i)} for i in range(1, n + 1)]
+    ids = {g["id"] for g in k.groups}
+    for s in k.students.values():
+        if s.group not in ids:
+            s.group = None
+
+
+def plan_groups(k: Klass, n: int) -> None:
+    """모둠을 만들고 접속한 학생을 무작위로 고르게 나눈다."""
+    n = max(1, min(MAX_GROUPS, n))
+    k.groups = [{"id": f"g{i}", "name": group_name(i)} for i in range(1, n + 1)]
     members = [s for s in k.students.values() if s.conns > 0] or list(k.students.values())
     random.shuffle(members)
     for s in k.students.values():
@@ -1467,6 +1483,8 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         k.activity = None
     elif t == "breakout_plan":
         plan_groups(k, groups_needed(k, m))
+    elif t == "breakout_setup":
+        setup_groups(k, groups_needed(k, m))
     elif t == "breakout_rename":
         for g in k.groups:
             if g["id"] == m.get("group"):
@@ -1484,6 +1502,8 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
             if not s.group or not any(g["id"] == s.group for g in k.groups):
                 s.group = smallest_group(k)
         k.breakout = True
+        k.breakout_at = time.time()
+        # 시간은 미리 정하지 않는다 (선생님이 보고 끝낸다). 예전 화면이 보낸 minutes는 그대로 받아 준다
         minutes = m.get("minutes")
         k.ends_at = time.time() + float(minutes) * 60 if minutes else None
     elif t == "breakout_time":
@@ -1491,7 +1511,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         k.ends_at = time.time() + float(minutes) * 60 if minutes else None
     elif t == "breakout_end":
         k.breakout = False
-        k.ends_at = None
+        k.ends_at = k.breakout_at = None
         k.listening, k.talking, k.broadcasting = [], None, False
         for s in k.students.values():
             s.help = False
