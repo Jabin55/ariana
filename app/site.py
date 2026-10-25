@@ -45,12 +45,11 @@ def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_cla
 
 @router.get("/live/about", response_class=HTMLResponse)
 async def about():
-    op = html.escape(settings()["operator"])
     return site_page("외솔온닷 소개", f"""
 <section class="info-block">
   <h2>집에서 듣는, 울산의 실시간 공동 수업</h2>
   <p>외솔온닷은 울산의 고등학생이 자기 학교에 없는 과목도 거점학교 선생님께 실시간으로 배울 수 있도록 만든 온라인 수업 공간이에요.
-  학생은 집에서 학교 구글 계정으로 들어오고, 선생님은 어디서든 수업을 열 수 있어요. 운영: {op}</p>
+  학생은 집에서 학교 구글 계정으로 들어오고, 선생님은 어디서든 수업을 열 수 있어요.</p>
 </section>
 <h2 class="home-h">외솔온닷 <span>시스템 특징</span></h2>
 <section class="sys-feat">
