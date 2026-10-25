@@ -28,7 +28,7 @@ async function boot() {
   ME = CONFIG.user;
   window.WaesolHeader?.render(ME); // 이름·내 정보·로그아웃은 맨 위 머리글에만
   if (!ME) return showLogin();
-  // 회원가입: [회원 유형 선택] → [약관 동의] → [가입정보 입력] → [가입완료 안내]
+  // 회원가입: [회원 유형 선택] → [가입정보 입력] → [약관 동의] → [가입완료 안내]
   if (ME.role_choice) {
     // 학교 계정으로 처음 들어옴: 첫 화면에서 고른 것(학생/선생님)이 있으면 그대로, 없으면 물어본다
     const pick = sessionGet("signup_as");
@@ -37,7 +37,9 @@ async function boot() {
     }
     return showRoleChoice();
   }
-  if (ME.needs_terms) return showConsent(); // 학생·선생님 모두 약관 동의 (동의해야 다음 단계)
+  // 가입 중이면 가입정보를 다 적은 뒤에 약관 동의를 받는다. 이미 가입한 사람은 약관이 바뀌었을 때 바로 다시 동의
+  const signingUp = ME.role === "guest" ? !ME.memberships.length : !ME.name;
+  if (ME.needs_terms && !signingUp) return showConsent();
   if (params.get("profile")) return showProfile();
   if (ME.role === "guest") return showGuest();
   if (params.get("apply")) return showGuest(true);
@@ -80,7 +82,16 @@ function showDone(kind, role, place) {
   $("#done-actions").replaceChildren(go("신청 현황 보기", () => boot(), true), h("a", { class: "button", href: "/live/home" }, "처음 화면으로"));
 }
 
-/* ───── 회원가입 2단계: 이용약관 · 개인정보 수집·이용 동의 ───── */
+/* ───── 회원가입 3단계: 이용약관 · 개인정보 수집·이용 동의 (가입정보를 다 적은 뒤) ───── */
+
+let afterConsent = null; // 동의를 받은 뒤 보낼 가입정보 { view, send }
+
+/** 아직 약관에 동의하지 않았으면 동의 화면을 먼저 띄우고, 동의하면 그때 가입정보를 보낸다 */
+function withConsent(view, send) {
+  if (!ME.needs_terms) return send();
+  afterConsent = { view, send };
+  showConsent();
+}
 
 async function showConsent() {
   show("consent-view");
@@ -104,6 +115,11 @@ $("#c-all").addEventListener("change", (e) => {
   consentChanged();
 });
 $("#c-cancel").addEventListener("click", async () => {
+  if (afterConsent) { // 가입정보 화면으로 돌아간다 (적은 내용 그대로)
+    show(afterConsent.view);
+    afterConsent = null;
+    return;
+  }
   await fetch("/api/auth/logout", { method: "POST" });
   location.href = "/live/home";
 });
@@ -111,7 +127,12 @@ $("#c-next").addEventListener("click", async () => {
   $("#consent-error").textContent = "";
   try {
     await api("/api/me/consent", { terms: $("#c-terms").checked, privacy: $("#c-privacy").checked });
-    boot();
+    ME.needs_terms = false;
+    const next = afterConsent;
+    afterConsent = null;
+    if (!next) return boot();
+    show(next.view); // 가입정보를 보내다 틀린 곳이 있으면 그 화면에서 고친다
+    await next.send();
   } catch (err) { $("#consent-error").textContent = err.message; }
 });
 
@@ -379,12 +400,14 @@ $("#profile").addEventListener("submit", async (e) => {
   } else {
     Object.assign(body, { birth: $("#p-birth").value, gender: $("#p-gender").value, email: $("#p-email").value.trim(), phone: $("#p-phone").value.trim() });
   }
-  const first = ME.needs_profile; // 처음 가입이면 '가입완료' 안내로
-  try {
-    ME = await api("/api/me/profile", body);
-    if (first && ME.role === "student") showDone("student");
-    else boot();
-  } catch (err) { $("#profile-error").textContent = err.message; }
+  const first = !ME.name; // 처음 가입이면 '가입완료' 안내로
+  withConsent("profile-view", async () => {
+    try {
+      ME = await api("/api/me/profile", body);
+      if (first && ME.role === "student") showDone("student");
+      else boot();
+    } catch (err) { $("#profile-error").textContent = err.message; }
+  });
 });
 window.showProfile = showProfile; // 머리글의 '내 정보' 버튼
 
@@ -563,6 +586,10 @@ $("#apply").addEventListener("submit", async (e) => {
   const first = !ME.memberships.length; // 처음 가입 신청이면 '가입완료' 안내로
   const place = role === "instructor" ? (CONFIG.schools.length ? $("#a-hub-search").value.trim() : $("#a-hub").selectedOptions[0]?.textContent || "")
     : $("#a-hub-name").value.trim();
+  withConsent("guest-view", () => sendApply(role, first, place));
+});
+
+async function sendApply(role, first, place) {
   try {
     await api("/api/staff/apply", {
       role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
@@ -585,7 +612,7 @@ $("#apply").addEventListener("submit", async (e) => {
     if (first) return showDone("teacher", role, place);
     showGuest(!$("#apply-back").hidden);
   } catch (err) { $("#apply-error").textContent = err.message; }
-});
+}
 
 /* ───── 학생 ───── */
 
