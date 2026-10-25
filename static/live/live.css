@@ -888,11 +888,11 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .activity.preview { pointer-events: none; }
 
 /* ───── 노트북·태블릿 화면에 맞게 가로로 넓게 (세로로 길게 늘어지지 않게) ───── */
-.landing { max-width: 1280px; padding: 24px 24px 48px; }
-.site-header-in { max-width: 1280px; }
-.site-main { max-width: 1240px; }
-.home-wrap, .bb-in, .g-hero-in { max-width: 1240px; }
-.materials { max-width: 1280px; }
+.landing { max-width: 1120px; padding: 24px 24px 48px; }
+.site-header-in { max-width: 1160px; }
+.site-main { max-width: 1080px; }
+.home-wrap, .bb-in, .g-hero-in { max-width: 1120px; }
+.materials { max-width: 1120px; }
 .landing .card.narrow { max-width: none; }
 #profile-view, #role-view { max-width: 720px !important; margin-left: auto; margin-right: auto; }
 #guest-view { max-width: 980px !important; margin-left: auto; margin-right: auto; }
