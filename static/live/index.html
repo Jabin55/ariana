@@ -199,40 +199,73 @@
     <!-- 선생님 -->
     <section id="teacher-view" hidden>
       <nav class="tabs page-tabs" id="home-tabs">
-        <button data-tab="classes" class="active">수업</button>
-        <button data-tab="courses">강좌·수강생 <span class="badge" id="pending-badge" hidden></span></button>
-        <button data-tab="history">출결 기록</button>
-        <button data-tab="hub" id="hub-tab" hidden>거점학교 관리 <span class="badge" id="hub-badge" hidden></span></button>
+        <button data-tab="meet">특강/회의</button>
+        <button data-tab="create">강좌 개설</button>
+        <button data-tab="students">수강생 관리 <span class="badge" id="pending-badge" hidden></span></button>
+        <button data-tab="run" class="active">강좌 운영</button>
+        <button data-tab="hub" id="hub-tab">거점학교 운영 <span class="badge" id="hub-badge" hidden></span></button>
         <button data-tab="admin" id="admin-tab" hidden>전체 관리 <span class="badge" id="admin-badge" hidden></span></button>
       </nav>
+      <p class="no-access" id="no-access" hidden>권한이 없습니다.</p>
 
-      <div data-panel="classes" class="cards">
-        <section class="card">
-          <h2>새 수업 열기</h2>
-          <form id="create">
-            <label for="t-course" class="muted">강좌</label>
-            <select id="t-course"></select>
-            <span class="muted" id="t-course-hint" style="font-size:0.85rem"></span>
-            <label for="title" class="muted">수업 이름</label>
-            <input id="title" maxlength="60" placeholder="예: 3주차 - 선거 제도">
-            <button class="primary" type="submit">수업 열기</button>
-            <p class="error" id="create-error"></p>
-          </form>
+      <div data-panel="meet" hidden>
+        <div class="meet-grid">
+          <section class="card">
+            <h2>🎥 지금 바로 열기</h2>
+            <form id="meet-now">
+              <input id="meet-title" maxlength="60" placeholder="이름 (예: 1학년 진로 특강, 교과협의회)">
+              <button class="primary" type="submit">지금 열기</button>
+            </form>
+            <p class="muted" style="font-size:0.85rem">열면 입장 코드가 생겨요. 코드를 받은 사람(학생·선생님 누구나)이 들어와요.</p>
+          </section>
+          <section class="card">
+            <h2>📅 예약하기</h2>
+            <form id="meet-book">
+              <input id="book-title" maxlength="60" required placeholder="이름 (예: 학부모 설명회)">
+              <div class="row"><input type="date" id="book-date" required><input type="time" id="book-time" required></div>
+              <button class="primary" type="submit">예약하고 입장 코드 받기</button>
+            </form>
+          </section>
+          <section class="card">
+            <h2>🔑 입장 코드로 참가</h2>
+            <form id="meet-join">
+              <input id="meet-code" maxlength="12" placeholder="받은 입장 코드" autocomplete="off" style="text-transform:uppercase">
+              <button class="primary" type="submit">참가하기</button>
+              <p class="error" id="meet-join-error"></p>
+            </form>
+          </section>
+        </div>
+        <section class="card" style="margin-top:16px">
+          <h2>진행 중</h2>
+          <div id="live-classes"><span class="muted">불러오는 중…</span></div>
+          <h2 style="margin-top:16px">예약한 특강·회의</h2>
+          <div id="meet-list"><span class="muted">불러오는 중…</span></div>
         </section>
-        <section class="card">
-          <h2>진행 중인 수업</h2>
-          <div class="recent" id="live-classes"><span class="muted">없어요.</span></div>
+        <section class="card" style="margin-top:16px">
+          <h2>지난 특강·회의 기록</h2>
+          <div class="recent" id="meet-history"></div>
+          <div id="meet-detail"></div>
         </section>
       </div>
 
-      <div data-panel="courses" hidden>
+      <div data-panel="create" hidden>
         <section class="card" style="margin-bottom:16px">
           <div class="row"><h2 class="grow" style="margin:0 0 8px">새 강좌 개설</h2>
             <button class="small" type="button" id="more-roles">다른 거점학교·역할 신청</button></div>
-          <p class="muted" style="margin:0 0 10px;font-size:0.9rem">학기 초에 강좌를 만들면 학생들이 첫 화면에서 수강신청해요. 승인한 학생은 수업 때 코드 없이 들어오고, 승인하지 않은 학생은 코드를 알아도 들어올 수 없어요.</p>
+          <p class="muted" style="margin:0 0 10px;font-size:0.9rem">학기 초에 강좌를 만들면 학생들이 '수업 신청'에서 수강신청해요. 승인한 학생은 수업 때 입장 코드 없이 들어오고, 승인하지 않은 학생은 들어올 수 없어요.</p>
           <div id="course-create-box"><p class="muted">불러오는 중…</p></div>
         </section>
-        <div id="course-list"></div>
+        <div id="create-extras"></div>
+      </div>
+
+      <div data-panel="students" hidden>
+        <p class="muted">강좌별로 수강신청한 학생을 승인해요. 거점학교 관리교사가 최종 승인하면 수강 확정돼요.</p>
+        <div id="students-list"></div>
+      </div>
+
+      <div data-panel="run">
+        <div id="run-list"></div>
+        <div id="run-course" hidden></div>
       </div>
 
       <div data-panel="hub" hidden>
@@ -244,15 +277,6 @@
         <p class="muted">전체 관리자 화면이에요. 거점학교 관리교사 신청을 승인하면 그 거점학교가 등록되고, 관리교사가 그 학교 강사를 승인할 수 있게 돼요.</p>
         <div id="admin-list"></div>
       </div>
-
-      <div data-panel="history" hidden>
-        <div class="row" style="margin:12px 0">
-          <label>날짜 <input type="date" id="h-date"></label>
-          <span class="muted" id="h-summary"></span>
-        </div>
-        <div class="recent" id="h-classes"></div>
-        <div id="h-detail"></div>
-      </div>
     </section>
     <footer class="site-footer">
       <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문·동의서</a>
@@ -262,8 +286,10 @@
   <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
   <script src="/static/live/common.js"></script>
   <script src="/static/live/assignments.js"></script>
+  <script src="/static/live/thumbs.js"></script>
   <script src="/static/live/course-form.js"></script>
   <script src="/static/live/home.js"></script>
+  <script src="/static/live/teacher-home.js"></script>
   <script src="/static/live/site.js"></script>
 </body>
 </html>

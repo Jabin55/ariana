@@ -910,3 +910,28 @@ body { line-height: 1.75; }
 button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-height: 1.4; }
 .info-block, .faq p, .hero-sub, .g-points p, .credit-joint, .notice-body, .doc { line-height: 1.9; }
 .info-card p, .feature p, .withdraw p, .facts, .course-info, .chatmsg .text, .sys-col li { line-height: 1.75; }
+
+/* 선생님 마이페이지 탭 */
+.no-access { margin: 40px 0; padding: 40px 16px; text-align: center; font-size: 1.15rem; font-weight: 700; color: var(--muted);
+  border: 1px dashed var(--border); border-radius: 14px; }
+.meet-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.meet-grid form { display: flex; flex-direction: column; gap: 8px; }
+.meet-grid .row input { flex: 1 1 0; min-width: 0; }
+.meet-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.meet-row:last-child { border-bottom: 0; }
+.meet-row .grow { min-width: 180px; }
+.run-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.run-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 0 0 12px; text-align: left; white-space: normal;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--card, #fff); overflow: hidden; cursor: pointer; }
+.run-tile:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
+.run-tile > :not(.run-thumb) { margin: 0 12px; }
+.run-tile strong { margin-top: 8px !important; font-size: 1.05rem; }
+.run-thumb { width: 100%; }
+.sub-tabs { margin: 14px 0 12px; }
+.sub-tabs button { flex: 0 0 auto; padding: 10px 18px; font-size: 1rem; }
+.run-sub { min-height: 120px; }
+.open-box { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
+.open-box label { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+.course-notices { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.course-notices summary { cursor: pointer; }
+@media (max-width: 760px) { .meet-grid { grid-template-columns: minmax(0, 1fr); } }
