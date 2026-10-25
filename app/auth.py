@@ -71,6 +71,7 @@ def public_user(u) -> dict:
         # 이름은 가입 때 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
         "name_locked": bool(d.get("name_locked")) and not d.get("is_admin"),
         "gender": d.get("gender") or "", "contact_email": d.get("contact_email") or "", "phone": d.get("phone") or "",
+        "subjects": d.get("subjects") or "",
         "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
         # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
         "role_choice": d["role"] == "student" and not d.get("self_role"),
@@ -298,6 +299,8 @@ class Profile(BaseModel):
     gender: str | None = Field(default=None, pattern="^(남|여)?$")
     email: str | None = Field(default=None, max_length=200)
     phone: str | None = Field(default=None, max_length=100)
+    office: str | None = Field(default=None, max_length=30)  # 소속 교육청
+    subjects: str | None = Field(default=None, max_length=300)  # 담당과목 (강의교사)
 
 
 @router.post("/api/me/profile")
@@ -336,12 +339,19 @@ async def save_profile(p: Profile, request: Request):
             values["contact_email"] = p.email.strip()
         if p.phone is not None:
             values["phone"] = p.phone.strip()
+        if p.subjects is not None:
+            values["subjects"] = " ".join(p.subjects.split())
+        if p.office:
+            from app.subjects import OFFICES
+            if p.office not in OFFICES:
+                raise HTTPException(400, "소속 교육청을 목록에서 골라 주세요.")
 
     def save():
         with db.engine.begin() as c:
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**values))
             # 승인하는 사람이 보는 등록 신청서의 연락처도 함께 고친다
-            ms = {k: v for k, v in (("email", values.get("contact_email")), ("contact", values.get("phone"))) if v}
+            ms = {k: v for k, v in (("email", values.get("contact_email")), ("contact", values.get("phone")),
+                                    ("office", p.office if u["role"] != "student" else None)) if v}
             if ms:
                 c.execute(update(db.memberships).where(db.memberships.c.user_id == u["id"]).values(**ms))
 

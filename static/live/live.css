@@ -1130,3 +1130,14 @@ input[readonly] { background: var(--surface-2, #f1f3f5); color: var(--muted); cu
 .profile-grid label { display: flex; flex-direction: column; gap: 4px; }
 .profile-grid[hidden] { display: none; }
 @media (max-width: 560px) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 선생님 내 정보 */
+.me-table { width: 100%; border-collapse: collapse; border-top: 2px solid #555; margin-bottom: 12px; }
+.me-table th { width: 110px; text-align: left; vertical-align: middle; background: var(--surface-2, #f6f7f9); padding: 10px 14px; font-size: 0.9rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+.me-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.me-table td input:not([type=checkbox]), .me-table td select { width: 100%; max-width: 420px; }
+.me-avatar { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #0f4a5c; color: #fff; font-size: 1.5rem; font-weight: 700; }
+.me-school { display: flex; align-items: center; gap: 8px; max-width: 560px; }
+.me-school select { flex: 0 0 auto; width: auto !important; }
+.me-school input { flex: 1; min-width: 0; }
+@media (max-width: 560px) { .me-table th { width: 78px; padding: 8px; } .me-table td { padding: 6px 8px; } .me-school { flex-wrap: wrap; } }

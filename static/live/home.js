@@ -212,8 +212,64 @@ $("#dev-login").addEventListener("submit", async (e) => {
 
 /* ───── 내 정보 ───── */
 
+/** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 학교정보 · 권한정보 · (강의교사) 담당과목 · 이메일 · 휴대전화 */
+async function drawTeacherProfile() {
+  const meta = await subjectMeta();
+  const last = ME.memberships[ME.memberships.length - 1];
+  const instructor = ME.teach_hubs.length > 0 || ME.memberships.some((m) => m.role === "instructor");
+  const f = {
+    name: h("input", { maxlength: 30, value: ME.name || "" }),
+    gender: h("select", {}, h("option", { value: "" }, "고르세요"), ["남", "여"].map((g) => h("option", { value: g, selected: ME.gender === g }, g === "남" ? "남자" : "여자"))),
+    birth: h("input", { type: "date", min: "1920-01-01", max: new Date().toISOString().slice(0, 10), value: ME.birth || "" }),
+    office: h("select", {}, h("option", { value: "" }, "교육청"), koSort(meta.offices).map((o) => h("option", { value: o, selected: (last?.office || "") === o }, o))),
+    school: h("input", { maxlength: 60, value: ME.school || "", placeholder: "소속 학교·기관" }),
+    subjects: h("input", { maxlength: 300, value: ME.subjects || "", placeholder: "예: 법과 사회, 정치, 경제" }),
+    phone: h("input", { maxlength: 100, value: ME.phone || last?.contact || "", placeholder: "010-0000-0000" }),
+  };
+  f.name.readOnly = !!ME.name_locked;
+  const roles = [
+    ME.is_admin ? "전체 관리자" : null,
+    ...ME.coordinator_hubs.map((x) => `거점학교 관리교사 (${x.name})`),
+    ...ME.lead_hubs.map((x) => `강의교사 (${x.name})`),
+    ...ME.teach_hubs.filter((x) => !ME.lead_hubs.some((y) => y.id === x.id)).map((x) => `팀티칭 보조교사 (${x.name})`),
+    ...(ME.participant_schools || []).map((x) => `참여학교 담당자 (${x})`),
+  ].filter(Boolean);
+  const pending = ME.memberships.filter((m) => m.status === "pending").map((m) => `${m.hub} ${ROLE_NAME[m.role] || m.role} (승인 대기)`);
+  const err = h("p", { class: "error" });
+  const row = (label, ...v) => h("tr", {}, h("th", {}, label), h("td", {}, ...v));
+  $("#t-profile").replaceChildren(
+    h("table", { class: "me-table" }, h("tbody", {},
+      row("프로필", h("span", { class: "me-avatar" }, (ME.name || ME.email || "?").slice(0, 1))),
+      row("이름", f.name, ME.name_locked ? h("div", { class: "muted", style: "font-size:0.8rem;margin-top:2px" }, "🔒 가입 때 적은 실명으로 정해져 바꿀 수 없어요 (전체 관리자에게 요청)") : null),
+      row("성별", f.gender),
+      row("생년월일", f.birth),
+      row("학교정보", h("div", { class: "me-school" }, f.office, h("span", { class: "muted" }, "|"), f.school)),
+      row("권한정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
+        pending.length ? h("div", { class: "muted", style: "font-size:0.82rem" }, pending.join(", ")) : null),
+      instructor ? row("담당과목", f.subjects) : null,
+      row("이메일", h("strong", {}, ME.email), h("span", { class: "muted", style: "font-size:0.82rem" }, "  (가입한 구글 계정)")),
+      row("휴대전화", f.phone))),
+    err,
+    h("button", { class: "primary", type: "button", style: "width:100%", onclick: async () => {
+      err.textContent = "";
+      try {
+        ME = await api("/api/me/profile", {
+          name: f.name.value.trim(), school: f.school.value.trim(), gender: f.gender.value, birth: f.birth.value,
+          office: f.office.value, phone: f.phone.value.trim(),
+          ...(instructor ? { subjects: f.subjects.value.trim() } : {}),
+        });
+        toast("내 정보를 저장했어요.");
+        drawTeacherProfile();
+      } catch (e) { err.textContent = e.message; }
+    } }, "저장"));
+}
+
 function showProfile() {
   show("profile-view");
+  const teacherView = ME.role === "teacher";
+  $("#t-profile").hidden = !teacherView;
+  $("#profile").hidden = teacherView;
+  if (teacherView) drawTeacherProfile();
   $("#withdraw-box").open = false;
   const student = ME.role === "student";
   document.querySelectorAll(".student-only").forEach((el) => { el.hidden = !student; });
@@ -361,6 +417,7 @@ async function showGuest(fromTeacher = false) {
   $("#a-birth").max = new Date().toISOString().slice(0, 10);
   if (ME.birth) $("#a-birth").value = ME.birth;
   if (ME.gender) $("#a-gender").value = ME.gender;
+  if (ME.subjects) $("#a-subjects").value = ME.subjects;
   $("#guest-hint").hidden = fromTeacher;
   $("#to-student").hidden = fromTeacher || !ME.can_be_student;
   if (sessionGet("signup_as") === "student" && !ME.can_be_student) {
@@ -451,6 +508,7 @@ function updateApplyRole() {
   $("#a-hub-name").required = role !== "instructor";
   $("#a-hub-name-label").textContent = role === "participant" ? "소속 학교 (울산)" : "관리할 거점학교 (울산)";
   $("#a-wish-wrap").hidden = role !== "instructor";
+  $("#a-subjects-wrap").hidden = role !== "instructor"; // 담당과목은 강의교사만
   $("#a-wish-from").required = $("#a-wish-until").required = role === "instructor";
   $("#a-msg-wrap").hidden = role !== "coordinator";
 }
@@ -469,6 +527,7 @@ $("#apply").addEventListener("submit", async (e) => {
       role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
       hub_name: role !== "instructor" ? $("#a-hub-name").value : role === "instructor" && CONFIG.schools.length ? $("#a-hub-search").value.trim() : "",
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value, gender: $("#a-gender").value,
+      subjects: role === "instructor" ? $("#a-subjects").value.trim() : "",
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
       assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",

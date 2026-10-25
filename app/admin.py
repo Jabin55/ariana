@@ -77,6 +77,7 @@ class ApplyReq(BaseModel):
     contact: str = Field(min_length=1, max_length=100)  # 연락처 (전화번호)
     birth: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 생년월일
     gender: str = Field(default="", pattern="^(남|여)?$")  # 성별
+    subjects: str = Field(default="", max_length=300)  # 담당과목 (강의교사만)
     assistant: bool = False  # 강사: 팀티칭 보조교사로 참여 (강좌를 직접 열지 않고 다른 강사의 강좌를 돕는다)
     message: str = Field(default="", max_length=500)  # 관리교사만 (강사 신청서에는 없음)
     wish_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 강사: 희망 기간
@@ -160,6 +161,8 @@ async def apply(req: ApplyReq, request: Request):
             if req.email.strip():
                 who["contact_email"] = req.email.strip()
             who["phone"] = req.contact.strip()
+            if req.role == "instructor" and req.subjects.strip():
+                who["subjects"] = " ".join(req.subjects.split())
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**who))
             same = (m.hub_id == hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
