@@ -1185,3 +1185,9 @@ img.me-avatar { object-fit: cover; }
   .site-me strong { max-width: 5.5em; }
   .site-user-box button.small { padding: 5px 8px; }
 }
+/* 공지사항 첨부 파일 */
+.notice-files { list-style: none; padding: 10px 12px; margin: 14px 0 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); display: grid; gap: 6px; }
+.notice-files:empty { display: none; }
+.notice-files a { font-weight: 600; word-break: break-all; color: var(--brand); text-decoration: none; }
+.notice-files a:hover { text-decoration: underline; }
+.notice-attach { display: grid; gap: 4px; margin: 8px 0; }

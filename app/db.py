@@ -128,6 +128,16 @@ course_requests = Table(
     Column("created_at", Float, nullable=False),
 )
 
+notice_files = Table(
+    "notice_files", metadata,  # 공지사항 첨부 파일 (FILES_DIR/notices/id). 올린 뒤 글을 저장하면 notice_id 가 붙는다
+    Column("id", String(16), primary_key=True),
+    Column("notice_id", Integer, index=True),
+    Column("name", String(200), nullable=False),
+    Column("size", Integer, nullable=False, default=0),
+    Column("uploader_id", Integer),
+    Column("created_at", Float, nullable=False),
+)
+
 notices = Table(
     "notices", metadata,  # 공지사항 (전체 관리자가 쓴다, 누구나 본다)
     Column("id", Integer, primary_key=True),

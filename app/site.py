@@ -8,6 +8,8 @@ import json
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -334,7 +336,7 @@ async def catalog():
 
 @router.get("/live/courses", response_class=HTMLResponse)
 async def courses_page():
-    return site_page("수업신청", """
+    return site_page("수강신청", """
 <section class="info-block">
   <p style="margin:0">지금 수강신청을 받는 강좌예요. 신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
   <div class="row" style="margin-top:12px">
@@ -429,7 +431,7 @@ async def home_page():
       <a href="/live/credit"><span class="circle c6"></span>고교학점제</a>
       <a href="/live/about"><span class="circle c2"></span>사업 소개</a>
       <a href="/live/guide"><span class="circle c3"></span>수강 안내</a>
-      <a href="/live/courses"><span class="circle c4"></span>수업 신청</a>
+      <a href="/live/courses"><span class="circle c4"></span>수강 신청</a>
       <a href="/live/help"><span class="circle c5"></span>자주 묻는 질문</a>
     </nav>
   </section>
@@ -469,18 +471,99 @@ def notice_rows(limit: int | None = None):
         return c.execute(q).all()
 
 
-def notice_json(r, body: bool = False) -> dict:
+def notice_json(r, body: bool = False, files: list | None = None) -> dict:
     out = {"id": r.id, "title": r.title, "pinned": bool(r.pinned), "author": r.author, "author_id": r.author_id,
            "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
            "new": r.created_at > time.time() - 7 * 86400}
     if body:
         out["body"] = r.body
+    if files is not None:
+        out["files"] = files
+    return out
+
+
+# ── 공지사항 첨부 파일: 선생님이 올리고, 누구나 내려받는다 (공지는 공개 글) ──
+NOTICE_FILE_MAX = 20 * 1024 * 1024  # 한 파일 20MB
+NOTICE_FILES_PER = 10  # 글 하나에 10개까지
+NOTICE_FILE_EXTS = {"pdf", "hwp", "hwpx", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv",
+                    "jpg", "jpeg", "png", "gif", "webp", "zip", "mp3", "mp4"}
+
+
+def notice_file_path(fid: str) -> Path:
+    from app.assignments import FILES_DIR
+    return FILES_DIR / "notices" / fid
+
+
+def file_json(f) -> dict:
+    return {"id": f.id, "name": f.name, "size": f.size, "url": f"/api/notices/files/{f.id}"}
+
+
+def files_of(c, nids: list[int]) -> dict[int, list]:
+    out: dict[int, list] = {}
+    for f in c.execute(select(db.notice_files).where(db.notice_files.c.notice_id.in_(nids or [-1]))
+                       .order_by(db.notice_files.c.created_at)):
+        out.setdefault(f.notice_id, []).append(file_json(f))
     return out
 
 
 @router.get("/api/notices")
 async def list_notices(limit: int = Query(default=0, ge=0, le=200)):
-    return {"notices": [notice_json(r, body=True) for r in await db.run(notice_rows, limit or None)]}
+    def run():
+        rows = notice_rows(limit or None)
+        with db.engine.connect() as c:
+            fs = files_of(c, [r.id for r in rows])
+        return [notice_json(r, body=True, files=fs.get(r.id, [])) for r in rows]
+
+    return {"notices": await db.run(run)}
+
+
+@router.post("/api/admin/notices/files")
+async def upload_notice_file(request: Request, name: str = Query(min_length=1, max_length=200)):
+    """첨부 파일 올리기 (요청 본문 = 파일 그대로). 글을 저장할 때 그 글에 붙는다."""
+    u = await require_teacher(request)
+    name = Path(name.replace("\\", "/")).name.strip() or "file"
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in NOTICE_FILE_EXTS:
+        raise HTTPException(415, "올릴 수 있는 파일: PDF, 한글(HWP), 워드, 엑셀, 파워포인트, 그림, ZIP, 텍스트, MP3, MP4")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > NOTICE_FILE_MAX:
+            raise HTTPException(413, "파일이 너무 커요. 20MB 이하로 올려 주세요.")
+    if not data:
+        raise HTTPException(400, "빈 파일이에요.")
+    fid = uuid.uuid4().hex[:16]
+
+    def run():
+        p = notice_file_path(fid)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+        with db.engine.begin() as c:
+            c.execute(insert(db.notice_files).values(id=fid, notice_id=None, name=name, size=len(data),
+                                                     uploader_id=u["id"], created_at=time.time()))
+            # 올려 두고 글에 붙이지 않은 지 하루 지난 파일은 지운다
+            old = c.execute(select(db.notice_files.c.id).where(db.notice_files.c.notice_id.is_(None),
+                                                               db.notice_files.c.created_at < time.time() - 86400)).scalars().all()
+            c.execute(delete(db.notice_files).where(db.notice_files.c.id.in_(old or ["-"])))
+        for o in old:
+            notice_file_path(o).unlink(missing_ok=True)
+
+    await db.run(run)
+    return {"id": fid, "name": name, "size": len(data), "url": f"/api/notices/files/{fid}"}
+
+
+@router.get("/api/notices/files/{fid}")
+async def notice_file(fid: str):
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.notice_files).where(db.notice_files.c.id == fid)).first()
+
+    f = await db.run(run) if fid.isalnum() else None
+    if not f or f.notice_id is None or not notice_file_path(fid).is_file():
+        raise HTTPException(404, "파일을 찾을 수 없어요.")
+    return FileResponse(notice_file_path(fid), media_type="application/octet-stream", headers={
+        "Content-Disposition": f"attachment; filename=\"file{Path(f.name).suffix[:10]}\"; filename*=UTF-8''{quote(f.name)}",
+        "X-Content-Type-Options": "nosniff"})
 
 
 # 공지사항 쓰기·고치기·지우기: 선생님은 누구나 쓰고, 내가 쓴 글만(전체 관리자는 모두) 고치거나 지운다
@@ -510,11 +593,21 @@ async def notice_page(nid: int):
     if not r:
         raise HTTPException(404, "공지사항을 찾을 수 없어요.")
     j = notice_json(r)
+
+    def files():
+        with db.engine.connect() as c:
+            return files_of(c, [r.id]).get(r.id, [])
+
+    fl = await db.run(files)
+    size = lambda n: f"{n / 1024 / 1024:.1f}MB" if n >= 1024 * 1024 else f"{max(1, n // 1024)}KB"  # noqa: E731
+    attach = ("" if not fl else '<ul class="notice-files">' + "".join(
+        f'<li><a href="{f["url"]}">📎 {html.escape(f["name"])}</a> <span class="muted">({size(f["size"])})</span></li>' for f in fl) + "</ul>")
     return site_page("공지사항", f"""
 <article class="info-block notice-view" id="notice-view" data-id="{r.id}" data-author="{r.author_id or ''}" data-pinned="{int(bool(r.pinned))}">
   <h2>{html.escape(r.title)}</h2>
   <p class="muted">{j["date"]}{f" · {html.escape(r.author)}" if r.author else ""}</p>
   <div class="notice-body">{html.escape(r.body)}</div>
+  {attach}
 </article>
 <p class="row"><a class="button" href="/live/notices">← 목록으로</a><span class="grow"></span><span id="notice-tools"></span></p>""",
                      "외솔온닷 소식과 안내", scripts=NOTICE_SCRIPT)
@@ -525,6 +618,7 @@ class NoticeReq(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     body: str = Field(default="", max_length=20000)
     pinned: bool = False
+    files: list[str] = Field(default_factory=list, max_length=NOTICE_FILES_PER)  # 붙일 첨부 파일 (빠진 것은 지운다)
 
 
 async def require_admin(request: Request) -> dict:
@@ -560,13 +654,28 @@ async def save_notice(req: NoticeReq, request: Request):
         values["pinned"] = int(req.pinned)
 
     def run():
+        removed = []
         with db.engine.begin() as c:
             if req.id:
                 _own_notice(c, req.id, u)
                 c.execute(update(db.notices).where(db.notices.c.id == req.id).values(updated_at=time.time(), **values))
-                return req.id
-            return c.execute(insert(db.notices).values(created_at=time.time(), author=u["name"] or "",
-                                                       author_id=u["id"], **values)).inserted_primary_key[0]
+                nid = req.id
+            else:
+                nid = c.execute(insert(db.notices).values(created_at=time.time(), author=u["name"] or "",
+                                                          author_id=u["id"], **values)).inserted_primary_key[0]
+            nf = db.notice_files.c
+            keep = set(req.files)
+            # 이 글에 있던 파일 중 빠진 것은 지운다
+            for f in c.execute(select(nf.id).where(nf.notice_id == nid)).scalars().all():
+                if f not in keep:
+                    removed.append(f)
+            c.execute(delete(db.notice_files).where(nf.id.in_(removed or ["-"])))
+            # 내가 올려 둔(아직 글에 안 붙은) 파일만 이 글에 붙인다
+            c.execute(update(db.notice_files).where(nf.id.in_(keep or ["-"]), nf.notice_id.is_(None), nf.uploader_id == u["id"])
+                      .values(notice_id=nid))
+        for f in removed:
+            notice_file_path(f).unlink(missing_ok=True)
+        return nid
 
     return {"id": await db.run(run)}
 
@@ -578,7 +687,11 @@ async def delete_notice(nid: int, request: Request):
     def run():
         with db.engine.begin() as c:
             _own_notice(c, nid, u)
+            fids = c.execute(select(db.notice_files.c.id).where(db.notice_files.c.notice_id == nid)).scalars().all()
+            c.execute(delete(db.notice_files).where(db.notice_files.c.notice_id == nid))
             c.execute(delete(db.notices).where(db.notices.c.id == nid))
+        for f in fids:
+            notice_file_path(f).unlink(missing_ok=True)
 
     await db.run(run)
     return {"ok": True}

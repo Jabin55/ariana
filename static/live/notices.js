@@ -26,16 +26,46 @@
     const pinned = el("input", { type: "checkbox" });
     pinned.checked = !!cur?.pinned;
     const err = el("p", { class: "error" });
+    // 첨부 파일: 고르면 바로 올리고, [올리기/수정 저장] 때 이 글에 붙는다
+    const files = [...(cur?.files || [])];
+    const fileList = el("ul", { class: "notice-files edit" });
+    const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`);
+    const drawFiles = () => fileList.replaceChildren(...files.map((f) => el("li", {},
+      `📎 ${f.name} `, el("span", { class: "muted" }, `(${kb(f.size)})`), " ",
+      el("button", { type: "button", class: "small", onclick: () => { files.splice(files.indexOf(f), 1); drawFiles(); } }, "빼기"))));
+    const picker = el("input", { type: "file", multiple: true, hidden: true });
+    const uploading = el("span", { class: "muted" });
+    picker.addEventListener("change", async () => {
+      err.textContent = "";
+      const chosen = [...picker.files]; // 올리는 동안 목록이 바뀌지 않게 먼저 복사
+      for (const file of chosen) {
+        if (files.length >= 10) { err.textContent = "파일은 10개까지 붙일 수 있어요."; break; }
+        uploading.textContent = `올리는 중… ${file.name}`;
+        try {
+          const r = await fetch(`/api/admin/notices/files?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(`${file.name}: ${d.detail || "올리지 못했어요."}`);
+          files.push(d);
+          drawFiles();
+        } catch (e) { err.textContent = e.message; }
+      }
+      uploading.textContent = "";
+      picker.value = "";
+    });
+    drawFiles();
     const box = el("section", { class: "info-block notice-editor" },
       el("h2", {}, cur ? "공지 수정" : "공지 쓰기"),
       el("label", {}, "제목", title), el("label", {}, "내용", body),
+      el("div", { class: "notice-attach" }, el("div", { class: "row" }, el("strong", {}, "첨부 파일"),
+        el("button", { type: "button", class: "small", onclick: () => picker.click() }, "📎 파일 첨부"), uploading, picker),
+        el("span", { class: "muted", style: "font-size:0.85rem" }, "한 파일 20MB, 10개까지 (PDF·한글·오피스·그림·ZIP 등)"), fileList),
       me.is_admin ? el("label", { class: "switch" }, pinned, " 맨 위에 고정") : null,
       err,
       el("div", { class: "row" },
         el("button", { class: "primary", type: "button", onclick: async () => {
           if (!title.value.trim()) { title.focus(); return; }
           try {
-            const r = await post("/api/admin/notices", { id: cur?.id || null, title: title.value, body: body.value, pinned: pinned.checked });
+            const r = await post("/api/admin/notices", { id: cur?.id || null, title: title.value, body: body.value, pinned: pinned.checked, files: files.map((f) => f.id) });
             location.href = `/live/notices/${r.id}`;
           } catch (e) { err.textContent = e.message; }
         } }, cur ? "수정 저장" : "올리기"),

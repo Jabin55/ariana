@@ -1754,3 +1754,27 @@ def test_profile_photo_upload_view_and_delete():
     assert t.get(url).status_code == 404 and t.get(url2).status_code == 200
     assert t.delete("/api/me/photo").json()["photo"] == ""
     assert t.get(url2).status_code == 404
+
+
+def test_notice_attachments():
+    t = teacher()
+    assert t.post("/api/admin/notices/files?name=x.exe", content=b"x").status_code == 415
+    f1 = t.post("/api/admin/notices/files?name=" + "안내문.hwp", content=b"hwpdata").json()
+    f2 = t.post("/api/admin/notices/files?name=b.pdf", content=b"%PDF").json()
+    anon = TestClient(app)
+    assert anon.get(f1["url"]).status_code == 404  # 글에 붙기 전에는 못 받는다
+    nid = t.post("/api/admin/notices", json={"title": "수강신청 안내", "body": "첨부 참고", "files": [f1["id"], f2["id"]]}).json()["id"]
+    r = anon.get(f1["url"])  # 공지는 누구나 본다
+    assert r.status_code == 200 and r.content == b"hwpdata" and "attachment" in r.headers["content-disposition"]
+    n = next(x for x in anon.get("/api/notices").json()["notices"] if x["id"] == nid)
+    assert [x["name"] for x in n["files"]] == ["안내문.hwp", "b.pdf"]
+    assert "안내문.hwp" in anon.get(f"/live/notices/{nid}").text
+    # 다른 선생님이 올린 파일은 내 글에 붙일 수 없다
+    o = teacher("other@gmail.com")
+    f3 = o.post("/api/admin/notices/files?name=c.pdf", content=b"c").json()
+    t.post("/api/admin/notices", json={"id": nid, "title": "수강신청 안내", "files": [f1["id"], f3["id"]]})
+    n = next(x for x in anon.get("/api/notices").json()["notices"] if x["id"] == nid)
+    assert [x["id"] for x in n["files"]] == [f1["id"]]  # f2는 빠졌고, f3은 붙지 않았다
+    assert anon.get(f2["url"]).status_code == 404
+    t.post(f"/api/admin/notices/{nid}/delete", json={})
+    assert anon.get(f1["url"]).status_code == 404

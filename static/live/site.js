@@ -4,7 +4,7 @@
     ["/live/about", "외솔온닷 소개"],
     ["/live/credit", "고교학점제"],
     ["/live/guide", "수강안내"],
-    ["/live/courses", "수업신청"],
+    ["/live/courses", "수강신청"],
     ["/live/help", "이용안내"],
     ["/live?office=1", "교무실"], // 선생님 화면 (학생이 누르면 '접근 권한이 없습니다.')
   ];
