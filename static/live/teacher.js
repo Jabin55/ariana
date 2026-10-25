@@ -642,7 +642,6 @@ function render() {
 
   $("#set-chat").checked = S.settings.chat;
   $("#set-ai").checked = S.settings.ai;
-  $("#set-mic-lock").checked = S.settings.mic_lock;
   $("#set-lowbw").checked = S.settings.lowbw;
   applyQuality();
   renderPeople();
@@ -950,7 +949,6 @@ function renderPeople() {
 
 $("#set-chat").addEventListener("change", (e) => sock.send({ t: "settings", chat: e.target.checked }));
 $("#set-ai").addEventListener("change", (e) => sock.send({ t: "settings", ai: e.target.checked }));
-$("#set-mic-lock").addEventListener("change", (e) => sock.send({ t: "settings", mic_lock: e.target.checked }));
 $("#set-lowbw").addEventListener("change", (e) => sock.send({ t: "settings", lowbw: e.target.checked }));
 $("#mute-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "mute", target: "all" }); toast("모든 학생의 마이크를 껐어요."); });
 $("#camoff-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "cam_off", target: "all" }); toast("모든 학생의 카메라를 껐어요."); });

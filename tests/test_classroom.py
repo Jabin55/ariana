@@ -332,9 +332,9 @@ def test_low_bandwidth_mode_limits_student_publishing():
     code = create(t)["code"]
     a = student(1)
     assert a.post(f"/api/live/classes/{code}/join").status_code == 200
-    # 기본값: 마이크 통제 + 데이터 절약 모드 → 전체 교실에서 학생은 아무것도 못 내보냄 (선생님이 켜 줘야 함)
+    # 기본값: 마이크는 언제나 자유, 데이터 절약 모드라 카메라는 선생님이 켜 줘야 함
     g = grants(a, "main")
-    assert g.can_publish is False
+    assert g.can_publish and g.can_publish_sources == ["microphone"]
     assert "camera" in grants(t, "main").can_publish_sources  # 선생님은 제한 없음
     with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
         st = state(sa)
@@ -344,12 +344,12 @@ def test_low_bandwidth_mode_limits_student_publishing():
         tw.send_json({"t": "allow_mic", "target": sid, "on": True})
         state(sa, lambda m: m["me"]["can_speak"])
         assert sorted(grants(a, "main").can_publish_sources) == ["camera", "microphone"]
-        # 발언권 회수 + 마이크 잠금 → 아무것도 못 내보냄 (빈 목록은 '모두 허용'이 되므로 can_publish=False)
+        # 선생님이 마이크를 꺼도 학생은 다시 켤 수 있다. 예전의 '마이크 통제' 설정은 무시된다
         tw.send_json({"t": "allow_mic", "target": sid, "on": False})
         tw.send_json({"t": "settings", "mic_lock": True})
-        state(sa, lambda m: m["settings"]["mic_lock"] and not m["me"]["can_speak"])
-        g = grants(a, "main")
-        assert g.can_publish is False
+        st = state(sa, lambda m: not m["me"]["can_speak"])
+        assert st["settings"]["mic_lock"] is False
+        assert "microphone" in grants(a, "main").can_publish_sources
         # 모둠에서는 카메라·마이크·화면 공유 모두 가능
         tw.send_json({"t": "breakout_plan", "n": 1})
         tw.send_json({"t": "breakout_start"})
@@ -358,8 +358,8 @@ def test_low_bandwidth_mode_limits_student_publishing():
         assert g.can_publish and set(g.can_publish_sources) == {"camera", "microphone", "screen_share", "screen_share_audio"}
         tw.send_json({"t": "breakout_end"})
         # 데이터 절약 모드를 끄면 전체 교실에서도 카메라 가능
-        tw.send_json({"t": "settings", "lowbw": False, "mic_lock": False})
-        state(sa, lambda m: m["room"] == "main" and not m["settings"]["lowbw"] and not m["settings"]["mic_lock"])
+        tw.send_json({"t": "settings", "lowbw": False})
+        state(sa, lambda m: m["room"] == "main" and not m["settings"]["lowbw"])
         assert sorted(grants(a, "main").can_publish_sources) == ["camera", "microphone"]
 
 
@@ -890,38 +890,31 @@ def test_groups_by_size_and_teacher_controls_mic():
         st = state(tw, lambda m: len(m["groups"]) == 3)
         sizes = sorted(sum(1 for s in st["students"] if s["group"] == g["id"]) for g in st["groups"])
         assert sizes == [2, 2, 3]
-        # 마이크 통제(기본): 학생은 스스로 못 켜고, 선생님이 켜면 권한이 생기며 학생 화면이 바로 켠다
+        # 마이크는 언제나 학생이 자유롭게 켠다. 선생님은 학생 마이크를 켜거나(학생 화면이 바로 켬) 끌 수 있다
         sid = st["students"][0]["id"]
         who = next(s for s in studs if str(s.get("/api/me").json()["user"]["id"]) == sid)
         with who.websocket_connect(f"/ws/live/{code}") as sw:
-            assert state(sw)["settings"]["mic_lock"] is True
-            assert grants(who, "main").can_publish is False
-            # 마이크 요청(🎙️)과 손 들기(✋, 할 말 있음)는 따로
-            sw.send_json({"t": "mic_req", "on": True})
+            assert state(sw)["settings"]["mic_lock"] is False
+            assert grants(who, "main").can_publish_sources == ["microphone"]  # 카메라는 데이터 절약 모드라 아직
+            sw.send_json({"t": "mic_req", "on": True})  # 마이크 요청은 이제 필요 없어 무시
             sw.send_json({"t": "hand", "up": True})
-            st2 = state(tw, lambda m: any(x["mic_req"] and x["hand"] for x in m["students"]))
-            assert sum(x["mic_req"] for x in st2["students"]) == 1
+            st2 = state(tw, lambda m: any(x["hand"] for x in m["students"]))
+            assert sum(x["mic_req"] for x in st2["students"]) == 0
             tw.send_json({"t": "cmd", "cmd": "mic_on", "target": sid})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mic_on"
             me = state(sw, lambda m: m["me"]["can_speak"])["me"]
-            assert me["mic_req"] is False and me["hand"] is True and me["can_cam"] is False  # 손은 그대로
-            sw.send_json({"t": "mic_req", "on": True})  # 이미 켜 줬으면 요청은 무시
-            assert grants(who, "main").can_publish_sources == ["microphone"]
-            # 카메라도 선생님이 켠다 (데이터 절약 모드)
+            assert me["hand"] is True and me["can_cam"] is False  # 손은 그대로
+            # 카메라는 선생님이 켠다 (데이터 절약 모드)
             tw.send_json({"t": "cmd", "cmd": "cam_on", "target": sid})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "cam_on"
             state(sw, lambda m: m["me"]["can_cam"])
             assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone"]
-            # 선생님이 끄면 권한도 사라져 학생이 다시 켤 수 없다
+            # 선생님이 꺼도 학생은 다시 켤 수 있다
             tw.send_json({"t": "cmd", "cmd": "mic_off", "target": sid})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mute"
-            state(sw, lambda m: not m["me"]["can_speak"])
-            assert grants(who, "main").can_publish_sources == ["camera"]
-            # 모두 음소거 → 모두 권한 회수
-            tw.send_json({"t": "cmd", "cmd": "mic_on", "target": sid})
-            state(sw, lambda m: m["me"]["can_speak"])
+            assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone"]
             tw.send_json({"t": "cmd", "cmd": "mute", "target": "all"})
-            state(sw, lambda m: not m["me"]["can_speak"])
+            assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mute"
 
 
 def test_policy_pages(monkeypatch):

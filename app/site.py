@@ -183,14 +183,14 @@ async def guide():
         step(4, "실시간 수업 듣기", [
             "수업 시간이 되면 마이페이지 <b>[지금 들어갈 수 있는 수업]</b>에 강좌가 떠요. <b>[들어가기]</b>만 누르면 돼요. 수업 코드는 필요 없어요.",
             "처음 들어갈 때 브라우저가 묻는 <b>카메라·마이크 사용을 [허용]</b>해 주세요. 울림이 없도록 <b>이어폰</b>을 꼭 써요.",
-            "말하고 싶으면 <b>[🔒 마이크 요청]</b>, 할 말이 있으면 <b>[✋ 손 들기]</b>, 궁금한 건 <b>[질문]</b>으로 선생님께 보내요.",
+            "말하고 싶으면 <b>[🎤 마이크]</b>를 켜고 말해요(말이 끝나면 꺼 주세요). 할 말이 있으면 <b>[✋ 손 들기]</b>, 궁금한 건 <b>[질문]</b>으로 선생님께 보내요.",
             "선생님이 띄운 <b>발표 자료·판서</b>를 보고, <b>퀴즈·투표</b>와 <b>모둠 활동</b>에도 화면에서 바로 참여해요.",
         ], mock("class…/live/class/…", """
 <div class="m-live"><div class="m-now">▶ 지금 들어갈 수 있는 수업 · 법과 사회 <span class="m-btn">들어가기</span></div>
 <div class="m-stage"><div class="m-slide"><b>3차시 · 헌법과 기본권</b><span></span><span></span><span class="short"></span><em>✏️</em></div>
 <div class="m-cams"><div class="m-cam t">👩‍🏫<small>선생님</small></div><div class="m-cam">🙂<small>나</small></div><div class="m-cam">😀</div></div></div>
 <div class="m-quiz">✅ 퀴즈: 기본권을 제한할 수 있는 근거는? <span>① 법률</span><span>② 명령</span></div>
-<div class="m-bar"><span>🔒 마이크 요청</span><span>✋ 손 들기</span><span>❓ 질문</span><span>💬 채팅</span></div></div>"""
+<div class="m-bar"><span>🎤 마이크</span><span>✋ 손 들기</span><span>❓ 질문</span><span>💬 채팅</span></div></div>"""
             + pin(1, "3%", "2%") + pin(2, "22%", "64%") + pin(3, "86%", "2%") + pin(4, "64%", "2%"))),
         step(5, "과제 · 복습", [
             "<b>[마이페이지] → 과제</b>에서 파일이나 글로 과제를 내요. 마감 전에는 다시 낼 수 있어요.",
@@ -387,7 +387,7 @@ async def help_page():
   <details><summary>선생님인데 학교 계정으로 로그인했더니 학생 화면이 나와요</summary>
     <p>처음 화면에서 <b>'선생님으로 시작하기'</b>를 고르고 로그인하세요. 이미 학생으로 들어왔다면 마이페이지의 '내 정보'에서 '선생님이신가요?'를 눌러 강사·관리교사 등록을 신청할 수 있어요.</p></details>
   <details><summary>카메라·마이크가 안 켜져요</summary>
-    <p>처음 들어갈 때 브라우저가 묻는 카메라·마이크 사용을 <b>허용</b>해야 해요. 주소창 왼쪽 자물쇠 아이콘 → 권한에서 다시 허용할 수 있어요. 수업 중 마이크는 선생님이 켜 줘요.</p></details>
+    <p>처음 들어갈 때 브라우저가 묻는 카메라·마이크 사용을 <b>허용</b>해야 해요. 주소창 왼쪽 자물쇠 아이콘 → 권한에서 다시 허용할 수 있어요. 말할 때만 마이크를 켜고, 말이 끝나면 꺼 주세요.</p></details>
   <details><summary>소리가 울리거나 끊겨요</summary>
     <p>이어폰을 쓰면 울림이 사라져요. 영상이 끊기면 와이파이 가까이로 가거나, 다른 앱을 닫아 보세요. 연결이 끊겨도 자동으로 다시 연결돼요.</p></details>
   <details><summary>수업 중 '🔴 녹화 중'이 보여요</summary>

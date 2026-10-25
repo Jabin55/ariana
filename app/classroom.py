@@ -61,8 +61,9 @@ TEXT_LIMIT = 500
 # 화상 서버 데이터 비용과 학생 휴대폰 데이터를 크게 줄인다. LOW_BANDWIDTH=0 이면 기본으로 끔.
 LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
 # 마이크 통제 기본값: 전체 교실에서 학생 마이크는 선생님이 켜 줘야 쓸 수 있다(학생은 손 들기로 요청).
-# MIC_LOCK=0 이면 기본으로 학생이 자유롭게 켠다. (모둠 활동 중에는 언제나 자유)
-MIC_LOCK_DEFAULT = os.environ.get("MIC_LOCK", "1") != "0"
+# 학생은 언제나 스스로 마이크를 켜고 끈다. 선생님은 학생 목록에서 마이크를 켜거나 끌 수 있다.
+# (예전의 '학생 마이크는 선생님이 켜고 끄기' 설정은 없앴다. MIC_LOCK 설정은 무시)
+MIC_LOCK_DEFAULT = False
 # 강의 녹화(선생님 컴퓨터에 저장). 학교가 허용하지 않으면 ALLOW_RECORDING=0
 ALLOW_RECORDING = os.environ.get("ALLOW_RECORDING", "1") != "0"
 # 발표 자료(PDF)는 수업이 끝나도 남겨 둔다(그 수업을 들은 학생·강좌 수강생이 나중에 다시 봄)
@@ -1203,7 +1204,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     if handle_present(k, conn, m):
         return
     if t == "settings":
-        for name in ("chat", "ai", "mic_lock", "lowbw"):
+        for name in ("chat", "ai", "lowbw"):
             if name in m:
                 k.settings[name] = bool(m[name])
         if "mic_lock" in m:  # 통제를 바꾸면 남아 있는 마이크 요청은 지운다
