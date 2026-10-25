@@ -98,6 +98,7 @@
         const { notices } = await (await fetch("/api/notices")).json();
         const cur = notices.find((n) => n.id === id);
         view.hidden = true;
+        tools.hidden = true; // 고치는 동안에는 [수정][삭제]를 숨긴다
         view.after(editor(me, cur, () => location.reload()));
       } }, "✏️ 수정"),
       el("button", { class: "danger", onclick: async () => {
