@@ -57,7 +57,7 @@ def course_row(r, counts: dict | None = None) -> dict:
     out = {"id": r.id, "title": r.title, "description": r.description, "open": bool(r.open),
            "archived": bool(r.archived), "created_at": r.created_at,
            "instructor": r.instructor, "hub_school": r.hub_school,
-           "start_date": r.start_date, "end_date": r.end_date, "hub_id": r.hub_id,
+           "start_date": r.start_date, "end_date": r.end_date, "hub_id": r.hub_id, "grades": course_grades(r),
            "finished": bool(r.end_date and r.end_date < today_kst())}  # 강의기간이 지남
     if counts is not None:
         out.update(counts.get(r.id, {"approved": 0, "pending": 0, "waiting": 0}))
@@ -90,6 +90,21 @@ class CourseReq(BaseModel):
     start_date: str = Field(pattern=DATE)  # 강의기간
     end_date: str = Field(pattern=DATE)
     description: str = Field(default="", max_length=300)
+    grades: list[int] = Field(default_factory=list)  # 대상 학년 (비우면 모든 학년)
+
+
+def grades_text(grades: list[int] | None) -> str:
+    return ",".join(str(g) for g in sorted({g for g in (grades or []) if 1 <= g <= 6}))
+
+
+def course_grades(r) -> list[int]:
+    return [int(g) for g in (r.grades or "").split(",") if g.strip().isdigit()]
+
+
+def grade_ok(r, grade) -> bool:
+    """대상 학년이 정해진 강좌면 그 학년 학생만"""
+    gs = course_grades(r)
+    return not gs or grade in gs
 
 
 @router.get("/api/courses/mine")
@@ -140,7 +155,7 @@ async def create_course(req: CourseReq, request: Request):
             return c.execute(insert(db.courses).values(
                 teacher_id=t["id"], title=req.title.strip(), description=req.description.strip(),
                 instructor=req.instructor.strip(), hub_school=hub_school, hub_id=req.hub_id,
-                start_date=req.start_date, end_date=req.end_date,
+                start_date=req.start_date, end_date=req.end_date, grades=grades_text(req.grades),
                 school=t["school"] or "", open=1, archived=0, created_at=time.time())).inserted_primary_key[0]
 
     return {"id": await db.run(run)}
@@ -155,13 +170,15 @@ class CourseUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=300)
     open: bool | None = None
     archived: bool | None = None
+    grades: list[int] | None = None
 
 
 @router.post("/api/courses/{course_id}")
 async def update_course(course_id: int, req: CourseUpdate, request: Request):
     t = await require_user(request, "teacher")
     cur = await db.run(owned_course, course_id, t)
-    values = {k: (int(v) if isinstance(v, bool) else v.strip()) for k, v in req.model_dump().items() if v is not None}
+    values = {k: (int(v) if isinstance(v, bool) else grades_text(v) if k == "grades" else v.strip())
+              for k, v in req.model_dump().items() if v is not None}
     if cur.hub_id:
         values.pop("hub_school", None)  # 등록된 거점학교 강좌는 거점학교를 바꾸지 않는다
     check_period(values.get("start_date", cur.start_date), values.get("end_date", cur.end_date))
@@ -275,8 +292,8 @@ async def available_courses(request: Request):
     for r in rows:
         status, note = mine.get(r.id, (None, ""))
         row = course_row(r)
-        if status is None and (not r.open or row["finished"]):
-            continue  # 신청 마감·기간 끝남 + 신청한 적 없음
+        if status is None and (not r.open or row["finished"] or not grade_ok(r, u["grade"])):
+            continue  # 신청 마감·기간 끝남·대상 학년 아님 + 신청한 적 없음
         out.append({**row, "instructor": r.instructor or r.teacher_name, "status": status,
                     "note": note if status == "rejected" else ""})
     return {"courses": out}
@@ -297,6 +314,8 @@ async def enroll(course_id: int, request: Request):
                 return row.status
             if not co.open or (co.end_date and co.end_date < today_kst()):
                 raise HTTPException(409, "수강신청이 마감된 강좌예요.")
+            if not grade_ok(co, u["grade"]):
+                raise HTTPException(409, f"{'·'.join(map(str, course_grades(co)))}학년 대상 강좌예요.")
             if row:  # 거절됐던 강좌에 다시 신청
                 c.execute(update(db.enrollments).where(e.id == row.id)
                           .values(status="pending", requested_at=time.time(), decided_at=None,

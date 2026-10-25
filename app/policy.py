@@ -50,12 +50,13 @@ def page(title: str, body: str, printable: bool = False) -> HTMLResponse:
     extra = ('<button class="small no-print" onclick="print()">🖨️ 인쇄</button>' if printable else "")
     return HTMLResponse(f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(title)}</title><link rel="stylesheet" href="/static/live/live.css"></head>
-<body><main class="landing doc">
-<p class="no-print"><a href="/live">← 실시간 수업</a> · <a href="/live/terms">이용약관</a> · <a href="/live/privacy">개인정보 처리방침</a> · <a href="/live/notice">보호자 안내문</a></p>
+<title>{html.escape(title)} · 외솔온닷</title><link rel="icon" href="/static/live/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/live/live.css"></head>
+<body class="site"><main class="landing doc">
+<p class="no-print doc-links"><a href="/live/terms">이용약관</a> · <a href="/live/privacy">개인정보 처리방침</a> · <a href="/live/notice">보호자 안내문</a></p>
 <div class="row"><h1 class="grow">{html.escape(title)}</h1>{extra}</div>
 {body}
-</main></body></html>""")
+</main><script src="/static/live/site.js"></script></body></html>""")
 
 
 def e(v: str) -> str:
@@ -153,7 +154,9 @@ async def privacy():
 
 <h2>5. 처리 위탁과 국외 이전</h2>
 <p>서비스는 해외 서버에서 운영되어 개인정보가 국외로 이전됩니다(「개인정보 보호법」 제28조의8).
-EU(유럽연합)는 2025년 9월 개인정보보호위원회가 국내와 동등한 보호 수준을 갖췄다고 인정한 지역입니다.</p>
+EU(유럽연합)는 2025년 9월 개인정보보호위원회가 국내와 실질적으로 동등한 보호 수준을 갖췄다고 인정(적정성 인정)한 지역이므로,
+같은 법 제28조의8 제1항 제5호에 따라 <strong>별도의 국외 이전 동의 없이</strong> 이전할 수 있습니다. 이 서비스의 서버(데이터 보관·처리)는 모두 EU에 있습니다.
+{'다만 AI 조교(미국)는 이 인정 대상이 아니어서, 처음 쓸 때 안내를 확인한 경우에만 질문 내용이 전송됩니다.' if ai else ''}</p>
 <div class="table-wrap"><table class="att"><thead><tr><th>받는 자</th><th>목적</th><th>항목</th><th>국가</th><th>시기·방법</th><th>보유 기간</th><th>거부 방법과 결과</th></tr></thead><tbody>
 <tr><td>Hetzner Online GmbH (독일)<br><span class="muted">hetzner.com/legal/privacy-policy</span></td><td>서버 호스팅 (데이터 보관·전송)</td>
 <td>2번의 모든 항목</td><td>{e(s['region'])}</td><td>서비스를 이용할 때 암호화된 인터넷 연결로 전송</td><td>3번 보유 기간과 같음</td>
@@ -209,7 +212,7 @@ async def notice():
 
 <h2>2. 개인정보 국외 이전</h2>
 <ul>
-<li>Hetzner Online GmbH (독일) 서버, {e(s['region'])} — 서비스 운영(데이터 보관·전송). EU는 국내와 동등한 보호 수준으로 인정된 지역입니다.</li>
+<li>Hetzner Online GmbH (독일) 서버, {e(s['region'])} — 서비스 운영(데이터 보관·전송). EU는 개인정보보호위원회가 국내와 동등한 보호 수준으로 인정한 지역(2025년 9월 적정성 인정, 개인정보 보호법 제28조의8 제1항 제5호)이라 별도 동의 없이 이전할 수 있습니다.</li>
 {'<li>Anthropic, PBC (미국) — AI 조교 답변 생성. 학생이 AI 조교에 입력한 질문만 전송되며 이름·학번은 보내지 않습니다. AI 조교를 쓰지 않아도 수업에는 지장이 없습니다.</li>' if ai else ''}
 </ul>
 

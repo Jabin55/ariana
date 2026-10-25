@@ -25,6 +25,7 @@ from app.admin import router as admin_router
 from app.policy import router as policy_router
 from app.materials import router as materials_router
 from app.assignments import router as assignments_router
+from app.site import router as site_router
 from app.auth import router as auth_router
 from app.classroom import heartbeat_loop, router as live_router
 from app.courses import router as courses_router
@@ -72,6 +73,7 @@ app.include_router(admin_router)
 app.include_router(policy_router)
 app.include_router(materials_router)
 app.include_router(assignments_router)
+app.include_router(site_router)
 
 
 class ChatMessage(BaseModel):

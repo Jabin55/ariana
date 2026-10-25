@@ -3,31 +3,66 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>실시간 수업</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🎥%3C/text%3E%3C/svg%3E">
+  <title>외솔온닷 · 마이페이지</title>
+  <link rel="icon" href="/static/live/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/live/live.css">
 </head>
-<body>
+<body class="site">
   <main class="landing">
-    <div class="row" style="margin-bottom:4px">
-      <h1 class="grow">🎥 실시간 수업</h1>
+    <div class="row mypage-bar" id="mypage-bar" hidden>
+      <h1 class="grow mypage-title">마이페이지</h1>
       <span class="muted" id="who"></span>
       <button class="small" id="edit-profile" hidden>내 정보</button>
       <button class="small" id="logout" hidden>로그아웃</button>
     </div>
-    <p id="lead">화상 수업 · 퀴즈와 투표 · 채팅과 질문 · 모둠 활동 · AI 조교</p>
+    <p id="lead" hidden></p>
 
-    <!-- 로그인 -->
-    <section class="card narrow" id="login-view" hidden>
-      <h2>로그인</h2>
-      <p class="muted" id="login-hint">학교에서 받은 구글 계정으로 로그인하세요.</p>
-      <div id="google-btn"></div>
+    <!-- 로그인 전: 첫 화면 -->
+    <section id="login-view" hidden>
+      <section class="hero">
+        <div class="hero-text">
+          <p class="hero-kicker">울산 거점학교 공동교육과정 온라인 수업</p>
+          <h1 class="hero-title">울산 어디서나,<br><span>함께 듣는 실시간 수업</span></h1>
+          <p class="hero-sub">우리 학교에 없는 과목도 거점학교 선생님께 집에서 실시간으로.<br>화상 수업 · 자료 발표와 판서 · 퀴즈 · 모둠 활동 · 과제까지 한곳에서.</p>
+        </div>
+        <div class="start-box card" id="start-box">
+          <h2 style="margin:0 0 4px">시작하기</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:0.9rem">처음이면 가입, 이미 가입했으면 같은 버튼으로 로그인돼요.</p>
+          <div class="start-choices">
+            <button type="button" class="start-choice" data-role="student"><span class="sc-ico">🎒</span><strong>학생으로 시작하기</strong><small>학교 구글 계정으로 수강신청·수업 듣기</small></button>
+            <button type="button" class="start-choice" data-role="staff"><span class="sc-ico">👩‍🏫</span><strong>선생님으로 시작하기</strong><small>강사·거점학교 관리교사 등록 신청</small></button>
+          </div>
+          <div id="login-step" hidden>
+            <p class="login-chosen" id="login-chosen"></p>
+            <p class="muted" id="login-hint" style="font-size:0.9rem">학교에서 받은 구글 계정으로 로그인하세요.</p>
+            <div id="google-btn"></div>
+            <button type="button" class="link-btn" id="login-back">← 다시 고르기</button>
+          </div>
       <form id="dev-login" class="dev" hidden>
         <p class="muted" style="margin:0">개발용 로그인 (DEV_LOGIN=1)</p>
         <input id="dev-email" placeholder="email@school.kr" required>
         <button type="submit">개발용 로그인</button>
       </form>
       <p class="error" id="login-error"></p>
+        </div>
+      </section>
+      <section class="feature-grid">
+        <div class="feature"><span class="f-ico">🎥</span><h3>실시간 화상 수업</h3><p>데이터 절약 모드로 휴대폰에서도 부담 없이</p></div>
+        <div class="feature"><span class="f-ico">✍️</span><h3>자료 발표·판서</h3><p>PDF·PPT 위에 바로 판서, 화이트보드까지</p></div>
+        <div class="feature"><span class="f-ico">👥</span><h3>모둠 활동</h3><p>모둠 회의실에서 토론하고 함께 발표</p></div>
+        <div class="feature"><span class="f-ico">📚</span><h3>복습과 과제</h3><p>지난 수업 자료 다시 보기, 과제 제출과 피드백</p></div>
+      </section>
+    </section>
+
+    <!-- 학교 계정으로 들어왔는데 학생·선생님을 아직 안 고름 -->
+    <section class="card narrow" id="role-view" hidden>
+      <h2>어떤 분이세요?</h2>
+      <p class="muted" style="margin:0 0 12px">학교 구글 계정으로 들어오셨어요. 학생과 선생님이 같은 계정 주소를 쓰는 경우가 있어 한 번만 골라 주세요.</p>
+      <div class="start-choices">
+        <button type="button" class="start-choice" data-self="student"><span class="sc-ico">🎒</span><strong>학생이에요</strong><small>수강신청하고 수업 듣기</small></button>
+        <button type="button" class="start-choice" data-self="staff"><span class="sc-ico">👩‍🏫</span><strong>선생님이에요</strong><small>강사·거점학교 관리교사 등록 신청 (승인 뒤 강의)</small></button>
+      </div>
+      <p class="error" id="role-error"></p>
     </section>
 
     <!-- 내 정보 -->
@@ -53,12 +88,14 @@
         <button class="primary" type="submit">저장</button>
         <p class="error" id="profile-error"></p>
       </form>
+      <button type="button" class="link-btn student-only" id="to-staff" hidden>선생님이신가요? 강사·관리교사 등록 신청으로 →</button>
     </section>
 
     <!-- 손님: 강사 등록 신청 -->
     <section class="card narrow" id="guest-view" hidden>
       <div class="row"><h2 class="grow" style="margin:0">관리교사·강사 등록 신청</h2>
-        <button class="small" id="apply-back" hidden>← 돌아가기</button></div>
+        <button class="small" id="apply-back" hidden>← 돌아가기</button>
+        <button class="small" id="to-student" hidden>학생이에요 →</button></div>
       <div id="my-apps" style="margin:10px 0"></div>
       <p class="muted" style="font-size:0.9rem;margin:0 0 10px" id="guest-hint">학교 소속이 아니어도(대학교수, 보충수업 강사 등) 강사로 신청할 수 있어요.<br>
         <strong>학생이라면</strong> 오른쪽 위 <strong>로그아웃</strong>을 누르고 학교에서 받은 구글 계정으로 다시 로그인하세요.</p>
@@ -145,11 +182,6 @@
             <span class="muted" id="t-course-hint" style="font-size:0.85rem"></span>
             <label for="title" class="muted">수업 이름</label>
             <input id="title" maxlength="60" placeholder="예: 3주차 - 선거 제도">
-            <span class="muted no-course">대상 학급 (선택: 정하면 출결 기록에 '미접속' 학생도 보여요)</span>
-            <div class="row no-course">
-              <input id="t-grade" type="number" min="1" max="6" placeholder="학년" style="width:6em">
-              <input id="t-class" type="number" min="1" max="30" placeholder="반" style="width:6em">
-            </div>
             <button class="primary" type="submit">수업 열기</button>
             <p class="error" id="create-error"></p>
           </form>
@@ -172,6 +204,13 @@
             <label id="c-hub-text" hidden>거점학교명 <input id="c-hub" maxlength="60" placeholder="강의를 운영하는 학교 (강사 소속과 달라도 돼요)"></label>
             <div class="period">강의기간
               <div class="row"><input id="c-start" type="date" required> ~ <input id="c-end" type="date" required></div>
+            </div>
+            <div class="wide grade-pick">대상 학년 <span class="muted" style="font-size:0.85rem">(고르지 않으면 모든 학년)</span>
+              <div class="row">
+                <label class="switch"><input type="checkbox" name="c-grade" value="1"> 1학년</label>
+                <label class="switch"><input type="checkbox" name="c-grade" value="2"> 2학년</label>
+                <label class="switch"><input type="checkbox" name="c-grade" value="3"> 3학년</label>
+              </div>
             </div>
             <label class="wide">설명 (선택) <input id="c-desc" maxlength="300" placeholder="예: 화·목 7~8교시, 선거와 정당 단원"></label>
             <button class="primary wide" type="submit">강좌 개설</button>
@@ -209,5 +248,6 @@
   <script src="/static/live/common.js"></script>
   <script src="/static/live/assignments.js"></script>
   <script src="/static/live/home.js"></script>
+  <script src="/static/live/site.js"></script>
 </body>
 </html>

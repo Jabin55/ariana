@@ -40,6 +40,15 @@ KST = ZoneInfo("Asia/Seoul")
 def today_kst() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
 SCHOOLS = [s.strip() for s in os.environ.get("SCHOOLS", "").split(",") if s.strip()]
+
+
+def get_schools() -> list[str]:
+    """학생이 고르는 학교 목록: 전체 관리자가 화면에서 저장한 것, 없으면 SCHOOLS 설정"""
+    with db.engine.connect() as c:
+        row = c.execute(select(db.site_settings.c.value).where(db.site_settings.c.key == "schools")).first()
+    if row and row.value.strip():
+        return [s.strip() for s in row.value.splitlines() if s.strip()]
+    return SCHOOLS
 # 로컬 개발·자동 테스트 전용 로그인. 배포 서버에서는 절대 켜지 말 것.
 DEV_LOGIN = os.environ.get("DEV_LOGIN") == "1"
 
@@ -53,6 +62,9 @@ def public_user(u) -> dict:
         "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
         "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []),
         "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
+        # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
+        "role_choice": d["role"] == "student" and not d.get("self_role"),
+        "can_be_student": school_account(d["email"]) and d["role"] != "teacher",
     }
 
 
@@ -70,13 +82,19 @@ def membership_status(m: dict) -> str:
     return m["status"]
 
 
-def effective_role(email: str, memberships: list[dict]) -> str:
+def school_account(email: str) -> bool:
+    """학생용 학교 계정 도메인인가 (울산처럼 선생님도 같은 도메인을 쓸 수 있다)"""
+    domain = email.lower().rsplit("@", 1)[-1]
+    return not ALLOWED_DOMAINS or domain in ALLOWED_DOMAINS
+
+
+def effective_role(email: str, memberships: list[dict], self_role: str = "") -> str:
     email = email.lower()
     if email in ADMIN_EMAILS or email in TEACHER_EMAILS or any(membership_active(m) for m in memberships):
         return "teacher"
-    domain = email.rsplit("@", 1)[-1]
-    if not ALLOWED_DOMAINS or domain in ALLOWED_DOMAINS:
-        return "student"
+    if school_account(email):
+        # 학교 계정이라도 '선생님'을 고르면 강사·관리교사 등록 신청 화면(손님)으로. 승인되면 위에서 teacher
+        return "guest" if self_role == "staff" else "student"
     return "guest"
 
 
@@ -109,6 +127,8 @@ def needs_terms(u: dict) -> bool:
 def needs_profile(u: dict) -> bool:
     if u.get("role") == "guest":
         return False  # 손님은 관리교사·강사 등록 신청서에서 이름을 적고 약관을 확인한다
+    if u.get("role") == "student" and not u.get("self_role"):
+        return True  # 학생인지 선생님인지 먼저 고른다
     if needs_terms(u):
         return True  # 내 정보 화면에서 약관 확인을 함께 받는다
     if not u.get("name"):
@@ -133,7 +153,7 @@ def _load_with_role(uid: int) -> dict | None:
         ms = [dict(r._mapping) for r in c.execute(
             select(db.memberships).where(db.memberships.c.user_id == uid).order_by(db.memberships.c.id))]
         hub_names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
-        role = effective_role(u["email"], ms)
+        role = effective_role(u["email"], ms, u.get("self_role") or "")
         if role != u["role"]:
             c.execute(update(db.users).where(db.users.c.id == uid).values(role=role))
             u["role"] = role
@@ -240,7 +260,7 @@ async def me(request: Request):
         "google_client_id": GOOGLE_CLIENT_ID, "dev_login": DEV_LOGIN,
         "drive_picker": {"api_key": GOOGLE_API_KEY, "app_id": GOOGLE_APP_ID}
         if GOOGLE_CLIENT_ID and GOOGLE_API_KEY and GOOGLE_APP_ID else None,
-        "schools": SCHOOLS, "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
+        "schools": await db.run(get_schools), "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
         "policy_version": POLICY_VERSION, "policy_ready": policy_ready(),
         "recording_allowed": os.environ.get("ALLOW_RECORDING", "1") != "0",
     }
@@ -261,14 +281,16 @@ async def save_profile(p: Profile, request: Request):
     name = re.sub(r"\s+", " ", p.name).strip()
     school = p.school.strip()
     # 학교 목록은 학생에게만 적용. 강사는 대학교수 등 학교 밖 사람일 수 있어 소속을 자유롭게 적는다.
-    if u["role"] == "student" and SCHOOLS and school and school not in SCHOOLS:
-        raise HTTPException(400, "목록에 있는 학교를 골라 주세요.")
+    schools = await db.run(get_schools)
+    if u["role"] == "student" and schools and school not in schools:
+        raise HTTPException(400, "목록에 있는 학교를 골라 주세요. 학교가 목록에 없으면 선생님께 알려 주세요.")
     values = {"name": name, "school": school}
     if needs_terms(u):
         if not p.agree:
             raise HTTPException(400, "이용약관과 개인정보 처리방침을 확인하고 동의해 주세요.")
         values.update(terms_version=POLICY_VERSION, terms_at=time.time())
     if u["role"] == "student":
+        values["self_role"] = "student"  # 학생 정보를 적었으면 학생을 고른 것
         if not (school and p.grade and p.class_no and p.number):
             raise HTTPException(400, "학교, 학년, 반, 번호를 모두 입력해 주세요.")
         values.update(grade=p.grade, class_no=p.class_no, number=p.number)
@@ -292,3 +314,25 @@ async def ai_ok(request: Request):
 
     await db.run(save)
     return {"ok": True}
+
+
+class SelfRole(BaseModel):
+    role: str = Field(pattern="^(student|staff)$")
+
+
+@router.post("/api/me/self-role")
+async def choose_self_role(req: SelfRole, request: Request):
+    """학교 계정으로 들어온 사람이 학생인지 선생님(강사·관리교사 신청)인지 고른다.
+    선생님을 골라도 승인 전에는 아무 권한이 없으므로 학생이 잘못 골라도 위험하지 않다."""
+    u = await current_user(request)
+    if not u:
+        raise HTTPException(401, "로그인이 필요해요.")
+    if not school_account(u["email"]) or u["email"].lower() in ADMIN_EMAILS | TEACHER_EMAILS:
+        raise HTTPException(400, "학교 계정만 고를 수 있어요.")
+
+    def save():
+        with db.engine.begin() as c:
+            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(self_role=req.role))
+
+    await db.run(save)
+    return public_user(await db.run(_load_with_role, u["id"]))

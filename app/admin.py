@@ -16,7 +16,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 
 from app import db
 from app.auth import PLEDGE, current_user, membership_status, today_kst
@@ -206,3 +206,32 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
 
     await db.run(run)
     return {"ok": True}
+
+
+# ───────────────────────── 학교 목록 (학생 가입용) ─────────────────────────
+
+
+class SchoolsReq(BaseModel):
+    text: str = Field(default="", max_length=20000)  # 한 줄에 학교 하나 (정식 이름)
+
+
+@router.post("/api/admin/schools")
+async def save_schools(req: SchoolsReq, request: Request):
+    """전체 관리자가 학생이 고를 학교 목록을 저장한다 (비우면 학생이 직접 적음)"""
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+    names = []
+    for line in req.text.splitlines():
+        name = " ".join(line.split())[:60]
+        if name and name not in names:
+            names.append(name)
+    names.sort()
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.site_settings).where(db.site_settings.c.key == "schools"))
+            c.execute(insert(db.site_settings).values(key="schools", value="\n".join(names)))
+
+    await db.run(run)
+    return {"schools": names}

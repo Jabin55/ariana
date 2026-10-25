@@ -3,9 +3,10 @@ const params = new URLSearchParams(location.search);
 let ME = null;
 let CONFIG = null;
 
-const views = ["login-view", "profile-view", "guest-view", "student-view", "teacher-view"];
+const views = ["login-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
+  $("#mypage-bar").hidden = id === "login-view"; // 로그인 전에는 첫 화면(소개·시작하기)만
   $("#student-questions").hidden = true;
   $("#student-results").hidden = true;
   $("#student-materials").hidden = true;
@@ -27,10 +28,18 @@ async function boot() {
   ME = CONFIG.user;
   $("#logout").hidden = !ME;
   $("#edit-profile").hidden = !ME || ME.needs_profile;
-  const roleName = ME?.is_admin ? "전체 관리자" : ME?.coordinator_hubs?.length ? "관리교사"
+  const roleName = ME?.is_admin ? "전체 관리자" : ME?.coordinator_hubs?.length ? "관리교사" : ME?.role_choice ? "가입 중"
     : { teacher: "강사", student: "학생", guest: "등록 신청" }[ME?.role];
   $("#who").textContent = ME ? `${ME.display || ME.email} (${roleName})` : "";
   if (!ME) return showLogin();
+  if (ME.role_choice) {
+    // 학교 계정으로 처음 들어옴: 첫 화면에서 고른 것(학생/선생님)이 있으면 그대로, 없으면 물어본다
+    const pick = sessionGet("signup_as");
+    if (pick) {
+      try { await api("/api/me/self-role", { role: pick }); sessionDel("signup_as"); return boot(); } catch { /* 아래에서 물어본다 */ }
+    }
+    return showRoleChoice();
+  }
   if (ME.role === "guest") return showGuest();
   if (params.get("apply")) return showGuest(true);
   if (ME.needs_profile) return showProfile();
@@ -40,30 +49,76 @@ async function boot() {
 
 /* ───── 로그인 ───── */
 
+const sessionGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+const sessionSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* 사생활 보호 모드 */ } };
+const sessionDel = (k) => { try { sessionStorage.removeItem(k); } catch { /* 무시 */ } };
+let gsiReady = null;
+
+function loadGsi() {
+  gsiReady = gsiReady || new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("구글 로그인 화면을 불러오지 못했어요. 인터넷 연결을 확인해 주세요."));
+    document.head.append(s);
+  });
+  return gsiReady;
+}
+
 function showLogin() {
   show("login-view");
-  if (CONFIG.domains.length) {
-    $("#login-hint").textContent = `학생은 학교에서 받은 구글 계정(@${CONFIG.domains.join(", @")})으로 로그인하세요. 강사는 아무 구글 계정으로 로그인해 등록을 신청할 수 있어요.`;
-  }
   $("#dev-login").hidden = !CONFIG.dev_login;
-  if (!CONFIG.google_client_id) {
-    if (!CONFIG.dev_login) $("#login-error").textContent = "서버에 GOOGLE_CLIENT_ID 가 설정되지 않았어요. 선생님께 알려 주세요.";
-    return;
+  $("#login-step").hidden = true;
+  document.querySelectorAll("#start-box .start-choices").forEach((x) => { x.hidden = false; });
+  if (!CONFIG.google_client_id && !CONFIG.dev_login) {
+    $("#login-error").textContent = "서버에 GOOGLE_CLIENT_ID 가 설정되지 않았어요. 선생님께 알려 주세요.";
   }
-  const s = document.createElement("script");
-  s.src = "https://accounts.google.com/gsi/client";
-  s.onload = () => {
+  if (CONFIG.google_client_id) loadGsi().catch((err) => { $("#login-error").textContent = err.message; });
+}
+
+/** 첫 화면에서 학생/선생님을 고르면 그에 맞는 구글 로그인 버튼을 보여 준다 */
+async function chooseStart(role) {
+  sessionSet("signup_as", role);
+  $("#start-box .start-choices").hidden = true;
+  $("#login-step").hidden = false;
+  $("#dev-login").hidden = !CONFIG.dev_login;
+  const school = CONFIG.domains.length ? `@${CONFIG.domains.join(", @")}` : "학교";
+  $("#login-chosen").textContent = role === "student" ? "🎒 학생으로 시작해요" : "👩‍🏫 선생님으로 시작해요";
+  $("#login-hint").textContent = role === "student"
+    ? `학교에서 받은 구글 계정(${school})으로 로그인하세요.`
+    : "학교 계정이든 개인 구글 계정이든 괜찮아요. 로그인한 뒤 강사·관리교사 등록을 신청해요.";
+  if (!CONFIG.google_client_id) return;
+  try {
+    await loadGsi();
     google.accounts.id.initialize({
       client_id: CONFIG.google_client_id,
       callback: onGoogle,
-      hd: CONFIG.domains.length === 1 ? CONFIG.domains[0] : undefined, // 학교 계정을 먼저 보여 준다
+      // 학생은 학교 계정을 먼저 보여 주고, 선생님은 아무 계정이나 고를 수 있게
+      hd: role === "student" && CONFIG.domains.length === 1 ? CONFIG.domains[0] : undefined,
       ux_mode: "popup",
     });
+    $("#google-btn").replaceChildren();
     google.accounts.id.renderButton($("#google-btn"), { theme: "outline", size: "large", text: "signin_with", locale: "ko", width: 280 });
-  };
-  s.onerror = () => { $("#login-error").textContent = "구글 로그인 화면을 불러오지 못했어요. 인터넷 연결을 확인해 주세요."; };
-  document.head.append(s);
+  } catch (err) { $("#login-error").textContent = err.message; }
 }
+document.querySelectorAll("#start-box .start-choice").forEach((b) => b.addEventListener("click", () => chooseStart(b.dataset.role)));
+$("#login-back").addEventListener("click", () => {
+  sessionDel("signup_as");
+  $("#login-step").hidden = true;
+  $("#start-box .start-choices").hidden = false;
+});
+
+/* 학교 계정: 학생/선생님 고르기 */
+function showRoleChoice() { show("role-view"); }
+async function setSelfRole(role) {
+  try { await api("/api/me/self-role", { role }); sessionDel("signup_as"); boot(); }
+  catch (err) { toast(err.message); $("#role-error").textContent = err.message; }
+}
+document.querySelectorAll("#role-view .start-choice").forEach((b) => b.addEventListener("click", () => setSelfRole(b.dataset.self)));
+$("#to-staff").addEventListener("click", () => {
+  if (confirm("강사·관리교사 등록 신청 화면으로 갈까요? 승인되기 전까지는 학생 기능을 쓸 수 없어요.")) setSelfRole("staff");
+});
+$("#to-student").addEventListener("click", () => setSelfRole("student"));
 
 async function onGoogle(resp) {
   $("#login-error").textContent = "";
@@ -107,6 +162,7 @@ function showProfile() {
   $("#p-school").hidden = false;
   if (student && CONFIG.schools.length) {
     sel.hidden = false;
+    sel.required = true;
     $("#p-school").hidden = true;
     sel.replaceChildren(h("option", { value: "" }, "학교를 고르세요"),
       ...CONFIG.schools.map((s) => h("option", { value: s, selected: s === ME.school }, s)));
@@ -166,6 +222,12 @@ async function showGuest(fromTeacher = false) {
   $("#lead").hidden = true;
   $("#apply-back").hidden = !fromTeacher;
   $("#guest-hint").hidden = fromTeacher;
+  $("#to-student").hidden = fromTeacher || !ME.can_be_student;
+  if (sessionGet("signup_as") === "student" && !ME.can_be_student) {
+    // 학생을 골랐는데 학교 계정이 아닌 개인 계정으로 로그인함
+    toast(`학생은 학교 구글 계정(@${CONFIG.domains.join(", @")})으로 로그인해야 해요. 오른쪽 위 '로그아웃' 후 다시 로그인해 주세요.`, 9000);
+  }
+  sessionDel("signup_as");
   $("#pledge-text").textContent = CONFIG.pledge;
   $("#a-name").value = ME.name || "";
   $("#a-aff").value = ME.school || "";
@@ -268,6 +330,7 @@ function courseInfo(c) {
   if (c.instructor) bits.push(`강사 ${c.instructor}`);
   if (c.hub_school) bits.push(`거점학교 ${c.hub_school}`);
   if (c.start_date || c.end_date) bits.push(`강의기간 ${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}`);
+  bits.push(c.grades?.length ? `대상 ${c.grades.join("·")}학년` : "대상 전 학년");
   return h("div", { class: "course-info" }, bits.join(" · "), c.finished ? h("span", { class: "status rejected" }, "기간 종료") : null);
 }
 
@@ -405,8 +468,6 @@ $("#create").addEventListener("submit", async (e) => {
     const res = await api("/api/live/classes", {
       title: $("#title").value,
       course_id: courseId,
-      target_grade: Number($("#t-grade").value) || null,
-      target_class: Number($("#t-class").value) || null,
     });
     location.href = `/live/teacher/${res.code}`;
   } catch (err) { $("#create-error").textContent = err.message; }
@@ -422,6 +483,8 @@ function courseEditForm(c) {
   const form = h("form", { class: "course-form", style: "margin-top:8px", onsubmit: async (e) => {
     e.preventDefault();
     const v = Object.fromEntries(new FormData(form));
+    delete v.grade;
+    v.grades = [...form.querySelectorAll("input[name=grade]:checked")].map((x) => Number(x.value));
     try {
       await api(`/api/courses/${c.id}`, v);
       editing.delete(c.id);
@@ -435,6 +498,9 @@ function courseEditForm(c) {
     h("div", { class: "period" }, "강의기간", h("div", { class: "row" },
       h("input", { name: "start_date", type: "date", value: c.start_date, required: true }), " ~ ",
       h("input", { name: "end_date", type: "date", value: c.end_date, required: true }))),
+    h("div", { class: "wide grade-pick" }, "대상 학년 ", h("span", { class: "muted", style: "font-size:0.85rem" }, "(고르지 않으면 모든 학년)"),
+      h("div", { class: "row" }, [1, 2, 3].map((g) => h("label", { class: "switch" },
+        h("input", { type: "checkbox", name: "grade", value: g, checked: (c.grades || []).includes(g) }), ` ${g}학년`)))),
     h("label", { class: "wide" }, "설명", h("input", { name: "description", value: c.description, maxlength: 300 })),
     h("div", { class: "row wide" }, h("button", { class: "primary", type: "submit" }, "저장"),
       h("button", { type: "button", onclick: () => { editing.delete(c.id); renderCourseList(); } }, "취소")));
@@ -486,8 +552,10 @@ $("#course-create").addEventListener("submit", async (e) => {
       hub_id: ME.teach_hubs.length ? Number($("#c-hub-select").value) : null,
       hub_school: ME.teach_hubs.length ? "" : $("#c-hub").value,
       start_date: $("#c-start").value, end_date: $("#c-end").value, description: $("#c-desc").value,
+      grades: [...document.querySelectorAll("input[name=c-grade]:checked")].map((x) => Number(x.value)),
     });
     for (const id of ["#c-title", "#c-desc", "#c-start", "#c-end"]) $(id).value = "";
+    document.querySelectorAll("input[name=c-grade]").forEach((x) => { x.checked = false; });
     toast("강좌를 만들었어요. 학생들이 첫 화면에서 수강신청할 수 있어요.");
     loadTeacherCourses();
   } catch (err) { $("#course-error").textContent = err.message; }
@@ -619,6 +687,25 @@ function staffSections(list, today, reload, label) {
 }
 
 /* 전체 관리자: 관리교사 승인 */
+/** 전체 관리자: 학생이 가입할 때 고르는 학교 목록 (정식 이름, 한 줄에 하나) */
+function schoolsEditor() {
+  const ta = h("textarea", { rows: 8, placeholder: "한 줄에 학교 하나씩, 정식 이름으로\n예)\n신정고등학교\n울산고등학교", value: (CONFIG.schools || []).join("\n") });
+  const count = h("span", { class: "muted" }, `지금 ${CONFIG.schools.length}개`);
+  return h("details", { class: "card", style: "margin:12px 0", open: !CONFIG.schools.length || null },
+    h("summary", {}, h("strong", {}, "🏫 학생 학교 목록 "), count),
+    h("p", { class: "muted", style: "font-size:0.9rem" }, "학생은 가입할 때 이 목록에서 학교를 골라요(직접 쓸 수 없어 이름이 줄여 쓰이지 않아요). 비워 두면 학생이 직접 적어요."),
+    ta,
+    h("div", { class: "row", style: "margin-top:8px" }, h("button", { class: "primary", onclick: async () => {
+      try {
+        const { schools } = await api("/api/admin/schools", { text: ta.value });
+        CONFIG.schools = schools;
+        ta.value = schools.join("\n");
+        count.textContent = `지금 ${schools.length}개`;
+        toast(`학교 ${schools.length}개를 저장했어요.`);
+      } catch (err) { toast(err.message); }
+    } }, "저장")));
+}
+
 async function loadAdmin() {
   const { applications, today } = await api("/api/staff/applications?role=coordinator");
   applications.forEach((x) => { x.role = "coordinator"; });
@@ -630,6 +717,7 @@ async function loadAdmin() {
       h("span", {}, "📄 개인정보 처리방침에 들어갈 운영 기관·개인정보 보호책임자·연락처가 아직 비어 있어요. 서버 콘솔에서: ",
         h("code", {}, 'live-config OPERATOR_NAME="○○고등학교" PRIVACY_OFFICER="교감 홍길동" PRIVACY_CONTACT="02-000-0000"'),
         " ", h("a", { href: "/live/privacy", target: "_blank" }, "처리방침 보기")))]),
+    schoolsEditor(),
     h("h2", { style: "margin:8px 0 0" }, "거점학교 관리교사"),
     ...staffSections(applications, today, loadAdmin, "관리교사"));
 }

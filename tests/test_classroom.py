@@ -1062,3 +1062,42 @@ def test_recording_notice(monkeypatch):
         time.sleep(0.2)
     assert cr.classes[code].recording is False
     assert "강의 녹화" not in TestClient(app).get("/live/privacy").text
+
+
+def test_signup_choice_schools_and_grades(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    admin = login("admin@gmail.com", name="관리자")
+    # 학교 계정(선생님도 같은 도메인)으로 처음 들어오면 학생/선생님을 고른다
+    tch = TestClient(app)
+    tch.post("/api/auth/dev", json={"email": "kim@s.school.kr"})
+    me = tch.get("/api/me").json()["user"]
+    assert me["role"] == "student" and me["role_choice"] and me["needs_profile"]
+    me = tch.post("/api/me/self-role", json={"role": "staff"}).json()
+    assert me["role"] == "guest" and not me["role_choice"] and me["can_be_student"]  # 강사·관리교사 신청 화면으로
+    assert tch.get("/api/courses/available").status_code == 403  # 학생 기능은 못 씀
+    # 학교 계정이 아니면 고를 수 없다
+    g = TestClient(app)
+    g.post("/api/auth/dev", json={"email": "someone@gmail.com"})
+    assert g.post("/api/me/self-role", json={"role": "student"}).status_code == 400
+    # 학교 목록: 전체 관리자만 저장, 학생은 목록에 있는 정식 이름만
+    assert tch.post("/api/admin/schools", json={"text": "가나고"}).status_code == 403
+    r = admin.post("/api/admin/schools", json={"text": "신정고등학교\n  울산고등학교 \n\n신정고등학교"}).json()
+    assert r["schools"] == ["신정고등학교", "울산고등학교"]
+    assert admin.get("/api/me").json()["schools"] == ["신정고등학교", "울산고등학교"]
+    s = TestClient(app)
+    s.post("/api/auth/dev", json={"email": "st9@s.school.kr"})
+    prof = {"name": "학생", "grade": 2, "class_no": 1, "number": 9, "agree": True}
+    assert s.post("/api/me/profile", json={**prof, "school": "신정고"}).status_code == 400
+    me = s.post("/api/me/profile", json={**prof, "school": "신정고등학교"}).json()
+    assert me["role"] == "student" and not me["needs_profile"]
+    # 대상 학년: 1학년 강좌는 2학년에게 안 보이고 신청도 안 된다
+    t = teacher()
+    c1 = t.post("/api/courses", json={**COURSE, "title": "1학년 강좌", "grades": [1]}).json()["id"]
+    c2 = t.post("/api/courses", json={**COURSE, "title": "2·3학년 강좌", "grades": [3, 2]}).json()["id"]
+    titles = [x["title"] for x in s.get("/api/courses/available").json()["courses"]]
+    assert "1학년 강좌" not in titles and "2·3학년 강좌" in titles
+    assert s.post(f"/api/courses/{c1}/enroll").status_code == 409
+    assert s.post(f"/api/courses/{c2}/enroll").status_code == 200
+    assert [x["grades"] for x in t.get("/api/courses/mine").json()["courses"] if x["id"] == c2] == [[2, 3]]
+    t.post(f"/api/courses/{c1}", json={"grades": []})  # 학년 제한을 풀면 보인다
+    assert "1학년 강좌" in [x["title"] for x in s.get("/api/courses/available").json()["courses"]]

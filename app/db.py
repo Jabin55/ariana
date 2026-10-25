@@ -42,6 +42,14 @@ users = Table(
     Column("terms_version", String(10), nullable=False, default=""),  # 확인(동의)한 이용약관·처리방침 시행일
     Column("terms_at", Float),
     Column("ai_ok_at", Float),  # AI 조교 국외 전송 안내를 확인한 시각
+    # 학교 계정으로 처음 로그인했을 때 고른 것: student(학생) staff(선생님 → 강사·관리교사 신청). 비면 아직 안 고름
+    Column("self_role", String(10), nullable=False, default=""),
+)
+
+site_settings = Table(
+    "site_settings", metadata,  # 전체 관리자가 화면에서 바꾸는 설정 (예: 학교 목록)
+    Column("key", String(40), primary_key=True),
+    Column("value", Text, nullable=False),
 )
 
 hubs = Table(
@@ -85,6 +93,7 @@ courses = Table(
     Column("start_date", String(10), nullable=False, default=""),  # 강의기간 시작 (YYYY-MM-DD)
     Column("end_date", String(10), nullable=False, default=""),  # 강의기간 끝
     Column("hub_id", Integer, index=True),  # 거점학교 강좌면 관리교사의 최종 승인이 필요
+    Column("grades", String(10), nullable=False, default=""),  # 대상 학년 (예: "1,2"). 비면 모든 학년
     Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
     Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
     Column("created_at", Float, nullable=False),
@@ -247,7 +256,9 @@ def init() -> None:
              ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("users", "terms_version", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("users", "terms_at", "FLOAT"),
-             ("users", "ai_ok_at", "FLOAT")]
+             ("users", "ai_ok_at", "FLOAT"),
+             ("users", "self_role", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "grades", "VARCHAR(10) NOT NULL DEFAULT ''")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:
