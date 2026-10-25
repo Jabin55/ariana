@@ -590,7 +590,7 @@ class TokenReq(BaseModel):
 async def create_class(req: CreateReq, request: Request):
     t = await require_user(request, "teacher")
     if req.course_id is not None:
-        course = await db.run(owned_course, req.course_id, t["id"])
+        course = await db.run(owned_course, req.course_id, t)
         if course.archived:
             raise HTTPException(409, "보관된 강좌에는 수업을 열 수 없어요.")
     prune_classes()

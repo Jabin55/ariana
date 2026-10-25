@@ -56,11 +56,13 @@ memberships = Table(
     Column("hub_id", Integer, index=True),  # 강사: 신청한 거점학교 / 관리교사: 승인 때 정해짐
     Column("hub_name", String(60), nullable=False, default=""),  # 관리교사가 신청서에 적은 거점학교명
     Column("status", String(10), nullable=False),  # pending(대기) approved(승인) rejected(거절) revoked(해제)
-    Column("kind", String(15), nullable=False, default=""),  # 강사 구분: regular(정규) supplementary(보충수업)
+    Column("kind", String(15), nullable=False, default=""),  # (더 이상 쓰지 않음: 예전 정규·보충수업 구분)
     Column("contact", String(100), nullable=False, default=""),
     Column("message", String(500), nullable=False, default=""),
     Column("valid_from", String(10), nullable=False, default=""),  # 활동 기간 (비우면 제한 없음)
     Column("valid_until", String(10), nullable=False, default=""),
+    Column("wish_from", String(10), nullable=False, default=""),  # 강사가 신청서에 적은 희망 기간
+    Column("wish_until", String(10), nullable=False, default=""),
     Column("pledge_at", Float),  # 개인정보 보호 서약에 동의한 시각
     Column("requested_at", Float, nullable=False),
     Column("decided_at", Float),
@@ -180,7 +182,9 @@ def init() -> None:
              ("courses", "hub_id", "INTEGER"),
              ("enrollments", "instructor_by", "INTEGER"),
              ("enrollments", "coordinator_by", "INTEGER"),
-             ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''")]
+             ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("memberships", "wish_from", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:

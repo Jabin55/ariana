@@ -36,11 +36,20 @@ def is_enrolled(course_id: int, user_id: int) -> bool:
             db.enrollments.c.status == "approved")).first() is not None
 
 
-def owned_course(course_id: int, teacher_id: int):
+def hub_locked(course, t: dict) -> bool:
+    """거점학교 강좌인데 그 거점학교 강사(관리교사) 활동 기간이 아니면 관리할 수 없다.
+    (다른 거점학교로 옮겼거나 기간이 끝났거나 해제된 경우)"""
+    return bool(course.hub_id) and not t["is_admin"] and course.hub_id not in {h["id"] for h in t["teach_hubs"]}
+
+
+def owned_course(course_id: int, t: dict):
     with db.engine.connect() as c:
         r = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
-    if not r or r.teacher_id != teacher_id:
+    if not r or r.teacher_id != t["id"]:
         raise HTTPException(404, "강좌를 찾을 수 없어요.")
+    if hub_locked(r, t):
+        raise HTTPException(403, f"{r.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리할 수 없어요. "
+                                 "계속 강의하려면 그 거점학교에 다시 신청해 주세요.")
     return r
 
 
@@ -103,7 +112,7 @@ async def my_courses(request: Request):
             return rows, counts
 
     rows, counts = await db.run(run)
-    return {"courses": [course_row(r, counts) for r in rows]}
+    return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t)} for r in rows]}
 
 
 @router.post("/api/courses")
@@ -151,7 +160,7 @@ class CourseUpdate(BaseModel):
 @router.post("/api/courses/{course_id}")
 async def update_course(course_id: int, req: CourseUpdate, request: Request):
     t = await require_user(request, "teacher")
-    cur = await db.run(owned_course, course_id, t["id"])
+    cur = await db.run(owned_course, course_id, t)
     values = {k: (int(v) if isinstance(v, bool) else v.strip()) for k, v in req.model_dump().items() if v is not None}
     if cur.hub_id:
         values.pop("hub_school", None)  # 등록된 거점학교 강좌는 거점학교를 바꾸지 않는다
@@ -171,7 +180,7 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
 @router.get("/api/courses/{course_id}/enrollments")
 async def course_enrollments(course_id: int, request: Request):
     t = await require_user(request, "teacher")
-    await db.run(owned_course, course_id, t["id"])
+    await db.run(owned_course, course_id, t)
 
     def run():
         with db.engine.connect() as c:
@@ -203,7 +212,7 @@ def after_instructor_ok(course) -> str:
 async def decide(course_id: int, user_id: int, req: DecideReq, request: Request):
     """강사의 1차 승인·거절·빼기"""
     t = await require_user(request, "teacher")
-    course = await db.run(owned_course, course_id, t["id"])
+    course = await db.run(owned_course, course_id, t)
 
     def run():
         e = db.enrollments.c
@@ -228,7 +237,7 @@ async def decide(course_id: int, user_id: int, req: DecideReq, request: Request)
 @router.post("/api/courses/{course_id}/approve-all")
 async def approve_all(course_id: int, request: Request):
     t = await require_user(request, "teacher")
-    course = await db.run(owned_course, course_id, t["id"])
+    course = await db.run(owned_course, course_id, t)
 
     def run():
         e = db.enrollments.c

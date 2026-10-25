@@ -76,7 +76,8 @@ def effective_role(email: str, memberships: list[dict]) -> str:
 def membership_view(m: dict, hub_names: dict) -> dict:
     return {"id": m["id"], "role": m["role"], "hub_id": m["hub_id"],
             "hub": hub_names.get(m["hub_id"]) or m["hub_name"], "status": membership_status(m),
-            "kind": m["kind"], "valid_from": m["valid_from"], "valid_until": m["valid_until"],
+            "valid_from": m["valid_from"], "valid_until": m["valid_until"],
+            "wish_from": m["wish_from"], "wish_until": m["wish_until"],
             "contact": m["contact"], "message": m["message"], "admin_note": m["admin_note"]}
 
 

@@ -3,8 +3,9 @@
     전체 관리자(ADMIN_EMAILS) ──승인──▶ 거점학교 관리교사 ──승인──▶ 강사
 
 - 관리교사 신청: 거점학교명을 적는다. 전체 관리자가 승인하면 그 거점학교가 만들어진다(이미 있으면 그 학교로).
-- 강사 신청: 등록된 거점학교 중 하나를 고른다. 그 거점학교 관리교사(또는 전체 관리자)가 구분·활동 기간을 정해 승인한다.
-- 활동 기간이 지나거나 해제되면 바로 권한이 꺼진다(수업 기록은 남는다).
+- 강사 신청: 등록된 거점학교 하나를 고르고 희망 기간을 적는다. 그 거점학교 관리교사(또는 전체 관리자)가
+  활동 기간(희망 기간이 미리 채워짐, 끝나는 날 필수)을 정해 승인한다.
+- 활동 기간이 지나거나 해제되면 바로 권한이 꺼진다(그 거점학교 강좌 관리·수업 열기도 막힌다. 기록은 남는다).
 - 한 사람이 여러 거점학교·역할을 가질 수 있다(예: A고 관리교사이면서 B고 강사).
 """
 
@@ -21,7 +22,6 @@ from app import db
 from app.auth import PLEDGE, current_user, membership_status, today_kst
 
 router = APIRouter()
-KINDS = {"regular": "정규 강사", "supplementary": "보충수업 강사"}
 ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사"}
 
 
@@ -60,8 +60,21 @@ class ApplyReq(BaseModel):
     name: str = Field(min_length=1, max_length=30)
     affiliation: str = Field(default="", max_length=60)  # 소속 (없으면 비움)
     contact: str = Field(min_length=1, max_length=100)
-    message: str = Field(default="", max_length=500)
+    message: str = Field(default="", max_length=500)  # 관리교사만 (강사 신청서에는 없음)
+    wish_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 강사: 희망 기간
+    wish_until: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
     pledge: bool  # 개인정보 보호 서약 동의
+
+
+def check_dates(start: str, end: str, what: str) -> None:
+    try:
+        for d in (start, end):
+            if d:
+                date.fromisoformat(d)
+    except ValueError:
+        raise HTTPException(400, f"{what} 날짜가 올바르지 않아요.")
+    if start and end and end < start:
+        raise HTTPException(400, f"{what}이 끝나는 날이 시작하는 날보다 빨라요.")
 
 
 @router.post("/api/staff/apply")
@@ -72,8 +85,14 @@ async def apply(req: ApplyReq, request: Request):
     hub_name = req.hub_name.strip()
     if req.role == "coordinator" and not hub_name:
         raise HTTPException(400, "거점학교명을 적어 주세요.")
-    if req.role == "instructor" and not req.hub_id:
-        raise HTTPException(400, "강의할 거점학교를 골라 주세요.")
+    if req.role == "instructor":
+        if not req.hub_id:
+            raise HTTPException(400, "강의할 거점학교를 골라 주세요.")
+        if not (req.wish_from and req.wish_until):
+            raise HTTPException(400, "희망 기간(시작일·종료일)을 적어 주세요.")
+        check_dates(req.wish_from, req.wish_until, "희망 기간")
+        if req.wish_until < today_kst():
+            raise HTTPException(400, "희망 기간이 이미 지났어요.")
     now = time.time()
 
     def run():
@@ -85,7 +104,11 @@ async def apply(req: ApplyReq, request: Request):
                       .values(name=req.name.strip(), school=req.affiliation.strip()))
             same = (m.hub_id == req.hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
-            values = {"contact": req.contact.strip(), "message": req.message.strip(), "pledge_at": now}
+            values = {"contact": req.contact.strip(), "pledge_at": now}
+            if req.role == "instructor":
+                values.update(wish_from=req.wish_from, wish_until=req.wish_until)
+            else:
+                values["message"] = req.message.strip()
             if row and membership_status(dict(row._mapping)) in ("approved", "scheduled"):
                 # 지금 활동 중(또는 시작 전)이면 연락처 등만 고친다. 기간이 끝났으면 아래에서 다시 '승인 대기'로.
                 c.execute(update(db.memberships).where(m.id == row.id).values(**values))
@@ -131,8 +154,8 @@ async def applications(role: str, request: Request):
         x = dict(r._mapping)
         out.append({"id": x["id"], "user_id": x["user_id"], "name": x["name"] or x["google_name"], "email": x["email"],
                     "affiliation": x["school"], "hub_id": x["hub_id"], "hub": names.get(x["hub_id"]) or x["hub_name"],
-                    "status": membership_status(x), "kind": x["kind"], "kind_name": KINDS.get(x["kind"], ""),
-                    "valid_from": x["valid_from"], "valid_until": x["valid_until"], "contact": x["contact"],
+                    "status": membership_status(x), "valid_from": x["valid_from"], "valid_until": x["valid_until"],
+                    "wish_from": x["wish_from"], "wish_until": x["wish_until"], "contact": x["contact"],
                     "message": x["message"], "admin_note": x["admin_note"], "pledged": bool(x["pledge_at"]),
                     "requested_at": x["requested_at"]})
     return {"applications": out, "today": today_kst()}
@@ -140,7 +163,6 @@ async def applications(role: str, request: Request):
 
 class DecideReq(BaseModel):
     action: str = Field(pattern="^(approve|reject|revoke)$")
-    kind: str = Field(default="regular", pattern="^(regular|supplementary)$")  # 강사만
     hub_name: str = Field(default="", max_length=60)  # 관리교사 승인 때 거점학교명을 고쳐 정할 수 있음
     valid_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
     valid_until: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
@@ -150,14 +172,7 @@ class DecideReq(BaseModel):
 @router.post("/api/staff/{membership_id}")
 async def decide(membership_id: int, req: DecideReq, request: Request):
     u = await login_required(request)
-    try:
-        for d in (req.valid_from, req.valid_until):
-            if d:
-                date.fromisoformat(d)
-    except ValueError:
-        raise HTTPException(400, "활동 기간 날짜가 올바르지 않아요.")
-    if req.valid_from and req.valid_until and req.valid_until < req.valid_from:
-        raise HTTPException(400, "활동 기간이 끝나는 날이 시작하는 날보다 빨라요.")
+    check_dates(req.valid_from, req.valid_until, "활동 기간")
     status = {"approve": "approved", "reject": "rejected", "revoke": "revoked"}[req.action]
 
     def run():
@@ -174,9 +189,8 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
             if req.action == "approve":
                 values.update(valid_from=req.valid_from, valid_until=req.valid_until)
                 if row.role == "instructor":
-                    if req.kind == "supplementary" and not req.valid_until:
-                        raise HTTPException(400, "보충수업 강사는 활동 기간이 끝나는 날을 정해 주세요.")
-                    values["kind"] = req.kind
+                    if not req.valid_until:  # 기간이 끝나면 저절로 권한이 꺼지도록 강사는 끝나는 날이 꼭 있어야 한다
+                        raise HTTPException(400, "강사는 활동 기간이 끝나는 날을 정해 주세요.")
                 else:  # 관리교사: 거점학교를 찾거나 새로 만든다
                     name = (req.hub_name or row.hub_name).strip()
                     if not name:
