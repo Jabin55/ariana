@@ -962,21 +962,21 @@ async def course_approval(course_id: int, req: ApprovalReq, request: Request):
     return {"ok": True}
 
 
-# ───────────────────────── 참여학교 담당자: 우리 학교 학생 · 탈퇴 승인 ─────────────────────────
+# ───────────────────────── 참여학교 담당교사: 우리 학교 학생 · 탈퇴 승인 ─────────────────────────
 
 
 def my_schools(u: dict) -> set[str] | None:
-    """참여학교 담당자가 맡은 학교. 전체 관리자는 None(= 모든 학교)."""
+    """참여학교 담당교사가 맡은 학교. 전체 관리자는 None(= 모든 학교)."""
     if u["is_admin"]:
         return None
     schools = set(u.get("participant_schools") or [])
     if not schools:
-        raise HTTPException(403, "참여학교 담당자만 할 수 있어요.")
+        raise HTTPException(403, "참여학교 담당교사만 할 수 있어요.")
     return schools
 
 
 def withdraw_requests(schools: set[str] | None, uid: int | None = None) -> list[dict]:
-    """탈퇴를 신청한 학생. 참여학교 담당자는 자기 학교 학생만, 전체 관리자는 모두 본다."""
+    """탈퇴를 신청한 학생. 참여학교 담당교사는 자기 학교 학생만, 전체 관리자는 모두 본다."""
     today = auth.today_kst()
     with db.engine.connect() as c:
         u = db.users.c
@@ -1041,7 +1041,7 @@ def withdrawn_rows(schools: set[str] | None) -> list[dict]:
 
 @router.get("/api/school/overview")
 async def school_overview(request: Request):
-    """참여학교 담당자: 우리 학교 학생의 수강 현황과 탈퇴 신청"""
+    """참여학교 담당교사: 우리 학교 학생의 수강 현황과 탈퇴 신청"""
     u = await require_user(request)
     schools = my_schools(u)
     return {"schools": sorted(schools) if schools is not None else [],
@@ -1057,7 +1057,7 @@ class WithdrawDecide(BaseModel):
 
 @router.post("/api/school/withdrawals/{uid}")
 async def school_withdraw_decide(uid: int, req: WithdrawDecide, request: Request):
-    """참여학교 담당자: 우리 학교 학생 탈퇴 승인(계정과 기록을 모두 지움) 또는 반려"""
+    """참여학교 담당교사: 우리 학교 학생 탈퇴 승인(계정과 기록을 모두 지움) 또는 반려"""
     u = await require_user(request)
     schools = my_schools(u)
     if not await db.run(withdraw_requests, schools, uid):

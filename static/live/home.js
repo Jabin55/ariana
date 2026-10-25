@@ -68,7 +68,7 @@ function showDone(kind, role, place) {
     return;
   }
   const WHO = { instructor: `${place || "거점학교"} 관리교사`, coordinator: "전체 관리자", participant: "전체 관리자" };
-  const NAME = { instructor: "강의교사", coordinator: "거점학교 관리교사", participant: "참여학교 담당자" };
+  const NAME = { instructor: "거점학교 강의교사", coordinator: "거점학교 관리교사", participant: "참여학교 담당교사" };
   $("#done-ico").textContent = "📨";
   $("#done-title").textContent = "가입 신청이 완료되었어요";
   $("#done-body").replaceChildren(
@@ -212,7 +212,7 @@ $("#dev-login").addEventListener("submit", async (e) => {
 
 /* ───── 내 정보 ───── */
 
-/** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 학교정보 · 권한정보 · (강의교사) 담당과목 · 이메일 · 휴대전화 */
+/** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 소속 · 직위 · 권한정보 · (강의교사) 담당과목 · 이메일 · 휴대전화 */
 async function drawTeacherProfile() {
   const meta = await subjectMeta();
   const last = ME.memberships[ME.memberships.length - 1];
@@ -224,15 +224,16 @@ async function drawTeacherProfile() {
     office: h("select", {}, h("option", { value: "" }, "교육청"), koSort(meta.offices).map((o) => h("option", { value: o, selected: (last?.office || "") === o }, o))),
     school: h("input", { maxlength: 60, value: ME.school || "", placeholder: "소속 학교·기관" }),
     subjects: h("input", { maxlength: 300, value: ME.subjects || "", placeholder: "예: 법과 사회, 정치, 경제" }),
+    position: h("input", { maxlength: 30, value: ME.position || "", placeholder: "예: 교사, 부장교사, 교감" }),
     phone: h("input", { maxlength: 100, value: ME.phone || last?.contact || "", placeholder: "010-0000-0000" }),
   };
   f.name.readOnly = !!ME.name_locked;
   const roles = [
     ME.is_admin ? "전체 관리자" : null,
     ...ME.coordinator_hubs.map((x) => `거점학교 관리교사 (${x.name})`),
-    ...ME.lead_hubs.map((x) => `강의교사 (${x.name})`),
+    ...ME.lead_hubs.map((x) => `거점학교 강의교사 (${x.name})`),
     ...ME.teach_hubs.filter((x) => !ME.lead_hubs.some((y) => y.id === x.id)).map((x) => `팀티칭 보조교사 (${x.name})`),
-    ...(ME.participant_schools || []).map((x) => `참여학교 담당자 (${x})`),
+    ...(ME.participant_schools || []).map((x) => `참여학교 담당교사 (${x})`),
   ].filter(Boolean);
   const pending = ME.memberships.filter((m) => m.status === "pending").map((m) => `${m.hub} ${ROLE_NAME[m.role] || m.role} (승인 대기)`);
   const err = h("p", { class: "error" });
@@ -243,7 +244,8 @@ async function drawTeacherProfile() {
       row("이름", f.name, ME.name_locked ? h("div", { class: "muted", style: "font-size:0.8rem;margin-top:2px" }, "🔒 가입 때 적은 실명으로 정해져 바꿀 수 없어요 (전체 관리자에게 요청)") : null),
       row("성별", f.gender),
       row("생년월일", f.birth),
-      row("학교정보", h("div", { class: "me-school" }, f.office, h("span", { class: "muted" }, "|"), f.school)),
+      row("소속", h("div", { class: "me-school" }, f.office, h("span", { class: "muted" }, "|"), f.school)),
+      row("직위", f.position),
       row("권한정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
         pending.length ? h("div", { class: "muted", style: "font-size:0.82rem" }, pending.join(", ")) : null),
       instructor ? row("담당과목", f.subjects) : null,
@@ -255,7 +257,7 @@ async function drawTeacherProfile() {
       try {
         ME = await api("/api/me/profile", {
           name: f.name.value.trim(), school: f.school.value.trim(), gender: f.gender.value, birth: f.birth.value,
-          office: f.office.value, phone: f.phone.value.trim(),
+          office: f.office.value, phone: f.phone.value.trim(), position: f.position.value.trim(),
           ...(instructor ? { subjects: f.subjects.value.trim() } : {}),
         });
         toast("내 정보를 저장했어요.");
@@ -399,7 +401,7 @@ $("#withdraw").addEventListener("submit", async (e) => {
 
 /* ───── 관리교사·강사 등록 신청 ───── */
 
-const ROLE_NAME = { coordinator: "거점학교 관리교사", instructor: "강의교사", participant: "참여학교 담당자" };
+const ROLE_NAME = { coordinator: "거점학교 관리교사", instructor: "거점학교 강의교사", participant: "참여학교 담당교사" };
 const MEMBER_STATUS = {
   pending: ["pending", "승인 대기"], approved: ["approved", "활동 중"], scheduled: ["pending", "활동 시작 전"],
   expired: ["rejected", "기간 끝남"], rejected: ["rejected", "거절됨"], revoked: ["rejected", "해제됨"],
@@ -806,7 +808,7 @@ function applicantInfo(x) {
 
 function staffCard(x, today, reload) {
   const isCoord = x.role === "coordinator";
-  const named = x.role !== "instructor"; // 관리교사: 거점학교명 / 참여학교 담당자: 소속 학교를 고쳐 승인할 수 있다
+  const named = x.role !== "instructor"; // 관리교사: 거점학교명 / 참여학교 담당교사: 소속 학교를 고쳐 승인할 수 있다
   const decide = async (body) => {
     try {
       await api(`/api/staff/${x.id}`, body);
@@ -848,7 +850,7 @@ function staffCard(x, today, reload) {
 
 /* ───── 교사 목록: 수강생 관리처럼 위에 검색 칸, 아래에 목록 (줄의 '관리'를 누르면 승인 칸) ───── */
 
-const STAFF_ROLE = { coordinator: "거점학교 관리교사", participant: "참여학교 담당자", instructor: "강의교사" };
+const STAFF_ROLE = { coordinator: "거점학교 관리교사", participant: "참여학교 담당교사", instructor: "거점학교 강의교사" };
 const staffBoards = {}; // 보드마다 검색 조건·체크·펼침
 
 function staffBoard(id, list, today, reload, title) {
@@ -1029,7 +1031,7 @@ async function loadAdmin() {
   const pending = list.filter((x) => x.status === "pending").length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
-  $("#admin-list").replaceChildren(staffBoard("admin", list, co.today, loadAdmin, "거점학교 관리교사 · 참여학교 담당자"));
+  $("#admin-list").replaceChildren(staffBoard("admin", list, co.today, loadAdmin, "거점학교 관리교사 · 참여학교 담당교사"));
 }
 
 /* 수업 기록 (출결·채점·질문) — 그릴 자리는 detailEl() */

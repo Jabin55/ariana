@@ -16,7 +16,7 @@ function today() {
 /** replaceChildren에 null·false가 섞여도 글자로 찍히지 않게 */
 function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "")); }
 
-/* 권한: 강의교사는 [특강/회의]~[과목 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 담당자는 [참여학교 담당].
+/* 권한: 강의교사는 [특강/회의]~[과목 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 담당교사는 [참여학교 담당].
    역할이 여럿이면 그 탭들이 모두 열리고, 전체 관리자는 모두 열린다. 권한이 없는 탭은 '권한이 없습니다.' */
 function canHub() { return ME.is_admin || ME.coordinator_hubs.length > 0; }
 function canSchool() { return ME.is_admin || (ME.participant_schools || []).length > 0; }
@@ -33,6 +33,8 @@ function allowed(tab) {
 
 function showTeacher() {
   show("teacher-view");
+  $(".mypage-title").textContent = "교무실";
+  document.title = "외솔온닷 · 교무실";
   $("#lead").hidden = true;
   $("#admin-tab").hidden = !ME.is_admin;
   const want = params.get("tab") === "courses" || params.get("tab") === "history" ? "run" : params.get("tab");
@@ -682,7 +684,7 @@ async function loadHub() {
   else fill(box, ...hubStudents(ov, log.classes));
 }
 
-/** 강의교사 승인: 강좌 개설 신청 · 강의교사 등록 (참여학교 담당자는 전체 관리자가 승인) */
+/** 강의교사 승인: 강좌 개설 신청 · 강의교사 등록 (참여학교 담당교사는 전체 관리자가 승인) */
 function hubApprove(ov, inst) {
   const decide = async (c, action) => {
     let note = "";

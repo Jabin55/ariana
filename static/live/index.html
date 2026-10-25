@@ -28,7 +28,7 @@
           <p class="muted" style="margin:0 0 12px;font-size:0.9rem">처음이면 가입, 이미 가입했으면 같은 버튼으로 로그인돼요. 구글 계정으로 로그인한 뒤 약관 동의로 넘어가요.</p>
           <div class="start-choices">
             <button type="button" class="start-choice" data-role="student"><span class="sc-ico">🎒</span><strong>학생 가입</strong><small>학교 구글 계정으로 수강신청·수업 듣기</small></button>
-            <button type="button" class="start-choice" data-role="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>강의교사 · 거점학교 관리교사 · 참여학교 담당자</small></button>
+            <button type="button" class="start-choice" data-role="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>거점학교 관리교사 · 거점학교 강의교사 · 참여학교 담당교사</small></button>
           </div>
           <div id="login-step" hidden>
             <p class="login-chosen" id="login-chosen"></p>
@@ -84,7 +84,7 @@
       <p class="muted" style="margin:0 0 12px">학교 구글 계정으로 들어오셨어요. 학생과 선생님이 같은 계정 주소를 쓰는 경우가 있어 한 번만 골라 주세요.</p>
       <div class="start-choices">
         <button type="button" class="start-choice" data-self="student"><span class="sc-ico">🎒</span><strong>학생 가입</strong><small>수강신청하고 수업 듣기</small></button>
-        <button type="button" class="start-choice" data-self="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>강의교사 · 거점학교 관리교사 · 참여학교 담당자</small></button>
+        <button type="button" class="start-choice" data-self="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>거점학교 관리교사 · 거점학교 강의교사 · 참여학교 담당교사</small></button>
       </div>
       <p class="error" id="role-error"></p>
     </section>
@@ -146,9 +146,9 @@
       <form id="apply" class="course-form">
         <h3 class="wide form-sec">1) 회원 구분</h3>
         <div class="wide role-pick">
-          <label class="switch"><input type="radio" name="a-role" value="instructor" checked> <span><strong>강의교사</strong> — 거점학교에서 강의 (그 학교 관리교사가 승인)</span></label>
           <label class="switch"><input type="radio" name="a-role" value="coordinator"> <span><strong>거점학교 관리교사</strong> — 강의교사·강좌 개설 승인 (전체 관리자가 승인)</span></label>
-          <label class="switch"><input type="radio" name="a-role" value="participant"> <span><strong>참여학교 담당자</strong> — 우리 학교 학생의 수강 현황 확인·탈퇴 승인 (전체 관리자가 승인)</span></label>
+          <label class="switch"><input type="radio" name="a-role" value="instructor" checked> <span><strong>거점학교 강의교사</strong> — 거점학교에서 강의 (그 학교 관리교사가 승인)</span></label>
+          <label class="switch"><input type="radio" name="a-role" value="participant"> <span><strong>참여학교 담당교사</strong> — 우리 학교 학생의 수강 현황 확인·탈퇴 승인 (전체 관리자가 승인)</span></label>
         </div>
         <label class="wide" id="a-hub-pick">강의할 거점학교 (울산)
           <input id="a-hub-search" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)">
@@ -323,7 +323,7 @@
       </div>
 
       <div data-panel="admin" hidden>
-        <p class="muted">전체 관리자 화면이에요. 거점학교 관리교사와 참여학교 담당자의 가입 신청을 승인해요. 관리교사를 승인하면 그 거점학교가 등록되고, 관리교사가 그 학교 강의교사를 승인할 수 있게 돼요.</p>
+        <p class="muted">전체 관리자 화면이에요. 거점학교 관리교사와 참여학교 담당교사의 가입 신청을 승인해요. 관리교사를 승인하면 그 거점학교가 등록되고, 관리교사가 그 학교 강의교사를 승인할 수 있게 돼요.</p>
         <div id="admin-list"></div>
       </div>
     </section>

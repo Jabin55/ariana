@@ -1187,7 +1187,7 @@ def test_withdraw(monkeypatch, tmp_path):
     # 승인하면 그 학생의 기록·파일만 모두 지워진다
     assert p1.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 200
     assert a.get("/api/me").json()["user"] is None
-    # 탈퇴한 학생은 탈퇴 기록(이름·학교·학번·날짜)만 남아 참여학교 담당자 목록에 계속 보인다
+    # 탈퇴한 학생은 탈퇴 기록(이름·학교·학번·날짜)만 남아 참여학교 담당교사 목록에 계속 보인다
     gone = p1.get("/api/school/overview").json()["withdrawn"]
     assert [(x["name"], x["student_no"], x["approved_by"]) for x in gone] == [("학생1", "20301", "담당")]
     assert p2.get("/api/school/overview").json()["withdrawn"] == []
@@ -1422,7 +1422,7 @@ def test_roles_are_separate_and_one_step_enrollment(monkeypatch):
     hub_id = me["coordinator_hubs"][0]["id"]
     assert me["lead_hubs"] == [] and me["teach_hubs"] == []
     assert coord.post("/api/courses", json={**COURSE, "hub_id": hub_id}).status_code == 403
-    # 참여학교 담당자 신청은 전체 관리자만 승인한다 (거점학교 관리교사는 못 함)
+    # 참여학교 담당교사 신청은 전체 관리자만 승인한다 (거점학교 관리교사는 못 함)
     p = TestClient(app)
     p.post("/api/auth/dev", json={"email": "p@gmail.com"})
     assert p.post("/api/staff/apply", json={"role": "participant", "name": "참여", "hub_name": SCHOOL, "contact": "010", "pledge": True}).status_code == 200

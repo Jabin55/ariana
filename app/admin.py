@@ -6,7 +6,7 @@
 - 강사 신청: 등록된 거점학교 하나를 고르고 희망 기간을 적는다. 그 거점학교 관리교사(또는 전체 관리자)가
   활동 기간(희망 기간이 미리 채워짐, 끝나는 날 필수)을 정해 승인한다.
 - 활동 기간이 지나거나 해제되면 바로 권한이 꺼진다(그 거점학교 강좌 관리·수업 열기도 막힌다. 기록은 남는다).
-- 참여학교 담당자 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 전체 관리자가 승인하면 그 학교 학생의
+- 참여학교 담당교사 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 전체 관리자가 승인하면 그 학교 학생의
   수강 현황을 보고 탈퇴를 승인한다.
 - 한 사람이 여러 거점학교·역할을 가질 수 있다(예: A고 관리교사이면서 B고 강사).
 """
@@ -32,7 +32,7 @@ from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
 
 router = APIRouter()
-ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사", "participant": "참여학교 담당자"}
+ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사", "participant": "참여학교 담당교사"}
 
 
 async def login_required(request: Request) -> dict:
@@ -43,7 +43,7 @@ async def login_required(request: Request) -> dict:
 
 
 def can_manage(u: dict, m) -> bool:
-    """관리교사·참여학교 담당자 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자가 처리한다."""
+    """관리교사·참여학교 담당교사 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자가 처리한다."""
     if u["is_admin"]:
         return True
     return m.role == "instructor" and m.hub_id in {h["id"] for h in u["coordinator_hubs"]}
@@ -65,7 +65,7 @@ async def list_hubs(request: Request):
 
 class ApplyReq(BaseModel):
     role: str = Field(pattern="^(coordinator|instructor|participant)$")
-    hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 담당자: 소속 학교
+    hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 담당교사: 소속 학교
     hub_id: int | None = None  # 강사: 거점학교 고르기
     name: str = Field(min_length=1, max_length=30)
     affiliation: str = Field(default="", max_length=60)  # 소속 학교·대학·기관 (없으면 비움)

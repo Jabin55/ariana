@@ -30,20 +30,24 @@
     if (u.is_admin) return "전체 관리자";
     if (u.role_choice) return "가입 중";
     if (u.role !== "teacher") return { student: "학생", guest: "등록 신청" }[u.role] || "";
-    // 선생님: 가진 역할을 모두 (강의교사 · 거점학교 관리교사 · 참여학교 담당자)
+    // 선생님: 가진 역할을 모두 (강의교사 · 거점학교 관리교사 · 참여학교 담당교사)
     const names = [];
     if (u.lead_hubs?.length || u.teach_hubs?.length) names.push("강의교사");
     if (u.coordinator_hubs?.length) names.push("관리교사");
-    if (u.participant_schools?.length) names.push("참여학교 담당자");
+    if (u.participant_schools?.length) names.push("참여학교 담당교사");
     return names.join("·") || "강의교사";
   };
   function render(u) {
+    // 선생님에게는 '마이페이지' 대신 '교무실'
+    const staff = !!u && (u.role === "teacher" || u.is_admin);
+    const mine = nav.querySelector('a[href="/live"]');
+    if (mine) mine.textContent = staff ? "교무실" : "마이페이지";
     user.replaceChildren();
     if (!u) {
       user.append(el("a", { class: "site-user", href: "/live" }, "로그인"));
       return;
     }
-    const name = el("a", { class: "site-me", href: "/live", title: "마이페이지" },
+    const name = el("a", { class: "site-me", href: "/live", title: staff ? "교무실" : "마이페이지" },
       el("strong", {}, `${u.display || u.name || u.email.split("@")[0]}`), el("span", {}, roleName(u)));
     const info = el("button", { type: "button", class: "small" }, "내 정보");
     info.addEventListener("click", () => {
