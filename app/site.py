@@ -442,7 +442,7 @@ async def home_page():
     <div class="home-courses" id="home-courses"><p class="muted">불러오는 중…</p></div>
   </section>
   <section class="home-box">
-    <div class="home-box-h"><h2>🙋 학생들이 듣고 싶은 과목</h2><a href="/live?start=student">나도 요청하기 +</a></div>
+    <div class="home-box-h"><h2>🙋 학생들이 듣고 싶은 과목</h2><a href="/live?wish=1" id="wish-link">나도 요청하기 +</a></div>
     <p class="muted" style="margin:0 0 10px;font-size:0.9rem">학생들이 마이페이지에서 요청한 과목이에요. 선생님들이 보고 강좌를 여는 데 참고해요.</p>
     <div class="wish-cloud" id="home-wishes"><p class="muted">불러오는 중…</p></div>
   </section>

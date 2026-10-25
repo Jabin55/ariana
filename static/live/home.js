@@ -42,7 +42,10 @@ async function boot() {
   if (ME.role === "guest") return showGuest();
   if (params.get("apply")) return showGuest(true);
   if (ME.needs_profile) return showProfile();
-  if (ME.role === "teacher") return showTeacher();
+  if (ME.role === "teacher") {
+    if (params.get("wish")) toast("듣고 싶은 과목 요청은 학생 계정으로 할 수 있어요. 요청 현황은 메인 화면에서 볼 수 있어요.", 6000);
+    return showTeacher();
+  }
   return showStudent();
 }
 
@@ -140,7 +143,7 @@ function showLogin() {
   }
   if (CONFIG.google_client_id) loadGsi().catch((err) => { $("#login-error").textContent = err.message; });
   // 메인 화면의 '학생으로 시작'·'선생님으로 시작'에서 왔으면 바로 그 로그인 단계로
-  const start = params.get("start");
+  const start = params.get("start") || (params.get("wish") ? "student" : null); // '듣고 싶은 과목 요청'은 학생 로그인으로
   if (start === "student" || start === "staff") chooseStart(start);
 }
 
@@ -482,6 +485,18 @@ function showStudent() {
   loadMyQuestions();
   loadMyMaterials();
   loadMyAssignments();
+  if (params.get("wish")) openWishBox();
+}
+
+/** 메인 화면 '나도 요청하기'에서 왔으면 과목 개설 요청 칸을 펼쳐 바로 보여 준다 */
+function openWishBox() {
+  const box = $("#wish-box");
+  if (!box) return;
+  box.open = true;
+  setTimeout(() => {
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+    box.querySelector("input, textarea")?.focus({ preventScroll: true });
+  }, 300);
 }
 
 /* 수강 승인된 강좌에서 지금 열린 수업 → 코드 없이 입장 */

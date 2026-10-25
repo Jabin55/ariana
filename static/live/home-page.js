@@ -140,6 +140,9 @@
       const { user: u } = await (await fetch("/api/me")).json();
       if (!u) return;
       const role = u.is_admin ? "전체 관리자" : u.role === "teacher" ? "선생님" : u.role === "student" ? "학생" : "회원";
+      // 과목 개설 요청은 학생만: 선생님에게는 링크 대신 안내
+      const wish = $("#wish-link");
+      if (wish && u.role !== "student") { wish.removeAttribute("href"); wish.textContent = "학생만 요청할 수 있어요"; wish.classList.add("muted"); }
       $("#home-login .home-box-h h2").textContent = "👋 반가워요";
       $("#home-login-body").innerHTML = `<p class="hello"><strong>${esc(u.name || u.email.split("@")[0])}</strong> ${role}님</p>
         <a class="start-choice" href="/live"><span class="sc-ico">🏠</span><strong>마이페이지로</strong></a>
