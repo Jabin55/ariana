@@ -328,7 +328,7 @@ async function courseForm(c, done) {
       done(id);
     } catch (e2) { err.textContent = e2.message; }
   } },
-    h("h2", { class: "wz-title" }, isNew ? "온라인 공동교육과정 수업 개설 신청" : `수업 정보 수정 · ${c.title}`),
+    isNew ? null : h("h2", { class: "wz-title" }, `수업 정보 수정 · ${c.title}`),
     bar, step1, step2, step3, err,
     h("div", { class: "row wz-nav" }, prev, h("span", { class: "grow" }),
       isNew ? null : h("button", { type: "button", onclick: () => done(null) }, "취소"), next, submit));
