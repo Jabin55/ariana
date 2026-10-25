@@ -1156,21 +1156,32 @@ img.me-avatar { object-fit: cover; }
 .site-header { position: static; background: var(--surface); backdrop-filter: none; border-top: 4px solid var(--brand); border-bottom: none; }
 .site-header-in { max-width: 1160px; padding: 22px 24px; gap: 12px; flex-wrap: nowrap; }
 .site-header .grow { flex: 1; }
-.brand { font-size: 2.1rem; }
-.brand-mark { width: 42px; height: 42px; border-radius: 12px; margin-right: 10px; }
-.site-menu { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--surface) 94%, transparent);
-  backdrop-filter: blur(8px); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.brand { font-size: 1.8rem; }
+.brand-mark { width: 36px; height: 36px; border-radius: 10px; margin-right: 9px; }
+.site-menu { position: sticky; top: 0; z-index: 30; background: #fbf3d9; /* 연노랑·아이보리 */
+  border-top: 1px solid #efe2bb; border-bottom: 1px solid #efe2bb; }
+.site-menu .site-nav a:hover { background: #f4e7bf; }
+@media (prefers-color-scheme: dark) { .site-menu { background: #2a2618; border-color: #3a3422; } .site-menu .site-nav a:hover { background: #3a3422; } }
 .site-menu-in { max-width: 1160px; margin: 0 auto; padding: 8px 12px; }
 .site-menu .site-nav { display: flex; gap: 6px; overflow-x: auto; }
 .site-menu .site-nav a { flex: 1; text-align: center; padding: 10px 12px; border-radius: 999px; color: var(--text);
   font-size: 1.08rem; font-weight: 600; }
-.site-menu .site-nav a:hover { background: var(--accent-soft); }
 .site-menu .site-nav a.on { background: var(--brand); color: #fff; }
 @media (max-width: 760px) {
   .site-header-in { padding: 12px 14px; flex-wrap: nowrap; }
-  .brand { font-size: 1.5rem; }
+  .brand { font-size: 1.35rem; }
   .brand-mark { width: 32px; height: 32px; margin-right: 8px; }
   .site-user-box { margin-left: 0; }
   .site-menu-in { padding: 6px 8px; }
   .site-menu .site-nav a { flex: none; padding: 7px 12px; font-size: 0.98rem; }
+}
+/* 좁은 휴대폰: 이름이 길어도 오른쪽 위가 화면 밖으로 넘치지 않게 */
+@media (max-width: 420px) {
+  .site-header-in { gap: 8px; padding: 10px 10px; }
+  .brand { font-size: 1.2rem; }
+  .brand-mark { width: 28px; height: 28px; margin-right: 6px; }
+  .site-user-box { min-width: 0; gap: 4px; }
+  .site-me { min-width: 0; }
+  .site-me strong { max-width: 5.5em; }
+  .site-user-box button.small { padding: 5px 8px; }
 }
