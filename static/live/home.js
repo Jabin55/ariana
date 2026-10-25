@@ -64,7 +64,7 @@ function showDone(kind, role, place) {
     $("#done-actions").replaceChildren(go("수강신청하러 가기", () => boot(), true), h("a", { class: "button", href: "/live/courses" }, "개설 강좌 둘러보기"));
     return;
   }
-  const WHO = { instructor: `${place || "거점학교"} 관리교사`, coordinator: "전체 관리자", participant: "거점학교 관리교사" };
+  const WHO = { instructor: `${place || "거점학교"} 관리교사`, coordinator: "전체 관리자", participant: "전체 관리자" };
   const NAME = { instructor: "강의교사", coordinator: "거점학교 관리교사", participant: "참여학교 담당자" };
   $("#done-ico").textContent = "📨";
   $("#done-title").textContent = "가입 신청이 완료되었어요";
@@ -376,7 +376,7 @@ async function showGuest(fromTeacher = false) {
       m.admin_note ? h("div", { style: "font-size:0.9rem" }, `메모: ${m.admin_note}`) : null,
       m.status === "pending" ? h("div", { class: "muted", style: "font-size:0.85rem" },
         m.role === "coordinator" ? "전체 관리자가 승인하면 관리교사 기능이 켜져요."
-          : m.role === "participant" ? "거점학교 관리교사가 승인하면 우리 학교 학생을 관리할 수 있어요."
+          : m.role === "participant" ? "전체 관리자가 승인하면 우리 학교 학생을 관리할 수 있어요."
             : `${m.hub} 관리교사가 승인하면 강좌를 개설할 수 있어요.`) : null);
   }));
   // 거점학교 목록 (강사 신청용)
@@ -456,7 +456,7 @@ $("#apply").addEventListener("submit", async (e) => {
       pledge: $("#a-pledge").checked,
     });
     toast(role === "coordinator" ? "신청했어요. 전체 관리자가 승인하면 관리교사 기능이 켜져요."
-      : role === "participant" ? "신청했어요. 거점학교 관리교사가 승인하면 우리 학교 학생을 관리할 수 있어요."
+      : role === "participant" ? "신청했어요. 전체 관리자가 승인하면 우리 학교 학생을 관리할 수 있어요."
         : "신청했어요. 거점학교 관리교사가 승인하면 강좌를 개설할 수 있어요.");
     CONFIG = await api("/api/me");
     ME = CONFIG.user;
@@ -753,15 +753,127 @@ function staffCard(x, today, reload) {
         } }, "권한 해제") : null)));
 }
 
-function staffSections(list, today, reload, label) {
-  const section = (title, items) => items.length ? [h("h3", { class: "section-title", style: "margin:14px 0 8px" }, `${title} ${items.length}명`), ...items.map((x) => staffCard(x, today, reload))] : [];
-  return [
-    ...section("승인 대기", list.filter((x) => x.status === "pending")),
-    ...section(label, list.filter((x) => ["approved", "scheduled", "expired"].includes(x.status))),
-    ...section("거절·해제", list.filter((x) => ["rejected", "revoked"].includes(x.status))),
-    ...(list.length ? [] : [h("p", { class: "muted" }, "아직 신청이 없어요.")]),
-  ];
+/* ───── 교사 목록: 수강생 관리처럼 위에 검색 칸, 아래에 목록 (줄의 '관리'를 누르면 승인 칸) ───── */
+
+const STAFF_ROLE = { coordinator: "거점학교 관리교사", participant: "참여학교 담당자", instructor: "강의교사" };
+const staffBoards = {}; // 보드마다 검색 조건·체크·펼침
+
+function staffBoard(id, list, today, reload, title) {
+  const st = staffBoards[id] ||= { q: {}, pick: new Set(), open: new Set() };
+  const box = h("div", { class: "staff-board" });
+  const roles = [...new Set(list.map((x) => x.role))];
+  const schools = koSort(new Set(list.map((x) => x.hub).filter(Boolean)));
+  const f = {
+    role: h("select", {}, h("option", { value: "" }, "전체"), koSort(roles, (r) => STAFF_ROLE[r]).map((r) => h("option", { value: r }, STAFF_ROLE[r]))),
+    status: h("select", {}, h("option", { value: "" }, "전체"),
+      koSort(Object.entries(MEMBER_STATUS), (x) => x[1][1]).map(([k, v]) => h("option", { value: k }, v[1]))),
+    school: h("select", {}, h("option", { value: "" }, "전체"), schools.map((x) => h("option", { value: x }, x))),
+    name: h("input", { placeholder: "이름" }),
+    aff: h("input", { placeholder: "소속 학교·기관" }),
+    from: h("input", { type: "date" }),
+    to: h("input", { type: "date" }),
+  };
+  for (const [k, el] of Object.entries(f)) el.value = st.q[k] || "";
+  const result = h("div");
+  const search = () => {
+    for (const [k, el] of Object.entries(f)) st.q[k] = el.value.trim();
+    st.pick.clear();
+    draw();
+  };
+  for (const el of Object.values(f)) el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } });
+  const quick = (days) => {
+    f.to.value = today;
+    f.from.value = new Date(Date.parse(today) - days * 86400000).toISOString().slice(0, 10);
+  };
+  const row = (...cells) => h("div", { class: "sf-row" }, ...cells.flat());
+  const cell = (label, el, wide) => [h("div", { class: "sf-label" }, label), h("div", { class: `sf-field ${wide ? "wide" : ""}` }, el)];
+  const day = (ts) => (ts ? new Date(ts * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "");
+
+  function filtered() {
+    const q = st.q;
+    const has = (v, w) => !w || (v || "").includes(w);
+    return list.filter((x) => (!q.role || x.role === q.role) && (!q.status || x.status === q.status) && (!q.school || x.hub === q.school)
+      && has(x.name, q.name) && has(x.affiliation, q.aff)
+      && (!q.from || day(x.requested_at) >= q.from) && (!q.to || day(x.requested_at) <= q.to))
+      .sort((a, b) => (a.status === "pending") - (b.status === "pending") || a.requested_at - b.requested_at).reverse();
+  }
+
+  function draw() {
+    const rows = filtered();
+    const decide = async (action) => {
+      const picked = rows.filter((x) => st.pick.has(x.id) && x.status === "pending");
+      if (!picked.length) { toast("승인 대기인 신청을 먼저 체크해 주세요."); return; }
+      // 강의교사는 끝나는 날이 꼭 있어야 한다 → 신청서의 희망 기간으로 승인 (다르게 정하려면 '관리'에서 한 명씩)
+      const noEnd = action === "approve" ? picked.filter((x) => x.role === "instructor" && !x.wish_until) : [];
+      if (!confirm(`${picked.length}건을 ${action === "approve" ? "승인" : "거절"}할까요?` +
+        (action === "approve" ? "\n활동 기간은 신청서에 적은 희망 기간 그대로예요." : ""))) return;
+      let ok = 0;
+      for (const x of picked) {
+        if (noEnd.includes(x)) continue;
+        const body = action === "approve"
+          ? { action, hub_name: x.hub, valid_from: x.wish_from || today, valid_until: x.wish_until || "" }
+          : { action, note: "" };
+        try { await api(`/api/staff/${x.id}`, body); ok++; } catch (err) { toast(err.message); }
+      }
+      st.pick.clear();
+      toast(`${ok}건을 ${action === "approve" ? "승인" : "거절"}했어요.` + (noEnd.length ? ` (희망 기간이 없는 ${noEnd.length}건은 '관리'에서 기간을 정해 주세요)` : ""), 6000);
+      reload();
+    };
+    const all = h("input", { type: "checkbox", onchange: (e) => {
+      for (const x of rows) { if (e.target.checked) st.pick.add(x.id); else st.pick.delete(x.id); }
+      result.querySelectorAll("tbody input.pick").forEach((c) => { c.checked = e.target.checked; });
+    } });
+    const COLS = 11;
+    const trs = rows.flatMap((x, i) => {
+      const open = st.open.has(x.id);
+      const [cls, label] = MEMBER_STATUS[x.status] || ["pending", x.status];
+      const main = h("tr", { class: open ? "open-row" : "" },
+        h("td", {}, h("input", { type: "checkbox", class: "pick", checked: st.pick.has(x.id), onchange: (e) => {
+          if (e.target.checked) st.pick.add(x.id); else st.pick.delete(x.id);
+        } })),
+        h("td", { class: "num" }, rows.length - i),
+        h("td", {}, STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (보조)" : "")),
+        h("td", {}, h("button", { class: "link-btn name-btn", onclick: () => { if (open) st.open.delete(x.id); else st.open.add(x.id); draw(); } },
+          `${open ? "▾" : "▸"} ${x.name}`)),
+        h("td", {}, x.hub || "-"), h("td", {}, x.affiliation || "-"),
+        h("td", {}, x.birth ? x.birth.replaceAll("-", ".") : "-"),
+        h("td", { class: "contact-cell" }, x.contact_email || x.email, h("br"), h("span", { class: "muted" }, x.contact || "-")),
+        h("td", {}, day(x.requested_at)),
+        h("td", {}, h("span", { class: `status ${cls}` }, label)),
+        h("td", {}, h("button", { class: "small", onclick: () => { if (open) st.open.delete(x.id); else st.open.add(x.id); draw(); } }, open ? "닫기" : "관리")));
+      return open ? [main, h("tr", { class: "detail-row" }, h("td", { colspan: COLS }, staffCard(x, today, reload)))] : [main];
+    });
+    result.replaceChildren(
+      h("div", { class: "row", style: "margin-bottom:8px" },
+        h("strong", {}, "총 ", h("span", { class: "accent-text" }, rows.length), "건"),
+        h("span", { class: "muted", style: "font-size:0.85rem" }, "체크한 신청 한꺼번에:"),
+        h("button", { class: "small primary", onclick: () => decide("approve") }, "승인"),
+        h("button", { class: "small", onclick: () => decide("reject") }, "거절")),
+      h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table" },
+        h("thead", {}, h("tr", {}, h("th", {}, all),
+          ["번호", "회원 구분", "이름", "학교", "소속", "생년월일", "이메일·연락처", "신청일", "상태", ""].map((t) => h("th", {}, t)))),
+        h("tbody", {}, trs.length ? trs
+          : h("tr", {}, h("td", { colspan: COLS, class: "muted", style: "text-align:center;padding:24px" }, list.length ? "조건에 맞는 신청이 없어요." : "아직 신청이 없어요."))))));
+  }
+
+  const pending = list.filter((x) => x.status === "pending").length;
+  box.append(
+    h("h2", { style: "margin:8px 0 6px" }, title, pending ? h("span", { class: "status pending", style: "margin-left:8px;font-size:0.85rem" }, `승인 대기 ${pending}`) : null),
+    h("div", { class: "search-form" },
+      row(cell("회원 구분", f.role), cell("상태", f.status)),
+      row(cell("학교", f.school), cell("이름", f.name)),
+      row(cell("소속", f.aff, true)),
+      row(cell("기간검색", h("div", { class: "row" }, f.from, "~", f.to,
+        ...[["오늘", 0], ["7일", 7], ["1개월", 30], ["6개월", 182]].map(([label, d]) => h("label", { class: "switch" },
+          h("input", { type: "radio", name: `${id}-quick`, onchange: () => quick(d) }), label))), true))),
+    h("div", { class: "row", style: "justify-content:center;margin:12px 0 20px" },
+      h("button", { type: "button", onclick: () => { st.q = {}; for (const el of Object.values(f)) el.value = ""; st.pick.clear(); draw(); } }, "초기화"),
+      h("button", { class: "primary", type: "button", onclick: search }, "검색")),
+    result);
+  draw();
+  return box;
 }
+
 
 /* 전체 관리자: 관리교사 승인 */
 /** 메인 전광판(배너): 선생님 누구나 꾸민다. 비워 두면 기본 배너가 보여요 */
@@ -817,14 +929,14 @@ async function bannersEditor(reload) {
 }
 
 async function loadAdmin() {
-  const { applications, today } = await api("/api/staff/applications?role=coordinator");
-  applications.forEach((x) => { x.role = "coordinator"; });
-  const pending = applications.filter((x) => x.status === "pending").length;
+  const [co, pa] = await Promise.all([api("/api/staff/applications?role=coordinator"), api("/api/staff/applications?role=participant")]);
+  co.applications.forEach((x) => { x.role = "coordinator"; });
+  pa.applications.forEach((x) => { x.role = "participant"; });
+  const list = [...co.applications, ...pa.applications];
+  const pending = list.filter((x) => x.status === "pending").length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
-  $("#admin-list").replaceChildren(
-    h("h2", { style: "margin:8px 0 0" }, "거점학교 관리교사"),
-    ...staffSections(applications, today, loadAdmin, "관리교사"));
+  $("#admin-list").replaceChildren(staffBoard("admin", list, co.today, loadAdmin, "거점학교 관리교사 · 참여학교 담당자"));
 }
 
 /* 수업 기록 (출결·채점·질문) — 그릴 자리는 detailEl() */

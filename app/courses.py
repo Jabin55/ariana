@@ -1002,7 +1002,7 @@ def withdraw_requests(schools: set[str] | None, uid: int | None = None) -> list[
 
 
 def school_students(schools: set[str] | None) -> list[dict]:
-    """우리 학교 학생과 수강신청한 강좌"""
+    """우리 학교 학생과 수강신청 (수업신청자 관리와 같은 칸: 교육과정·과목·거점학교·담당교사·신청일·상태)"""
     with db.engine.connect() as c:
         u = db.users.c
         q = select(db.users).where(u.role == "student")
@@ -1010,18 +1010,33 @@ def school_students(schools: set[str] | None) -> list[dict]:
             q = q.where(u.school.in_(schools))
         users = c.execute(q).all()
         e, co = db.enrollments.c, db.courses.c
-        rows = c.execute(select(e.user_id, e.status, co.id, co.title, co.instructor, co.hub_school, co.archived)
+        rows = c.execute(select(e.user_id, e.status, e.requested_at, co.id, co.title, co.subject, co.school_year, co.term,
+                                co.instructor, co.hub_school, co.archived)
                          .select_from(db.enrollments.join(db.courses, co.id == e.course_id))
                          .where(e.user_id.in_([x.id for x in users] or [-1]))).all()
     out = []
     for x in users:
-        mine = [r for r in rows if r.user_id == x.id and r.status in ("approved", "pending")]
-        out.append({"user_id": x.id, "name": x.name or x.google_name, "school": x.school,
+        mine = [r for r in rows if r.user_id == x.id and r.status in ("approved", "pending", "rejected")]
+        out.append({"user_id": x.id, "name": x.name or x.google_name, "school": x.school, "grade": x.grade, "class_no": x.class_no,
                     "student_no": student_no(dict(x._mapping)), "withdraw": bool(x.withdraw_at),
-                    "courses": [{"id": r.id, "title": r.title, "instructor": r.instructor, "hub": r.hub_school,
-                                 "status": r.status, "archived": bool(r.archived)} for r in mine]})
+                    "withdraw_reason": x.withdraw_reason or "", "withdraw_at": x.withdraw_at,
+                    "courses": [{"id": r.id, "title": r.title, "subject": r.subject or r.title,
+                                 "term": f"{r.school_year}학년도 {r.term}" if r.school_year and r.term else (r.term or ""),
+                                 "instructor": r.instructor, "hub": r.hub_school, "status": r.status,
+                                 "requested_at": r.requested_at, "archived": bool(r.archived)} for r in mine]})
     out.sort(key=lambda x: (x["school"] or "", x["student_no"] or "~", x["name"] or ""))
     return out
+
+
+def withdrawn_rows(schools: set[str] | None) -> list[dict]:
+    """탈퇴한 학생 기록 (이름·학교·학번·신청일·승인일만)"""
+    with db.engine.connect() as c:
+        q = select(db.withdrawn)
+        if schools is not None:
+            q = q.where(db.withdrawn.c.school.in_(schools))
+        return [{"id": r.id, "name": r.name, "school": r.school, "student_no": r.student_no, "grade": r.grade,
+                 "class_no": r.class_no, "reason": r.reason, "requested_at": r.requested_at, "approved_at": r.approved_at,
+                 "approved_by": r.approved_by} for r in c.execute(q.order_by(db.withdrawn.c.approved_at.desc()))]
 
 
 @router.get("/api/school/overview")
@@ -1031,7 +1046,8 @@ async def school_overview(request: Request):
     schools = my_schools(u)
     return {"schools": sorted(schools) if schools is not None else [],
             "students": await db.run(school_students, schools),
-            "withdrawals": await db.run(withdraw_requests, schools)}
+            "withdrawals": await db.run(withdraw_requests, schools),
+            "withdrawn": await db.run(withdrawn_rows, schools)}
 
 
 class WithdrawDecide(BaseModel):
@@ -1047,6 +1063,16 @@ async def school_withdraw_decide(uid: int, req: WithdrawDecide, request: Request
     if not await db.run(withdraw_requests, schools, uid):
         raise HTTPException(404, "탈퇴 신청을 찾을 수 없어요.")
     if req.action == "approve":
+        def log():
+            # 계정·기록을 지우기 전에 '누가 언제 탈퇴했는지'만 남긴다
+            with db.engine.begin() as c:
+                x = c.execute(select(db.users).where(db.users.c.id == uid)).first()
+                c.execute(insert(db.withdrawn).values(
+                    name=x.name or "", school=x.school or "", student_no=student_no(dict(x._mapping)), grade=x.grade,
+                    class_no=x.class_no, reason=x.withdraw_reason or "", requested_at=x.withdraw_at, approved_at=time.time(),
+                    approved_by=u["name"] or ""))
+
+        await db.run(log)
         await db.run(auth._withdraw, uid)
     else:
         def run():

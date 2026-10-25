@@ -6,7 +6,7 @@
 - 강사 신청: 등록된 거점학교 하나를 고르고 희망 기간을 적는다. 그 거점학교 관리교사(또는 전체 관리자)가
   활동 기간(희망 기간이 미리 채워짐, 끝나는 날 필수)을 정해 승인한다.
 - 활동 기간이 지나거나 해제되면 바로 권한이 꺼진다(그 거점학교 강좌 관리·수업 열기도 막힌다. 기록은 남는다).
-- 참여학교 담당자 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 거점학교 관리교사(또는 전체 관리자)가 승인하면 그 학교 학생의
+- 참여학교 담당자 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 전체 관리자가 승인하면 그 학교 학생의
   수강 현황을 보고 탈퇴를 승인한다.
 - 한 사람이 여러 거점학교·역할을 가질 수 있다(예: A고 관리교사이면서 B고 강사).
 """
@@ -43,12 +43,9 @@ async def login_required(request: Request) -> dict:
 
 
 def can_manage(u: dict, m) -> bool:
-    """관리교사 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자,
-    참여학교 담당자 신청은 거점학교 관리교사(어느 학교든)나 전체 관리자가 처리한다."""
+    """관리교사·참여학교 담당자 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자가 처리한다."""
     if u["is_admin"]:
         return True
-    if m.role == "participant":
-        return bool(u["coordinator_hubs"])
     return m.role == "instructor" and m.hub_id in {h["id"] for h in u["coordinator_hubs"]}
 
 
@@ -191,7 +188,7 @@ async def applications(role: str, request: Request):
     if role not in ROLES:
         raise HTTPException(400)
     hubs = {h["id"] for h in u["coordinator_hubs"]}
-    if not (u["is_admin"] or (role in ("instructor", "participant") and hubs)):
+    if not (u["is_admin"] or (role == "instructor" and hubs)):
         raise HTTPException(403, "관리 권한이 없어요.")
 
     def run():

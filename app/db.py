@@ -90,6 +90,20 @@ course_sessions = Table(
     Column("topic", String(120), nullable=False, default=""),
 )
 
+withdrawn = Table(
+    "withdrawn", metadata,  # 탈퇴 처리 기록: 탈퇴한 학생은 계정·수업 기록을 지우고 이것만 남긴다 (참여학교 담당자 목록용)
+    Column("id", Integer, primary_key=True),
+    Column("name", String(30), nullable=False, default=""),
+    Column("school", String(60), nullable=False, default="", index=True),
+    Column("student_no", String(10), nullable=False, default=""),
+    Column("grade", Integer),
+    Column("class_no", Integer),
+    Column("reason", String(300), nullable=False, default=""),
+    Column("requested_at", Float),
+    Column("approved_at", Float, nullable=False),
+    Column("approved_by", String(30), nullable=False, default=""),  # 승인한 선생님 이름
+)
+
 course_requests = Table(
     "course_requests", metadata,  # 학생이 듣고 싶은 과목 개설 요청 (관리교사·전체 관리자가 모아 본다)
     Column("id", Integer, primary_key=True),

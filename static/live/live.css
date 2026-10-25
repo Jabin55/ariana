@@ -1040,3 +1040,12 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .done-card .join-steps { justify-content: center; }
 .done-ico { font-size: 3.4rem; margin: 6px 0 0; }
 .done-list { text-align: left; display: inline-block; margin: 6px auto 0; line-height: 1.9; }
+.name-btn { font-weight: 600; text-decoration: none; color: var(--accent); padding: 0; }
+.enroll-table tr.open-row td { background: var(--accent-soft); }
+.enroll-table tr.detail-row > td { background: var(--surface-2, #f7f8fa); text-align: left; white-space: normal; padding: 10px 14px; }
+.inner-table { width: 100%; background: var(--card, #fff); }
+.inner-table th, .inner-table td { text-align: left !important; }
+.enroll-table tr.gone-row td { color: var(--muted); background: var(--surface-2, #f7f8fa); }
+.quit-cell { display: inline-flex; align-items: center; gap: 4px; }
+.enroll-table td.contact-cell { white-space: nowrap; font-size: 0.85rem; text-align: left; line-height: 1.4; }
+.enroll-table tr.detail-row .box { max-width: 1040px; }
