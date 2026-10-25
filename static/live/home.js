@@ -9,6 +9,7 @@ function show(id) {
   $("#student-questions").hidden = true;
   $("#student-results").hidden = true;
   $("#student-materials").hidden = true;
+  $("#student-assignments").hidden = true;
 }
 
 const fmtScore = (n) => (n === null || n === undefined ? "미채점" : `${Math.round(n * 100) / 100}`);
@@ -239,6 +240,7 @@ function showStudent() {
   loadMyResults();
   loadMyQuestions();
   loadMyMaterials();
+  loadMyAssignments();
 }
 
 /* 수강 승인된 강좌에서 지금 열린 수업 → 코드 없이 입장 */
@@ -496,6 +498,7 @@ function renderCourseList() {
   box.replaceChildren(...teacherCourses.map((c) => {
     const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
     const members = h("div", { class: "members-box" });
+    const assignBox = h("div", { class: "assign-box" });
     const card = h("section", { class: `card course-card ${c.archived ? "archived" : ""}`, style: "margin-bottom:12px" },
       h("div", { class: "row" },
         h("h2", { class: "grow", style: "margin:0" }, c.title, c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
@@ -511,13 +514,16 @@ function renderCourseList() {
         !c.archived ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: c.open, onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
         h("button", { class: "small", onclick: () => { if (openCourse.has(c.id)) openCourse.delete(c.id); else openCourse.add(c.id); renderCourseList(); } },
           openCourse.has(c.id) ? "수강생 목록 접기" : "수강생 관리"),
+        h("button", { class: `small ${openAssign.has(c.id) ? "on" : ""}`, onclick: () => { if (openAssign.has(c.id)) openAssign.delete(c.id); else openAssign.add(c.id); renderCourseList(); } },
+          openAssign.has(c.id) ? "과제 접기" : "📝 과제"),
         h("span", { class: "grow" }),
         !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); renderCourseList(); } }, "정보 수정") : null,
         h("button", { class: "small", onclick: () => {
           if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
         } }, c.archived ? "보관 해제" : "보관 (학기 끝)")),
-      members);
+      members, assignBox);
     if (openCourse.has(c.id)) renderMembers(c, members);
+    if (openAssign.has(c.id) && !c.locked) renderCourseAssignments(c, assignBox);
     return card;
   }));
   if (!teacherCourses.length) box.append(h("p", { class: "muted" }, "아직 만든 강좌가 없어요."));

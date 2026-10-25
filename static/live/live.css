@@ -397,3 +397,12 @@ details.card > summary { cursor: pointer; }
 .material-item:hover, .material-link:hover { outline: 2px solid var(--accent); }
 .material-link { color: var(--text); text-decoration: none; }
 .m-items { flex-wrap: wrap; margin-bottom: 8px; }
+
+/* ───── 과제 ───── */
+.assign-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.assign-item { margin-bottom: 8px; }
+.assign-desc { white-space: pre-wrap; font-size: 0.9rem; margin: 6px 0; }
+.assign-student { border-top: 1px solid var(--border); padding: 10px 0; }
+.assign-student summary { cursor: pointer; list-style: revert; }
+.assign-submit { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; align-items: flex-start; }
+.assign-submit textarea { width: 100%; }

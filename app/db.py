@@ -180,6 +180,42 @@ boards = Table(
     UniqueConstraint("class_id", "key"),
 )
 
+assignments = Table(
+    "assignments", metadata,  # 강좌 과제 (선생님이 내고, 수강 확정 학생이 파일·글로 제출)
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("teacher_id", Integer, nullable=False),
+    Column("title", String(80), nullable=False),
+    Column("description", Text, nullable=False, default=""),
+    Column("due_at", Float),  # 마감 시각 (없으면 마감 없음)
+    Column("allow_late", Integer, nullable=False, default=1),  # 마감 뒤에도 제출 받기(지각 표시)
+    Column("closed", Integer, nullable=False, default=0),  # 제출 막기
+    Column("created_at", Float, nullable=False),
+)
+
+submissions = Table(
+    "submissions", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("assignment_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("text", Text, nullable=False, default=""),
+    Column("submitted_at", Float),  # 마지막으로 낸 시각 (비면 아직 안 냄)
+    Column("score", Float),
+    Column("feedback", Text, nullable=False, default=""),
+    Column("graded_at", Float),
+    UniqueConstraint("assignment_id", "user_id"),
+)
+
+submission_files = Table(
+    "submission_files", metadata,
+    Column("id", String(16), primary_key=True),  # 파일 이름으로도 쓴다 (FILES_DIR/assignments/과제번호/id)
+    Column("submission_id", Integer, nullable=False, index=True),
+    Column("name", String(150), nullable=False),
+    Column("size", Integer, nullable=False),
+    Column("content_type", String(100), nullable=False, default="application/octet-stream"),
+    Column("created_at", Float, nullable=False),
+)
+
 grades = Table(
     "grades", metadata,  # 수업이 끝난 뒤 선생님이 매긴 점수·피드백 (자동 채점을 덮어쓸 수도 있음)
     Column("id", Integer, primary_key=True),

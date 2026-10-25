@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY static ./static
 # root가 아닌 사용자로 실행
-RUN useradd --system --uid 10001 web && mkdir -p /srv/slides && chown web /srv/slides
+RUN useradd --system --uid 10001 web && mkdir -p /srv/slides /srv/files && chown web /srv/slides /srv/files
 USER web
-ENV SLIDES_DIR=/srv/slides
+ENV SLIDES_DIR=/srv/slides FILES_DIR=/srv/files
 CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000", "--timeout-graceful-shutdown", "10"]

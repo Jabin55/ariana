@@ -973,3 +973,62 @@ def test_drive_picker_config(monkeypatch):
     monkeypatch.setattr(auth, "GOOGLE_API_KEY", "AIzaTEST")
     monkeypatch.setattr(auth, "GOOGLE_APP_ID", "123")
     assert c.get("/api/me").json()["drive_picker"] == {"api_key": "AIzaTEST", "app_id": "123"}
+
+
+def test_assignments(monkeypatch, tmp_path):
+    import io
+    import zipfile
+    import app.assignments as asg
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a, b, outsider = student(1), student(2), student(3)
+    for s in (a, b):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    # 과제 내기 (마감: 먼 미래)
+    assert outsider.post(f"/api/courses/{cid}/assignments", json={"title": "x"}).status_code == 403
+    aid = t.post(f"/api/courses/{cid}/assignments", json={
+        "title": "선거 제도 보고서", "description": "A4 1장", "due": "2099-11-05T23:59", "allow_late": False}).json()["id"]
+    mine = a.get("/api/my/assignments").json()["assignments"]
+    assert [x["title"] for x in mine] == ["선거 제도 보고서"] and mine[0]["can_submit"] and mine[0]["due"] == "2099-11-05 23:59"
+    assert outsider.get("/api/my/assignments").json()["assignments"] == []  # 수강생이 아니면 안 보임
+    assert outsider.post(f"/api/assignments/{aid}/files", content=b"x").status_code == 404
+    # 제출: 파일 + 글. 다시 내면 고쳐진다
+    fid = a.post(f"/api/assignments/{aid}/files?name=보고서.pdf", content=b"%PDF-1.4 report",
+                 headers={"Content-Type": "application/pdf"}).json()["id"]
+    a.post(f"/api/assignments/{aid}/files?name=<script>.html", content=b"<script>alert(1)</script>",
+           headers={"Content-Type": "text/html"})
+    a.post(f"/api/assignments/{aid}/text", json={"text": "참고 자료는 교과서 3단원"})
+    m = a.get("/api/my/assignments").json()["assignments"][0]["mine"]
+    assert m["submitted"] and len(m["files"]) == 2 and m["text"] == "참고 자료는 교과서 3단원" and not m["late"]
+    # 파일은 낸 학생과 선생님만. HTML 같은 형식은 브라우저에서 열리지 않고 내려받기로만
+    assert a.get(f"/api/submission-files/{fid}").content == b"%PDF-1.4 report"
+    assert t.get(f"/api/submission-files/{fid}").status_code == 200
+    assert b.get(f"/api/submission-files/{fid}").status_code == 404
+    html_id = [f["id"] for f in m["files"] if f["name"].endswith(".html")][0]
+    r = a.get(f"/api/submission-files/{html_id}")
+    assert r.headers["content-type"] == "application/octet-stream" and r.headers["content-disposition"].startswith("attachment")
+    assert a.post(f"/api/submission-files/{html_id}/delete").status_code == 200
+    # 선생님: 제출 현황 (낸 학생·안 낸 학생), 점수·피드백
+    subs = {s["student_no"]: s for s in t.get(f"/api/assignments/{aid}/submissions").json()["submissions"]}
+    assert subs["20301"]["submitted"] and len(subs["20301"]["files"]) == 1 and not subs["20302"]["submitted"]
+    assert t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]["submitted"] == 1
+    t.post(f"/api/assignments/{aid}/grade", json={"user_id": subs["20301"]["user_id"], "score": 9, "feedback": "근거가 좋아요"})
+    m = a.get("/api/my/assignments").json()["assignments"][0]["mine"]
+    assert m["score"] == 9 and m["feedback"] == "근거가 좋아요"
+    # 모두 내려받기
+    z = zipfile.ZipFile(io.BytesIO(t.get(f"/api/assignments/{aid}/download.zip").content))
+    assert sorted(z.namelist()) == ["가나중학교_20301_학생1/보고서.pdf", "가나중학교_20301_학생1/제출글.txt"]
+    # 마감이 지나면(지각 제출 안 받음) 낼 수 없고, 지각 제출을 켜면 '지각'으로 받는다
+    t.post(f"/api/assignments/{aid}", json={"due": "2020-01-01T00:00"})
+    assert b.post(f"/api/assignments/{aid}/text", json={"text": "늦었어요"}).status_code == 409
+    t.post(f"/api/assignments/{aid}", json={"allow_late": True})
+    assert b.post(f"/api/assignments/{aid}/text", json={"text": "늦었어요"}).status_code == 200
+    assert b.get("/api/my/assignments").json()["assignments"][0]["mine"]["late"] is True
+    t.post(f"/api/assignments/{aid}", json={"closed": True})
+    assert b.post(f"/api/assignments/{aid}/text", json={"text": "또"}).status_code == 409
+    # 과제를 지우면 제출물도 지워진다
+    assert t.post(f"/api/assignments/{aid}/delete").status_code == 200
+    assert not (tmp_path / "assignments" / str(aid)).exists()
+    assert a.get(f"/api/submission-files/{fid}").status_code == 404

@@ -31,7 +31,7 @@ IP="${SERVER_IP:-$(curl -4 -fsS --max-time 10 https://api.ipify.org || hostname 
 SITE="${1:-class.${IP//./-}.sslip.io}"
 RTC="rtc.$SITE"
 TURN="turn.$SITE"
-mkdir -p "$DIR" "$DIR/backups" "$DIR/slides"
+mkdir -p "$DIR" "$DIR/backups" "$DIR/slides" "$DIR/files"
 chmod 700 "$DIR" "$DIR/backups"  # 학생 개인정보(백업)가 들어 있으므로 관리자만
 
 # ── 키·비밀번호: 처음 한 번 만들고 계속 같은 것을 쓴다
@@ -241,7 +241,8 @@ services:
     network_mode: host
     env_file: [app.env, auto.env]
     volumes:
-      - ./slides:/srv/slides
+      - ./slides:/srv/slides   # 수업 자료(PDF)
+      - ./files:/srv/files     # 학생 과제 제출 파일
     depends_on:
       db:
         condition: service_healthy
@@ -355,7 +356,7 @@ fi
 
 # 매일 새벽 3시 30분(한국 시각) 백업 — 4시 자동 재부팅보다 먼저
 echo "30 3 * * * root $BIN/live-backup >> /var/log/live-backup.log 2>&1" > /etc/cron.d/live-backup
-chown 10001 "$DIR/slides"  # 수업 사이트(root가 아닌 사용자)가 발표 자료를 저장하는 곳
+chown 10001 "$DIR/slides" "$DIR/files"  # 수업 사이트(root가 아닌 사용자)가 수업 자료·과제 파일을 저장하는 곳
 cp "$INFO" /etc/motd       # 콘솔에 로그인하면 바로 보이게
 
 log "수업 서버 시작 (처음에는 5~10분 걸려요)"
