@@ -96,7 +96,7 @@ APP_MODE = os.environ.get("APP_MODE", "chatbot")
 @app.get("/", response_model=None)
 async def index() -> FileResponse | RedirectResponse:
     if APP_MODE == "live":
-        return RedirectResponse("/live")
+        return RedirectResponse("/live/home")
     return FileResponse(STATIC_DIR / "index.html")
 
 

@@ -4,30 +4,37 @@
 from __future__ import annotations
 
 import html
+import json
+import time
+import uuid
+from datetime import datetime
 
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, insert, select, update
 
 from app import db
-from app.auth import today_kst
+from app.auth import KST, require_user, today_kst
 from app.courses import course_grades, subject_info
 from app.policy import settings
 
 router = APIRouter()
 
 
-def site_page(title: str, body: str, lead: str = "") -> HTMLResponse:
+def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_class: str = "site-main",
+              scripts: str = "") -> HTMLResponse:
+    head = f'<section class="page-hero"><h1>{html.escape(title)}</h1>{f"<p>{lead}</p>" if lead else ""}</section>' if hero else ""
     return HTMLResponse(f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)} · 외솔온닷</title>
 <link rel="icon" href="/static/live/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/live/live.css"></head>
 <body class="site">
-<main class="site-main">
-<section class="page-hero"><h1>{html.escape(title)}</h1>{f'<p>{lead}</p>' if lead else ''}</section>
+<main class="{main_class}">
+{head}
 {body}
-</main>
+</main>{scripts}
 <footer class="site-footer">
   <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문·동의서</a>
 </footer>
@@ -185,3 +192,253 @@ async def help_page():
 </section>
 <section class="info-block"><h2>문의</h2><p>{contact}</p></section>
 """, "자주 묻는 질문과 도움말")
+
+
+# ───────────────────────── 메인 화면 ─────────────────────────
+
+
+@router.get("/live/home", response_class=HTMLResponse)
+async def home_page():
+    """메인: 전광판(배너) · 외솔온닷 안내(동그란 바로가기) · 공지사항 · 모집 중인 강좌 · 로그인"""
+    return site_page("외솔온닷", """
+<section class="billboard" id="billboard" aria-roledescription="carousel" aria-label="알림판">
+  <div class="bb-track" id="bb-track"></div>
+  <button class="bb-nav prev" id="bb-prev" aria-label="이전">‹</button>
+  <button class="bb-nav next" id="bb-next" aria-label="다음">›</button>
+  <div class="bb-dots" id="bb-dots"></div>
+</section>
+<div class="home-wrap">
+  <section class="guide-circles">
+    <h2 class="home-h">외솔온닷 <span>안내</span></h2>
+    <nav class="circles">
+      <a href="/live/notices"><span class="circle c1"></span>공지사항</a>
+      <a href="/live/about"><span class="circle c2"></span>사업 소개</a>
+      <a href="/live/guide"><span class="circle c3"></span>수강 안내</a>
+      <a href="/live/courses"><span class="circle c4"></span>수업 신청</a>
+      <a href="/live/help"><span class="circle c5"></span>자주 묻는 질문</a>
+      <a href="/live"><span class="circle c6"></span>마이페이지</a>
+    </nav>
+  </section>
+  <div class="home-cols">
+    <section class="home-box">
+      <div class="home-box-h"><h2>📢 공지사항</h2><a href="/live/notices">더보기 +</a></div>
+      <ul class="notice-list" id="home-notices"><li class="muted">불러오는 중…</li></ul>
+    </section>
+    <section class="home-box login-box" id="home-login">
+      <div class="home-box-h"><h2>🔑 시작하기</h2></div>
+      <div id="home-login-body">
+        <a class="start-choice" href="/live?start=student"><span class="sc-ico">🎒</span><strong>학생으로 시작</strong></a>
+        <a class="start-choice" href="/live?start=staff"><span class="sc-ico">👩‍🏫</span><strong>선생님으로 시작</strong></a>
+      </div>
+    </section>
+  </div>
+  <section class="home-box">
+    <div class="home-box-h"><h2>✨ 지금 모집 중인 강좌</h2><a href="/live/courses">전체 보기 +</a></div>
+    <div class="home-courses" id="home-courses"><p class="muted">불러오는 중…</p></div>
+  </section>
+</div>
+""", hero=False, main_class="site-main home", scripts='<script src="/static/live/home-page.js"></script>')
+
+
+# ───────────────────────── 공지사항 ─────────────────────────
+
+
+def notice_rows(limit: int | None = None):
+    with db.engine.connect() as c:
+        q = select(db.notices).order_by(db.notices.c.pinned.desc(), db.notices.c.created_at.desc())
+        if limit:
+            q = q.limit(limit)
+        return c.execute(q).all()
+
+
+def notice_json(r, body: bool = False) -> dict:
+    out = {"id": r.id, "title": r.title, "pinned": bool(r.pinned), "author": r.author,
+           "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
+           "new": r.created_at > time.time() - 7 * 86400}
+    if body:
+        out["body"] = r.body
+    return out
+
+
+@router.get("/api/notices")
+async def list_notices(limit: int = Query(default=0, ge=0, le=200)):
+    return {"notices": [notice_json(r, body=True) for r in await db.run(notice_rows, limit or None)]}
+
+
+@router.get("/live/notices", response_class=HTMLResponse)
+async def notices_page():
+    rows = await db.run(notice_rows)
+    items = "".join(
+        f'<li class="{"pinned" if r.pinned else ""}"><a href="/live/notices/{r.id}">'
+        f'{"<span class=tag>공지</span>" if r.pinned else ""}{html.escape(r.title)}'
+        f'{"<span class=new-dot>N</span>" if notice_json(r)["new"] else ""}</a>'
+        f'<span class="muted">{notice_json(r)["date"]}</span></li>' for r in rows)
+    return site_page("공지사항", f'<section class="info-block"><ul class="notice-list big">{items or "<li class=muted>아직 공지사항이 없어요.</li>"}</ul></section>',
+                     "외솔온닷 소식과 안내")
+
+
+@router.get("/live/notices/{nid}", response_class=HTMLResponse)
+async def notice_page(nid: int):
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.notices).where(db.notices.c.id == nid)).first()
+
+    r = await db.run(run)
+    if not r:
+        raise HTTPException(404, "공지사항을 찾을 수 없어요.")
+    j = notice_json(r)
+    return site_page("공지사항", f"""
+<article class="info-block notice-view">
+  <h2>{html.escape(r.title)}</h2>
+  <p class="muted">{j["date"]}{f" · {html.escape(r.author)}" if r.author else ""}</p>
+  <div class="notice-body">{html.escape(r.body)}</div>
+</article>
+<p><a class="button" href="/live/notices">← 목록으로</a></p>""", "외솔온닷 소식과 안내")
+
+
+class NoticeReq(BaseModel):
+    id: int | None = None
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=20000)
+    pinned: bool = False
+
+
+async def require_admin(request: Request) -> dict:
+    u = await require_user(request, profile=False)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+    return u
+
+
+@router.post("/api/admin/notices")
+async def save_notice(req: NoticeReq, request: Request):
+    u = await require_admin(request)
+    values = {"title": req.title.strip(), "body": req.body.strip(), "pinned": int(req.pinned)}
+
+    def run():
+        with db.engine.begin() as c:
+            if req.id:
+                n = c.execute(update(db.notices).where(db.notices.c.id == req.id)
+                              .values(updated_at=time.time(), **values)).rowcount
+                if not n:
+                    raise HTTPException(404, "공지사항을 찾을 수 없어요.")
+                return req.id
+            return c.execute(insert(db.notices).values(created_at=time.time(), author=u["name"] or "", **values)
+                             ).inserted_primary_key[0]
+
+    return {"id": await db.run(run)}
+
+
+@router.post("/api/admin/notices/{nid}/delete")
+async def delete_notice(nid: int, request: Request):
+    await require_admin(request)
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.notices).where(db.notices.c.id == nid))
+
+    await db.run(run)
+    return {"ok": True}
+
+
+# ───────────────────────── 메인 배너(전광판) ─────────────────────────
+
+THEMES = ("green", "orange", "blue", "purple", "yellow")
+IMAGE_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
+
+
+class Banner(BaseModel):
+    kicker: str = Field(default="", max_length=40)  # 작은 머리글
+    title: str = Field(default="", max_length=60)
+    text: str = Field(default="", max_length=120)
+    button: str = Field(default="", max_length=20)
+    link: str = Field(default="", max_length=300)
+    theme: str = Field(default="green", max_length=10)
+    image: str = Field(default="", max_length=40)  # 올린 그림 (있으면 배경으로)
+
+
+class BannersReq(BaseModel):
+    banners: list[Banner] = Field(default_factory=list, max_length=10)
+
+
+def get_banners() -> list[dict]:
+    with db.engine.connect() as c:
+        r = c.execute(select(db.site_settings.c.value).where(db.site_settings.c.key == "banners")).first()
+    try:
+        return json.loads(r.value) if r else []
+    except ValueError:
+        return []
+
+
+@router.get("/api/banners")
+async def banners():
+    """메인 전광판. 비어 있으면 화면이 기본 배너를 보여 준다."""
+    return {"banners": await db.run(get_banners)}
+
+
+def banner_dir():
+    from app.assignments import FILES_DIR
+    return FILES_DIR / "banners"
+
+
+@router.post("/api/admin/banners")
+async def save_banners(req: BannersReq, request: Request):
+    await require_admin(request)
+    out = []
+    for b in req.banners:
+        d = b.model_dump()
+        d = {k: v.strip() for k, v in d.items()}
+        if d["theme"] not in THEMES:
+            d["theme"] = "green"
+        if d["link"] and not (d["link"].startswith("/") or d["link"].startswith("https://")):
+            raise HTTPException(400, "링크는 /로 시작하는 사이트 안 주소나 https:// 주소로 적어 주세요.")
+        if d["image"] and not (banner_dir() / d["image"]).is_file():
+            d["image"] = ""
+        if d["title"] or d["image"]:
+            out.append(d)
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.site_settings).where(db.site_settings.c.key == "banners"))
+            c.execute(insert(db.site_settings).values(key="banners", value=json.dumps(out, ensure_ascii=False)))
+        used = {b["image"] for b in out}
+        if banner_dir().is_dir():  # 안 쓰는 그림은 지운다
+            for f in banner_dir().iterdir():
+                if f.name not in used and f.stat().st_mtime < time.time() - 3600:
+                    f.unlink(missing_ok=True)
+
+    await db.run(run)
+    return {"banners": out}
+
+
+@router.post("/api/admin/banners/image")
+async def upload_banner_image(request: Request, name: str = Query(default="banner.png", max_length=150)):
+    """배너 그림 올리기 (PNG·JPG·WEBP·GIF, 5MB까지). 요청 본문 = 그림 파일 그대로"""
+    await require_admin(request)
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in IMAGE_TYPES:
+        raise HTTPException(415, "그림은 PNG, JPG, WEBP, GIF 파일로 올려 주세요.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > 5 * 1024 * 1024:
+            raise HTTPException(413, "그림이 너무 커요. 5MB 이하로 올려 주세요.")
+    fid = f"{uuid.uuid4().hex[:12]}.{'jpg' if ext == 'jpeg' else ext}"
+
+    def save():
+        banner_dir().mkdir(parents=True, exist_ok=True)
+        (banner_dir() / fid).write_bytes(data)
+
+    await db.run(save)
+    return {"image": fid}
+
+
+@router.get("/api/banners/image/{fid}")
+async def banner_image(fid: str):
+    stem, _, ext = fid.partition(".")
+    if not stem.isalnum() or ext not in IMAGE_TYPES:
+        raise HTTPException(404)
+    path = banner_dir() / fid
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, media_type=IMAGE_TYPES[ext], headers={"Cache-Control": "public, max-age=86400"})

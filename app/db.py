@@ -56,6 +56,17 @@ site_settings = Table(
     Column("value", Text, nullable=False),
 )
 
+notices = Table(
+    "notices", metadata,  # 공지사항 (전체 관리자가 쓴다, 누구나 본다)
+    Column("id", Integer, primary_key=True),
+    Column("title", String(120), nullable=False),
+    Column("body", Text, nullable=False, default=""),
+    Column("pinned", Integer, nullable=False, default=0),  # 위에 고정
+    Column("author", String(30), nullable=False, default=""),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float),
+)
+
 hubs = Table(
     "hubs", metadata,  # 거점학교 (전체 관리자가 관리교사를 승인할 때 만들어진다)
     Column("id", Integer, primary_key=True),

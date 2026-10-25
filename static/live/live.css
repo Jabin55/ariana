@@ -534,3 +534,101 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .course-more summary { cursor: pointer; font-size: 0.85rem; color: var(--brand); }
 .tag.off { background: var(--surface-2); color: var(--muted); }
 .ct-desc { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ───────── 메인 (전광판 · 동그란 바로가기 · 공지 · 강좌) ───────── */
+.site-main.home { max-width: none; padding: 0 0 40px; }
+.billboard { position: relative; overflow: hidden; background: var(--brand-deep); }
+.bb-track { display: flex; transition: transform 0.6s cubic-bezier(.4, 0, .2, 1); }
+.bb-slide { position: relative; flex: 0 0 100%; min-height: 340px; display: flex; align-items: center; background-size: cover; background-position: center; color: #fff; }
+.bb-in { width: 100%; max-width: 1100px; margin: 0 auto; padding: 36px 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.bb-text { max-width: 560px; position: relative; z-index: 1; }
+.bb-kicker { display: inline-block; margin: 0 0 10px; padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.22); font-weight: 700; font-size: 0.9rem; }
+.bb-text h2 { margin: 0 0 10px; font-size: clamp(1.6rem, 4.2vw, 2.6rem); line-height: 1.25; letter-spacing: -0.02em; word-break: keep-all; }
+.bb-text p { margin: 0 0 18px; font-size: clamp(0.95rem, 2vw, 1.1rem); opacity: 0.95; word-break: keep-all; }
+.bb-btn { display: inline-block; padding: 12px 22px; border-radius: 999px; background: #fff; color: var(--brand-deep); font-weight: 800; text-decoration: none; box-shadow: 0 6px 16px rgba(0,0,0,0.18); transition: transform .15s; }
+.bb-btn:hover { transform: translateY(-2px); }
+.bb-art { flex: 0 0 auto; width: min(36vw, 340px); }
+.bb-art svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 10px 18px rgba(0,0,0,0.18)); }
+.bb-cover { position: absolute; inset: 0; z-index: 2; }
+.theme-green { background-color: #1b6b4a; background-image: radial-gradient(circle at 85% 20%, #2f8f65 0, transparent 45%), radial-gradient(circle at 10% 90%, #145538 0, transparent 40%); }
+.theme-orange { background-color: #e8663a; background-image: radial-gradient(circle at 85% 20%, #f39065 0, transparent 45%), radial-gradient(circle at 10% 90%, #c94f25 0, transparent 40%); }
+.theme-blue { background-color: #3d63dd; background-image: radial-gradient(circle at 85% 20%, #6d8cf0 0, transparent 45%), radial-gradient(circle at 10% 90%, #2b4bb5 0, transparent 40%); }
+.theme-purple { background-color: #7a4fd6; background-image: radial-gradient(circle at 85% 20%, #9d7ae8 0, transparent 45%), radial-gradient(circle at 10% 90%, #5d36b3 0, transparent 40%); }
+.theme-yellow { background-color: #f4b400; color: #3a2a00; background-image: radial-gradient(circle at 85% 20%, #ffd34d 0, transparent 45%); }
+.theme-yellow .bb-kicker { background: rgba(255,255,255,0.5); }
+.bb-slide.has-image .bb-text { background: linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0)); padding: 18px 22px; border-radius: 16px; }
+.bb-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.25); color: #fff; font-size: 1.8rem; line-height: 1; cursor: pointer; }
+.bb-nav:hover { background: rgba(255,255,255,0.4); }
+.bb-nav.prev { left: 14px; }
+.bb-nav.next { right: 14px; }
+.bb-dots { position: absolute; bottom: 14px; left: 0; right: 0; display: flex; justify-content: center; gap: 8px; z-index: 3; }
+.bb-dots button { width: 10px; height: 10px; border-radius: 999px; border: 0; padding: 0; background: rgba(255,255,255,0.5); cursor: pointer; transition: width .2s; }
+.bb-dots button.on { width: 28px; background: #fff; }
+
+.home-wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+.home-h { font-family: "WaesolBrand", serif; color: var(--brand-deep); font-size: 1.5rem; margin: 30px 0 18px; text-align: center; }
+.home-h span { color: var(--brand-warm); }
+.circles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+.circles a { display: flex; flex-direction: column; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 0.95rem; }
+.circle { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 8px 18px rgba(15,74,51,0.15); transition: transform .2s; }
+.circle svg { width: 52px; height: 52px; }
+.circles a:hover .circle { transform: translateY(-4px) rotate(-4deg); }
+.circle.c1 { background: linear-gradient(135deg, #ff8a5c, #e8663a); color: #e8663a; }
+.circle.c2 { background: linear-gradient(135deg, #3fa77a, #1b6b4a); color: #1b6b4a; }
+.circle.c3 { background: linear-gradient(135deg, #6d8cf0, #3d63dd); color: #3d63dd; }
+.circle.c4 { background: linear-gradient(135deg, #ffcf4d, #f4a300); color: #c98500; }
+.circle.c5 { background: linear-gradient(135deg, #b18cf2, #7a4fd6); color: #7a4fd6; }
+.circle.c6 { background: linear-gradient(135deg, #ff8fb1, #e5507e); color: #e5507e; }
+.home-cols { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-top: 30px; }
+.home-box { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; margin-top: 16px; }
+.home-cols .home-box { margin-top: 0; }
+.home-box-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.home-box-h h2 { margin: 0; font-size: 1.1rem; color: var(--brand-deep); }
+.home-box-h a { font-size: 0.85rem; color: var(--muted); text-decoration: none; }
+.notice-list { list-style: none; margin: 0; padding: 0; }
+.notice-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 2px; border-bottom: 1px dashed var(--border); }
+.notice-list li:last-child { border-bottom: 0; }
+.notice-list a { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notice-list a:hover { color: var(--brand); text-decoration: underline; }
+.notice-list .muted { flex: 0 0 auto; font-size: 0.85rem; }
+.notice-list.big li { padding: 13px 4px; font-size: 1.02rem; }
+.new-dot { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 6px; border-radius: 50%; background: var(--brand-warm); color: #fff; font-size: 0.7rem; font-weight: 800; vertical-align: 2px; }
+.notice-view h2 { margin: 0 0 4px; }
+.notice-body { white-space: pre-wrap; line-height: 1.8; margin-top: 16px; }
+.login-box .start-choice { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); margin-bottom: 8px; padding: 12px 14px; }
+.login-box .hello { margin: 0 0 10px; }
+.home-courses { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.mini-course { display: grid; gap: 4px; padding: 14px 16px; border-radius: 16px; text-decoration: none; color: var(--text); border: 1px solid var(--border); transition: transform .15s, box-shadow .15s; }
+.mini-course:hover { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(0,0,0,0.08); }
+.mini-course strong { font-size: 1.05rem; }
+.mini-course .muted, .mc-meta { font-size: 0.82rem; }
+.mc-badge { justify-self: start; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #fff; }
+.hue-0 { background: #eaf6ef; } .hue-0 .mc-badge { color: #1b6b4a; }
+.hue-1 { background: #fff1e9; } .hue-1 .mc-badge { color: #c94f25; }
+.hue-2 { background: #edf1ff; } .hue-2 .mc-badge { color: #3d63dd; }
+.hue-3 { background: #fff8e1; } .hue-3 .mc-badge { color: #a87400; }
+.hue-4 { background: #f4eeff; } .hue-4 .mc-badge { color: #7a4fd6; }
+@media (max-width: 760px) {
+  .bb-slide { min-height: 260px; }
+  .bb-in { padding: 26px 20px 44px; }
+  .bb-art { width: 34vw; }
+  .bb-nav { display: none; }
+  .circles { grid-template-columns: repeat(3, 1fr); row-gap: 18px; }
+  .circle { width: 72px; height: 72px; }
+  .circle svg { width: 40px; height: 40px; }
+  .home-cols { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) { .bb-art { display: none; } }
+@media (prefers-color-scheme: dark) {
+  .hue-0, .hue-1, .hue-2, .hue-3, .hue-4 { background: var(--surface-2); }
+}
+/* 메인 화면 제목용 둥근 글꼴 (배달의민족 주아체, SIL OFL — fonts/OFL-Jua.txt) */
+@font-face { font-family: "WaesolFun"; src: url("/static/live/fonts/jua-subset.woff2") format("woff2"); font-display: swap; }
+.bb-text h2, .bb-btn, .circles a, .home-box-h h2, .mini-course strong { font-family: "WaesolFun", system-ui, sans-serif; font-weight: 400; }
+.bb-text h2 { font-size: clamp(1.8rem, 4.6vw, 2.9rem); }
+.circles a { font-size: 1.05rem; }
+.home-box-h h2 { font-size: 1.25rem; }
+.home-cols { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.home-cols > * { min-width: 0; }
+.notice-list li > a { min-width: 0; }
+@media (max-width: 760px) { .home-cols { grid-template-columns: minmax(0, 1fr); } }

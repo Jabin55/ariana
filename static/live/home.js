@@ -74,6 +74,9 @@ function showLogin() {
     $("#login-error").textContent = "서버에 GOOGLE_CLIENT_ID 가 설정되지 않았어요. 선생님께 알려 주세요.";
   }
   if (CONFIG.google_client_id) loadGsi().catch((err) => { $("#login-error").textContent = err.message; });
+  // 메인 화면의 '학생으로 시작'·'선생님으로 시작'에서 왔으면 바로 그 로그인 단계로
+  const start = params.get("start");
+  if (start === "student" || start === "staff") chooseStart(start);
 }
 
 /** 첫 화면에서 학생/선생님을 고르면 그에 맞는 구글 로그인 버튼을 보여 준다 */
@@ -793,6 +796,95 @@ function schoolsEditor() {
     } }, "저장")));
 }
 
+/** 전체 관리자: 공지사항 쓰기·고치기·지우기 */
+async function noticesEditor() {
+  const { notices } = await api("/api/notices");
+  const title = h("input", { maxlength: 120, placeholder: "제목" });
+  const body = h("textarea", { rows: 6, maxlength: 20000, placeholder: "내용" });
+  const pinned = h("input", { type: "checkbox" });
+  let editId = null;
+  const submit = h("button", { class: "primary" }, "공지 올리기");
+  const reset = () => { editId = null; title.value = ""; body.value = ""; pinned.checked = false; submit.textContent = "공지 올리기"; };
+  submit.onclick = async () => {
+    try {
+      await api("/api/admin/notices", { id: editId, title: title.value, body: body.value, pinned: pinned.checked });
+      toast(editId ? "공지를 고쳤어요." : "공지를 올렸어요. 메인 화면에 보여요.");
+      reset();
+      loadAdmin();
+    } catch (err) { toast(err.message); }
+  };
+  return h("details", { class: "card", style: "margin:12px 0" },
+    h("summary", {}, h("strong", {}, "📢 공지사항 "), h("span", { class: "muted" }, `${notices.length}개`)),
+    h("div", { class: "course-form", style: "margin-top:10px" }, h("label", { class: "wide" }, "제목", title),
+      h("label", { class: "wide" }, "내용", body),
+      h("label", { class: "switch" }, pinned, " 맨 위에 고정"),
+      h("div", { class: "row wide" }, submit, h("button", { onclick: reset }, "새로 쓰기"))),
+    h("ul", { class: "notice-list", style: "margin-top:12px" }, notices.map((n) => h("li", {},
+      h("a", { href: `/live/notices/${n.id}`, target: "_blank" }, n.pinned ? "📌 " : "", n.title),
+      h("span", { class: "row", style: "gap:6px;flex:0 0 auto" }, h("span", { class: "muted" }, n.date),
+        h("button", { class: "small", onclick: () => {
+          editId = n.id; title.value = n.title; body.value = n.body; pinned.checked = n.pinned; submit.textContent = "고친 내용 저장";
+          title.focus();
+        } }, "고치기"),
+        h("button", { class: "small danger", onclick: async () => {
+          if (!confirm(`'${n.title}' 공지를 지울까요?`)) return;
+          await api(`/api/admin/notices/${n.id}/delete`, {});
+          loadAdmin();
+        } }, "지우기"))))));
+}
+
+/** 전체 관리자: 메인 전광판(배너). 비워 두면 기본 배너가 보여요 */
+async function bannersEditor() {
+  const { banners } = await api("/api/banners");
+  const list = banners.map((b) => ({ ...b }));
+  const THEME_NAMES = { green: "초록", orange: "주황", blue: "파랑", purple: "보라", yellow: "노랑" };
+  const box = h("div");
+  const draw = () => {
+    box.replaceChildren(...list.map((b, i) => {
+      const inp = (k, label, attrs = {}) => h("label", {}, label, h("input", { value: b[k] || "", ...attrs, oninput: (e) => { b[k] = e.target.value; } }));
+      const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", onchange: async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const res = await fetch(`/api/admin/banners/image?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(data.detail || "그림을 올리지 못했어요."); return; }
+        b.image = data.image;
+        draw();
+      } });
+      return h("div", { class: "box", style: "margin-bottom:10px" },
+        h("div", { class: "row" }, h("strong", { class: "grow" }, `배너 ${i + 1}`),
+          i > 0 ? h("button", { class: "small", onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw(); } }, "▲") : null,
+          h("button", { class: "small danger", onclick: () => { list.splice(i, 1); draw(); } }, "빼기")),
+        h("div", { class: "course-form" },
+          inp("kicker", "작은 머리글", { maxlength: 40, placeholder: "예: 2026 여름학기" }),
+          inp("title", "제목", { maxlength: 60, placeholder: "예: 여름학기 수강신청 시작!" }),
+          inp("text", "설명", { maxlength: 120 }),
+          inp("button", "버튼 글자", { maxlength: 20, placeholder: "예: 신청하러 가기" }),
+          inp("link", "링크", { maxlength: 300, placeholder: "/live/courses 또는 https://..." }),
+          h("label", {}, "배경색", h("select", { onchange: (e) => { b.theme = e.target.value; } },
+            Object.entries(THEME_NAMES).map(([k, v]) => h("option", { value: k, selected: (b.theme || "green") === k }, v)))),
+          h("label", { class: "wide" }, "그림 (선택 — 가로로 긴 그림, 1600×500 정도 권장. 올리면 배경으로 꽉 차요)", file,
+            b.image ? h("span", { class: "row" }, h("img", { src: `/api/banners/image/${b.image}`, alt: "", style: "height:60px;border-radius:8px" }),
+              h("button", { class: "small", onclick: () => { b.image = ""; draw(); } }, "그림 빼기")) : null)));
+    }), list.length ? "" : h("p", { class: "muted" }, "지금은 기본 배너 3개가 보여요. 배너를 추가하면 그 배너만 보여요."));
+  };
+  draw();
+  return h("details", { class: "card", style: "margin:12px 0" },
+    h("summary", {}, h("strong", {}, "🖼️ 메인 전광판(배너) "), h("span", { class: "muted" }, list.length ? `${list.length}개` : "기본 배너")),
+    h("p", { class: "muted", style: "font-size:0.9rem" }, "메인 화면 맨 위에 5초마다 넘어가며 보여요. 제목이나 그림 중 하나는 있어야 해요."),
+    box,
+    h("div", { class: "row" },
+      h("button", { onclick: () => { if (list.length < 10) { list.push({ theme: "green" }); draw(); } } }, "+ 배너 추가"),
+      h("button", { class: "primary", onclick: async () => {
+        try {
+          const { banners: saved } = await api("/api/admin/banners", { banners: list });
+          toast(saved.length ? `배너 ${saved.length}개를 저장했어요.` : "기본 배너로 돌아갔어요.");
+          loadAdmin();
+        } catch (err) { toast(err.message); }
+      } }, "저장"),
+      h("a", { href: "/live/home", target: "_blank" }, "메인 화면 보기")));
+}
+
 async function loadAdmin() {
   const { applications, today } = await api("/api/staff/applications?role=coordinator");
   applications.forEach((x) => { x.role = "coordinator"; });
@@ -804,7 +896,7 @@ async function loadAdmin() {
       h("span", {}, "📄 개인정보 처리방침에 들어갈 운영 기관·개인정보 보호책임자·연락처가 아직 비어 있어요. 서버 콘솔에서: ",
         h("code", {}, 'live-config OPERATOR_NAME="○○고등학교" PRIVACY_OFFICER="교감 홍길동" PRIVACY_CONTACT="02-000-0000"'),
         " ", h("a", { href: "/live/privacy", target: "_blank" }, "처리방침 보기")))]),
-    schoolsEditor(),
+    schoolsEditor(), await noticesEditor(), await bannersEditor(),
     h("h2", { style: "margin:8px 0 0" }, "거점학교 관리교사"),
     ...staffSections(applications, today, loadAdmin, "관리교사"));
 }

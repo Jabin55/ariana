@@ -369,7 +369,7 @@ def test_live_site_mode_root_goes_to_class(monkeypatch):
     assert c.get("/", follow_redirects=False).status_code == 200  # 기본: 정치쌤 챗봇
     monkeypatch.setattr(main, "APP_MODE", "live")
     r = c.get("/", follow_redirects=False)
-    assert r.status_code in (302, 307) and r.headers["location"] == "/live"
+    assert r.status_code in (302, 307) and r.headers["location"] == "/live/home"
 
 
 def test_questions_and_replies_are_kept():
@@ -1269,3 +1269,33 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     assert asst.post(f"/api/live/classes/{code}/token", json={"room": "main"}).status_code == 403
     # 다른 거점학교 강사는 보조교사로 넣을 수 없다
     assert prof.post(f"/api/courses/{cid}", json={"team_teaching": True, "co_teachers": [s1.get("/api/me").json()["user"]["id"]]}).status_code == 400
+
+
+def test_home_notices_and_banners(monkeypatch, tmp_path):
+    import app.assignments as asg
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss, anyone, t = login("boss@gmail.com", name="관리자"), TestClient(app), teacher()
+    assert anyone.get("/live/home").status_code == 200
+    # 공지사항: 전체 관리자만 쓰고, 누구나 본다. 고정 공지가 맨 위
+    assert t.post("/api/admin/notices", json={"title": "x"}).status_code == 403
+    a = boss.post("/api/admin/notices", json={"title": "첫 공지", "body": "<b>안녕</b>"}).json()["id"]
+    boss.post("/api/admin/notices", json={"title": "수강신청 안내", "pinned": True})
+    assert [n["title"] for n in anyone.get("/api/notices?limit=5").json()["notices"]] == ["수강신청 안내", "첫 공지"]
+    page = anyone.get(f"/live/notices/{a}").text
+    assert "&lt;b&gt;안녕" in page and "<b>안녕" not in page  # 글은 그대로(태그로 해석하지 않음)
+    boss.post("/api/admin/notices", json={"id": a, "title": "첫 공지(수정)"})
+    assert "첫 공지(수정)" in anyone.get("/live/notices").text
+    boss.post(f"/api/admin/notices/{a}/delete", json={})
+    assert anyone.get(f"/live/notices/{a}").status_code == 404
+    # 배너: 비면 기본 배너. 그림을 올려 배경으로 쓸 수 있다
+    assert anyone.get("/api/banners").json()["banners"] == []
+    assert boss.post("/api/admin/banners/image?name=x.svg", content=b"<svg/>").status_code == 415
+    img = boss.post("/api/admin/banners/image?name=ad.png", content=b"\x89PNG fake").json()["image"]
+    assert anyone.get(f"/api/banners/image/{img}").headers["content-type"] == "image/png"
+    assert boss.post("/api/admin/banners", json={"banners": [{"title": "a", "link": "javascript:alert(1)"}]}).status_code == 400
+    r = boss.post("/api/admin/banners", json={"banners": [{"title": "여름학기 신청", "link": "/live/courses", "theme": "red"},
+                                                          {"image": img}, {"text": "제목도 그림도 없음"}]})
+    saved = r.json()["banners"]
+    assert [b["title"] for b in saved] == ["여름학기 신청", ""] and saved[0]["theme"] == "green" and saved[1]["image"] == img
+    assert t.post("/api/admin/banners", json={"banners": []}).status_code == 403

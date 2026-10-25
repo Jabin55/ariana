@@ -15,7 +15,7 @@
     for (const k of kids) n.append(k);
     return n;
   };
-  const logo = el("a", { class: "brand", href: "/live/about", "aria-label": "외솔온닷 처음으로" },
+  const logo = el("a", { class: "brand", href: "/live/home", "aria-label": "외솔온닷 처음으로" },
     el("span", { class: "brand-mark", "aria-hidden": "true" }),
     el("span", { class: "brand-a" }, "외솔"), el("span", { class: "brand-b" }, "온닷"));
   const nav = el("nav", { class: "site-nav", "aria-label": "주 메뉴" },
