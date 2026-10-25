@@ -46,6 +46,10 @@
           <label>번호 <input id="p-number" type="number" min="1" max="60" required style="width:4.5em"></label>
         </div>
         <p class="muted student-only" style="margin:0;font-size:0.9rem">학번: <strong id="p-no">-</strong></p>
+        <div class="agree-box" id="p-agree-wrap" hidden>
+          <label class="switch"><input type="checkbox" id="p-agree"> <span><a href="/live/terms" target="_blank">이용약관</a>과 <a href="/live/privacy" target="_blank">개인정보 처리방침</a>을 읽고 동의해요 <span class="muted">(필수)</span></span></label>
+          <p class="muted" style="margin:4px 0 0;font-size:0.85rem" id="p-agree-note">수업 영상은 녹화하지 않아요. 수업 화면을 녹화·캡처해 올리지 말아 주세요. 만 14세 미만 학생은 학교가 보호자 동의를 받은 뒤 이용할 수 있어요.</p>
+        </div>
         <button class="primary" type="submit">저장</button>
         <p class="error" id="profile-error"></p>
       </form>
@@ -72,7 +76,7 @@
           <div class="row"><input id="a-wish-from" type="date"> ~ <input id="a-wish-until" type="date"></div>
         </div>
         <label class="wide" id="a-msg-wrap" hidden>하고 싶은 말 (선택) <textarea id="a-msg" maxlength="500" rows="3"></textarea></label>
-        <label class="wide pledge"><span><input type="checkbox" id="a-pledge" required> <strong>개인정보 보호 서약</strong></span><span id="pledge-text" class="muted"></span></label>
+        <label class="wide pledge"><span><input type="checkbox" id="a-pledge" required> <strong>개인정보 보호 서약</strong>과 <a href="/live/terms" target="_blank">이용약관</a>·<a href="/live/privacy" target="_blank">개인정보 처리방침</a>에 동의</span><span id="pledge-text" class="muted"></span></label>
         <button class="primary wide" type="submit" id="apply-btn">신청하기</button>
       </form>
       <p class="error" id="apply-error"></p>
@@ -187,6 +191,9 @@
         <div id="h-detail"></div>
       </div>
     </section>
+    <footer class="site-footer">
+      <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문·동의서</a>
+    </footer>
   </main>
 
   <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>

@@ -39,7 +39,7 @@ def login(email, **profile):
     r = c.post("/api/auth/dev", json={"email": email})
     assert r.status_code == 200, r.text
     if profile:
-        r = c.post("/api/me/profile", json=profile)
+        r = c.post("/api/me/profile", json={"agree": True, **profile})
         assert r.status_code == 200, r.text
     return c
 
@@ -82,8 +82,24 @@ def test_login_rules():
     code = create(t)["code"]
     assert s.post(f"/api/live/classes/{code}/join").status_code == 409  # 내 정보 먼저
     assert s.post("/api/live/classes", json={}).status_code in (403, 409)  # 학생은 수업을 못 연다
-    r = s.post("/api/me/profile", json={"name": "김민준", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 15})
+    prof = {"name": "김민준", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 15}
+    assert s.post("/api/me/profile", json=prof).status_code == 400  # 이용약관·처리방침 확인 필요
+    r = s.post("/api/me/profile", json={**prof, "agree": True})
     assert r.json()["student_no"] == "20315" and r.json()["display"] == "20315 김민준"
+    assert r.json()["needs_terms"] is False and r.json()["ai_ok"] is False
+    assert s.post("/api/me/ai-ok").status_code == 200 and s.get("/api/me").json()["user"]["ai_ok"] is True
+    # 약관 내용이 바뀌면(시행일 변경) 다시 확인해야 수업에 들어갈 수 있다
+    import app.auth as auth_mod
+    old = auth_mod.POLICY_VERSION
+    auth_mod.POLICY_VERSION = "2099-01-01"
+    try:
+        assert s.get("/api/me").json()["user"]["needs_profile"] is True
+        assert s.post(f"/api/live/classes/{code}/join").status_code == 409
+        s.post("/api/me/profile", json={**prof, "agree": True})
+        assert s.get("/api/me").json()["user"]["needs_profile"] is False
+    finally:
+        auth_mod.POLICY_VERSION = old
+    s.post("/api/me/profile", json={**prof, "agree": True})
     assert s.post(f"/api/live/classes/{code}/join").status_code == 200
 
 
@@ -882,3 +898,26 @@ def test_groups_by_size_and_teacher_controls_mic():
             state(sw, lambda m: m["me"]["can_speak"])
             tw.send_json({"t": "cmd", "cmd": "mute", "target": "all"})
             state(sw, lambda m: not m["me"]["can_speak"])
+
+
+def test_policy_pages(monkeypatch):
+    c = TestClient(app)
+    for path in ("/live/terms", "/live/privacy", "/live/notice"):
+        r = c.get(path)
+        assert r.status_code == 200 and "(설정 필요)" in r.text  # 운영 기관 등을 아직 안 정함
+    monkeypatch.setenv("OPERATOR_NAME", "가나고등학교<script>")
+    monkeypatch.setenv("PRIVACY_OFFICER", "교감 홍길동")
+    monkeypatch.setenv("PRIVACY_CONTACT", "02-123-4567")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    p = c.get("/live/privacy").text
+    assert "가나고등학교&lt;script&gt;" in p and "<script>" not in p  # 설정 값은 그대로 출력하지 않는다
+    assert "Hetzner" in p and "Anthropic" not in p  # AI 조교를 안 쓰면 미국 이전 항목 없음
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert "Anthropic" in c.get("/live/privacy").text and "AI 조교" in c.get("/live/terms").text
+    assert c.get("/api/me").json()["policy_ready"] is True
+    # 강사 신청서의 동의는 이용약관 확인으로도 기록된다
+    g = TestClient(app)
+    g.post("/api/auth/dev", json={"email": "guest@gmail.com"})
+    assert g.get("/api/me").json()["user"]["needs_terms"] is True
+    g.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
+    assert g.get("/api/me").json()["user"]["needs_terms"] is False

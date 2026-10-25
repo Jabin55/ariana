@@ -15,7 +15,7 @@ from sqlalchemy import and_, select
 
 from app import db
 from app.auth import require_user, student_no
-from app.courses import course_roster
+from app.courses import course_roster, hub_locked
 from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
 
 router = APIRouter()
@@ -77,6 +77,8 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                 db.classes.c.teacher_id == t["id"],
                 db.classes.c.created_at >= start, db.classes.c.created_at < end,
             ).order_by(db.classes.c.created_at)).all()
+            locked = locked_course_ids(c, t)
+            rows = [r for r in rows if r.course_id not in locked]
             counts, qcounts = {}, {}
             for r in rows:
                 counts[r.id] = len(set(c.execute(select(db.attendance.c.user_id)
@@ -92,11 +94,20 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                          "start": kst(r.created_at)} for r in rows]}
 
 
-def _owned_class(class_id: int, teacher_id: int):
+def locked_course_ids(c, t: dict) -> set[int]:
+    """그 거점학교 강사 활동 기간이 끝난 강좌: 수업 기록(학생 개인정보)도 볼 수 없다."""
+    rows = c.execute(select(db.courses).where(db.courses.c.teacher_id == t["id"], db.courses.c.hub_id.is_not(None))).all()
+    return {r.id for r in rows if hub_locked(r, t)}
+
+
+def _owned_class(class_id: int, t: dict):
     with db.engine.connect() as c:
         r = c.execute(select(db.classes).where(db.classes.c.id == class_id)).first()
-    if not r or r.teacher_id != teacher_id:
+        locked = r is not None and r.course_id is not None and r.course_id in locked_course_ids(c, t)
+    if not r or r.teacher_id != t["id"]:
         raise HTTPException(404, "수업 기록을 찾을 수 없어요.")
+    if locked:
+        raise HTTPException(403, "그 거점학교 강사 활동 기간이 끝나 이 수업 기록을 볼 수 없어요.")
     return r
 
 
@@ -193,7 +204,7 @@ def attendance_report(cls, teacher_id: int) -> dict:
 @router.get("/api/live/history/{class_id}")
 async def class_history(class_id: int, request: Request):
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     return await db.run(attendance_report, cls, t["id"])
 
 
@@ -208,7 +219,7 @@ def csv_response(rows: list[list], filename: str) -> Response:
 async def attendance_csv(class_id: int, request: Request):
     """학생 한 명당 한 줄: 첫 접속·마지막 종료·접속 시간·재입장 횟수·자리 비운 시간"""
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     rep = await db.run(attendance_report, cls, t["id"])
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
     rows = [["날짜", "수업", "학번", "이름", "학교", "이메일", "첫 접속", "마지막 종료", "마지막 종료 사유",
@@ -227,7 +238,7 @@ async def attendance_csv(class_id: int, request: Request):
 async def attendance_log_csv(class_id: int, request: Request):
     """들어오고 나간 기록 하나당 한 줄 (재입장까지 모두)"""
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     rep = await db.run(attendance_report, cls, t["id"])
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
     rows = [["날짜", "수업", "학번", "이름", "순서", "들어옴", "나감", "나간 사유", "머문 시간(분)", "직전 이탈 후 다시 들어오기까지(분)"]]
@@ -263,14 +274,14 @@ def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
 @router.get("/api/live/history/{class_id}/questions")
 async def class_questions(class_id: int, request: Request):
     t = await require_user(request, "teacher")
-    await db.run(_owned_class, class_id, t["id"])
+    await db.run(_owned_class, class_id, t)
     return {"questions": await db.run(_questions, class_id)}
 
 
 @router.get("/api/live/history/{class_id}/questions.csv")
 async def class_questions_csv(class_id: int, request: Request):
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     qs = await db.run(_questions, class_id)
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
     rows = [["날짜", "수업", "학교", "학번", "이름", "질문 시각", "질문", "답변 시각", "답변", "확인"]]
@@ -292,7 +303,7 @@ async def my_questions(request: Request):
 @router.get("/api/live/history/{class_id}/results.csv")
 async def results_csv(class_id: int, request: Request):
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     live = live_classes.get(cls.code)
     current = live.activity if live and live.db_id == cls.id else None
 

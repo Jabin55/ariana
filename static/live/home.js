@@ -112,6 +112,13 @@ function showProfile() {
   } else {
     $("#p-school").value = ME.school || "";
   }
+  // 처음 로그인했거나 약관이 바뀌었으면 확인(동의)을 함께 받는다
+  $("#p-agree-wrap").hidden = !ME.needs_terms;
+  $("#p-agree").required = !!ME.needs_terms;
+  $("#p-agree").checked = false;
+  $("#p-agree-note").textContent = student
+    ? "수업 영상은 녹화하지 않아요. 수업 화면을 녹화·캡처해 올리지 말아 주세요. 만 14세 미만 학생은 학교가 보호자 동의를 받은 뒤 이용할 수 있어요."
+    : "수업에서 알게 된 학생 개인정보는 수업 목적으로만 쓰고, 내려받은 자료는 강의가 끝나면 지체 없이 지워 주세요.";
   $("#p-grade").value = ME.grade || "";
   $("#p-class").value = ME.class_no || "";
   $("#p-number").value = ME.number || "";
@@ -130,6 +137,7 @@ $("#profile").addEventListener("submit", async (e) => {
   const body = {
     name: $("#p-name").value.trim(),
     school: ME.role === "student" && CONFIG.schools.length ? $("#p-school-select").value : $("#p-school").value.trim(),
+    agree: $("#p-agree").checked,
   };
   if (ME.role === "student") {
     Object.assign(body, { grade: Number($("#p-grade").value), class_no: Number($("#p-class").value), number: Number($("#p-number").value) });
@@ -483,7 +491,7 @@ function renderCourseList() {
       courseInfo(c),
       c.description ? h("p", { class: "muted", style: "margin:4px 0" }, c.description) : null,
       c.locked ? h("p", { class: "error", style: "margin:4px 0" },
-        `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '다른 거점학교·역할 신청'으로 다시 신청하세요. 지난 기록은 '출결 기록' 탭에서 볼 수 있어요.`) : null,
+        `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '다른 거점학교·역할 신청'으로 다시 신청하세요. 학생 개인정보 보호를 위해 이 강좌의 지난 수업 기록도 볼 수 없어요(다시 승인받으면 보여요).`) : null,
       c.locked ? null : editing.has(c.id) ? courseEditForm(c) : null,
       c.locked ? null : h("div", { class: "row", style: "margin-top:6px" },
         !c.archived ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: c.open, onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
@@ -597,7 +605,12 @@ async function loadAdmin() {
   const pending = applications.filter((x) => x.status === "pending").length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
-  $("#admin-list").replaceChildren(h("h2", { style: "margin:8px 0 0" }, "거점학교 관리교사"),
+  $("#admin-list").replaceChildren(
+    ...(CONFIG.policy_ready ? [] : [h("div", { class: "banner warn" },
+      h("span", {}, "📄 개인정보 처리방침에 들어갈 운영 기관·개인정보 보호책임자·연락처가 아직 비어 있어요. 서버 콘솔에서: ",
+        h("code", {}, 'live-config OPERATOR_NAME="○○고등학교" PRIVACY_OFFICER="교감 홍길동" PRIVACY_CONTACT="02-000-0000"'),
+        " ", h("a", { href: "/live/privacy", target: "_blank" }, "처리방침 보기")))]),
+    h("h2", { style: "margin:8px 0 0" }, "거점학교 관리교사"),
     ...staffSections(applications, today, loadAdmin, "관리교사"));
 }
 

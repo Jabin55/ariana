@@ -296,6 +296,29 @@ class AIChat {
     const form = h("form", { class: "chatform", onsubmit: (e) => { e.preventDefault(); this.ask(); } }, this.input, this.btn);
     submitOnEnter(this.input, form);
     root.append(this.log, form);
+    // 처음 쓸 때 한 번: 질문이 미국 회사로 전송된다는 안내를 확인받는다 (개인정보 처리방침의 국외 이전)
+    api("/api/me").then(({ user }) => { if (user && !user.ai_ok) this.showGate(); }).catch(() => {});
+  }
+
+  showGate() {
+    this.input.disabled = this.btn.disabled = true;
+    const gate = h("div", { class: "banner warn ai-gate" },
+      h("div", {},
+        h("strong", {}, "AI 조교를 쓰기 전에 확인해 주세요"),
+        h("div", { style: "font-size:0.9rem;margin-top:4px" },
+          "여기 쓴 질문은 답을 만들기 위해 미국의 AI 회사(Anthropic)로 보내져요. ",
+          h("strong", {}, "이름·학번·연락처 같은 개인정보는 쓰지 마세요."),
+          " AI의 답은 틀릴 수 있으니 중요한 건 선생님께 확인하세요. ",
+          h("a", { href: "/live/privacy", target: "_blank" }, "개인정보 처리방침"))),
+      h("button", { class: "primary", onclick: async () => {
+        try {
+          await api("/api/me/ai-ok", {});
+          gate.remove();
+          this.input.disabled = this.btn.disabled = false;
+          this.input.focus();
+        } catch (err) { toast(err.message); }
+      } }, "확인했어요"));
+    this.log.append(gate);
   }
 
   add(role, text) {

@@ -104,7 +104,7 @@ def gradebook(cls) -> dict:
 @router.get("/api/live/history/{class_id}/grades")
 async def get_grades(class_id: int, request: Request):
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     return await db.run(gradebook, cls)
 
 
@@ -123,7 +123,7 @@ class PointsReq(BaseModel):
 @router.post("/api/live/history/{class_id}/activities/{activity_id}/points")
 async def set_points(class_id: int, activity_id: int, req: PointsReq, request: Request):
     t = await require_user(request, "teacher")
-    await db.run(_owned_class, class_id, t["id"])
+    await db.run(_owned_class, class_id, t)
     await db.run(_activity_in_class, activity_id, class_id)
 
     def run():
@@ -143,7 +143,7 @@ class GradeReq(BaseModel):
 @router.post("/api/live/history/{class_id}/activities/{activity_id}/grade")
 async def set_grade(class_id: int, activity_id: int, req: GradeReq, request: Request):
     t = await require_user(request, "teacher")
-    await db.run(_owned_class, class_id, t["id"])
+    await db.run(_owned_class, class_id, t)
     a = await db.run(_activity_in_class, activity_id, class_id)
     if req.score is not None and req.score > a.points:
         raise HTTPException(400, f"배점({a.points:g}점)보다 큰 점수는 줄 수 없어요.")
@@ -169,7 +169,7 @@ class PublishReq(BaseModel):
 @router.post("/api/live/history/{class_id}/publish")
 async def publish(class_id: int, req: PublishReq, request: Request):
     t = await require_user(request, "teacher")
-    await db.run(_owned_class, class_id, t["id"])
+    await db.run(_owned_class, class_id, t)
 
     def run():
         with db.engine.begin() as c:
@@ -182,7 +182,7 @@ async def publish(class_id: int, req: PublishReq, request: Request):
 @router.get("/api/live/history/{class_id}/grades.csv")
 async def grades_csv(class_id: int, request: Request):
     t = await require_user(request, "teacher")
-    cls = await db.run(_owned_class, class_id, t["id"])
+    cls = await db.run(_owned_class, class_id, t)
     book = await db.run(gradebook, cls)
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
     acts = [a for a in book["activities"] if a["gradable"]]

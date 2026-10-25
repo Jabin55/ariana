@@ -368,3 +368,25 @@ details.card > summary { cursor: pointer; }
 .small-switch { font-size: 0.85rem; }
 .banner.ask { position: sticky; top: 0; z-index: 5; }
 #people button.off { opacity: 0.55; border-style: dashed; }
+
+/* ───── 이용약관·처리방침·보호자 안내문 ───── */
+.site-footer { margin: 28px 0 8px; text-align: center; font-size: 0.85rem; color: var(--muted); }
+.site-footer a { color: var(--muted); }
+.agree-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.ai-gate { flex-wrap: wrap; align-items: center; }
+.doc { max-width: 860px; line-height: 1.7; }
+.doc h2 { font-size: 1.1rem; margin: 22px 0 6px; }
+.doc table { font-size: 0.9rem; }
+.doc td { vertical-align: top; }
+.doc .table-wrap { overflow-x: auto; }
+.consent-form { margin-top: 28px; }
+.consent-form .cut { color: var(--muted); text-align: center; overflow: hidden; white-space: nowrap; }
+.consent-form .sign td { padding: 12px 8px; }
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+  .doc { max-width: none; font-size: 11pt; line-height: 1.5; }
+  .consent-form { break-inside: avoid; }
+}
+.doc p, .doc li { color: var(--text); }
+@media print { .doc p, .doc li, .doc td { color: #000; } }

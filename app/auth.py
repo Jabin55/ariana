@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import insert, select, update
 
 from app import db
+from app.policy import POLICY_VERSION, policy_ready
 
 router = APIRouter()
 
@@ -46,6 +48,7 @@ def public_user(u) -> dict:
         "student_no": student_no(d), "display": display_name(d), "needs_profile": needs_profile(d),
         "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
         "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []),
+        "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
     }
 
 
@@ -94,9 +97,16 @@ def display_name(u: dict) -> str:
     return f"{no} {name}" if no else name
 
 
+def needs_terms(u: dict) -> bool:
+    """이용약관·개인정보 처리방침을 아직 확인하지 않았거나, 그 뒤에 내용이 바뀌었다."""
+    return u.get("terms_version") != POLICY_VERSION
+
+
 def needs_profile(u: dict) -> bool:
     if u.get("role") == "guest":
-        return False  # 손님은 관리교사·강사 등록 신청서에서 이름을 적는다
+        return False  # 손님은 관리교사·강사 등록 신청서에서 이름을 적고 약관을 확인한다
+    if needs_terms(u):
+        return True  # 내 정보 화면에서 약관 확인을 함께 받는다
     if not u.get("name"):
         return True
     if u.get("role") == "student":
@@ -225,6 +235,7 @@ async def me(request: Request):
         "user": public_user(u) if u else None,
         "google_client_id": GOOGLE_CLIENT_ID, "dev_login": DEV_LOGIN,
         "schools": SCHOOLS, "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
+        "policy_version": POLICY_VERSION, "policy_ready": policy_ready(),
     }
 
 
@@ -234,6 +245,7 @@ class Profile(BaseModel):
     grade: int | None = Field(default=None, ge=1, le=6)
     class_no: int | None = Field(default=None, ge=1, le=30)
     number: int | None = Field(default=None, ge=1, le=60)
+    agree: bool = False  # 이용약관·개인정보 처리방침 확인(동의)
 
 
 @router.post("/api/me/profile")
@@ -245,6 +257,10 @@ async def save_profile(p: Profile, request: Request):
     if u["role"] == "student" and SCHOOLS and school and school not in SCHOOLS:
         raise HTTPException(400, "목록에 있는 학교를 골라 주세요.")
     values = {"name": name, "school": school}
+    if needs_terms(u):
+        if not p.agree:
+            raise HTTPException(400, "이용약관과 개인정보 처리방침을 확인하고 동의해 주세요.")
+        values.update(terms_version=POLICY_VERSION, terms_at=time.time())
     if u["role"] == "student":
         if not (school and p.grade and p.class_no and p.number):
             raise HTTPException(400, "학교, 학년, 반, 번호를 모두 입력해 주세요.")
@@ -256,3 +272,16 @@ async def save_profile(p: Profile, request: Request):
 
     await db.run(save)
     return public_user(await db.run(_load_with_role, u["id"]))
+
+
+@router.post("/api/me/ai-ok")
+async def ai_ok(request: Request):
+    """AI 조교 안내(질문이 미국 회사로 전송됨, 개인정보 쓰지 말 것)를 확인했다."""
+    u = await require_user(request, profile=False)
+
+    def save():
+        with db.engine.begin() as c:
+            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(ai_ok_at=time.time()))
+
+    await db.run(save)
+    return {"ok": True}

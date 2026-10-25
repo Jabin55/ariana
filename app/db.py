@@ -39,6 +39,9 @@ users = Table(
     Column("number", Integer),
     Column("created_at", Float, nullable=False),
     Column("last_login", Float),
+    Column("terms_version", String(10), nullable=False, default=""),  # 확인(동의)한 이용약관·처리방침 시행일
+    Column("terms_at", Float),
+    Column("ai_ok_at", Float),  # AI 조교 국외 전송 안내를 확인한 시각
 )
 
 hubs = Table(
@@ -184,7 +187,10 @@ def init() -> None:
              ("enrollments", "coordinator_by", "INTEGER"),
              ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("memberships", "wish_from", "VARCHAR(10) NOT NULL DEFAULT ''"),
-             ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''")]
+             ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("users", "terms_version", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("users", "terms_at", "FLOAT"),
+             ("users", "ai_ok_at", "FLOAT")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:

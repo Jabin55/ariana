@@ -20,6 +20,7 @@ from sqlalchemy import func, insert, select, update
 
 from app import db
 from app.auth import PLEDGE, current_user, membership_status, today_kst
+from app.policy import POLICY_VERSION
 
 router = APIRouter()
 ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사"}
@@ -100,8 +101,10 @@ async def apply(req: ApplyReq, request: Request):
         with db.engine.begin() as c:
             if req.role == "instructor" and not c.execute(select(db.hubs.c.id).where(db.hubs.c.id == req.hub_id)).first():
                 raise HTTPException(404, "거점학교를 찾을 수 없어요.")
+            # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
             c.execute(update(db.users).where(db.users.c.id == u["id"])
-                      .values(name=req.name.strip(), school=req.affiliation.strip()))
+                      .values(name=req.name.strip(), school=req.affiliation.strip(),
+                              terms_version=POLICY_VERSION, terms_at=now))
             same = (m.hub_id == req.hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
             values = {"contact": req.contact.strip(), "pledge_at": now}

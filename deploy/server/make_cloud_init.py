@@ -9,11 +9,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 SETTINGS = """\
-# ▼ 붙여 넣기 전에 아래 두 줄을 채우세요 (나중에 콘솔에서 live-config 로 바꿀 수도 있어요)
+# ▼ 붙여 넣기 전에 아래 값을 채우세요. ADMIN_EMAILS·ALLOWED_DOMAINS 는 꼭, 나머지는 선택 (나중에 콘솔에서 live-config 로 바꿀 수도 있어요)
 # 전체 관리자 구글 이메일 (거점학교 관리교사 신청을 승인하는 사람, 쉼표로 여러 개)
 ADMIN_EMAILS=
 # 학생 구글 계정 도메인 (예: s.myschool.kr, 쉼표로 여러 개). 비우면 아무 구글 계정이나 학생이 됨
 ALLOWED_DOMAINS=
+# (선택) 개인정보 처리방침에 들어갈 운영 기관·개인정보 보호책임자·연락처 (예: 가나고등학교 / 교감 홍길동 / 02-000-0000)
+OPERATOR_NAME=
+PRIVACY_OFFICER=
+PRIVACY_CONTACT=
 """
 
 

@@ -49,11 +49,12 @@ else
 fi
 
 # ── 선생님이 바꾸는 설정 (처음 한 번만 만든다. 이후에는 live-config 로 고친다)
-SETTING_NAMES="GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY LOW_BANDWIDTH MIC_LOCK"
+SETTING_NAMES="GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY LOW_BANDWIDTH MIC_LOCK OPERATOR_NAME PRIVACY_OFFICER PRIVACY_CONTACT RETENTION SERVER_REGION"
 if [ ! -f "$DIR/app.env" ]; then
   {
     echo "# 수업 사이트 설정. 바꾸려면 콘솔에서:  live-config 이름=값   (예: live-config ADMIN_EMAILS=me@gmail.com)"
-    for name in GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY; do
+    for name in GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY \
+                OPERATOR_NAME PRIVACY_OFFICER PRIVACY_CONTACT; do
       value=""
       if [ -f "$SETTINGS" ]; then
         value="$(grep -E "^$name=" "$SETTINGS" | tail -n 1 | cut -d= -f2- | tr -d '\r' || true)"
@@ -192,10 +193,17 @@ EOF
 
 cat > "$DIR/docker-compose.yaml" <<EOF
 # 자동 생성됨 (setup.sh). 서버가 재부팅되면 모두 자동으로 다시 켜진다.
+# 로그는 서비스마다 10MB × 3개까지만 남긴다 (디스크가 차지 않게, 접속 기록을 오래 두지 않게)
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
   caddy:
     image: $CADDY_IMAGE
     command: run --config /etc/caddy.yaml --adapter yaml
+    logging: *logging
     restart: unless-stopped
     network_mode: host
     volumes:
@@ -204,6 +212,7 @@ services:
   livekit:
     image: $LIVEKIT_IMAGE
     command: --config /etc/livekit.yaml
+    logging: *logging
     restart: unless-stopped
     network_mode: host
     volumes:
@@ -211,6 +220,7 @@ services:
   db:
     image: $POSTGRES_IMAGE
     command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "max_connections=60"]
+    logging: *logging
     restart: unless-stopped
     network_mode: host
     environment:
@@ -226,6 +236,7 @@ services:
   app:
     build: ./src
     image: live-class-app
+    logging: *logging
     restart: unless-stopped
     network_mode: host
     env_file: [app.env, auto.env]
@@ -324,6 +335,9 @@ cat > "$INFO" <<EOF
      live-config GOOGLE_CLIENT_ID=….apps.googleusercontent.com
   3) 전체 관리자·학생 계정 도메인도 확인:
      live-config ADMIN_EMAILS=내이메일@gmail.com ALLOWED_DOMAINS=학생계정도메인
+  4) 개인정보 처리방침에 들어갈 학교 정보:
+     live-config OPERATOR_NAME="○○고등학교" PRIVACY_OFFICER="교감 홍길동" PRIVACY_CONTACT="02-000-0000"
+     확인: https://$SITE/live/privacy  ·  보호자 안내문(인쇄용): https://$SITE/live/notice
 
 자주 쓰는 명령
   live-config            지금 설정 보기 / live-config 이름=값 으로 바꾸기
