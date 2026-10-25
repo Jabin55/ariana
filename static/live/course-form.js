@@ -29,38 +29,33 @@ async function courseForm(c, done) {
   const last = [...(ME.memberships || [])].reverse().find((m) => m.affil_type || m.email) || {};
   const AFFIL = { school: "교사", univ: "대학 교원", cert: "교원자격 소지자", other: "기타" };
   const kind = last.affil_type ? AFFIL[last.affil_type] : ME.is_admin ? "전체 관리자" : "교사";
-  const instructor = h("input", { value: c.instructor || ME.name || "", maxlength: 30, required: true });
-  const email = h("input", { type: "email", value: c.contact_email || last.email || ME.email || "", maxlength: 200, required: true });
-  const phone = h("input", { value: c.contact_phone || last.contact || "", maxlength: 40, required: true, placeholder: "휴대전화 번호" });
+  // 교강사 정보는 가입(등록 신청) 때 적은 그대로 보여 준다. 여기서는 고치지 않는다 (공개 여부만)
+  const instructorName = c.instructor || ME.name || "";
+  const emailText = c.contact_email || last.email || ME.email || "";
+  const phoneText = c.contact_phone || last.contact || "";
   const [emailToggle, showEmail] = toggle(!!c.show_email);
   const [phoneToggle, showPhone] = toggle(!!c.show_phone);
 
-  // 거점학교는 반드시 울산 고등학교: 강사는 승인받은 거점학교 중에서, 전체 관리자는 울산 고등학교 목록 전체에서
+  // 개설학교 정보: 소속 교육청과 거점학교를 목록에서만 고른다 (고칠 때도 바꿀 수 있음, 정식 이름만)
+  // 강사는 승인받은 거점학교 중에서, 전체 관리자는 울산 고등학교 목록 전체에서
   const leadHubs = ME.lead_hubs || [];
   const byName = !leadHubs.length || ME.is_admin;
-  const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...schools])].sort();
-  const hubSel = h("select", { required: isNew }, h("option", { value: "" }, "거점학교를 고르세요"),
-    byName ? schoolNames.map((n) => h("option", { value: n }, n)) : leadHubs.map((x) => h("option", { value: x.id }, x.name)));
-  if (!byName && leadHubs.length === 1) hubSel.value = String(leadHubs[0].id);
-  const hubIdNow = () => (isNew ? (byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value) || null) : c.hub_id);
+  const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...schools, ...(c.hub_school ? [c.hub_school] : [])])].sort();
+  const office = h("select", { required: true }, meta.offices.map((o) => h("option", { value: o, selected: o === "울산광역시교육청" }, o)));
+  const hubSel = h("select", { required: true }, h("option", { value: "" }, "거점학교를 고르세요"),
+    byName ? schoolNames.map((n) => h("option", { value: n, selected: n === c.hub_school }, n))
+      : leadHubs.map((x) => h("option", { value: x.id, selected: x.id === c.hub_id }, x.name)));
+  if (isNew && !byName && leadHubs.length === 1) hubSel.value = String(leadHubs[0].id);
+  const officeNote = h("span", { class: "muted", style: "font-size:0.85rem" });
+  office.addEventListener("change", () => {
+    const ulsan = office.value === "울산광역시교육청";
+    hubSel.disabled = !ulsan;
+    officeNote.textContent = ulsan ? "" : "거점학교는 울산광역시교육청 소속 고등학교만 고를 수 있어요.";
+  });
+  const hubIdNow = () => (byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || (hubSel.value === c.hub_school ? c.hub_id : null)) : Number(hubSel.value) || null);
 
-  // 참여 학교: 이 강좌를 함께 듣는 학교 (비우면 울산 모든 고등학교 학생이 신청)
-  const joined = [...(c.schools || [])];
-  const joinBox = h("div", { class: "chips" });
-  const dlId = `join-${c.id || "new"}-${Math.random().toString(36).slice(2, 7)}`;
-  const joinInput = h("input", { list: dlId, maxlength: 60, autocomplete: "off", placeholder: "학교명을 입력하세요 (예: 신정)" });
-  const drawJoined = () => joinBox.replaceChildren(...(joined.length ? joined.map((n, i) => h("span", { class: "chip" }, n,
-    h("button", { type: "button", "aria-label": `${n} 빼기`, onclick: () => { joined.splice(i, 1); drawJoined(); } }, "×")))
-    : [h("span", { class: "muted", style: "font-size:0.85rem" }, "추가하지 않으면 울산의 모든 고등학교 학생이 신청할 수 있어요.")]));
-  const addJoined = () => {
-    const n = joinInput.value.trim();
-    if (!n) return;
-    if (schools.length && !schools.includes(n)) { toast("울산 고등학교 목록에 있는 학교를 골라 주세요."); return; }
-    if (!joined.includes(n)) joined.push(n);
-    joinInput.value = "";
-    drawJoined();
-  };
-  drawJoined();
+  const joined = [...(c.schools || [])]; // (참여 학교 칸은 없앴다. 예전 강좌 값은 그대로 둔다)
+  const dlId = `cf-${c.id || "new"}-${Math.random().toString(36).slice(2, 7)}`;
 
   // 팀티칭: 같은 거점학교에서 승인받은 강사 중 보조교사
   const [teamToggle, team] = toggle(!!c.team_teaching, "함", "안 함");
@@ -87,18 +82,17 @@ async function courseForm(c, done) {
   const step1 = h("section", { class: "wz-step" },
     h("h3", { class: "wz-h" }, "수업 담당 교강사 정보"),
     h("div", { class: "wz-table two" },
-      row("교사명", h("strong", {}, ME.name || "-")), row("유형", kind),
+      row("교사명", h("strong", {}, instructorName || "-")), row("유형", kind),
       row("소속 교육청", last.office || "-"), row("소속 학교", ME.school || "-"),
-      row("이메일", email, emailToggle), row("연락처", phone, phoneToggle)),
-    h("div", { class: "wz-table" }, row("학생에게 보일 강사명", instructor)),
-    h("h3", { class: "wz-h" }, "개설 및 참여 학교 정보"),
-    h("div", { class: "wz-table" },
-      row("거점학교", isNew ? [h("span", { class: "chip fixed" }, "울산광역시교육청"), hubSel] : h("strong", {}, c.hub_school || "-")),
-      row("참여 학교", h("div", { class: "row" }, joinInput, h("datalist", { id: dlId }, schools.map((n) => h("option", { value: n }))),
-        h("button", { type: "button", onclick: addJoined }, "추가")), joinBox)),
+      row("이메일", h("span", {}, emailText || "-"), emailToggle), row("연락처", h("span", {}, phoneText || "-"), phoneToggle)),
+    h("p", { class: "muted", style: "margin:0;font-size:0.85rem" }, "교강사 정보는 등록 신청 때 적은 내용이에요. 바꾸려면 '내 정보'나 등록 신청서에서 고쳐 주세요."),
+    h("h3", { class: "wz-h" }, "개설학교 정보"),
+    h("div", { class: "wz-table two" },
+      row("소속 교육청", office, officeNote),
+      row("거점학교", hubSel,
+        byName && !schoolNames.length ? h("span", { class: "error", style: "font-size:0.85rem" }, "울산 고등학교 목록이 비어 있어요. 전체 관리 → 🏫 울산 고등학교 목록을 먼저 채워 주세요.") : null)),
     h("h3", { class: "wz-h" }, "팀 티칭 교강사 정보"),
     h("div", { class: "wz-table" }, row("팀티칭 여부", teamToggle, coBox)));
-  joinInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addJoined(); } });
 
   /* ───── 2. 수업 개설 정보 ───── */
   const title = h("input", { name: "title", value: c.title || "", maxlength: 60, required: true, placeholder: "학생에게 보일 수업 이름 (예: 판례로 배우는 법과 사회)" });
@@ -282,7 +276,7 @@ async function courseForm(c, done) {
     for (const el of stepEls[n].querySelectorAll("input, select, textarea")) {
       if (!el.disabled && !el.checkValidity()) { el.reportValidity(); return false; }
     }
-    if (n === 0 && isNew && !hubSel.value) { err.textContent = "거점학교를 골라 주세요. 거점학교 없이는 수업을 열 수 없어요."; return false; }
+    if (n === 0 && !hubSel.value) { err.textContent = "거점학교를 골라 주세요. 거점학교 없이는 수업을 열 수 없어요."; return false; }
     if (n === 1 && Number(exam.value) + Number(perf.value) !== 100) { err.textContent = "지필평가와 수행평가 비율을 더하면 100%가 되어야 해요."; return false; }
     return true;
   };
@@ -304,15 +298,19 @@ async function courseForm(c, done) {
       grades: grades.filter((x) => x.checked).map((x) => Number(x.value)), capacity: Number(capacity.value),
       recruit_start: rStart.value, recruit_start_time: rStartT.value, recruit_end: rEnd.value, recruit_end_time: rEndT.value,
       start_date: start.value, end_date: end.value, exam_ratio: Number(exam.value), perf_ratio: Number(perf.value),
-      instructor: instructor.value.trim(), description: desc.value.trim(),
-      contact_email: email.value.trim(), contact_phone: phone.value.trim(), show_email: showEmail.checked, show_phone: showPhone.checked,
+      instructor: instructorName, description: desc.value.trim(),
+      contact_email: emailText, contact_phone: phoneText, show_email: showEmail.checked, show_phone: showPhone.checked,
       schools: joined, team_teaching: team.checked, co_teachers: team.checked ? [...coChosen] : [],
       class_days: days.filter((x) => x.checked).map((x) => Number(x.value)), class_start: tStart.value, class_end: tEnd.value,
       sessions: sessions.map((x) => ({ date: x.date, start: x.start || "", end: x.end || "", topic: x.topic || "" })),
     };
+    // 거점학교 (새로 만들 때와 고칠 때 모두): 승인받은 거점학교는 번호로, 그 밖에는 울산 고등학교 이름으로
+    const hid = byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value);
     if (isNew) {
-      body.hub_id = byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value);
-      body.hub_school = body.hub_id ? "" : hubSel.value;
+      body.hub_id = hid;
+      body.hub_school = hid ? "" : hubSel.value;
+    } else if (hubSel.value !== (byName ? c.hub_school : String(c.hub_id))) {
+      if (hid) body.hub_id = hid; else body.hub_school = hubSel.value;
     }
     // 같은 이름의 수업이 이미 있으면 한 번 더 묻는다 (학생이 다른 쪽에 신청해 수업에 못 들어오는 일을 막기)
     const same = (typeof teacherCourses !== "undefined" ? teacherCourses : [])

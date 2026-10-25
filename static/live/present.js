@@ -50,7 +50,13 @@ class Presenter {
     const prev = this.view;
     this.view = view;
     if (!view) { this.pageSize = null; return; }
-    if (prev && prev.key === view.key && prev.pages === view.pages) return;
+    if (prev && prev.key === view.key && prev.pages === view.pages) {
+      // 같은 쪽: 확대 배율이 바뀌면 다시 그리고, 위치만 바뀌면 옮기기만 한다
+      if ((prev.zoom?.z || 1) !== this.zoomZ()) this.layout();
+      else this.place();
+      return;
+    }
+    this.localZoom = null;
     const seq = ++this.renderSeq;
     if (view.mode === "board") {
       this.pageSize = { w: 1600, h: 1600 / BOARD_RATIO };
@@ -91,6 +97,10 @@ class Presenter {
   /** 쪽 수를 알아야 할 때(선생님이 발표를 시작할 때) */
   async pageCount(fid) { return (await this.doc(fid)).numPages; }
 
+  /** 확대 배율 (PDF 발표만, 선생님이 정하면 학생 화면도 같이) */
+  zoomZ() { return this.view?.mode === "slides" ? (this.localZoom?.z || this.view.zoom?.z || 1) : 1; }
+  zoomXY() { const z = this.localZoom || this.view?.zoom || {}; return [z.x ?? 0.5, z.y ?? 0.5]; }
+
   /** 자리 크기에 맞춰 종이 크기를 정하고 다시 그린다 */
   layout() {
     if (!this.pageSize) return;
@@ -103,10 +113,13 @@ class Presenter {
     let w = W;
     let hh = w / ratio;
     if (hh > H) { hh = H; w = hh * ratio; }
-    w = Math.floor(w); hh = Math.floor(hh);
+    const z = this.zoomZ();
+    w = Math.floor(w * z); hh = Math.floor(hh * z);
     this.sheet.style.width = `${w}px`;
     this.sheet.style.height = `${hh}px`;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.place();
+    // 크게 확대해도 너무 큰 그림을 만들지 않게(기기 메모리) 해상도를 제한한다
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, 4096 / Math.max(w, hh));
     for (const c of [this.pageCanvas, this.inkCanvas]) {
       c.width = Math.round(w * dpr);
       c.height = Math.round(hh * dpr);
@@ -114,6 +127,34 @@ class Presenter {
     this.dpr = dpr;
     this.drawPage();
     this.redrawInk();
+  }
+
+  /** 확대했을 때 보이는 부분: 선생님이 고른 지점이 가운데 오게 (가장자리 밖은 보이지 않게) */
+  place() {
+    const z = this.zoomZ();
+    this.area.classList.toggle("zoomed", z > 1);
+    if (z <= 1) { this.sheet.style.left = ""; this.sheet.style.top = ""; return; }
+    const W = this.area.clientWidth, H = this.area.clientHeight;
+    const sw = this.sheet.offsetWidth, sh = this.sheet.offsetHeight;
+    const [x, y] = this.zoomXY();
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const left = sw <= W ? (W - sw) / 2 : clamp(W / 2 - x * sw, W - sw, 0);
+    const top = sh <= H ? (H - sh) / 2 : clamp(H / 2 - y * sh, H - sh, 0);
+    this.sheet.style.left = `${Math.round(left)}px`;
+    this.sheet.style.top = `${Math.round(top)}px`;
+  }
+
+  /** 선생님: 확대·이동 (학생 화면에도 같이 보낸다) */
+  setZoom(z, x, y) {
+    if (this.view?.mode !== "slides") return;
+    const [cx, cy] = this.zoomXY();
+    const nz = Math.min(4, Math.max(1, Math.round(z * 100) / 100));
+    const nx = Math.min(1, Math.max(0, x ?? cx)), ny = Math.min(1, Math.max(0, y ?? cy));
+    const sizeChanged = nz !== this.zoomZ();
+    this.localZoom = { z: nz, x: nx, y: ny };
+    if (sizeChanged) this.layout(); else this.place();
+    clearTimeout(this.zoomTimer);
+    this.zoomTimer = setTimeout(() => { this.opt.send({ t: "present_zoom", z: nz, x: nx, y: ny }); }, 60);
   }
 
   drawPage() {
@@ -207,6 +248,11 @@ class Presenter {
       if (!this.key || e.button > 0) return;
       e.preventDefault();
       c.setPointerCapture(e.pointerId);
+      if (this.tool.kind === "pan") { // ✋ 이동: 확대한 자료를 끌어서 옮긴다
+        const [x0, y0] = this.zoomXY();
+        cur = { pan: true, sx: e.clientX, sy: e.clientY, x0, y0 };
+        return;
+      }
       if (this.tool.kind === "eraser") { cur = { eraser: true }; erase(pos(e)); return; }
       const hl = this.tool.kind === "hl";
       cur = { key: this.key, id: Math.random().toString(36).slice(2, 12), color: this.tool.color, size: hl ? 18 : 3, hl };
@@ -220,13 +266,25 @@ class Presenter {
     });
     c.addEventListener("pointermove", (e) => {
       if (!cur) return;
+      if (cur.pan) {
+        const sw = this.sheet.offsetWidth, sh = this.sheet.offsetHeight;
+        this.setZoom(this.zoomZ(), cur.x0 - (e.clientX - cur.sx) / sw, cur.y0 - (e.clientY - cur.sy) / sh);
+        return;
+      }
       if (cur.eraser) { erase(pos(e)); return; }
       const pts = (e.getCoalescedEvents?.() || [e]).map(pos);
       this.addPoints({ key: cur.key, id: cur.id, color: cur.color, size: cur.size, hl: cur.hl, pts });
       pending.push(...pts);
       if (!timer) timer = setTimeout(flushPts, 40); // 0.04초마다 모아서 보낸다
     });
-    const end = () => { if (cur && !cur.eraser) { clearTimeout(timer); flushPts(); } cur = null; };
+    const end = () => { if (cur && !cur.eraser && !cur.pan) { clearTimeout(timer); flushPts(); } cur = null; };
+    // Ctrl + 마우스 휠로도 확대·축소 (마우스가 있는 곳을 중심으로)
+    c.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey || this.view?.mode !== "slides") return;
+      e.preventDefault();
+      const r = c.getBoundingClientRect();
+      this.setZoom(this.zoomZ() * (e.deltaY < 0 ? 1.2 : 1 / 1.2), (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    }, { passive: false });
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
   }

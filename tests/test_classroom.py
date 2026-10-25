@@ -805,7 +805,12 @@ def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
         state(tw)
         tw.send_json({"t": "present_open", "file": fid, "pages": 3})
         st = state(sw, lambda m: m["present"] is not None)
-        assert st["present"] == {"mode": "slides", "file": fid, "name": "선거제도.pdf", "page": 1, "pages": 3, "key": f"{fid}:1"}
+        assert st["present"] == {"mode": "slides", "file": fid, "name": "선거제도.pdf", "page": 1, "pages": 3, "key": f"{fid}:1",
+                                 "zoom": {"z": 1, "x": 0.5, "y": 0.5}}
+        # 확대: 선생님이 확대하면 학생 화면도 같은 곳을 같은 배율로 (최대 4배)
+        tw.send_json({"t": "present_zoom", "z": 9, "x": 0.25, "y": 0.75})
+        assert state(sw, lambda m: m["present"]["zoom"]["z"] > 1)["present"]["zoom"] == {"z": 4.0, "x": 0.25, "y": 0.75}
+        sw.send_json({"t": "present_zoom", "z": 1})  # 학생은 바꿀 수 없다
         # 판서: 그리는 중에 나눠 보낸 점이 학생에게 바로 간다 (상태 전체를 다시 보내지 않음)
         tw.send_json({"t": "stroke", "key": f"{fid}:1", "id": "a1", "color": "#d92d20", "size": 3, "pts": [[0.1, 0.1], [0.2, 0.2]]})
         tw.send_json({"t": "stroke", "key": f"{fid}:1", "id": "a1", "pts": [[0.3, 0.3]]})
@@ -815,6 +820,7 @@ def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
         # 다음 쪽 → 그 쪽 판서(빈 것)를 받는다. 마지막 쪽 너머로는 안 간다
         tw.send_json({"t": "present_page", "page": 2})
         assert until(sw, lambda m: m["t"] == "strokes")["key"] == f"{fid}:2"
+        assert state(sw, lambda m: m["present"]["page"] == 2)["present"]["zoom"]["z"] == 1  # 쪽을 넘기면 확대가 풀린다
         tw.send_json({"t": "present_page", "page": 9})
         assert state(sw, lambda m: m["present"]["page"] == 3)["present"]["page"] == 3
         tw.send_json({"t": "present_page", "page": 1})
@@ -1505,3 +1511,14 @@ def test_private_chat_layout_and_roster():
         assert [x["identity"] for x in lay["pair"]] == [f"s-{sid_a}", f"s-{sid_b}"]
         tw.send_json({"t": "layout", "mode": "grid"})
         assert state(sb, lambda m: m["layout"]["mode"] == "grid")["layout"]["pair"] == []
+
+
+def test_course_hub_can_be_changed_to_listed_school(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "신정고등학교\n울산고등학교"})
+    cid = boss.post("/api/courses", json={**COURSE, "hub_school": "신정고등학교"}).json()["id"]
+    assert boss.post(f"/api/courses/{cid}", json={"hub_school": "아무고"}).status_code == 400  # 목록에 없는 이름
+    assert boss.post(f"/api/courses/{cid}", json={"hub_school": "울산고등학교"}).status_code == 200
+    c = boss.get("/api/courses/mine").json()["courses"][0]
+    assert c["hub_school"] == "울산고등학교" and c["hub_id"]

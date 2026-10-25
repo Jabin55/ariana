@@ -880,3 +880,27 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .person.absent { opacity: 0.55; }
 #debate-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 #debate-bar[hidden] { display: none; }
+/* 자료 확대: 종이를 키우고 보이는 부분만 자리 안에 */
+.present-area.zoomed { display: block; }
+.present-area.zoomed .sheet { position: absolute; }
+.sheet canvas.ink.drawable.pan { cursor: grab; }
+.reveal-preview { margin-top: 10px; padding: 10px; border: 2px dashed var(--border); border-radius: 14px; background: var(--surface-2); }
+.activity.preview { pointer-events: none; }
+
+/* ───── 노트북·태블릿 화면에 맞게 가로로 넓게 (세로로 길게 늘어지지 않게) ───── */
+.landing { max-width: 1280px; padding: 24px 24px 48px; }
+.site-header-in { max-width: 1280px; }
+.site-main { max-width: 1240px; }
+.home-wrap, .bb-in, .g-hero-in { max-width: 1240px; }
+.materials { max-width: 1280px; }
+.landing .card.narrow { max-width: none; }
+#profile-view, #role-view { max-width: 720px !important; margin-left: auto; margin-right: auto; }
+#guest-view { max-width: 980px !important; margin-left: auto; margin-right: auto; }
+@media (min-width: 900px) {
+  /* 학생 마이페이지: 카드를 두 줄로 나란히 */
+  #student-view:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  #student-view > * { margin-top: 0 !important; }
+  .landing > section.card.narrow[id^="student-"]:not([hidden]) { margin-top: 16px; }
+  /* 강좌 개설: 표 두 칸 */
+  .wz-row { grid-template-columns: 150px minmax(0, 1fr); }
+}

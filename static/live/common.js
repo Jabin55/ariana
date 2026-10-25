@@ -400,6 +400,26 @@ function resultBars(a) {
 
 const KIND_NAMES = { ox: "OX 퀴즈", choice: "객관식", poll: "투표", text: "주관식" };
 
+/** 선생님 화면용: 결과를 공개했을 때 학생 화면에 보이는 모습 (이름 없이, 정답 표시·막대그래프) */
+function revealPreview(a) {
+  const card = h("section", { class: "activity preview" },
+    h("div", { class: "kind" }, `${KIND_NAMES[a.kind]}${a.open ? "" : " · 마감됨"}`),
+    h("h3", {}, a.prompt));
+  if (a.kind === "text") {
+    const texts = (a.responses || []).map((r) => r.value);
+    card.append(h("div", { class: "muted" }, `친구들의 답 (${texts.length}개)`),
+      h("div", { class: "texts" }, texts.map((t) => h("div", {}, t))));
+  } else {
+    card.append(h("div", { class: `options ${a.kind === "ox" ? "ox" : ""}` }, a.options.map((opt, i) =>
+      h("button", { class: a.correct === i ? "correct" : "", disabled: true }, a.kind === "ox" ? opt : `${i + 1}. ${opt}`))));
+    if (a.correct !== null && a.correct !== undefined) {
+      card.append(h("div", { class: "muted", style: "font-size:0.85rem" }, "정답을 맞힌 학생에게는 '⭕ 정답이에요!', 틀린 학생에게는 '❌ 아쉬워요'가 보여요."));
+    }
+    card.append(resultBars(a));
+  }
+  return card;
+}
+
 /* ───────────────────────── 화질 설정 (저대역폭 모드) ───────────────────────── */
 
 /** 화상 서버 작업이 끝나지 않고 멈추는 경우(방이 닫히는 중 등)를 막는다 */

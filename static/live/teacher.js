@@ -668,7 +668,8 @@ function renderPresent() {
   $("#present-btn").classList.toggle("on", v?.mode === "slides");
   $("#board-btn").classList.toggle("on", v?.mode === "board");
   presenter.setView(v);
-  const sig = JSON.stringify([v, S.files, showStudents, presenter.tool]);
+  presenter.inkCanvas.classList.toggle("pan", presenter.tool.kind === "pan");
+  const sig = JSON.stringify([v, S.files, showStudents, presenter.tool, presenter.zoomZ()]);
   if (sig === presentSig) return;
   presentSig = sig;
   const bar = $("#present-bar");
@@ -689,6 +690,14 @@ function renderPresent() {
     ...PEN_COLORS.map((c, i) => tool("pen", c, "●", ["검정 펜", "빨강 펜", "파랑 펜", "초록 펜"][i])),
     tool("hl", "#f5c400", "▮", "형광펜"),
     tool("eraser", null, "지우개", "지우개 (선을 문지르면 지워져요)"),
+    ...(v.mode === "slides" ? [
+      h("span", { class: "sep" }),
+      h("button", { class: "small", title: "확대 (Ctrl + 마우스 휠로도 돼요)", onclick: () => presenter.setZoom(presenter.zoomZ() * 1.5) }, "🔍＋"),
+      h("button", { class: "small", title: "축소", disabled: presenter.zoomZ() <= 1, onclick: () => presenter.setZoom(presenter.zoomZ() / 1.5) }, "🔍－"),
+      h("span", { class: "pageno", title: "확대 배율 (학생 화면도 같이 확대돼요)" }, `${Math.round(presenter.zoomZ() * 100)}%`),
+      presenter.zoomZ() > 1 ? tool("pan", null, "✋ 이동", "확대한 자료를 끌어서 보고 싶은 곳으로 옮겨요") : null,
+      presenter.zoomZ() > 1 ? h("button", { class: "small", title: "쪽 전체 보기", onclick: () => { presenter.setZoom(1, 0.5, 0.5); if (presenter.tool.kind === "pan") presenter.tool = { kind: "pen", color: PEN_COLORS[0] }; } }, "맞춤") : null,
+    ] : []),
     h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"),
     h("button", { class: "small", title: "이 쪽 판서 모두 지우기", onclick: () => { if (confirm("이 쪽에 그린 것을 모두 지울까요?")) presenter.clear(); } }, "🗑"),
     h("span", { class: "grow" }),
@@ -1090,6 +1099,11 @@ function renderActivity() {
         a.reveal ? "🙈 결과 숨기기" : "📊 학생에게 결과 공개"),
       h("button", { class: "danger", onclick: () => sock.send({ t: "activity_clear" }) }, "끝내기")));
   box.append(card);
+  // 결과를 공개하면 학생 화면에 어떻게 보이는지 선생님도 함께 본다 (학생 이름은 보이지 않음)
+  box.append(h("div", { class: "reveal-preview" },
+    h("div", { class: "muted", style: "font-size:0.85rem;margin-bottom:6px" },
+      a.reveal ? "📱 지금 학생 화면 (결과 공개 중)" : "📱 결과를 공개하면 학생 화면에 이렇게 보여요"),
+    revealPreview(a)));
   // 메인 화면에도 짧게 표시
   mini.append(h("div", { class: "banner" }, h("strong", {}, `📝 ${KIND_NAMES[a.kind]}`),
     h("span", { class: "grow" }, a.prompt), h("span", { class: "muted" }, `응답 ${a.total}/${online}`),
@@ -1157,6 +1171,7 @@ let qSig = "";
 const qDrafts = new Map();
 
 function renderQuestions() {
+  if (!$("#questions")) return; // 질문 탭은 없앴다 (학생은 1:1 채팅으로 보낸다)
   const qs = S.questions;
   const open = qs.filter((q) => !q.done).length;
   $("#q-badge").textContent = open;

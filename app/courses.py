@@ -448,7 +448,8 @@ async def create_course(req: CourseReq, request: Request):
 class CourseUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=60)
     instructor: str | None = Field(default=None, min_length=1, max_length=30)
-    hub_school: str | None = Field(default=None, min_length=1, max_length=60)
+    hub_school: str | None = Field(default=None, min_length=1, max_length=60)  # 거점학교 바꾸기 (울산 고등학교 목록에서)
+    hub_id: int | None = None
     start_date: str | None = Field(default=None, pattern=DATE)
     end_date: str | None = Field(default=None, pattern=DATE)
     description: str | None = Field(default=None, max_length=3000)
@@ -485,6 +486,39 @@ class CourseUpdate(BaseModel):
     sessions: list[SessionIn] | None = Field(default=None, max_length=200)
 
 
+async def new_hub(t: dict, hub_id: int | None, name: str) -> dict:
+    """강좌의 거점학교 바꾸기: 강사는 승인받은 거점학교로, 전체 관리자는 울산 고등학교 목록의 어느 학교로든"""
+    name = " ".join(name.split())
+    lead = {h["id"]: h["name"] for h in t["lead_hubs"]}
+    if hub_id is None:
+        hub_id = next((i for i, n in lead.items() if n == name), None)
+    if hub_id is not None:
+        if hub_id not in lead and not t["is_admin"]:
+            raise HTTPException(403, "강사로 승인받은 거점학교로만 바꿀 수 있어요.")
+
+        def find():
+            with db.engine.connect() as c:
+                return c.execute(select(db.hubs).where(db.hubs.c.id == hub_id)).first()
+
+        hub = await db.run(find)
+        if not hub:
+            raise HTTPException(404, "거점학교를 찾을 수 없어요.")
+        return {"hub_id": hub.id, "hub_school": hub.name}
+    schools = await db.run(auth.get_schools)
+    if not name or (schools and name not in schools):
+        raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
+    if not t["is_admin"]:
+        if t["email"].lower() in auth.TEACHER_EMAILS:  # 거점학교 밖 강사(설정으로 등록): 학교 이름만
+            return {"hub_id": None, "hub_school": name}
+        raise HTTPException(403, "강사로 승인받은 거점학교로만 바꿀 수 있어요.")
+
+    def make():
+        with db.engine.begin() as c:
+            return hub_for_school(c, name)
+
+    return {"hub_id": await db.run(make), "hub_school": name}
+
+
 @router.post("/api/courses/{course_id}")
 async def update_course(course_id: int, req: CourseUpdate, request: Request):
     t = await require_user(request, "teacher")
@@ -495,12 +529,13 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
     extra = {**subject_values(data, cur), **extra_values(data, await db.run(auth.get_schools))}
     if data.get("capacity") == 0:
         extra["capacity"] = None
-    simple = {k: v for k, v in data.items() if v is not None and k not in SUBJECT_KEYS and k != "co_teachers"}
+    simple = {k: v for k, v in data.items()
+              if v is not None and k not in SUBJECT_KEYS and k not in ("co_teachers", "hub_id", "hub_school")}
     values = {k: (int(v) if isinstance(v, bool) else grades_text(v) if k == "grades" else v.strip())
               for k, v in simple.items()}
     values.update(extra)
-    if cur.hub_id:
-        values.pop("hub_school", None)  # 등록된 거점학교 강좌는 거점학교를 바꾸지 않는다
+    if data["hub_id"] is not None or data["hub_school"]:
+        values.update(await new_hub(t, data["hub_id"], data["hub_school"] or ""))
     check_period(values.get("start_date", cur.start_date), values.get("end_date", cur.end_date))
     if req.archived:
         values["open"] = 0  # 보관하면 수강신청도 닫는다

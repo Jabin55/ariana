@@ -412,6 +412,7 @@ function renderActivity() {
 }
 
 function renderQuestions() {
+  if (!$("#myquestions")) return; // 질문 탭은 없앴다 (선생님에게 1:1 채팅으로)
   $("#myquestions").replaceChildren(...S.my_questions.slice().reverse().map((q) =>
     h("div", { class: `q ${q.done ? "done" : ""}` },
       h("div", { class: "meta" }, `${fmtTime(q.ts)} · ${q.done ? "선생님이 확인했어요" : "확인 대기 중"}`),
@@ -462,13 +463,13 @@ $("#chatform").addEventListener("submit", (e) => {
 });
 submitOnEnter($("#chatinput"), $("#chatform"));
 
-$("#askform").addEventListener("submit", (e) => {
+$("#askform")?.addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("#askinput");
   const text = input.value.trim();
   if (text && sock?.send({ t: "question", text })) { input.value = ""; toast("선생님께 질문을 보냈어요."); }
 });
-submitOnEnter($("#askinput"), $("#askform"));
+if ($("#askinput")) submitOnEnter($("#askinput"), $("#askform"));
 
 $("#mic").addEventListener("click", () => setMic(!prefs.mic));
 $("#cam").addEventListener("click", () => setCam(!prefs.cam));

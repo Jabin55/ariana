@@ -458,7 +458,7 @@ def present_view(k: Klass) -> dict | None:
     if not f:
         return None
     return {"mode": "slides", "file": f["id"], "name": f["name"], "page": p["page"], "pages": f["pages"],
-            "key": f"{f['id']}:{p['page']}"}
+            "key": f"{f['id']}:{p['page']}", "zoom": p.get("zoom") or {"z": 1, "x": 0.5, "y": 0.5}}
 
 
 def teacher_state(k: Klass) -> dict:
@@ -962,6 +962,15 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
         else:
             f = next((f for f in k.files if f["id"] == k.present["file"]), None)
             k.present["page"] = min(max(1, f["pages"] if f else 1), max(1, page))
+            k.present["zoom"] = None  # 쪽을 넘기면 확대를 풀어 쪽 전체를 보여 준다
+    elif t == "present_zoom" and k.present and k.present["mode"] == "slides":  # 자료 확대 (학생 화면도 같이)
+        try:
+            z = min(4.0, max(1.0, float(m.get("z", 1))))
+            x = min(1.0, max(0.0, float(m.get("x", 0.5))))
+            y = min(1.0, max(0.0, float(m.get("y", 0.5))))
+        except (TypeError, ValueError):
+            return True
+        k.present["zoom"] = None if z <= 1.001 else {"z": round(z, 2), "x": round(x, 4), "y": round(y, 4)}
     elif t == "present_close":
         k.present = None
     elif t == "file_remove":
@@ -1211,6 +1220,11 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
         private = m.get("to") == "teacher"  # 선생님에게만 1:1 (학생끼리 1:1 채팅은 없다)
         post_chat(k, {"id": k.next_id(), "role": "student", "sid": s.id, "name": s.name, "text": text,
                       "scope": f"dm:{s.id}" if private else k.room_of(s), "private": private, "ts": now})
+        if private:  # 선생님에게 보낸 1:1 은 질문 기록으로도 남긴다 (수업이 끝나도 질문·답변 기록에서 볼 수 있게)
+            q = {"id": uuid.uuid4().hex, "sid": s.id, "name": s.name, "text": text, "ts": now, "done": False, "reply": ""}
+            k.questions.append(q)
+            del k.questions[:-300]
+            write_question(_question_insert, k.db_id, int(s.id), dict(q))
     elif t == "question":
         text = clean(m.get("text"))
         if text:
@@ -1291,6 +1305,13 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
             post_chat(k, {"id": k.next_id(), "role": "teacher", "sid": None, "name": "선생님",
                           "text": text, "scope": scope, "private": dm,
                           "to_name": k.students[scope[3:]].name if dm else None, "ts": time.time()})
+            if dm:  # 1:1 답장은 그 학생의 가장 최근 질문 기록에 답변으로 남긴다
+                mine = [q for q in k.questions if q["sid"] == scope[3:]]
+                if mine:
+                    q = next((x for x in reversed(mine) if not x["reply"]), mine[-1])
+                    q["reply"] = f"{q['reply']}\n{text}".strip()
+                    q["done"] = True
+                    write_question(_question_update, q["id"], {"reply": q["reply"], "done": 1, "replied_at": time.time()})
     elif t == "layout":  # 학생 화면 구성
         mode = m.get("mode")
         if mode in ("teacher", "grid", "debate"):
