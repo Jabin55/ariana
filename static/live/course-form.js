@@ -136,6 +136,11 @@ async function courseForm(c, done) {
   desc.value = c.description || "";
   const file = h("input", { type: "file", accept: ".pdf,.hwp,.hwpx,.docx,.doc" });
 
+  // 수업 시수: 학점 × 16시간 (예: 3학점 → 48시간)
+  const hoursText = h("strong", {}, "");
+  const showHours = () => { hoursText.textContent = credits.value ? `${Number(credits.value) * meta.hours_per_credit}시간` : "-"; };
+  credits.addEventListener("input", showHours);
+  showHours();
   const lockSubject = () => {
     const found = !custom.checked && meta.subjects.find((x) => x.name === subject.value.trim());
     for (const el of [group, area, type]) el.disabled = !!found;
@@ -166,7 +171,7 @@ async function courseForm(c, done) {
     h("div", { class: "wz-table two" },
       row("교과(군)", group), row("교과 영역", area),
       row("과목 선택 구분", type), row("학년도", schoolYear),
-      row("수업 단위 (학점)", credits), row("성취도", achievement)),
+      row("학점", credits), row("수업 시수", hoursText), row("성취도", achievement)),
     h("div", { class: "wz-table" },
       row("수업 학기", h("div", { class: "row" }, terms)),
       row("대상 학년", h("div", { class: "row" }, grades.map((x) => h("label", { class: "switch" }, x, ` ${x.value}학년`)),
@@ -241,7 +246,7 @@ async function courseForm(c, done) {
   const step3 = h("section", { class: "wz-step", hidden: true },
     h("h3", { class: "wz-h" }, "회차 운영 개요"),
     h("div", { class: "wz-table" },
-      row("수업 단위", h("div", { class: "row" }, unit, "(이수 시간", hours, "시간)")),
+      row("학점·시수", h("div", { class: "row" }, unit, "(수업 시수", hours, "시간)")),
       row("수업 시작일", start),
       row("수업 요일", h("div", { class: "row" }, days.map((x, i) => h("label", { class: "switch" }, x, ` ${DAYS[i]}`)))),
       row("수업 시간", h("div", { class: "row" }, tStart, "~", tEnd)),
