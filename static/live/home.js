@@ -608,7 +608,7 @@ function courseInfo(c) {
   if (c.instructor) bits.push(`강사 ${c.instructor}`);
   if (c.hub_school) bits.push(`거점학교 ${c.hub_school}`);
   if (c.start_date || c.end_date) bits.push(`강의기간 ${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}`);
-  bits.push(c.grades?.length ? `대상 ${c.grades.join("·")}학년` : "대상 전 학년");
+  bits.push(`대상 ${(c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", ")}`);
   return h("div", { class: "course-info" }, bits.join(" · "), c.finished ? h("span", { class: "status rejected" }, "기간 종료") : null);
 }
 
@@ -632,7 +632,7 @@ async function loadCourses() {
   };
   // 수강신청 목록: 대상학년 · 학기 · 강좌명 · 학점 · 인원 · 거점학교 · 성취도 · 평가방식만
   const enrollLine = (c) => {
-    const grades = c.grades?.length ? `${c.grades.join("·")}학년` : "전 학년";
+    const grades = (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`);
     const term = c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : "";
     const bits = [
       c.credits ? `${c.credits}학점` : "",
@@ -643,7 +643,7 @@ async function loadCourses() {
     ].filter(Boolean);
     return h("div", { class: "course-line enroll-line" },
       h("div", { class: "grow" },
-        h("div", { class: "enroll-head" }, h("span", { class: "chip" }, grades), term ? h("span", { class: "chip" }, term) : null,
+        h("div", { class: "enroll-head" }, grades.map((g) => h("span", { class: "chip" }, g)), term ? h("span", { class: "chip" }, term) : null,
           h("strong", {}, c.title)),
         h("div", { class: "muted enroll-facts" }, bits.flatMap((x, i) => [i ? " · " : "", h("span", { class: "nowrap" }, x)])),
         c.status ? h("span", { class: `status ${c.status}`, title: c.note ? `사유: ${c.note}` : "" },
