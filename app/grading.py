@@ -64,7 +64,7 @@ def shown(a: dict, value) -> str:
 
 def gradebook(cls) -> dict:
     acts, grades, users = _activities(cls.id)
-    people = sorted(users.values(), key=lambda u: (student_no(u) or "~", u["name"] or ""))
+    people = sorted(users.values(), key=lambda u: (u["school"] or "", student_no(u) or "~", u["name"] or ""))
     out_acts = []
     totals = {u["id"]: {"score": 0.0, "max": 0.0, "ungraded": 0} for u in people}
     for i, a in enumerate(acts, 1):
@@ -83,7 +83,7 @@ def gradebook(cls) -> dict:
                     totals[u["id"]]["score"] += sc
             rows.append({
                 "user_id": u["id"], "student_no": student_no(u), "name": u["name"] or u["google_name"],
-                "answered": v is not None, "answer": shown(a, v),
+                "school": u["school"] or "", "answered": v is not None, "answer": shown(a, v),
                 "correct": None if a["correct"] is None or v is None else v == a["correct"],
                 "score": sc, "manual": bool(g and g["score"] is not None),
                 "feedback": (g or {}).get("feedback", ""),
@@ -95,6 +95,7 @@ def gradebook(cls) -> dict:
             "gradable": a["kind"] != "poll", "auto": a["correct"] is not None, "rows": rows,
         })
     summary = [{"user_id": u["id"], "student_no": student_no(u), "name": u["name"] or u["google_name"],
+                "school": u["school"] or "",
                 **{k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals[u["id"]].items()}}
                for u in people]
     return {"public": bool(cls.results_public), "activities": out_acts, "summary": summary}
@@ -185,19 +186,19 @@ async def grades_csv(class_id: int, request: Request):
     book = await db.run(gradebook, cls)
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
     acts = [a for a in book["activities"] if a["gradable"]]
-    head = ["학번", "이름"] + [f"{a['no']}. {a['prompt'][:20]} ({a['points']:g}점)" for a in acts] + ["총점", "만점", "미채점"]
+    head = ["학교", "학번", "이름"] + [f"{a['no']}. {a['prompt'][:20]} ({a['points']:g}점)" for a in acts] + ["총점", "만점", "미채점"]
     rows = [head]
     for p in book["summary"]:
-        line = [p["student_no"], p["name"]]
+        line = [p["school"], p["student_no"], p["name"]]
         for a in acts:
             r = next(r for r in a["rows"] if r["user_id"] == p["user_id"])
             line.append("" if r["score"] is None else f"{r['score']:g}")
         rows.append(line + [f"{p['score']:g}", f"{p['max']:g}", p["ungraded"]])
     rows.append([])
-    rows.append(["학번", "이름", "문제", "답", "점수", "배점", "피드백"])
+    rows.append(["학교", "학번", "이름", "문제", "답", "점수", "배점", "피드백"])
     for a in acts:
         for r in a["rows"]:
-            rows.append([r["student_no"], r["name"], f"{a['no']}. {a['prompt']}", r["answer"] or "(미응답)",
+            rows.append([r["school"], r["student_no"], r["name"], f"{a['no']}. {a['prompt']}", r["answer"] or "(미응답)",
                          "미채점" if r["score"] is None else f"{r['score']:g}", f"{a['points']:g}", r["feedback"]])
     return csv_response(rows, f"grades-{day}-{cls.code}.csv")
 

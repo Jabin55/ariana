@@ -72,6 +72,7 @@ def clean(text: Any, limit: int = TEXT_LIMIT) -> str:
 class Student:
     id: str  # 사용자 id (문자열)
     name: str  # 화면에 보이는 이름 (예: 20315 김민준)
+    school: str = ""  # 다른 학교 학생도 함께 들을 수 있어 학번만으로는 구분이 안 될 때 쓴다
     conns: int = 0
     hand: bool = False
     help: bool = False  # 모둠 활동 중 '선생님 호출'
@@ -375,7 +376,7 @@ def teacher_state(k: Klass) -> dict:
         "course_id": k.course_id,
         "settings": k.settings, "livekit": livekit_ready(),
         "students": [
-            {"id": s.id, "name": s.name, "online": s.conns > 0, "hand": s.hand,
+            {"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand,
              "help": s.help, "can_speak": s.can_speak, "group": s.group, "room": k.room_of(s),
              "sessions": s.sessions}
             for s in k.students.values()
@@ -622,11 +623,11 @@ def add_student(k: Klass, u: dict) -> Student:
         raise HTTPException(403, "선생님이 이 수업에서 내보냈어요.")
     s = k.students.get(sid)
     if s:
-        s.name = display_name(u)
+        s.name, s.school = display_name(u), u.get("school") or ""
         return s
     if len(k.students) >= MAX_STUDENTS:
         raise HTTPException(409, "수업 인원이 가득 찼어요.")
-    s = Student(id=sid, name=display_name(u))
+    s = Student(id=sid, name=display_name(u), school=u.get("school") or "")
     if k.breakout and k.groups:  # 모둠 활동 중에 들어오면 인원이 가장 적은 모둠으로
         s.group = smallest_group(k)
     k.students[sid] = s

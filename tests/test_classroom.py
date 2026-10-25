@@ -741,3 +741,32 @@ def test_instructor_moves_to_another_hub(monkeypatch):
     # 다시 승인받으면 풀린다
     admin.post(f"/api/staff/{ids['가나고']}", json={"action": "approve", "valid_until": "2099-02-28"})
     assert t.get("/api/courses/mine").json()["courses"][0]["locked"] is False
+
+
+def test_students_from_other_schools(monkeypatch):
+    """거점학교 강좌는 다른 학교 학생도 신청해 듣는다. 학번이 같아도 학교로 구분된다."""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    admin = login("admin@gmail.com", name="전체관리자")
+    admin.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
+    admin.post(f"/api/staff/{admin.get('/api/staff/applications', params={'role': 'coordinator'}).json()['applications'][0]['id']}",
+               json={"action": "approve"})
+    hub = admin.get("/api/hubs").json()["hubs"][0]["id"]
+    cid = admin.post("/api/courses", json={**COURSE, "hub_id": hub}).json()["id"]
+    # 가나고 학생과 다라고 학생, 둘 다 학번 20315
+    a = login("a@s.school.kr", name="김민수", school="가나고", grade=2, class_no=3, number=15)
+    b = login("b@s.school.kr", name="김민수", school="다라고", grade=2, class_no=3, number=15)
+    for s in (a, b):
+        assert s.post(f"/api/courses/{cid}/enroll").status_code == 200
+    admin.post(f"/api/courses/{cid}/approve-all")
+    assert admin.post("/api/hub/approve-all", json={"course_id": cid}).json()["approved"] == 2
+    c = create(admin, title="1주차", course_id=cid)
+    code, cls_id = c["code"], c["class_id"]
+    with admin.websocket_connect(f"/ws/live/{code}") as tw:
+        for s in (a, b):
+            assert s.post(f"/api/live/classes/{code}/join").status_code == 200
+        with a.websocket_connect(f"/ws/live/{code}"), b.websocket_connect(f"/ws/live/{code}"):
+            st = state(tw, lambda m: sum(x["online"] for x in m["students"]) == 2)
+            assert sorted(x["school"] for x in st["students"]) == ["가나고", "다라고"]
+    rep = admin.get(f"/api/live/history/{cls_id}").json()
+    assert [(p["school"], p["student_no"]) for p in rep["students"]] == [("가나고", "20315"), ("다라고", "20315")]
+    assert "가나고" in admin.get(f"/api/live/history/{cls_id}/attendance.csv").text

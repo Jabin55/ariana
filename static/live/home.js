@@ -248,6 +248,9 @@ async function loadLiveNow() {
 }
 
 const fmtDate = (d) => (d ? d.replaceAll("-", ".") : "");
+// 다른 학교 학생이 섞여 있으면 학번이 겹칠 수 있어 이름 아래에 학교를 보여 준다
+const mixedSchools = (...lists) => new Set(lists.flat().map((p) => p.school || "")).size > 1;
+const nameTd = (p, mixed) => h("td", {}, p.name, mixed && p.school ? h("div", { class: "muted", style: "font-size:0.75rem" }, p.school) : null);
 function courseInfo(c) {
   const bits = [];
   if (c.instructor) bits.push(`강사 ${c.instructor}`);
@@ -638,7 +641,7 @@ async function loadHub() {
         h("span", { class: "acts" }, h("button", { class: "primary", onclick: () => final(e, "approved") }, "최종 승인"),
           h("button", { onclick: () => final(e, "rejected") }, "거절"))))),
       p.length ? h("div", { class: "muted", style: "font-size:0.85rem;margin-top:6px" }, `강사 승인 전: ${p.map((e) => e.name).join(", ")}`) : null,
-      ok.length ? h("div", { class: "muted", style: "font-size:0.85rem;margin-top:6px" }, `수강 확정: ${ok.map((e) => `${e.student_no} ${e.name}`).join(", ")}`) : null);
+      ok.length ? h("div", { class: "muted", style: "font-size:0.85rem;margin-top:6px" }, `수강 확정: ${ok.map((e) => `${e.student_no} ${e.name}${mixedSchools(ok) && e.school ? `(${e.school})` : ""}`).join(", ")}`) : null);
   });
   $("#hub-list").replaceChildren(
     h("h2", { style: "margin:8px 0" }, `📋 수강신청 최종 승인${waiting.length ? ` (${waiting.length}명 대기)` : ""}`),
@@ -672,8 +675,9 @@ async function loadDetail(id) {
   for (const b of document.querySelectorAll(".class-pick")) b.classList.toggle("on", Number(b.dataset.id) === id);
   const r = await api(`/api/live/history/${id}`);
   const c = r.class;
+  const mixed = mixedSchools(r.students, r.absent);
   const rows = r.students.map((p) => h("tr", { class: p.rejoins ? "rejoined" : "" },
-    h("td", {}, p.student_no || "-"), h("td", {}, p.name), h("td", {}, p.first_join_text),
+    h("td", {}, p.student_no || "-"), nameTd(p, mixed), h("td", {}, p.first_join_text),
     h("td", {}, p.online ? h("strong", { class: "ok-text" }, "접속 중") : `${p.last_leave_text} `,
       p.online ? null : h("span", { class: "muted" }, `(${p.last_reason_text})`)),
     h("td", { class: "num" }, `${p.minutes}분`),
@@ -684,7 +688,7 @@ async function loadDetail(id) {
         i && s.gap_before !== null ? h("div", { class: "gap" }, `… ${fmtGap(s.gap_before)} 뒤 다시 들어옴`) : null,
         `${s.joined} 들어옴 → ${s.left}${s.reason_text !== "접속 중" ? ` 나감 (${s.reason_text})` : ""}`)))))));
   const absent = r.absent.map((a) => h("tr", { class: "absent" },
-    h("td", {}, a.student_no), h("td", {}, a.name), h("td", { colspan: 6 }, "미접속")));
+    h("td", {}, a.student_no), nameTd(a, mixed), h("td", { colspan: 6 }, "미접속")));
   $("#h-detail").replaceChildren(h("section", { class: "card", style: "margin-top:12px" },
     h("div", { class: "row" },
       h("h2", { class: "grow", style: "margin:0" }, c.title),
@@ -734,7 +738,7 @@ async function renderGrades(id, box) {
       h("div", { class: "table-wrap" }, h("table", { class: "att" },
         h("thead", {}, h("tr", {}, ["학번", "이름", "총점", "만점", "미채점"].map((t) => h("th", {}, t)))),
         h("tbody", {}, book.summary.map((p) => h("tr", {},
-          h("td", {}, p.student_no || "-"), h("td", {}, p.name), h("td", { class: "num" }, h("strong", {}, fmtScore(p.score))),
+          h("td", {}, p.student_no || "-"), nameTd(p, mixedSchools(book.summary)), h("td", { class: "num" }, h("strong", {}, fmtScore(p.score))),
           h("td", { class: "num" }, fmtScore(p.max)), h("td", { class: "num" }, p.ungraded || "-"))))))) : null,
   ].filter(Boolean));
 }
@@ -761,7 +765,7 @@ function gradeActivity(classId, a, box) {
     scoreIn.addEventListener("change", saveRow);
     fbIn.addEventListener("change", saveRow);
     return h("tr", { class: r.score === null && a.gradable && r.answered ? "ungraded" : "" },
-      h("td", {}, r.student_no || "-"), h("td", {}, r.name),
+      h("td", {}, r.student_no || "-"), nameTd(r, mixedSchools(a.rows)),
       h("td", { class: "answer" }, r.answered ? r.answer : h("span", { class: "muted" }, "(미응답)"),
         r.correct === true ? " ⭕" : r.correct === false ? " ❌" : ""),
       a.gradable ? h("td", {}, h("div", { class: "row" }, scoreIn,
@@ -785,7 +789,7 @@ async function loadClassQuestions(id) {
       h("h2", { class: "grow", style: "margin:0" }, `💬 질문답변 ${questions.length}건`),
       questions.length ? h("a", { href: `/api/live/history/${id}/questions.csv`, class: "button" }, "📥 질문답변 CSV") : null),
     h("p", { class: "muted" }, questions.length ? `답변한 질문 ${replied}건 · 답변 없는 질문 ${questions.length - replied}건` : "이 수업에서 받은 질문이 없어요."),
-    h("div", { class: "people" }, questions.map((q) => qaItem(q, `${q.time.slice(0, 5)} · ${q.student_no} ${q.name}`)))));
+    h("div", { class: "people" }, questions.map((q) => qaItem(q, `${q.time.slice(0, 5)} · ${q.student_no} ${q.name}${mixedSchools(questions) && q.school ? ` (${q.school})` : ""}`)))));
 }
 
 boot().catch((err) => { document.body.prepend(h("p", { class: "error" }, err.message)); });

@@ -488,10 +488,11 @@ function renderPeople() {
   const hands = S.students.filter((s) => s.hand).length;
   $("#hand-badge").textContent = `✋${hands}`;
   $("#hand-badge").hidden = !hands;
+  const mixed = new Set(S.students.map((s) => s.school || "")).size > 1; // 다른 학교 학생이 섞이면 학교도 표시
   $("#people").replaceChildren(...list.map((s) => h("div", { class: `person ${s.hand ? "hand" : ""}` },
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
     h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
-      roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
+      mixed && s.school ? `${s.school} · ` : "", roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },
       S.settings.mic_lock || S.settings.lowbw ? h("button", {
         class: s.can_speak ? "on" : "",

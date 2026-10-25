@@ -179,12 +179,13 @@ def attendance_report(cls, teacher_id: int) -> dict:
             "rejoins": len(sess) - 1,
             "sessions": shown,
         })
-    out.sort(key=lambda p: (p["student_no"] or "~", p["name"]))
+    # 다른 학교 학생도 함께 듣는 강좌가 있어 학교 → 학번 순으로 정렬 (학번은 학교마다 겹칠 수 있음)
+    out.sort(key=lambda p: (p["school"] or "", p["student_no"] or "~", p["name"]))
     absent = [
-        {"student_no": student_no(u._mapping), "name": u.name, "email": u.email}
+        {"student_no": student_no(u._mapping), "name": u.name, "school": u.school or "", "email": u.email}
         for u in roster if u.id not in people
     ]
-    absent.sort(key=lambda a: a["student_no"])
+    absent.sort(key=lambda a: (a["school"], a["student_no"]))
     return {"class": {**class_row(cls), "start": kst(cls.created_at), "end": kst(cls.ended_at)},
             "students": out, "absent": absent}
 
@@ -218,7 +219,7 @@ async def attendance_csv(class_id: int, request: Request):
                      p["minutes"], p["away_minutes"], p["rejoins"],
                      " / ".join(f"{s['joined']}~{s['left']}({s['reason_text']})" for s in p["sessions"])])
     for a in rep["absent"]:
-        rows.append([day, cls.title, a["student_no"], a["name"], "", a["email"], "미접속", "", "", 0, 0, 0, ""])
+        rows.append([day, cls.title, a["student_no"], a["name"], a["school"], a["email"], "미접속", "", "", 0, 0, 0, ""])
     return csv_response(rows, f"attendance-{day}-{cls.code}.csv")
 
 
@@ -250,7 +251,7 @@ def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
     for r in rows:
         m = r._mapping
         out.append({
-            "student_no": student_no(m), "name": m["name"] or m["google_name"],
+            "student_no": student_no(m), "name": m["name"] or m["google_name"], "school": m["school"] or "",
             "class_title": m["title"], "class_code": m["code"],
             "date": datetime.fromtimestamp(m["class_created"], KST).strftime("%Y-%m-%d"),
             "time": kst(m["created_at"]), "text": m["text"], "reply": m["reply"] or "",
@@ -272,9 +273,9 @@ async def class_questions_csv(class_id: int, request: Request):
     cls = await db.run(_owned_class, class_id, t["id"])
     qs = await db.run(_questions, class_id)
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
-    rows = [["날짜", "수업", "학번", "이름", "질문 시각", "질문", "답변 시각", "답변", "확인"]]
+    rows = [["날짜", "수업", "학교", "학번", "이름", "질문 시각", "질문", "답변 시각", "답변", "확인"]]
     for q in qs:
-        rows.append([day, cls.title, q["student_no"], q["name"], q["time"], q["text"],
+        rows.append([day, cls.title, q["school"], q["student_no"], q["name"], q["time"], q["text"],
                      q["reply_time"], q["reply"], "확인함" if q["done"] else ""])
     return csv_response(rows, f"questions-{day}-{cls.code}.csv")
 
