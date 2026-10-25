@@ -15,7 +15,6 @@ import os
 import math
 import random
 import re
-import shutil
 import tempfile
 import time
 import uuid
@@ -29,7 +28,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 
 from livekit import api as lk
 
@@ -64,7 +63,7 @@ LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
 # 마이크 통제 기본값: 전체 교실에서 학생 마이크는 선생님이 켜 줘야 쓸 수 있다(학생은 손 들기로 요청).
 # MIC_LOCK=0 이면 기본으로 학생이 자유롭게 켠다. (모둠 활동 중에는 언제나 자유)
 MIC_LOCK_DEFAULT = os.environ.get("MIC_LOCK", "1") != "0"
-# 발표 자료(PDF)는 수업이 진행되는 동안만 서버 임시 폴더에 둔다(수업이 끝나면 지움)
+# 발표 자료(PDF)는 수업이 끝나도 남겨 둔다(그 수업을 들은 학생·강좌 수강생이 나중에 다시 봄)
 SLIDES_DIR = Path(os.environ.get("SLIDES_DIR") or Path(tempfile.gettempdir()) / "live-slides")
 MAX_FILE_BYTES = 40 * 1024 * 1024
 MAX_FILES = 20  # 수업당 올릴 수 있는 파일 수
@@ -147,6 +146,7 @@ class Klass:
     files: list[dict] = field(default_factory=list)  # 올린 발표 자료 [{id, name, pages, size}]
     board_pages: int = 1  # 화이트보드 쪽 수
     strokes: dict[str, list[dict]] = field(default_factory=dict)  # 쪽마다 선생님 판서
+    dirty_boards: set[str] = field(default_factory=set)  # 아직 DB에 저장하지 않은 판서 쪽
     seq: int = 0
     flush_scheduled: bool = False
     flush_at: float = 0.0
@@ -186,29 +186,55 @@ async def get_class(code: str) -> Klass:
     if not row:
         raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요.")
     saved_questions = await db.run(_load_questions, row.id)  # 서버가 다시 켜져도 질문답변은 이어진다
+    saved_files, saved_boards = await db.run(_load_materials, row.id)  # 발표 자료·판서도
     k = classes.get(code)  # 기다리는 사이 다른 요청이 먼저 살렸을 수 있다
     if not k:
         k = Klass(db_id=row.id, code=row.code, title=row.title, teacher_id=row.teacher_id, created=row.created_at,
                   course_id=row.course_id)
         k.questions = saved_questions
+        k.files = saved_files
+        k.strokes = saved_boards
+        k.board_pages = max([int(x[3:]) for x in saved_boards if x.startswith("wb:")] + [1])
         classes[code] = k
     return k
+
+
+def _load_materials(class_id: int) -> tuple[list[dict], dict[str, list]]:
+    with db.engine.connect() as c:
+        files = [{"id": r.id, "name": r.name, "pages": r.pages, "size": r.size} for r in c.execute(
+            select(db.materials).where(db.materials.c.class_id == class_id).order_by(db.materials.c.created_at))]
+        boards = {r.key: json.loads(r.strokes) for r in c.execute(
+            select(db.boards).where(db.boards.c.class_id == class_id))}
+    return files, boards
+
+
+def _boards_save(class_id: int, items: list[tuple[str, str]]) -> None:
+    now = time.time()
+    with db.engine.begin() as c:
+        for key, data in items:
+            c.execute(delete(db.boards).where(db.boards.c.class_id == class_id, db.boards.c.key == key))
+            if data != "[]":
+                c.execute(insert(db.boards).values(class_id=class_id, key=key, strokes=data, updated_at=now))
+
+
+async def save_boards(k: Klass) -> None:
+    """바뀐 판서를 DB에 저장한다 (1분마다, 수업이 끝날 때)."""
+    if not k.dirty_boards:
+        return
+    keys, k.dirty_boards = k.dirty_boards, set()
+    items = [(key, json.dumps(k.strokes.get(key, []), ensure_ascii=False)) for key in keys]
+    try:
+        await db.run(_boards_save, k.db_id, items)
+    except Exception:
+        k.dirty_boards |= keys  # 다음에 다시 시도
+        log.warning("판서 저장 실패", exc_info=True)
 
 
 def prune_classes() -> None:
     now = time.time()
     for code, k in list(classes.items()):
-        if not k.conns and now - k.last_active > MEMORY_IDLE_LIMIT:
-            classes.pop(code, None)
-            remove_files(k)
-    # 서버가 다시 켜져 주인을 잃은 발표 자료 폴더도 하루가 지나면 지운다
-    live = {str(k.db_id) for k in classes.values()}
-    try:
-        for d in SLIDES_DIR.iterdir():
-            if d.name not in live and now - d.stat().st_mtime > 24 * 3600:
-                shutil.rmtree(d, ignore_errors=True)
-    except OSError:
-        pass
+        if not k.conns and now - k.last_active > MEMORY_IDLE_LIMIT and not k.dirty_boards:
+            classes.pop(code, None)  # 자료·판서는 DB와 디스크에 남아 있다
 
 
 def _code_taken(code: str) -> bool:
@@ -298,6 +324,8 @@ async def heartbeat_loop() -> None:
                 await db.run(_att_touch, ids)
             except Exception:
                 log.warning("출결 갱신 실패", exc_info=True)
+        for k in list(classes.values()):
+            await save_boards(k)
         prune_classes()
 
 
@@ -746,10 +774,6 @@ def class_dir(k: Klass) -> Path:
     return SLIDES_DIR / str(k.db_id)
 
 
-def remove_files(k: Klass) -> None:
-    shutil.rmtree(class_dir(k), ignore_errors=True)
-
-
 @router.post("/api/live/classes/{code}/files")
 async def upload_file(code: str, request: Request, name: str = Query(default="자료.pdf", max_length=200)):
     """선생님이 발표할 PDF를 올린다. (요청 본문 = PDF 파일 그대로)"""
@@ -768,13 +792,17 @@ async def upload_file(code: str, request: Request, name: str = Query(default="�
         raise HTTPException(415, "PDF 파일만 올릴 수 있어요. PowerPoint는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요.")
     fid = uuid.uuid4().hex[:12]
     path = class_dir(k) / f"{fid}.pdf"
+    fname = clean(name, 80) or "자료.pdf"
 
     def save():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+        with db.engine.begin() as c:
+            c.execute(insert(db.materials).values(id=fid, class_id=k.db_id, teacher_id=k.teacher_id, name=fname,
+                                                  pages=0, size=len(data), created_at=time.time()))
 
     await asyncio.to_thread(save)
-    k.files.append({"id": fid, "name": clean(name, 80) or "자료.pdf", "pages": 0, "size": len(data)})
+    k.files.append({"id": fid, "name": fname, "pages": 0, "size": len(data)})
     push(k)
     return {"id": fid}
 
@@ -828,6 +856,18 @@ def clean_points(pts) -> list[list[float]]:
     return out
 
 
+def _material_pages(fid: str, pages: int) -> None:
+    with db.engine.begin() as c:
+        c.execute(update(db.materials).where(db.materials.c.id == fid).values(pages=pages))
+
+
+def _material_delete(class_id: int, fid: str, path: Path) -> None:
+    with db.engine.begin() as c:
+        c.execute(delete(db.materials).where(db.materials.c.id == fid))
+        c.execute(delete(db.boards).where(db.boards.c.class_id == class_id, db.boards.c.key.like(f"{fid}:%")))
+    path.unlink(missing_ok=True)
+
+
 def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
     """발표·판서 메시지. 처리했으면 True. (상태가 바뀌면 push는 호출한 쪽에서)"""
     t = m.get("t")
@@ -837,8 +877,10 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
         if not f:
             return True
         pages = m.get("pages")
-        if isinstance(pages, int) and 1 <= pages <= 2000:
+        if isinstance(pages, int) and 1 <= pages <= 2000 and f["pages"] != pages:
             f["pages"] = pages
+            fid = f["id"]
+            asyncio.get_running_loop().run_in_executor(None, _material_pages, fid, pages)
         page = m.get("page")
         k.present = {"mode": "slides", "file": f["id"],
                      "page": page if isinstance(page, int) and 1 <= page <= max(1, f["pages"]) else 1}
@@ -864,7 +906,9 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
             k.present = None
         for key in [x for x in k.strokes if x.startswith(f"{fid}:")]:
             del k.strokes[key]
-        (class_dir(k) / f"{fid}.pdf").unlink(missing_ok=True)
+            k.dirty_boards.discard(key)
+        if isinstance(fid, str) and fid.isalnum():
+            asyncio.get_running_loop().run_in_executor(None, _material_delete, k.db_id, fid, class_dir(k) / f"{fid}.pdf")
     elif t == "stroke":  # 획 그리기 (그리는 중에도 조금씩 나눠 보낸다)
         key, sid = m.get("key"), m.get("id")
         if key != before or not isinstance(sid, str) or not 0 < len(sid) <= 24:
@@ -885,6 +929,7 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
         if not pts:
             return True
         st["pts"].extend(pts)
+        k.dirty_boards.add(key)
         relay(k, conn, {"t": "stroke", "key": key, "id": sid, "color": st["color"], "size": st["size"],
                         "hl": st["hl"], "pts": pts})
     elif t == "stroke_del":  # 지우개·되돌리기
@@ -893,11 +938,13 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
             return True
         ids = {i for i in ids[:200] if isinstance(i, str)}
         k.strokes[key] = [x for x in k.strokes.get(key, []) if x["id"] not in ids]
+        k.dirty_boards.add(key)
         relay(k, conn, {"t": "stroke_del", "key": key, "ids": sorted(ids)})
     elif t == "board_clear":
         key = m.get("key")
         if key == before:
             k.strokes[key] = []
+            k.dirty_boards.add(key)
             relay(k, conn, {"t": "strokes", "key": key, "strokes": []})
     else:
         return False
@@ -1253,7 +1300,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 send(c, {"t": "ended"})
         close_livekit_rooms(k)
         classes.pop(k.code, None)
-        remove_files(k)  # 발표 자료는 수업이 끝나면 지운다
+        asyncio.get_running_loop().create_task(save_boards(k))  # 자료·판서는 남겨 둔다(지난 수업 자료)
         class_id = k.db_id
 
         def run():

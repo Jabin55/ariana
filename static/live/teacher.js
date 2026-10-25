@@ -545,7 +545,7 @@ function openFiles() {
       h("button", { class: "primary", onclick: () => { close(); $("#file-input").click(); } }, "＋ PDF 올리기"),
       h("p", { class: "muted", style: "margin:0;font-size:0.85rem" },
         "PowerPoint(PPT)는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. ",
-        "자료는 이 수업 동안만 보관되고 수업이 끝나면 지워져요.")));
+        "올린 자료와 판서는 수업이 끝나도 남아서, 수업을 못 들은 학생도 첫 화면 '지난 수업 자료'에서 다시 볼 수 있어요.")));
   document.body.append(dlg);
 }
 

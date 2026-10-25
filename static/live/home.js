@@ -8,6 +8,7 @@ function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
   $("#student-questions").hidden = true;
   $("#student-results").hidden = true;
+  $("#student-materials").hidden = true;
 }
 
 const fmtScore = (n) => (n === null || n === undefined ? "미채점" : `${Math.round(n * 100) / 100}`);
@@ -237,6 +238,7 @@ function showStudent() {
   loadCourses();
   loadMyResults();
   loadMyQuestions();
+  loadMyMaterials();
 }
 
 /* 수강 승인된 강좌에서 지금 열린 수업 → 코드 없이 입장 */
@@ -313,6 +315,18 @@ async function loadMyResults() {
         it.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${it.feedback}`) : null)))));
     $("#student-results").hidden = false;
   } catch { /* 결과를 못 불러와도 입장에는 지장 없음 */ }
+}
+
+async function loadMyMaterials() {
+  try {
+    const { classes } = await api("/api/materials");
+    if (!classes.length) return;
+    $("#my-materials").replaceChildren(...classes.slice(0, 5).map((c) => h("a", { class: "person material-link", href: `/live/materials?class=${c.id}` },
+      h("span", { class: "grow" }, h("strong", {}, c.title),
+        h("span", { class: "muted", style: "font-size:0.8rem" }, ` ${c.date.replaceAll("-", ".")}${c.course_title ? ` · ${c.course_title}` : ""}`)),
+      h("span", { class: "muted", style: "font-size:0.85rem" }, [c.files ? `📄${c.files}` : "", c.whiteboard ? "🖊️" : ""].join(" ")))));
+    $("#student-materials").hidden = false;
+  } catch { /* 못 불러와도 입장에는 지장 없음 */ }
 }
 
 async function loadMyQuestions() {
@@ -707,7 +721,8 @@ async function loadDetail(id) {
       h("h2", { class: "grow", style: "margin:0" }, c.title),
       h("a", { href: `/api/live/history/${id}/attendance.csv`, class: "button" }, "📥 출결 요약 CSV"),
       h("a", { href: `/api/live/history/${id}/attendance-log.csv`, class: "button" }, "📥 입·퇴장 전체 기록 CSV"),
-      h("a", { href: `/api/live/history/${id}/results.csv`, class: "button" }, "📥 퀴즈 결과 CSV")),
+      h("a", { href: `/api/live/history/${id}/results.csv`, class: "button" }, "📥 퀴즈 결과 CSV"),
+      h("a", { href: `/live/materials?class=${id}`, class: "button", target: "_blank" }, "📄 수업 자료·판서")),
     h("p", { class: "muted" }, `코드 ${c.code} · ${c.start} 시작 · ${c.end ? `${c.end} 종료` : (c.live ? "진행 중" : "종료 기록 없음")} · 참여 ${r.students.length}명`
       + (c.target_grade ? ` · 대상 ${c.target_grade}학년 ${c.target_class}반 (미접속 ${r.absent.length}명)` : "")),
     h("div", { class: "table-wrap" }, h("table", { class: "att" },

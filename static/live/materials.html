@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>지난 수업 자료</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E📄%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/live/live.css">
+</head>
+<body>
+  <main class="landing materials">
+    <div class="row" style="margin-bottom:8px">
+      <a href="/live" class="button small">← 처음 화면</a>
+      <h1 class="grow" style="margin:0;font-size:1.3rem" id="m-title">📄 지난 수업 자료</h1>
+    </div>
+    <p class="muted" id="m-sub" style="margin:0 0 12px">선생님이 수업 때 띄운 자료와 판서예요. 수업을 못 들었어도 여기서 다시 볼 수 있어요.</p>
+    <div id="m-list"></div>
+    <section id="m-viewer" hidden>
+      <div class="row m-items" id="m-items"></div>
+      <div class="present" id="m-present"><div class="present-bar" id="m-bar"></div></div>
+    </section>
+    <p class="error" id="m-error"></p>
+  </main>
+  <script src="/static/live/common.js"></script>
+  <script src="/static/live/present.js"></script>
+  <script src="/static/live/materials.js"></script>
+</body>
+</html>

@@ -19,7 +19,7 @@ const PEN_COLORS = ["#222222", "#d92d20", "#1d5fd6", "#16803c"];
 class Presenter {
   /**
    * @param {HTMLElement} box  그릴 자리
-   * @param {object} opt  { code, canDraw, send(msg) }
+   * @param {object} opt  { code, canDraw, send(msg), fileUrl(fid)? — 지난 수업 자료처럼 다른 주소에서 받을 때 }
    */
   constructor(box, opt) {
     this.box = box;
@@ -78,7 +78,7 @@ class Presenter {
   doc(fid) {
     if (!this.docs.has(fid)) {
       const p = loadPdfjs().then((lib) => lib.getDocument({
-        url: `/api/live/classes/${this.opt.code}/files/${fid}`,
+        url: this.opt.fileUrl ? this.opt.fileUrl(fid) : `/api/live/classes/${this.opt.code}/files/${fid}`,
         cMapUrl: `${PDFJS_BASE}cmaps/`, cMapPacked: true, standardFontDataUrl: `${PDFJS_BASE}standard_fonts/`,
         isEvalSupported: false, withCredentials: true,
       }).promise);

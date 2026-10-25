@@ -23,6 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import db
 from app.admin import router as admin_router
 from app.policy import router as policy_router
+from app.materials import router as materials_router
 from app.auth import router as auth_router
 from app.classroom import heartbeat_loop, router as live_router
 from app.courses import router as courses_router
@@ -68,6 +69,7 @@ app.include_router(grading_router)
 app.include_router(courses_router)
 app.include_router(admin_router)
 app.include_router(policy_router)
+app.include_router(materials_router)
 
 
 class ChatMessage(BaseModel):
@@ -103,6 +105,11 @@ async def live_index() -> FileResponse:
 @app.get("/live/teacher/{code}")
 async def live_teacher(code: str) -> FileResponse:
     return FileResponse(STATIC_DIR / "live" / "teacher.html")
+
+
+@app.get("/live/materials")
+async def live_materials() -> FileResponse:
+    return FileResponse(STATIC_DIR / "live" / "materials.html")
 
 
 @app.get("/live/class/{code}")

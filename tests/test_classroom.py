@@ -835,15 +835,40 @@ def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
         sw.send_json({"t": "stroke", "key": "wb:2", "id": "s", "pts": [[0.1, 0.1]]})
         time.sleep(0.2)
         assert cr.classes[code].present is not None and not cr.classes[code].strokes.get("wb:2")
+        tw.send_json({"t": "stroke", "key": "wb:2", "id": "w1", "pts": [[0.2, 0.2], [0.4, 0.4]]})
+        time.sleep(0.2)
         tw.send_json({"t": "present_close"})
         state(sw, lambda m: m["present"] is None)
-    # 수업이 끝나면 자료를 지운다
-    assert (tmp_path / str(c["class_id"]) / f"{fid}.pdf").exists()
+    # 서버가 다시 켜져도 자료와 판서가 이어진다 (1분마다·수업 종료 때 DB에 저장)
+    import asyncio
+    asyncio.run(cr.save_boards(cr.classes[code]))
+    cr.classes.clear()
     with t.websocket_connect(f"/ws/live/{code}") as tw:
-        state(tw)
+        st = state(tw)
+        assert [f["id"] for f in st["files"]] == [fid] and st["files"][0]["pages"] == 3
+        assert cr.classes[code].board_pages == 2
         tw.send_json({"t": "end_class"})
         until(tw, lambda m: m["t"] == "ended")
-    assert not (tmp_path / str(c["class_id"])).exists()
+    time.sleep(0.3)
+    # 수업이 끝나도 자료는 남는다 → 지난 수업 자료
+    cid = c["class_id"]
+    assert (tmp_path / str(cid) / f"{fid}.pdf").exists()
+    lst = s1.get("/api/materials").json()["classes"]
+    assert [x["id"] for x in lst] == [cid] and lst[0]["files"] == 1
+    detail = s1.get(f"/api/materials/class/{cid}").json()
+    assert detail["files"][0]["name"] == "선거제도.pdf" and detail["can_delete"] is False
+    assert s1.get(f"/api/materials/file/{fid}").content == pdf
+    # 수업에 들어오지 않았고 수강생도 아닌 학생은 볼 수 없다
+    assert s2.get("/api/materials").json()["classes"] == []
+    assert s2.get(f"/api/materials/class/{cid}").status_code == 403
+    assert s2.get(f"/api/materials/file/{fid}").status_code == 403
+    # 다른 선생님은 지울 수 없고, 수업을 연 선생님은 지울 수 있다
+    other = teacher("other@gmail.com")
+    assert other.post(f"/api/materials/file/{fid}/delete").status_code == 404
+    assert t.get(f"/api/materials/class/{cid}").json()["can_delete"] is True
+    assert t.post(f"/api/materials/file/{fid}/delete").status_code == 200
+    assert not (tmp_path / str(cid) / f"{fid}.pdf").exists()
+    assert s1.get(f"/api/materials/class/{cid}").json()["files"] == []
 
 
 def test_groups_by_size_and_teacher_controls_mic():
@@ -921,3 +946,21 @@ def test_policy_pages(monkeypatch):
     assert g.get("/api/me").json()["user"]["needs_terms"] is True
     g.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
     assert g.get("/api/me").json()["user"]["needs_terms"] is False
+
+
+def test_course_materials_for_absent_students(monkeypatch, tmp_path):
+    """수업을 못 들은 수강생도 지난 수업 자료를 볼 수 있다"""
+    monkeypatch.setattr(cr, "SLIDES_DIR", tmp_path)
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    absent = student(5)
+    absent.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    c = create(t, title="3주차", course_id=cid)
+    t.post(f"/api/live/classes/{c['code']}/files?name=a.pdf", content=b"%PDF-1.4 x")
+    lst = absent.get("/api/materials").json()["classes"]
+    assert [(x["id"], x["course_title"]) for x in lst] == [(c["class_id"], COURSE["title"])]
+    # 수강 승인이 취소되면 볼 수 없다
+    me = absent.get("/api/me").json()["user"]["id"]
+    t.post(f"/api/courses/{cid}/enrollments/{me}", json={"status": "removed"})
+    assert absent.get("/api/materials").json()["classes"] == []

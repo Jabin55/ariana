@@ -1,5 +1,5 @@
 /* 실시간 수업: 선생님·학생 화면이 함께 쓰는 코드 */
-const { Room, RoomEvent, Track, VideoPresets, VideoQuality } = window.LivekitClient;
+const { Room, RoomEvent, Track, VideoPresets, VideoQuality } = window.LivekitClient || {}; // 화상이 없는 화면(지난 수업 자료 등)에서는 비어 있음
 
 const CODE = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "").toUpperCase();
 

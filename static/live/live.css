@@ -390,3 +390,10 @@ details.card > summary { cursor: pointer; }
 }
 .doc p, .doc li { color: var(--text); }
 @media print { .doc p, .doc li, .doc td { color: #000; } }
+
+/* ───── 지난 수업 자료 ───── */
+.materials { max-width: 1000px; }
+.material-item { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; color: var(--text); text-decoration: none; }
+.material-item:hover, .material-link:hover { outline: 2px solid var(--accent); }
+.material-link { color: var(--text); text-decoration: none; }
+.m-items { flex-wrap: wrap; margin-bottom: 8px; }

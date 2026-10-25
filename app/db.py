@@ -159,6 +159,27 @@ activities = Table(
     Column("points", Float, nullable=False, default=1),  # 배점
 )
 
+materials = Table(
+    "materials", metadata,  # 수업 때 올린 발표 자료(PDF). 수업이 끝나도 남아 못 들은 학생도 다시 본다
+    Column("id", String(16), primary_key=True),  # 파일 이름으로도 쓴다 (SLIDES_DIR/수업번호/id.pdf)
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("teacher_id", Integer, nullable=False),
+    Column("name", String(120), nullable=False),
+    Column("pages", Integer, nullable=False, default=0),
+    Column("size", Integer, nullable=False, default=0),
+    Column("created_at", Float, nullable=False),
+)
+
+boards = Table(
+    "boards", metadata,  # 쪽마다 선생님 판서 (자료 위 판서 'id:쪽', 화이트보드 'wb:쪽')
+    Column("id", Integer, primary_key=True),
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("key", String(40), nullable=False),
+    Column("strokes", Text, nullable=False),  # JSON 목록
+    Column("updated_at", Float, nullable=False),
+    UniqueConstraint("class_id", "key"),
+)
+
 grades = Table(
     "grades", metadata,  # 수업이 끝난 뒤 선생님이 매긴 점수·피드백 (자동 채점을 덮어쓸 수도 있음)
     Column("id", Integer, primary_key=True),
