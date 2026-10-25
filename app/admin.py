@@ -21,9 +21,9 @@ import urllib.parse
 import urllib.request
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import delete, func, insert, or_, select, update
 
 from app import db
 from app.auth import NAME_LOCKED, PLEDGE, current_user, get_schools, membership_status, today_kst
@@ -364,3 +364,58 @@ async def schools_from_neis(request: Request):
 
     await db.run(run)
     return {"schools": names, "total": total}
+
+
+# ───────────── 전체 관리자: 다른 사람의 이름 고치기 (가입 뒤 이름은 본인이 못 바꾼다 — 오타 등) ─────────────
+
+
+async def require_admin(request: Request) -> dict:
+    u = await current_user(request)
+    if not u or not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+    return u
+
+
+@router.get("/api/admin/users")
+async def find_users(request: Request, q: str = Query(min_length=1, max_length=60)):
+    """이름·이메일로 회원 찾기 (50명까지)"""
+    await require_admin(request)
+    word = f"%{q.strip()}%"
+
+    def run():
+        uc = db.users.c
+        with db.engine.connect() as c:
+            return c.execute(select(uc.id, uc.name, uc.google_name, uc.email, uc.role, uc.school, uc.grade, uc.class_no, uc.number)
+                             .where(or_(uc.name.like(word), uc.email.like(word), uc.google_name.like(word)))
+                             .order_by(uc.name).limit(50)).all()
+
+    return {"users": [{"id": r.id, "name": r.name or "", "google_name": r.google_name or "", "email": r.email,
+                       "role": "학생" if r.role == "student" else "선생님", "school": r.school or "",
+                       "grade": r.grade, "class_no": r.class_no, "number": r.number} for r in await db.run(run)]}
+
+
+class NameReq(BaseModel):
+    name: str = Field(min_length=1, max_length=30)
+
+
+@router.post("/api/admin/users/{uid}/name")
+async def fix_name(uid: int, req: NameReq, request: Request):
+    """이름 고치기. 그 선생님이 연 강좌의 강사 이름도 같은 이름이면 함께 고친다."""
+    await require_admin(request)
+    name = re.sub(r"\s+", " ", req.name).strip()
+    if not name:
+        raise HTTPException(400, "이름을 적어 주세요.")
+
+    def run():
+        with db.engine.begin() as c:
+            old = c.execute(select(db.users.c.name).where(db.users.c.id == uid)).first()
+            if not old:
+                raise HTTPException(404, "회원을 찾을 수 없어요.")
+            c.execute(update(db.users).where(db.users.c.id == uid).values(name=name, name_locked=1))
+            if old.name:
+                c.execute(update(db.courses).where(db.courses.c.teacher_id == uid, db.courses.c.instructor == old.name)
+                          .values(instructor=name))
+            return old.name or ""
+
+    old = await db.run(run)
+    return {"ok": True, "old": old, "name": name}

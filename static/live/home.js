@@ -279,18 +279,16 @@ function photoPicker() {
     } }, "사진 지우기") : null);
 }
 
-/** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 소속 · 직위 · 권한정보 · (강의교사) 담당과목 · 이메일 · 휴대전화 */
+/** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 소속 · 직위 · 권한정보 · 이메일 · 휴대전화 */
 async function drawTeacherProfile() {
   const meta = await subjectMeta();
   const last = ME.memberships[ME.memberships.length - 1];
-  const instructor = ME.teach_hubs.length > 0 || ME.memberships.some((m) => m.role === "instructor");
   const f = {
     name: h("input", { maxlength: 30, value: ME.name || "" }),
     gender: h("select", {}, h("option", { value: "" }, "고르세요"), ["남", "여"].map((g) => h("option", { value: g, selected: ME.gender === g }, g === "남" ? "남자" : "여자"))),
     birth: h("input", { type: "date", min: "1920-01-01", max: new Date().toISOString().slice(0, 10), value: ME.birth || "" }),
     office: h("select", {}, h("option", { value: "" }, "교육청"), koSort(meta.offices).map((o) => h("option", { value: o, selected: (last?.office || "") === o }, o))),
     school: h("input", { maxlength: 60, value: ME.school || "", placeholder: "소속 학교·기관" }),
-    subjects: h("input", { maxlength: 300, value: ME.subjects || "", placeholder: "예: 법과 사회, 정치, 경제" }),
     position: h("input", { maxlength: 30, value: ME.position || "", placeholder: "예: 교사, 부장교사, 교감" }),
     phone: h("input", { maxlength: 100, value: ME.phone || last?.contact || "", placeholder: "010-0000-0000" }),
   };
@@ -315,7 +313,6 @@ async function drawTeacherProfile() {
       row("직위", f.position),
       row("권한정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
         pending.length ? h("div", { class: "muted", style: "font-size:0.82rem" }, pending.join(", ")) : null),
-      instructor ? row("담당과목", f.subjects) : null,
       row("이메일", h("strong", {}, ME.email), h("span", { class: "muted", style: "font-size:0.82rem" }, "  (가입한 구글 계정)")),
       row("휴대전화", f.phone))),
     err,
@@ -325,7 +322,6 @@ async function drawTeacherProfile() {
         ME = await api("/api/me/profile", {
           name: f.name.value.trim(), school: f.school.value.trim(), gender: f.gender.value, birth: f.birth.value,
           office: f.office.value, phone: f.phone.value.trim(), position: f.position.value.trim(),
-          ...(instructor ? { subjects: f.subjects.value.trim() } : {}),
         });
         toast("내 정보를 저장했어요.");
         drawTeacherProfile();
@@ -488,7 +484,6 @@ async function showGuest(fromTeacher = false) {
   $("#a-birth").max = new Date().toISOString().slice(0, 10);
   if (ME.birth) $("#a-birth").value = ME.birth;
   if (ME.gender) $("#a-gender").value = ME.gender;
-  if (ME.subjects) $("#a-subjects").value = ME.subjects;
   $("#guest-hint").hidden = fromTeacher;
   $("#to-student").hidden = fromTeacher || !ME.can_be_student;
   if (sessionGet("signup_as") === "student" && !ME.can_be_student) {
@@ -579,7 +574,6 @@ function updateApplyRole() {
   $("#a-hub-name").required = role !== "instructor";
   $("#a-hub-name-label").textContent = role === "participant" ? "소속 학교 (울산)" : "관리할 거점학교 (울산)";
   $("#a-wish-wrap").hidden = role !== "instructor";
-  $("#a-subjects-wrap").hidden = role !== "instructor"; // 담당과목은 강의교사만
   $("#a-wish-from").required = $("#a-wish-until").required = role === "instructor";
   $("#a-msg-wrap").hidden = role !== "coordinator";
 }
@@ -602,7 +596,6 @@ async function sendApply(role, first, place) {
       role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
       hub_name: role !== "instructor" ? $("#a-hub-name").value : role === "instructor" && CONFIG.schools.length ? $("#a-hub-search").value.trim() : "",
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value, gender: $("#a-gender").value,
-      subjects: role === "instructor" ? $("#a-subjects").value.trim() : "",
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
       assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",
@@ -739,7 +732,7 @@ async function loadCourses() {
   $("#my-courses").replaceChildren(...mine.map((c) => h("div", { class: "row" }, line(c),
     h("button", { class: "small", onclick: () => enrollBtn(c, "DELETE") }, c.status === "pending" ? "신청 취소" : "수강 취소"))));
   if (!mine.length) $("#my-courses").append(h("span", { class: "muted" }, "아직 수강 중인 강좌가 없어요."));
-  // 위의 검색 칸(개설연도·학기·운영방식·대상학년·거점학교·강좌명)으로 거른다
+  // 위의 검색 칸(개설연도·학기·대상학년·거점학교·강좌명)으로 거른다
   const drawOpen = (shown) => {
     $("#open-courses").replaceChildren(...shown.map((c) => h("div", { class: "row" }, enrollLine(c),
       c.recruit === "open" ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
@@ -1112,7 +1105,37 @@ async function loadAdmin() {
   const pending = list.filter((x) => x.status === "pending").length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
-  $("#admin-list").replaceChildren(staffBoard("admin", list, co.today, loadAdmin, "거점학교 관리교사 · 참여학교 담당교사"));
+  $("#admin-list").replaceChildren(staffBoard("admin", list, co.today, loadAdmin, "거점학교 관리교사 · 참여학교 담당교사"), nameFixer());
+}
+
+/** 전체 관리자: 다른 사람의 이름 고치기 (가입 뒤에는 본인이 이름을 못 바꾼다 — 오타 등) */
+function nameFixer() {
+  const q = h("input", { placeholder: "이름 또는 이메일", maxlength: 60 });
+  const result = h("div");
+  const find = async () => {
+    if (!q.value.trim()) { q.focus(); return; }
+    let users;
+    try { ({ users } = await api(`/api/admin/users?q=${encodeURIComponent(q.value.trim())}`)); } catch (err) { toast(err.message); return; }
+    if (!users.length) { fill(result, h("p", { class: "muted" }, "찾는 회원이 없어요.")); return; }
+    fill(result, h("div", { class: "table-wrap" }, h("table", { class: "att" },
+      h("thead", {}, h("tr", {}, ["구분", "이름", "이메일", "소속", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, users.map((x) => {
+        const name = h("input", { value: x.name, maxlength: 30, style: "width:9em" });
+        const where = [x.school, x.grade ? `${x.grade}학년 ${x.class_no || ""}반 ${x.number || ""}번` : ""].filter(Boolean).join(" · ");
+        return h("tr", {}, h("td", {}, x.role), h("td", {}, name), h("td", {}, x.email), h("td", {}, where || "-"),
+          h("td", {}, h("button", { class: "small primary", onclick: async () => {
+            const v = name.value.trim();
+            if (!v || v === x.name) return;
+            if (!confirm(`이름을 '${x.name || "(없음)"}' → '${v}'(으)로 고칠까요?`)) return;
+            try { await api(`/api/admin/users/${x.id}/name`, { name: v }); x.name = v; toast("이름을 고쳤어요."); } catch (err) { toast(err.message); }
+          } }, "저장")));
+      })))));
+  };
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
+  return h("section", { class: "box", style: "margin-top:24px" },
+    h("h3", { style: "margin:0 0 8px" }, "✏️ 회원 이름 고치기"),
+    h("div", { class: "row" }, q, h("button", { class: "primary", onclick: find }, "검색")),
+    result);
 }
 
 /* 수업 기록 (출결·채점·질문) — 그릴 자리는 detailEl() */

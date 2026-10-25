@@ -1778,3 +1778,23 @@ def test_notice_attachments():
     assert anon.get(f2["url"]).status_code == 404
     t.post(f"/api/admin/notices/{nid}/delete", json={})
     assert anon.get(f1["url"]).status_code == 404
+
+
+def test_admin_fixes_names(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    s = student(1)
+    t = teacher()
+    r = t.post("/api/courses", json={"title": "정치", "instructor": "박선생", "hub_school": SCHOOL,
+                                     "start_date": "2026-03-02", "end_date": "2099-01-01"})
+    assert r.status_code == 200, r.text
+    cid = r.json()["id"]
+    boss = login("boss@gmail.com", name="관리자", school=SCHOOL)
+    assert s.post("/api/me/profile", json={"name": "다른이름", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 1}).status_code == 400
+    assert t.get("/api/admin/users?q=학생").status_code == 403  # 전체 관리자만
+    found = boss.get("/api/admin/users?q=학생1").json()["users"]
+    assert [u["email"] for u in found] == ["st1@s.school.kr"]
+    assert boss.post(f"/api/admin/users/{found[0]['id']}/name", json={"name": " 김 학생 "}).json()["name"] == "김 학생"
+    assert s.get("/api/me").json()["user"]["name"] == "김 학생"
+    tid = boss.get("/api/admin/users?q=박선생").json()["users"][0]["id"]
+    boss.post(f"/api/admin/users/{tid}/name", json={"name": "박선생님"})
+    assert next(c for c in t.get("/api/courses/mine").json()["courses"] if c["id"] == cid)["instructor"] == "박선생님"
