@@ -11,8 +11,12 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import time
+import urllib.parse
+import urllib.request
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
@@ -275,3 +279,60 @@ async def save_schools(req: SchoolsReq, request: Request):
 
     await db.run(run)
     return {"schools": names}
+
+
+# ───────────────────────── 나이스(교육정보 개방 포털)에서 울산 고등학교 목록 가져오기 ─────────────────────────
+
+NEIS_URL = "https://open.neis.go.kr/hub/schoolInfo"
+
+
+def fetch_neis_schools(key: str) -> tuple[list[str], int]:
+    """울산광역시교육청(H10) 소속 고등학교 이름. (이름 목록, 나이스가 알려 준 전체 개수)"""
+    names, total, page = [], 0, 1
+    while page <= 10:
+        q = {"Type": "json", "pIndex": page, "pSize": 1000, "ATPT_OFCDC_SC_CODE": "H10", "SCHUL_KND_SC_NM": "고등학교"}
+        if key:
+            q["KEY"] = key
+        with urllib.request.urlopen(f"{NEIS_URL}?{urllib.parse.urlencode(q)}", timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        info = data.get("schoolInfo")
+        if not info:
+            msg = (data.get("RESULT") or {}).get("MESSAGE") or "나이스에서 학교 목록을 받지 못했어요."
+            raise HTTPException(502, f"나이스 응답: {msg}")
+        total = info[0]["head"][0]["list_total_count"]
+        rows = info[1]["row"] if len(info) > 1 else []
+        names += [r["SCHUL_NM"].strip() for r in rows if r.get("SCHUL_NM")]
+        if len(names) >= total or not rows or not key:
+            break
+        page += 1
+    return sorted(set(names)), total
+
+
+@router.post("/api/admin/schools/neis")
+async def schools_from_neis(request: Request):
+    """전체 관리자: 나이스에서 울산 고등학교 정식 이름 목록을 받아 '울산 고등학교 목록'에 넣는다"""
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+    key = os.environ.get("NEIS_API_KEY", "")
+    try:
+        names, total = await db.run(fetch_neis_schools, key)
+    except HTTPException:
+        raise
+    except Exception as e:  # 연결 실패 등
+        raise HTTPException(502, f"나이스에 연결하지 못했어요 ({type(e).__name__}). 잠시 뒤 다시 해 보세요.")
+    if not names:
+        raise HTTPException(502, "나이스에서 받은 학교가 없어요.")
+    partial = len(names) < total
+    if partial and not key:
+        raise HTTPException(400, f"인증키 없이 받을 수 있는 것은 견본 {len(names)}개뿐이에요 (전체 {total}개). "
+                                 "나이스 교육정보 개방 포털(open.neis.go.kr)에서 무료 인증키를 받아 서버에서 "
+                                 "live-config NEIS_API_KEY=인증키 로 넣은 뒤 다시 눌러 주세요.")
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.site_settings).where(db.site_settings.c.key == "schools"))
+            c.execute(insert(db.site_settings).values(key="schools", value="\n".join(names)))
+
+    await db.run(run)
+    return {"schools": names, "total": total}

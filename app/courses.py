@@ -743,9 +743,10 @@ async def available_courses(request: Request):
                 .order_by(co.start_date.desc(), co.title)).all()
             mine = {e.course_id: (e.status, e.note) for e in c.execute(
                 select(db.enrollments).where(db.enrollments.c.user_id == u["id"]))}
-            return rows, mine, sessions_of(c, [r.id for r in rows])
+            ok = [cid for cid, (st, _) in mine.items() if st == "approved"]
+            return rows, mine, sessions_of(c, [r.id for r in rows]), course_notices_of(c, ok)
 
-    rows, mine, sess = await db.run(run)
+    rows, mine, sess, notes = await db.run(run)
     out = []
     for r in rows:
         status, note = mine.get(r.id, (None, ""))
@@ -753,6 +754,7 @@ async def available_courses(request: Request):
         if status is None and (row["recruit"] == "closed" or not grade_ok(r, u["grade"])):
             continue  # 신청 마감·기간 끝남·대상 학년 아님 + 신청한 적 없음
         out.append({**row, "instructor": r.instructor or r.teacher_name, "status": status, "sessions": sess.get(r.id, []),
+                    "notices": notes.get(r.id, []),
                     "note": note if status == "rejected" else ""})
     return {"courses": out}
 
@@ -1099,3 +1101,77 @@ async def hub_course_requests(request: Request):
         g["in_curriculum"] = g["subject"] in known
         g["notes"] = g["notes"][-5:]
     return {"requests": out}
+
+
+# ───────────────────────── 강좌 공지사항 (강사 → 수강생) ─────────────────────────
+
+
+class CourseNoticeReq(BaseModel):
+    id: int | None = None
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=10000)
+
+
+def notice_json(n) -> dict:
+    return {"id": n.id, "title": n.title, "body": n.body, "author": n.author,
+            "date": datetime.fromtimestamp(n.created_at, KST).strftime("%Y-%m-%d"),
+            "new": n.created_at > time.time() - 3 * 86400}
+
+
+def course_notices_of(c, course_ids) -> dict:
+    out: dict = {}
+    for n in c.execute(select(db.course_notices).where(db.course_notices.c.course_id.in_(list(course_ids) or [-1]))
+                       .order_by(db.course_notices.c.created_at.desc())):
+        out.setdefault(n.course_id, []).append(notice_json(n))
+    return out
+
+
+@router.get("/api/courses/{course_id}/notices")
+async def course_notices(course_id: int, request: Request):
+    """강좌 공지: 그 강좌 선생님과 수강 확정 학생만"""
+    u = await require_user(request)
+    if u["role"] == "student":
+        if not await db.run(is_enrolled, course_id, u["id"]):
+            raise HTTPException(404, "강좌를 찾을 수 없어요.")
+    else:
+        await db.run(owned_course, course_id, u)
+
+    def run():
+        with db.engine.connect() as c:
+            return course_notices_of(c, [course_id]).get(course_id, [])
+
+    return {"notices": await db.run(run)}
+
+
+@router.post("/api/courses/{course_id}/notices")
+async def save_course_notice(course_id: int, req: CourseNoticeReq, request: Request):
+    t = await require_user(request, "teacher")
+    await db.run(owned_course, course_id, t)
+    values = {"title": req.title.strip(), "body": req.body.strip()}
+
+    def run():
+        n = db.course_notices.c
+        with db.engine.begin() as c:
+            if req.id:
+                if not c.execute(update(db.course_notices).where(n.id == req.id, n.course_id == course_id)
+                                 .values(updated_at=time.time(), **values)).rowcount:
+                    raise HTTPException(404, "공지를 찾을 수 없어요.")
+                return req.id
+            return c.execute(insert(db.course_notices).values(course_id=course_id, author=t["name"] or "",
+                                                              created_at=time.time(), **values)).inserted_primary_key[0]
+
+    return {"id": await db.run(run)}
+
+
+@router.post("/api/courses/{course_id}/notices/{nid}/delete")
+async def delete_course_notice(course_id: int, nid: int, request: Request):
+    t = await require_user(request, "teacher")
+    await db.run(owned_course, course_id, t)
+
+    def run():
+        n = db.course_notices.c
+        with db.engine.begin() as c:
+            c.execute(delete(db.course_notices).where(n.id == nid, n.course_id == course_id))
+
+    await db.run(run)
+    return {"ok": True}

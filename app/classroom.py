@@ -20,7 +20,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -33,7 +33,7 @@ from sqlalchemy import delete, insert, select, update
 from livekit import api as lk
 
 from app import db
-from app.auth import current_user, display_name, needs_profile, require_user
+from app.auth import KST, current_user, display_name, needs_profile, require_user
 from app.courses import course_roster, is_enrolled, owned_course
 
 log = logging.getLogger("live-class")
@@ -199,6 +199,10 @@ async def get_class(code: str) -> Klass:
         return k
     row = await db.run(_load_class, code) if code.isalnum() and len(code) <= 8 else None
     if not row:
+        waiting = await db.run(_waiting_meeting, code) if code.isalnum() and len(code) <= 8 else None
+        if waiting:
+            when = datetime.fromtimestamp(waiting.start_at, KST).strftime("%m월 %d일 %H:%M")
+            raise HTTPException(404, f"예약된 특강·회의 '{waiting.title}'이에요. {when}에 열려요. 선생님이 열면 다시 들어와 주세요.")
         if code.isalnum() and len(code) <= 8 and await db.run(_ended_class, code):
             raise HTTPException(404, "이미 끝난 수업이에요. 선생님이 새 수업을 열면 다시 들어올 수 있어요.")
         raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요. (강좌 수업은 코드 없이 마이페이지 '지금 들어갈 수 있는 수업'에서 들어가요)")
@@ -258,7 +262,21 @@ def _code_taken(code: str) -> bool:
     with db.engine.connect() as c:
         return c.execute(select(db.classes.c.id).where(
             db.classes.c.code == code, db.classes.c.ended_at.is_(None),
-            db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT)).first() is not None
+            db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT)).first() is not None \
+            or _meeting_by_code(c, code) is not None
+
+
+def _meeting_by_code(c, code: str):
+    """아직 열지 않은(또는 열린 지 얼마 안 된) 예약 특강·회의"""
+    return c.execute(select(db.meetings).where(
+        db.meetings.c.code == code, db.meetings.c.start_at > time.time() - CLASS_REVIVE_LIMIT)
+        .order_by(db.meetings.c.id.desc())).first()
+
+
+def _waiting_meeting(code: str):
+    with db.engine.connect() as c:
+        m = _meeting_by_code(c, code)
+    return m if m and not m.class_id else None
 
 
 async def new_code() -> str:
@@ -737,6 +755,99 @@ async def create_class(req: CreateReq, request: Request):
     return {"code": code, "title": title, "class_id": class_id}
 
 
+# ───────────────────────── 특강·회의 예약 ─────────────────────────
+
+
+class MeetingReq(BaseModel):
+    title: str = Field(min_length=1, max_length=60)
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def meeting_row(m, live_codes: set[str]) -> dict:
+    return {"id": m.id, "title": m.title, "code": m.code, "start_at": m.start_at,
+            "start": datetime.fromtimestamp(m.start_at, KST).strftime("%Y-%m-%d %H:%M"),
+            "opened": bool(m.class_id), "live": m.code in live_codes}
+
+
+@router.get("/api/meetings")
+async def my_meetings(request: Request):
+    """예약한 특강·회의 (지난 지 하루가 넘은 것은 빼고)"""
+    t = await require_user(request, "teacher")
+
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.meetings).where(
+                db.meetings.c.teacher_id == t["id"], db.meetings.c.start_at > time.time() - CLASS_REVIVE_LIMIT)
+                .order_by(db.meetings.c.start_at)).all()
+
+    live = {k.code for k in classes.values() if k.teacher_id == t["id"]}
+    return {"meetings": [meeting_row(m, live) for m in await db.run(run)]}
+
+
+@router.post("/api/meetings")
+async def add_meeting(req: MeetingReq, request: Request):
+    """특강·회의 예약: 입장 코드를 미리 받아 참가자에게 알려 줄 수 있다"""
+    t = await require_user(request, "teacher")
+    try:
+        start = datetime.fromisoformat(f"{req.date}T{req.time}").replace(tzinfo=KST).timestamp()
+    except ValueError:
+        raise HTTPException(400, "날짜·시각이 올바르지 않아요.")
+    if start < time.time() - 600:
+        raise HTTPException(400, "이미 지난 시각이에요. 지금 열려면 '지금 바로 열기'를 써 주세요.")
+    code = await new_code()
+
+    def run():
+        with db.engine.begin() as c:
+            return c.execute(insert(db.meetings).values(teacher_id=t["id"], title=clean(req.title, 60), code=code,
+                                                        start_at=start, created_at=time.time())).inserted_primary_key[0]
+
+    return {"id": await db.run(run), "code": code}
+
+
+def _my_meeting(mid: int, uid: int):
+    with db.engine.connect() as c:
+        m = c.execute(select(db.meetings).where(db.meetings.c.id == mid)).first()
+    if not m or m.teacher_id != uid:
+        raise HTTPException(404, "예약을 찾을 수 없어요.")
+    return m
+
+
+@router.post("/api/meetings/{mid}/open")
+async def open_meeting(mid: int, request: Request):
+    """예약한 특강·회의를 연다 (미리 알려 준 입장 코드 그대로)"""
+    t = await require_user(request, "teacher")
+    m = await db.run(_my_meeting, mid, t["id"])
+    if m.code in classes:
+        return {"code": m.code}
+    prune_classes()
+
+    def run():
+        with db.engine.begin() as c:
+            cid = c.execute(insert(db.classes).values(
+                code=m.code, title=m.title, teacher_id=t["id"], school=t["school"] or "", created_at=time.time(),
+                course_id=None)).inserted_primary_key[0]
+            c.execute(update(db.meetings).where(db.meetings.c.id == mid).values(class_id=cid))
+            return cid
+
+    class_id = await db.run(run)
+    classes[m.code] = Klass(db_id=class_id, code=m.code, title=m.title, teacher_id=t["id"], course_id=None)
+    return {"code": m.code}
+
+
+@router.post("/api/meetings/{mid}/delete")
+async def delete_meeting(mid: int, request: Request):
+    t = await require_user(request, "teacher")
+    await db.run(_my_meeting, mid, t["id"])
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.meetings).where(db.meetings.c.id == mid))
+
+    await db.run(run)
+    return {"ok": True}
+
+
 @router.get("/api/live/classes/{code}")
 async def class_info(code: str):
     k = await get_class(code)
@@ -768,8 +879,13 @@ async def ensure_enrolled(k: Klass, u: dict) -> None:
 
 @router.post("/api/live/classes/{code}/join")
 async def join_class(code: str, request: Request):
-    u = await require_user(request, "student")
+    """입장: 강좌 수업은 수강 확정 학생만, 특강·회의는 로그인한 사람 누구나(다른 선생님도) 참가자로"""
+    u = await require_user(request)
     k = await get_class(code)
+    if await is_class_teacher(k, u):
+        return {"teacher": True, "code": k.code}  # 이 수업의 선생님이면 선생님 화면으로
+    if u["role"] != "student" and k.course_id:
+        raise HTTPException(403, "강좌 수업은 수강 확정된 학생만 들어올 수 있어요.")
     await ensure_enrolled(k, u)
     s = add_student(k, u)
     k.last_active = time.time()
@@ -807,7 +923,7 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
         identity, name, role = ("teacher", "선생님", "teacher") if u["id"] == k.teacher_id \
             else (f"t-{u['id']}", f"{u['name'] or '보조'} 선생님", "teacher")
         sources = ["camera", "microphone", "screen_share", "screen_share_audio"]
-    elif u["role"] == "student" and str(u["id"]) in k.students:
+    elif str(u["id"]) in k.students:  # 참가자 (학생, 또는 특강·회의에 참가한 다른 선생님)
         s = k.students[str(u["id"])]
         if req.room != k.room_of(s):
             raise HTTPException(403, "지금은 그 방에 들어갈 수 없어요.")
@@ -1092,7 +1208,7 @@ async def live_socket(ws: WebSocket, code: str):
     if await is_class_teacher(k, u):
         conn = Conn(ws=ws, role="teacher", sid=None)
         k.roster = await db.run(load_roster, k.course_id)  # 선생님이 들어올 때마다 수강생 명단을 새로 읽는다
-    elif u["role"] == "student" and not needs_profile(u):
+    elif not needs_profile(u) and (u["role"] == "student" or not k.course_id):
         try:
             await ensure_enrolled(k, u)
             s = add_student(k, u)

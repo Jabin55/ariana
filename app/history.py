@@ -92,6 +92,49 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                          "start": kst(r.created_at)} for r in rows]}
 
 
+def _counts(c, rows) -> dict:
+    out = {}
+    for r in rows:
+        out[r.id] = len(set(c.execute(select(db.attendance.c.user_id).where(db.attendance.c.class_id == r.id)).scalars()))
+    return out
+
+
+@router.get("/api/courses/{course_id}/classes")
+async def course_classes(course_id: int, request: Request):
+    """수업 운영: 이 강좌에서 연 수업들 (최근 것부터)"""
+    from app.courses import owned_course
+    t = await require_user(request, "teacher")
+    course = await db.run(owned_course, course_id, t)
+    if hub_locked(course, t):
+        raise HTTPException(403, "그 거점학교 강사 활동 기간이 끝나 이 강좌의 수업 기록을 볼 수 없어요.")
+
+    def run():
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.classes).where(db.classes.c.course_id == course_id)
+                             .order_by(db.classes.c.created_at.desc())).all()
+            return rows, _counts(c, rows)
+
+    rows, counts = await db.run(run)
+    return {"classes": [{**class_row(r), "attended": counts[r.id], "start": kst(r.created_at),
+                         "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d")} for r in rows]}
+
+
+@router.get("/api/live/meetings-history")
+async def meetings_history(request: Request):
+    """특강·회의: 강좌와 상관없이 연 지난 모임 (최근 30개)"""
+    t = await require_user(request, "teacher")
+
+    def run():
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.classes).where(db.classes.c.teacher_id == t["id"], db.classes.c.course_id.is_(None))
+                             .order_by(db.classes.c.created_at.desc()).limit(30)).all()
+            return rows, _counts(c, rows)
+
+    rows, counts = await db.run(run)
+    return {"classes": [{**class_row(r), "attended": counts[r.id], "start": kst(r.created_at),
+                         "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d")} for r in rows]}
+
+
 def my_class_filter(c, t: dict):
     """SQL 조건: 내가 연 수업 + 내가 가르치는(팀티칭 보조교사 포함) 강좌의 수업"""
     return or_(db.classes.c.teacher_id == t["id"], db.classes.c.course_id.in_(taught_course_ids(c, t["id"]) or [-1]))

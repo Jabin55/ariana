@@ -460,7 +460,7 @@ def notice_rows(limit: int | None = None):
 
 
 def notice_json(r, body: bool = False) -> dict:
-    out = {"id": r.id, "title": r.title, "pinned": bool(r.pinned), "author": r.author,
+    out = {"id": r.id, "title": r.title, "pinned": bool(r.pinned), "author": r.author, "author_id": r.author_id,
            "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
            "new": r.created_at > time.time() - 7 * 86400}
     if body:
@@ -518,31 +518,50 @@ async def require_admin(request: Request) -> dict:
     return u
 
 
+async def require_teacher(request: Request) -> dict:
+    """선생님(승인받은 강사·관리교사·전체 관리자)"""
+    u = await require_user(request, profile=False)
+    if u["role"] != "teacher" and not u["is_admin"]:
+        raise HTTPException(403, "선생님만 할 수 있어요.")
+    return u
+
+
+def _own_notice(c, nid: int, u: dict):
+    n = c.execute(select(db.notices).where(db.notices.c.id == nid)).first()
+    if not n:
+        raise HTTPException(404, "공지사항을 찾을 수 없어요.")
+    if not u["is_admin"] and n.author_id != u["id"]:
+        raise HTTPException(403, "내가 쓴 공지만 고치거나 지울 수 있어요.")
+    return n
+
+
 @router.post("/api/admin/notices")
 async def save_notice(req: NoticeReq, request: Request):
-    u = await require_admin(request)
-    values = {"title": req.title.strip(), "body": req.body.strip(), "pinned": int(req.pinned)}
+    """외솔온닷 공지사항: 선생님 누구나 쓴다. 고치기는 쓴 사람과 전체 관리자만, 맨 위 고정은 전체 관리자만"""
+    u = await require_teacher(request)
+    values = {"title": req.title.strip(), "body": req.body.strip()}
+    if u["is_admin"]:
+        values["pinned"] = int(req.pinned)
 
     def run():
         with db.engine.begin() as c:
             if req.id:
-                n = c.execute(update(db.notices).where(db.notices.c.id == req.id)
-                              .values(updated_at=time.time(), **values)).rowcount
-                if not n:
-                    raise HTTPException(404, "공지사항을 찾을 수 없어요.")
+                _own_notice(c, req.id, u)
+                c.execute(update(db.notices).where(db.notices.c.id == req.id).values(updated_at=time.time(), **values))
                 return req.id
-            return c.execute(insert(db.notices).values(created_at=time.time(), author=u["name"] or "", **values)
-                             ).inserted_primary_key[0]
+            return c.execute(insert(db.notices).values(created_at=time.time(), author=u["name"] or "",
+                                                       author_id=u["id"], **values)).inserted_primary_key[0]
 
     return {"id": await db.run(run)}
 
 
 @router.post("/api/admin/notices/{nid}/delete")
 async def delete_notice(nid: int, request: Request):
-    await require_admin(request)
+    u = await require_teacher(request)
 
     def run():
         with db.engine.begin() as c:
+            _own_notice(c, nid, u)
             c.execute(delete(db.notices).where(db.notices.c.id == nid))
 
     await db.run(run)
@@ -591,7 +610,7 @@ def banner_dir():
 
 @router.post("/api/admin/banners")
 async def save_banners(req: BannersReq, request: Request):
-    await require_admin(request)
+    await require_teacher(request)  # 선생님 누구나 메인 전광판을 꾸밀 수 있다 (강좌 홍보 등)
     out = []
     for b in req.banners:
         d = b.model_dump()
@@ -622,7 +641,7 @@ async def save_banners(req: BannersReq, request: Request):
 @router.post("/api/admin/banners/image")
 async def upload_banner_image(request: Request, name: str = Query(default="banner.png", max_length=150)):
     """배너 그림 올리기 (PNG·JPG·WEBP·GIF, 5MB까지). 요청 본문 = 그림 파일 그대로"""
-    await require_admin(request)
+    await require_teacher(request)
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in IMAGE_TYPES:
         raise HTTPException(415, "그림은 PNG, JPG, WEBP, GIF 파일로 올려 주세요.")

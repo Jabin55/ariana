@@ -1277,9 +1277,13 @@ def test_home_notices_and_banners(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss, anyone, t = login("boss@gmail.com", name="관리자"), TestClient(app), teacher()
     assert anyone.get("/live/home").status_code == 200
-    # 공지사항: 전체 관리자만 쓰고, 누구나 본다. 고정 공지가 맨 위
-    assert t.post("/api/admin/notices", json={"title": "x"}).status_code == 403
+    # 공지사항: 선생님 누구나 쓰고, 누구나 본다. 학생은 못 쓴다. 고정 공지가 맨 위(고정은 전체 관리자만)
+    assert student(9).post("/api/admin/notices", json={"title": "x"}).status_code == 403
+    tid = t.post("/api/admin/notices", json={"title": "강사 공지", "pinned": True}).json()["id"]
     a = boss.post("/api/admin/notices", json={"title": "첫 공지", "body": "<b>안녕</b>"}).json()["id"]
+    assert t.post("/api/admin/notices", json={"id": a, "title": "남의 공지 고치기"}).status_code == 403
+    assert t.post(f"/api/admin/notices/{a}/delete", json={}).status_code == 403
+    assert t.post(f"/api/admin/notices/{tid}/delete", json={}).status_code == 200  # 내가 쓴 공지는 지울 수 있다
     boss.post("/api/admin/notices", json={"title": "수강신청 안내", "pinned": True})
     assert [n["title"] for n in anyone.get("/api/notices?limit=5").json()["notices"]] == ["수강신청 안내", "첫 공지"]
     page = anyone.get(f"/live/notices/{a}").text
@@ -1298,7 +1302,8 @@ def test_home_notices_and_banners(monkeypatch, tmp_path):
                                                           {"image": img}, {"text": "제목도 그림도 없음"}]})
     saved = r.json()["banners"]
     assert [b["title"] for b in saved] == ["여름학기 신청", ""] and saved[0]["theme"] == "green" and saved[1]["image"] == img
-    assert t.post("/api/admin/banners", json={"banners": []}).status_code == 403
+    assert t.post("/api/admin/banners", json={"banners": []}).status_code == 200  # 선생님도 전광판을 꾸민다
+    assert student(8).post("/api/admin/banners", json={"banners": []}).status_code == 403
 
 
 def test_pages_are_revalidated():

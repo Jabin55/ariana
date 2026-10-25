@@ -56,6 +56,28 @@ site_settings = Table(
     Column("value", Text, nullable=False),
 )
 
+course_notices = Table(
+    "course_notices", metadata,  # 강좌 공지사항 (강사 → 그 강좌 수강생)
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("title", String(120), nullable=False),
+    Column("body", Text, nullable=False, default=""),
+    Column("author", String(30), nullable=False, default=""),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float),
+)
+
+meetings = Table(
+    "meetings", metadata,  # 예약한 특강·회의 (입장 코드를 미리 받아 두고, 그 시각에 연다)
+    Column("id", Integer, primary_key=True),
+    Column("teacher_id", Integer, nullable=False, index=True),
+    Column("title", String(60), nullable=False),
+    Column("code", String(8), nullable=False, index=True),
+    Column("start_at", Float, nullable=False),  # 예약 시각
+    Column("created_at", Float, nullable=False),
+    Column("class_id", Integer),  # 연 뒤의 수업 번호
+)
+
 course_sessions = Table(
     "course_sessions", metadata,  # 강좌 회차 (날짜·시각·주제)
     Column("id", Integer, primary_key=True),
@@ -83,6 +105,7 @@ notices = Table(
     Column("body", Text, nullable=False, default=""),
     Column("pinned", Integer, nullable=False, default=0),  # 위에 고정
     Column("author", String(30), nullable=False, default=""),
+    Column("author_id", Integer),  # 쓴 선생님 (고치기·지우기는 쓴 사람과 전체 관리자만)
     Column("created_at", Float, nullable=False),
     Column("updated_at", Float),
 )
@@ -361,6 +384,7 @@ def init() -> None:
              ("courses", "class_days", "VARCHAR(20) NOT NULL DEFAULT ''"),
              ("courses", "class_start", "VARCHAR(5) NOT NULL DEFAULT ''"),
              ("courses", "class_end", "VARCHAR(5) NOT NULL DEFAULT ''"),
+             ("notices", "author_id", "INTEGER"),
              ("memberships", "affil_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "office", "VARCHAR(30) NOT NULL DEFAULT ''"),
              ("memberships", "license", "VARCHAR(100) NOT NULL DEFAULT ''"),
