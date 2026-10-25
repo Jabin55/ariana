@@ -168,11 +168,11 @@ async function drawCreateForm() {
 }
 $("#more-roles").addEventListener("click", () => showGuest(true));
 
-/** 강좌 개설 탭 아래: 메인 전광판·외솔온닷 공지사항 (선생님 누구나) */
+/** 강좌 개설 탭 아래: 메인 전광판 (선생님 누구나). 외솔온닷 공지사항은 공지사항 페이지에서 바로 쓴다 */
 async function drawCreateExtras() {
   const box = $("#create-extras");
   try {
-    fill(box, await bannersEditor(drawCreateExtras), await noticesEditor(drawCreateExtras));
+    fill(box, await bannersEditor(drawCreateExtras));
   } catch (err) { fill(box, h("p", { class: "error" }, err.message)); }
 }
 

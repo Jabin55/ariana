@@ -686,46 +686,6 @@ function staffSections(list, today, reload, label) {
 }
 
 /* 전체 관리자: 관리교사 승인 */
-/** 외솔온닷 공지사항: 선생님 누구나 쓴다. 고치기·지우기는 내가 쓴 것만(전체 관리자는 모두), 맨 위 고정은 전체 관리자만 */
-async function noticesEditor(reload) {
-  const { notices } = await api("/api/notices");
-  const title = h("input", { maxlength: 120, placeholder: "제목" });
-  const body = h("textarea", { rows: 6, maxlength: 20000, placeholder: "내용" });
-  const pinned = h("input", { type: "checkbox" });
-  let editId = null;
-  const submit = h("button", { class: "primary", type: "button" }, "공지 올리기");
-  const reset = () => { editId = null; title.value = ""; body.value = ""; pinned.checked = false; submit.textContent = "공지 올리기"; };
-  submit.onclick = async () => {
-    if (!title.value.trim()) { title.focus(); return; }
-    try {
-      await api("/api/admin/notices", { id: editId, title: title.value, body: body.value, pinned: pinned.checked });
-      toast(editId ? "공지를 고쳤어요." : "공지를 올렸어요. 메인 화면 공지사항에 보여요.");
-      reset();
-      reload();
-    } catch (err) { toast(err.message); }
-  };
-  const mine = (n) => ME.is_admin || n.author_id === ME.id;
-  return h("details", { class: "card", style: "margin:12px 0" },
-    h("summary", {}, h("strong", {}, "📢 외솔온닷 공지사항 쓰기 "), h("span", { class: "muted" }, `${notices.length}개`)),
-    h("p", { class: "muted", style: "font-size:0.9rem" }, "메인 화면 '공지사항'에 올라가는 글이에요. 선생님 누구나 쓸 수 있고, 내가 쓴 글만 고치거나 지울 수 있어요. 한 강좌 수강생에게만 알릴 내용은 '강좌 운영' → 강좌 → '공지사항'에 올려 주세요."),
-    h("div", { class: "course-form", style: "margin-top:10px" }, h("label", { class: "wide" }, "제목", title),
-      h("label", { class: "wide" }, "내용", body),
-      ME.is_admin ? h("label", { class: "switch" }, pinned, " 맨 위에 고정") : null,
-      h("div", { class: "row wide" }, submit, h("button", { type: "button", onclick: reset }, "새로 쓰기"))),
-    h("ul", { class: "notice-list", style: "margin-top:12px" }, notices.map((n) => h("li", {},
-      h("a", { href: `/live/notices/${n.id}`, target: "_blank" }, n.pinned ? "📌 " : "", n.title),
-      h("span", { class: "row", style: "gap:6px;flex:0 0 auto" }, h("span", { class: "muted" }, `${n.author ? `${n.author} · ` : ""}${n.date}`),
-        mine(n) ? h("button", { class: "small", onclick: () => {
-          editId = n.id; title.value = n.title; body.value = n.body; pinned.checked = n.pinned; submit.textContent = "고친 내용 저장";
-          title.focus();
-        } }, "고치기") : null,
-        mine(n) ? h("button", { class: "small danger", onclick: async () => {
-          if (!confirm(`'${n.title}' 공지를 지울까요?`)) return;
-          await api(`/api/admin/notices/${n.id}/delete`, {});
-          reload();
-        } }, "지우기") : null)))));
-}
-
 /** 메인 전광판(배너): 선생님 누구나 꾸민다. 비워 두면 기본 배너가 보여요 */
 async function bannersEditor(reload) {
   const { banners } = await api("/api/banners");

@@ -979,3 +979,9 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .group-board .members { flex-direction: column; }
 /* 선생님 화면: 크게 보이는 화면 아래 학생은 작은 줄로 */
 .grid.strip { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.notice-actions { margin: 0 0 12px; }
+.notice-editor label:not(.switch) { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.notice-editor label.switch { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.notice-editor input:not([type=checkbox]), .notice-editor textarea { width: 100%; }
+#notice-tools { display: inline-flex; gap: 6px; }
+.site-main > #notice-tools, #notice-tools:has(.notice-editor) { display: block; }

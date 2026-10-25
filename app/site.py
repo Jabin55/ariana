@@ -479,6 +479,10 @@ async def list_notices(limit: int = Query(default=0, ge=0, le=200)):
     return {"notices": [notice_json(r, body=True) for r in await db.run(notice_rows, limit or None)]}
 
 
+# 공지사항 쓰기·고치기·지우기: 선생님은 누구나 쓰고, 내가 쓴 글만(전체 관리자는 모두) 고치거나 지운다
+NOTICE_SCRIPT = '<script src="/static/live/notices.js"></script>'
+
+
 @router.get("/live/notices", response_class=HTMLResponse)
 async def notices_page():
     rows = await db.run(notice_rows)
@@ -487,8 +491,9 @@ async def notices_page():
         f'{"<span class=tag>공지</span>" if r.pinned else ""}{html.escape(r.title)}'
         f'{"<span class=new-dot>N</span>" if notice_json(r)["new"] else ""}</a>'
         f'<span class="muted">{notice_json(r)["date"]}</span></li>' for r in rows)
-    return site_page("공지사항", f'<section class="info-block"><ul class="notice-list big">{items or "<li class=muted>아직 공지사항이 없어요.</li>"}</ul></section>',
-                     "외솔온닷 소식과 안내")
+    return site_page("공지사항", '<div id="notice-tools"></div>'
+                     f'<section class="info-block"><ul class="notice-list big">{items or "<li class=muted>아직 공지사항이 없어요.</li>"}</ul></section>',
+                     "외솔온닷 소식과 안내", scripts=NOTICE_SCRIPT)
 
 
 @router.get("/live/notices/{nid}", response_class=HTMLResponse)
@@ -502,12 +507,13 @@ async def notice_page(nid: int):
         raise HTTPException(404, "공지사항을 찾을 수 없어요.")
     j = notice_json(r)
     return site_page("공지사항", f"""
-<article class="info-block notice-view">
+<article class="info-block notice-view" id="notice-view" data-id="{r.id}" data-author="{r.author_id or ''}" data-pinned="{int(bool(r.pinned))}">
   <h2>{html.escape(r.title)}</h2>
   <p class="muted">{j["date"]}{f" · {html.escape(r.author)}" if r.author else ""}</p>
   <div class="notice-body">{html.escape(r.body)}</div>
 </article>
-<p><a class="button" href="/live/notices">← 목록으로</a></p>""", "외솔온닷 소식과 안내")
+<p class="row"><a class="button" href="/live/notices">← 목록으로</a><span class="grow"></span><span id="notice-tools"></span></p>""",
+                     "외솔온닷 소식과 안내", scripts=NOTICE_SCRIPT)
 
 
 class NoticeReq(BaseModel):
