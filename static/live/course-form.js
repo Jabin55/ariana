@@ -367,8 +367,8 @@ function courseFacts(c) {
   const dl = h("dl", { class: "facts" }, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]),
     c.syllabus ? [h("dt", {}, "수업계획서"), h("dd", {}, h("a", { href: c.syllabus.url, target: "_blank" }, `📄 ${c.syllabus.name}`))] : null);
   if (!c.sessions?.length) return dl;
-  return h("div", {}, dl, h("details", { class: "course-more" }, h("summary", {}, `회차표 보기 (${c.sessions.length}회)`),
+  return h("div", {}, dl,
     h("table", { class: "sess-table view" }, h("tr", {}, h("th", {}, "회차"), h("th", {}, "날짜"), h("th", {}, "시간"), h("th", {}, "주제")),
       c.sessions.map((x) => h("tr", {}, h("td", {}, x.no), h("td", {}, `${fmtDate(x.date)} (${DAYS[dayOf(x.date)]})`),
-        h("td", {}, x.start ? `${x.start}~${x.end}` : ""), h("td", {}, x.topic))))));
+        h("td", {}, x.start ? `${x.start}~${x.end}` : ""), h("td", {}, x.topic)))));
 }

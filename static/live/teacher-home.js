@@ -411,32 +411,59 @@ async function renderCourseNotices(c, box) {
 }
 
 /* 수업 열기: 열린 수업이 있으면 들어가기, 없으면 회차 이름으로 바로 열기 */
+const openPick = {}; // 과목별로 펼친 회차 번호
+
 async function renderOpenClass(c, box) {
   const { classes } = await api("/api/live/my-classes");
   const open = classes.filter((x) => x.course_id === c.id);
   const t = today();
-  const next = (c.sessions || []).find((s) => s.date >= t);
-  const name = h("input", { maxlength: 60, value: next ? `${next.no}회차${next.topic && next.topic !== `${next.no}회차` ? ` · ${next.topic}` : ""}` : "", placeholder: "수업 주제 (예: 3차시 헌법과 기본권)" });
+  const sessions = c.sessions || [];
+  const next = sessions.find((s) => s.date >= t);
   const notYet = c.pending || 0;
   if (c.approval !== "approved") {
     fill(box, approvalNote(c));
     return;
   }
-  fill(box, 
+  const start = async (title) => {
+    if (notYet && !confirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
+    try {
+      const res = await api("/api/live/classes", { title: title || c.title, course_id: c.id });
+      location.href = `/live/teacher/${res.code}`;
+    } catch (err) { toast(err.message); }
+  };
+  // 회차표가 없으면 주제만 적고 바로 연다
+  const plain = () => {
+    const name = h("input", { maxlength: 60, placeholder: "수업 주제 (예: 3차시 헌법과 기본권)" });
+    return h("div", { class: "open-box" }, h("label", { class: "grow" }, "수업 주제", name),
+      h("button", { class: "primary big", onclick: () => start(name.value.trim()) }, "▶ 지금 온라인 수업 열기"));
+  };
+  // 회차표: 늘 펼쳐 두고, 날짜를 누르면 그 아래에서 주제를 적고 [지금 열기]
+  const table = () => h("table", { class: "sess-table view sess-open" },
+    h("tr", {}, ["회차", "날짜", "시간", "주제"].map((x) => h("th", {}, x))),
+    sessions.flatMap((s) => {
+      const picked = openPick[c.id] === s.no;
+      const toggle = () => { openPick[c.id] = picked ? null : s.no; renderOpenClass(c, box); };
+      const row = h("tr", { class: `${picked ? "on" : ""} ${next && next.no === s.no ? "next" : ""}` },
+        h("td", {}, s.no),
+        h("td", {}, h("button", { type: "button", class: "link-btn", onclick: toggle },
+          `${fmtDate(s.date)} (${DAYS[dayOf(s.date)]})`), s.date === t ? h("span", { class: "tag" }, "오늘") : null),
+        h("td", {}, s.start ? `${s.start}~${s.end}` : ""), h("td", {}, s.topic));
+      if (!picked) return [row];
+      const auto = !s.topic || s.topic === `${s.no}회차`;
+      const topic = h("input", { maxlength: 50, value: auto ? "" : s.topic, placeholder: "수업 주제 (예: 헌법과 기본권)" });
+      const go = () => start(`${s.no}회차${topic.value.trim() ? ` · ${topic.value.trim()}` : ""}`);
+      topic.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+      setTimeout(() => topic.focus(), 0);
+      return [row, h("tr", { class: "sess-start" }, h("td", { colspan: 4 },
+        h("div", { class: "open-box" }, h("label", { class: "grow" }, `${s.no}회차 수업 주제`, topic),
+          h("button", { class: "primary", onclick: go }, "▶ 지금 열기"))))];
+    }));
+  fill(box,
     open.length ? h("div", { class: "banner ok" }, h("strong", {}, "진행 중인 수업"), ...open.map((x) =>
       h("a", { class: "button small primary", href: `/live/teacher/${x.code}` }, `▶ ${x.title} 들어가기`))) : null,
-    c.archived ? h("p", { class: "muted" }, "보관한 강좌에는 수업을 열 수 없어요. '보관 해제'를 먼저 눌러 주세요.") : h("div", { class: "open-box" },
-      h("label", { class: "grow" }, "수업 주제", name),
-      h("button", { class: "primary big", onclick: async () => {
-        if (notYet && !confirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
-        try {
-          const res = await api("/api/live/classes", { title: name.value.trim() || c.title, course_id: c.id });
-          location.href = `/live/teacher/${res.code}`;
-        } catch (err) { toast(err.message); }
-      } }, "▶ 지금 온라인 수업 열기")),
     notYet ? h("p", { class: "muted", style: "font-size:0.9rem" }, `⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.`) : null,
-    next ? h("p", {}, `다음 회차: ${next.no}회차 ${fmtDate(next.date)} ${next.start || ""}~${next.end || ""}${next.topic ? ` · ${next.topic}` : ""}`) : null,
-    courseFacts({ sessions: c.sessions }));
+    c.archived ? h("p", { class: "muted" }, "보관한 강좌에는 수업을 열 수 없어요. '보관 해제'를 먼저 눌러 주세요.")
+      : sessions.length ? table() : plain());
 }
 
 /* ───── 학습 관리: 위에 [수업참석률][공지][설문][퀴즈][활동] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */

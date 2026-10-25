@@ -1142,3 +1142,10 @@ input[readonly] { background: var(--surface-2, #f1f3f5); color: var(--muted); cu
 .me-school select { flex: 0 0 auto; width: auto !important; }
 .me-school input { flex: 1; min-width: 0; }
 @media (max-width: 560px) { .me-table th { width: 78px; padding: 8px; } .me-table td { padding: 6px 8px; } .me-school { flex-wrap: wrap; } }
+/* 온라인 수업 열기: 회차표 — 날짜를 누르면 그 아래에서 주제를 적고 연다 */
+.sess-open .link-btn { color: var(--brand); font-size: inherit; padding: 0; font-weight: 600; }
+.sess-open tr.next td { background: var(--accent-soft); }
+.sess-open tr.on td { background: var(--accent-soft); border-bottom: none; }
+.sess-open tr.sess-start td { background: var(--accent-soft); padding: 4px 10px 12px; }
+.sess-open tr.sess-start .open-box { margin: 0; }
+.sess-open .tag { margin-left: 6px; }
