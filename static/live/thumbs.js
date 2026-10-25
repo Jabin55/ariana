@@ -1,4 +1,4 @@
-/* 강좌 카드 머리 그림: 교과별 색·그림 + 대상 학년 동그라미 + 모집 상태 띠 (수업신청·메인·수강안내 공통) */
+/* 강좌 카드 머리 그림: 교과별 색·그림 + 과목군 동그라미 + 과목명 + 학년도·학기 띠 (수업신청·메인·수강안내 공통) */
 (function () {
   const AREA = {
     국어: ["📖", "#ff8a5c", "#e8663a"], 수학: ["📐", "#6d8cf0", "#3d63dd"], 영어: ["🔤", "#b18cf2", "#7a4fd6"],
@@ -23,13 +23,17 @@
   /** 카드 머리 그림 HTML */
   function courseThumb(c) {
     const [ico, a, b] = AREA[c.subject_area] || ["📚", "#7fc8a9", "#1b6b4a"];
-    const g = c.grades?.length ? (c.grades.length === 1 ? `${c.grades[0]}학년` : `${c.grades.join(",")}<br>학년`) : "전<br>학년";
-    const [label, cls] = courseState(c);
+    // 동그라미: 과목군(사회·국어…). 네 글자 이상이면 두 줄로
+    const area = c.subject_area || "교양";
+    const cut = area.includes("·") ? area.indexOf("·") + 1 : Math.floor(area.length / 2);
+    const circle = area.length > 3 ? `${esc(area.slice(0, cut))}<br>${esc(area.slice(cut))}` : esc(area);
+    const term = c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : "";
+    const [state] = courseState(c);
     return `<div class="thumb" style="--a:${a};--b:${b}">
-      <span class="thumb-grade">${g}</span>
+      <span class="thumb-grade${area.length > 3 ? " long" : ""}">${circle}</span>
       <span class="thumb-ico" aria-hidden="true">${ico}</span>
-      <span class="thumb-sub">${esc(c.subject_area || "")}</span>
-      <span class="thumb-state ${cls}">${label}</span></div>`;
+      <span class="thumb-sub">${esc(c.subject || c.title || "")}</span>
+      <span class="thumb-state" title="${state}">${esc(term || state)}</span></div>`;
   }
 
   window.courseThumb = courseThumb;

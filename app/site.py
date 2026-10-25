@@ -357,7 +357,7 @@ async def courses_page():
       && (!g || !c.grades.length || c.grades.includes(g)));
     box.innerHTML = shown.length ? shown.map((c) => {
       // 대상학년 · 학기 · 강좌명 · 학점 · 인원 · 거점학교 · 성취도 · 평가방식만
-      const grade = c.grades.length ? `${c.grades.join("·")}학년` : "전 학년";
+      const grades = c.grades.length ? c.grades.map((g) => `${g}학년`) : ["전 학년"];
       const term = c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : "";
       const facts = [
         ["학점", c.credits ? `${c.credits}학점` : "-"],
@@ -367,7 +367,7 @@ async def courses_page():
         ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
       ];
       return `<article class="course-tile with-thumb">${window.courseThumb(c)}<div class="ct-body">
-      <div class="ct-top"><span class="tag soft">${esc(grade)}</span>${term ? `<span class="tag soft">${esc(term)}</span>` : ""}</div>
+      <div class="ct-top">${grades.map((g) => `<span class="tag soft">${esc(g)}</span>`).join("")}${term ? `<span class="tag soft">${esc(term)}</span>` : ""}</div>
       <h3>${esc(c.title)}</h3>
       <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
     </div></article>`;

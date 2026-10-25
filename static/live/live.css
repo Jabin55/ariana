@@ -653,9 +653,10 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .thumb::after { content: ""; position: absolute; left: 30%; bottom: -40px; width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,0.12); }
 .thumb-ico { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-size: 3rem; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.18)); }
 .thumb-grade { position: absolute; left: 12px; top: 12px; z-index: 1; width: 50px; height: 50px; border-radius: 50%; background: #fff; color: var(--b);
-  display: grid; place-items: center; text-align: center; font-weight: 800; font-size: 0.78rem; line-height: 1.1; box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
-.thumb-sub { position: absolute; left: 72px; top: 26px; color: #fff; font-weight: 800; font-size: 0.95rem; opacity: 0.95; }
-.thumb-state { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; padding: 5px 0; text-align: center; font-size: 0.82rem; font-weight: 800; color: #fff; background: rgba(15, 35, 60, 0.55); }
+  display: grid; place-items: center; text-align: center; font-weight: 800; font-size: 0.92rem; line-height: 1.1; box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
+.thumb-grade.long { font-size: 0.72rem; }
+.thumb-sub { position: absolute; left: 72px; right: 84px; top: 26px; color: #fff; font-weight: 800; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thumb-state { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; padding: 5px 0; text-align: center; font-size: 0.82rem; font-weight: 800; color: #fff; background: rgba(10, 30, 25, 0.35); }
 .thumb-state.open { background: rgba(232, 102, 58, 0.92); }
 .thumb-state.before { background: rgba(61, 99, 221, 0.85); }
 .thumb-state.running { background: rgba(27, 107, 74, 0.9); }

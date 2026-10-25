@@ -112,7 +112,7 @@
       const open = list.filter((c) => c.recruit === "open").concat(list.filter((c) => c.recruit === "before")).slice(0, 6);
       box.innerHTML = open.length ? open.map((c) => `<a class="mini-course with-thumb" href="/live/courses">
           ${window.courseThumb ? window.courseThumb(c) : ""}
-          <span class="mc-meta">${[c.grades.length ? `${c.grades.join("·")}학년` : "전 학년", c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : ""].filter(Boolean).map(esc).join(" · ")}</span>
+          <span class="mc-meta">${[c.grades.length ? c.grades.map((g) => `${g}학년`).join(" ") : "전 학년", c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : ""].filter(Boolean).map(esc).join(" · ")}</span>
           <strong>${esc(c.title)}</strong>
           <span class="mc-meta">${[c.credits ? `${c.credits}학점` : "", c.capacity ? `${c.capacity}명` : "인원 제한 없음", c.hub_school].filter(Boolean).map(esc).join(" · ")}</span>
           <span class="mc-meta">${[c.achievement_text ? `성취도 ${c.achievement_text}` : "", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}%·수행 ${c.perf_ratio}%` : ""].filter(Boolean).map(esc).join(" · ")}</span></a>`).join("")
