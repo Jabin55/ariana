@@ -219,7 +219,7 @@ function renderMedia(room) {
   if (!room) { syncTiles(stage, []); syncTiles(grid, []); $("#stage-empty").hidden = false; renderControls(); return; }
 
   const people = allParticipants(room);
-  const teacher = people.find(isTeacher);
+  const teacher = people.find((p) => p.identity === "teacher") || people.find(isTeacher); // 팀티칭이면 수업을 연 선생님이 크게
   if (inGroup) {
     syncTiles(stage, []);
     // 선생님은 모둠에서 말할 때만 타일로 보인다(듣기만 할 때는 위 배너로 안내)

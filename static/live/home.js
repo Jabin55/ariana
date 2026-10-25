@@ -285,11 +285,24 @@ async function showGuest(fromTeacher = false) {
   $("#a-aff").value = ME.school || "";
   const last = ME.memberships[ME.memberships.length - 1];
   $("#a-contact").value = last?.contact || "";
+  $("#a-email").value = last?.email || ME.email || "";
+  const meta = await subjectMeta();
+  $("#a-office").replaceChildren(h("option", { value: "" }, "교육청을 고르세요"), ...meta.offices.map((x) => h("option", { value: x }, x)));
+  if (last?.affil_type) {
+    $("#a-affil-type").value = last.affil_type;
+    $("#a-office").value = last.office || "";
+    $("#a-license").value = last.license || "";
+  } else {
+    $("#a-office").value = "울산광역시교육청";
+  }
+  // 거점학교(관리교사 신청)는 울산 학교 목록에서 검색해서 고른다
+  $("#school-options").replaceChildren(...CONFIG.schools.map((x) => h("option", { value: x })));
+  updateAffil();
   // 내 신청 현황
   $("#my-apps").replaceChildren(...ME.memberships.map((m) => {
     const [cls, label] = MEMBER_STATUS[m.status] || ["pending", m.status];
     return h("div", { class: "box", style: "margin-bottom:6px" },
-      h("div", { class: "row" }, h("strong", {}, `${m.hub} ${ROLE_NAME[m.role]}`), h("span", { class: `status ${cls}` }, label)),
+      h("div", { class: "row" }, h("strong", {}, `${m.hub} ${m.kind === "assistant" ? "팀티칭 보조교사" : ROLE_NAME[m.role]}`), h("span", { class: `status ${cls}` }, label)),
       m.status === "pending" && wishPeriod(m) ? h("div", { class: "muted", style: "font-size:0.85rem" }, `희망 기간 ${wishPeriod(m)}`) : null,
       m.status !== "pending" && period(m) ? h("div", { class: "muted", style: "font-size:0.85rem" }, `활동 기간 ${period(m)}`) : null,
       m.admin_note ? h("div", { style: "font-size:0.9rem" }, `메모: ${m.admin_note}`) : null,
@@ -303,8 +316,35 @@ async function showGuest(fromTeacher = false) {
   updateApplyRole();
 }
 
+let META = null;
+async function subjectMeta() {
+  META = META || await api("/api/subjects");
+  return META;
+}
+
+// 소속 구분에 따라 칸이 바뀐다: 학교 교원은 교육청·학교, 대학 교원은 대학(학과), 미임용은 교원자격
+const AFFIL = {
+  school: ["소속 학교", "예: 신정고등학교", true],
+  univ: ["소속 대학 (학과)", "예: 울산대학교 사회과교육과", true],
+  cert: ["소속 (있으면)", "없으면 비워 두세요", false],
+  other: ["소속 기관 (있으면)", "예: ○○연구소", false],
+};
+function updateAffil() {
+  const t = $("#a-affil-type").value;
+  const [label, ph, req] = AFFIL[t];
+  $("#a-aff-label").textContent = label;
+  $("#a-aff").placeholder = ph;
+  $("#a-aff").required = req;
+  $("#a-office-wrap").hidden = t !== "school";
+  $("#a-office").required = t === "school";
+  $("#a-license-wrap").hidden = t !== "cert";
+  $("#a-license").required = t === "cert";
+}
+$("#a-affil-type").addEventListener("change", updateAffil);
+
 function updateApplyRole() {
   const role = document.querySelector("input[name=a-role]:checked").value;
+  $("#a-kind-wrap").hidden = role !== "instructor";
   $("#a-hub-pick").hidden = role !== "instructor";
   $("#a-hub").required = role === "instructor";
   $("#a-hub-name-wrap").hidden = role !== "coordinator";
@@ -325,6 +365,9 @@ $("#apply").addEventListener("submit", async (e) => {
       role, hub_id: role === "instructor" ? Number($("#a-hub").value) || null : null,
       hub_name: role === "coordinator" ? $("#a-hub-name").value : "",
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value,
+      affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
+      license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
+      assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",
       message: role === "coordinator" ? $("#a-msg").value : "",
       wish_from: role === "instructor" ? $("#a-wish-from").value : "",
       wish_until: role === "instructor" ? $("#a-wish-until").value : "",
@@ -406,15 +449,17 @@ async function loadCourses() {
   };
   const line = (c) => h("div", { class: "course-line" },
     h("div", { class: "grow" }, h("strong", {}, c.title), courseInfo(c),
-      c.description ? h("div", { class: "muted", style: "font-size:0.85rem" }, c.description) : null),
+      (c.description || courseFacts(c)) ? h("details", { class: "course-more" }, h("summary", {}, "자세히 보기"),
+        courseFacts(c), c.description ? h("p", { style: "white-space:pre-wrap;margin:6px 0" }, c.description) : null) : null),
     c.status ? h("span", { class: `status ${c.status === "instructor_ok" ? "pending" : c.status}`,
       title: c.note ? `사유: ${c.note}` : "" }, ENROLL_STATUS[c.status] + (c.note ? ` (${c.note})` : "")) : null);
   $("#my-courses").replaceChildren(...mine.map((c) => h("div", { class: "row" }, line(c),
     h("button", { class: "small", onclick: () => enrollBtn(c, "DELETE") }, c.status === "pending" ? "신청 취소" : "수강 취소"))));
   if (!mine.length) $("#my-courses").append(h("span", { class: "muted" }, "아직 수강 중인 강좌가 없어요."));
   $("#open-courses").replaceChildren(...others.map((c) => h("div", { class: "row" }, line(c),
-    c.open ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
-      : h("span", { class: "muted" }, "마감"))));
+    c.recruit === "open" ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
+      : c.recruit === "before" ? h("span", { class: "muted" }, `모집 예정 (${fmtDate(c.recruit_start)}부터)`)
+        : h("span", { class: "muted" }, "마감"))));
   if (!others.length) $("#open-courses").append(h("span", { class: "muted" }, "신청할 수 있는 강좌가 없어요."));
 }
 
@@ -531,44 +576,19 @@ let teacherCourses = [];
 const editing = new Set(); // 정보 수정 중인 강좌
 
 function courseEditForm(c) {
-  const f = (id, label, value, attrs = {}) => h("label", {}, label, h("input", { name: id, value, ...attrs }));
-  const form = h("form", { class: "course-form", style: "margin-top:8px", onsubmit: async (e) => {
-    e.preventDefault();
-    const v = Object.fromEntries(new FormData(form));
-    delete v.grade;
-    v.grades = [...form.querySelectorAll("input[name=grade]:checked")].map((x) => Number(x.value));
-    try {
-      await api(`/api/courses/${c.id}`, v);
-      editing.delete(c.id);
-      toast("강좌 정보를 고쳤어요.");
-      loadTeacherCourses();
-    } catch (err) { toast(err.message); }
-  } },
-    f("title", "강의명", c.title, { maxlength: 60, required: true }),
-    f("instructor", "강사명", c.instructor, { maxlength: 30, required: true }),
-    f("hub_school", "거점학교명", c.hub_school, { maxlength: 60, required: true }),
-    h("div", { class: "period" }, "강의기간", h("div", { class: "row" },
-      h("input", { name: "start_date", type: "date", value: c.start_date, required: true }), " ~ ",
-      h("input", { name: "end_date", type: "date", value: c.end_date, required: true }))),
-    h("div", { class: "wide grade-pick" }, "대상 학년 ", h("span", { class: "muted", style: "font-size:0.85rem" }, "(고르지 않으면 모든 학년)"),
-      h("div", { class: "row" }, [1, 2, 3].map((g) => h("label", { class: "switch" },
-        h("input", { type: "checkbox", name: "grade", value: g, checked: (c.grades || []).includes(g) }), ` ${g}학년`)))),
-    h("label", { class: "wide" }, "설명", h("input", { name: "description", value: c.description, maxlength: 300 })),
-    h("div", { class: "row wide" }, h("button", { class: "primary", type: "submit" }, "저장"),
-      h("button", { type: "button", onclick: () => { editing.delete(c.id); renderCourseList(); } }, "취소")));
-  return form;
+  const box = h("div", { class: "edit-box" }, h("p", { class: "muted" }, "불러오는 중…"));
+  courseForm(c, (saved) => {
+    editing.delete(c.id);
+    if (saved) toast("강좌 정보를 고쳤어요.");
+    loadTeacherCourses();
+  }).then((form) => box.replaceChildren(form)).catch((err) => box.replaceChildren(h("p", { class: "error" }, err.message)));
+  return box;
 }
 const openCourse = new Set(); // 수강생 목록을 펼친 강좌
 
 async function loadTeacherCourses() {
   ({ courses: teacherCourses } = await api("/api/courses/mine"));
-  // 강좌 개설 칸: 강사로 승인받은 거점학교 중에서 고른다 (거점학교 밖 강사는 직접 입력)
-  if (!$("#c-instructor").value) $("#c-instructor").value = ME?.name || "";
-  const teachHubs = ME.teach_hubs || [];
-  $("#c-hub-pick").hidden = !teachHubs.length;
-  $("#c-hub-text").hidden = !!teachHubs.length;
-  $("#c-hub").required = !teachHubs.length;
-  $("#c-hub-select").replaceChildren(...teachHubs.map((x) => h("option", { value: x.id }, x.name)));
+  if (!$("#course-create-box").dataset.ready) drawCreateForm();
   const active = teacherCourses.filter((c) => !c.archived && !c.locked);
   // 수업 열기: 강좌 고르기
   const sel = $("#t-course");
@@ -595,23 +615,22 @@ function updateCourseHint() {
 $("#t-course").addEventListener("change", updateCourseHint);
 $("#more-roles").addEventListener("click", () => showGuest(true));
 
-$("#course-create").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  $("#course-error").textContent = "";
+async function drawCreateForm() {
+  const box = $("#course-create-box");
+  box.dataset.ready = "1";
+  // 팀티칭 보조교사로만 승인된 선생님은 강좌를 직접 열지 않는다
+  if (!ME.is_admin && ME.teach_hubs.length && !ME.lead_hubs.length) {
+    box.replaceChildren(h("p", { class: "muted" }, "팀티칭 보조교사로 승인받았어요. 주강사가 강좌를 열 때 보조교사로 넣으면 아래 목록에 그 강좌가 나타나요."));
+    return;
+  }
   try {
-    await api("/api/courses", {
-      title: $("#c-title").value, instructor: $("#c-instructor").value,
-      hub_id: ME.teach_hubs.length ? Number($("#c-hub-select").value) : null,
-      hub_school: ME.teach_hubs.length ? "" : $("#c-hub").value,
-      start_date: $("#c-start").value, end_date: $("#c-end").value, description: $("#c-desc").value,
-      grades: [...document.querySelectorAll("input[name=c-grade]:checked")].map((x) => Number(x.value)),
-    });
-    for (const id of ["#c-title", "#c-desc", "#c-start", "#c-end"]) $(id).value = "";
-    document.querySelectorAll("input[name=c-grade]").forEach((x) => { x.checked = false; });
-    toast("강좌를 만들었어요. 학생들이 첫 화면에서 수강신청할 수 있어요.");
-    loadTeacherCourses();
-  } catch (err) { $("#course-error").textContent = err.message; }
-});
+    box.replaceChildren(await courseForm(null, () => {
+      toast("강좌를 만들었어요. 모집 기간에 학생들이 수강신청할 수 있어요.");
+      drawCreateForm();
+      loadTeacherCourses();
+    }));
+  } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); }
+}
 
 function renderCourseList() {
   const box = $("#course-list");
@@ -626,7 +645,9 @@ function renderCourseList() {
         c.pending ? h("span", { class: "status pending" }, `내 승인 대기 ${c.pending}`) : null,
         c.waiting ? h("span", { class: "status pending" }, `관리교사 승인 대기 ${c.waiting}`) : null),
       courseInfo(c),
-      c.description ? h("p", { class: "muted", style: "margin:4px 0" }, c.description) : null,
+      c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
+      courseFacts(c),
+      c.description ? h("p", { class: "muted", style: "margin:4px 0;white-space:pre-wrap" }, c.description) : null,
       c.locked ? h("p", { class: "error", style: "margin:4px 0" },
         `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '다른 거점학교·역할 신청'으로 다시 신청하세요. 학생 개인정보 보호를 위해 이 강좌의 지난 수업 기록도 볼 수 없어요(다시 승인받으면 보여요).`) : null,
       c.locked ? null : editing.has(c.id) ? courseEditForm(c) : null,
@@ -637,8 +658,8 @@ function renderCourseList() {
         h("button", { class: `small ${openAssign.has(c.id) ? "on" : ""}`, onclick: () => { if (openAssign.has(c.id)) openAssign.delete(c.id); else openAssign.add(c.id); renderCourseList(); } },
           openAssign.has(c.id) ? "과제 접기" : "📝 과제"),
         h("span", { class: "grow" }),
-        !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); renderCourseList(); } }, "정보 수정") : null,
-        h("button", { class: "small", onclick: () => {
+        c.lead && !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); renderCourseList(); } }, "정보 수정") : null,
+        !c.lead ? null : h("button", { class: "small", onclick: () => {
           if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
         } }, c.archived ? "보관 해제" : "보관 (학기 끝)")),
       members, assignBox);
@@ -688,6 +709,19 @@ const statusBadge = (st) => {
 };
 
 /** 관리교사·강사 신청 카드 (승인 폼 포함) */
+const AFFIL_NAME = { school: "학교 교원", univ: "대학 교원", cert: "교원자격 소지자(미임용)", other: "기타" };
+function applicantInfo(x) {
+  const bits = [];
+  if (x.affil_type) bits.push(AFFIL_NAME[x.affil_type]);
+  if (x.office) bits.push(x.office);
+  bits.push(`소속 ${x.affiliation || "없음"}`);
+  if (x.license) bits.push(`자격 ${x.license}`);
+  bits.push(`이메일 ${x.contact_email || x.email}`);
+  if (x.contact_email && x.contact_email !== x.email) bits.push(`(로그인 ${x.email})`);
+  bits.push(`연락처 ${x.contact}`, `개인정보 서약 ${x.pledged ? "동의함" : "없음"}`);
+  return bits.join(" · ");
+}
+
 function staffCard(x, today, reload) {
   const isCoord = x.role === "coordinator";
   const decide = async (body) => {
@@ -709,7 +743,8 @@ function staffCard(x, today, reload) {
     h("div", { class: "row" }, h("strong", {}, x.name), statusBadge(x.status),
       h("span", { class: "muted" }, x.hub),
       h("span", { class: "grow" }), h("span", { class: "muted", style: "font-size:0.8rem" }, `신청 ${new Date(x.requested_at * 1000).toLocaleDateString("ko-KR")}`)),
-    h("div", { class: "muted", style: "font-size:0.9rem" }, `${x.email} · 소속 ${x.affiliation || "없음"} · 연락처 ${x.contact} · 개인정보 서약 ${x.pledged ? "동의함" : "없음"}`),
+    h("div", { class: "muted", style: "font-size:0.9rem" }, applicantInfo(x)),
+    !isCoord && x.kind === "assistant" ? h("div", { style: "font-size:0.9rem" }, h("span", { class: "status pending" }, "팀티칭 보조교사"), " 강좌를 직접 열지 않고, 주강사가 연 강좌에 함께 들어가요.") : null,
     isCoord && x.message ? h("div", { style: "font-size:0.9rem;white-space:pre-wrap" }, x.message) : null,
     !isCoord && wishPeriod(x) ? h("div", { style: "font-size:0.9rem" }, `희망 기간 ${wishPeriod(x)}`) : null,
     x.status !== "pending" && period(x) ? h("div", { class: "muted", style: "font-size:0.85rem" }, `활동 기간 ${period(x)}`) : null,

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app import db
 from app.auth import today_kst
-from app.courses import course_grades
+from app.courses import course_grades, subject_info
 from app.policy import settings
 
 router = APIRouter()
@@ -102,7 +102,7 @@ async def catalog():
     rows = [r for r in await db.run(run) if not (r.end_date and r.end_date < today)]
     return {"courses": [{"id": r.id, "title": r.title, "instructor": r.instructor, "hub_school": r.hub_school,
                          "start_date": r.start_date, "end_date": r.end_date, "grades": course_grades(r),
-                         "description": r.description} for r in rows]}
+                         "description": r.description, **subject_info(r)} for r in rows]}
 
 
 @router.get("/live/courses", response_class=HTMLResponse)
@@ -127,14 +127,30 @@ async def courses_page():
   const draw = () => {
     const q = document.getElementById("q").value.trim();
     const g = Number(document.getElementById("g").value);
-    const shown = list.filter((c) => (!q || [c.title, c.instructor, c.hub_school, c.description].join(" ").includes(q))
+    const shown = list.filter((c) => (!q || [c.title, c.instructor, c.hub_school, c.description, c.subject_area, c.subject_group].join(" ").includes(q))
       && (!g || !c.grades.length || c.grades.includes(g)));
-    box.innerHTML = shown.length ? shown.map((c) => `<article class="course-tile">
-      <div class="ct-top"><span class="tag">${esc(c.hub_school)}</span>${c.grades.length ? `<span class="tag soft">${c.grades.join("·")}학년</span>` : '<span class="tag soft">전 학년</span>'}</div>
+    const state = { open: ["모집 중", "ok"], before: ["모집 예정", "soft"], closed: ["마감", "off"] };
+    box.innerHTML = shown.length ? shown.map((c) => {
+      const [label, cls] = state[c.recruit] || state.open;
+      const facts = [
+        c.subject_area || c.subject_type ? ["과목", [c.subject_area, c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")] : null,
+        c.term ? ["학기", `${c.school_year || ""}학년도 ${c.term}`] : null,
+        c.credits ? ["학점", `${c.credits}학점 (${c.hours}시간)`] : null,
+        c.achievement_text ? ["성취도", c.achievement_text] : null,
+        c.exam_ratio != null && c.perf_ratio != null ? ["평가", `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%`] : null,
+        c.recruit_start ? ["모집", `${d(c.recruit_start)} ~ ${d(c.recruit_end)}`] : null,
+        c.capacity ? ["인원", `${c.capacity}명`] : null,
+        c.team_teaching ? ["팀티칭", "예"] : null,
+      ].filter(Boolean);
+      return `<article class="course-tile">
+      <div class="ct-top"><span class="tag ${cls}">${label}</span><span class="tag">${esc(c.hub_school)}</span>${c.grades.length ? `<span class="tag soft">${c.grades.join("·")}학년</span>` : '<span class="tag soft">전 학년</span>'}</div>
       <h3>${esc(c.title)}</h3>
-      <p class="muted">강사 ${esc(c.instructor)} · ${d(c.start_date)} ~ ${d(c.end_date)}</p>
-      ${c.description ? `<p>${esc(c.description)}</p>` : ""}
-    </article>`).join("") : '<p class="muted">조건에 맞는 강좌가 없어요.</p>';
+      <p class="muted">강사 ${esc(c.instructor)} · 수업 ${d(c.start_date)} ~ ${d(c.end_date)}</p>
+      ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
+      ${c.description ? `<p class="ct-desc">${esc(c.description)}</p>` : ""}
+      ${c.syllabus ? `<p><a href="${c.syllabus.url}" target="_blank">📄 수업계획서 (${esc(c.syllabus.name)})</a></p>` : ""}
+    </article>`;
+    }).join("") : '<p class="muted">조건에 맞는 강좌가 없어요.</p>';
   };
   document.getElementById("q").addEventListener("input", draw);
   document.getElementById("g").addEventListener("change", draw);

@@ -78,6 +78,11 @@ memberships = Table(
     Column("valid_until", String(10), nullable=False, default=""),
     Column("wish_from", String(10), nullable=False, default=""),  # 강사가 신청서에 적은 희망 기간
     Column("wish_until", String(10), nullable=False, default=""),
+    # 신청서: 소속 구분(school 학교 교원 / univ 대학 교원 / cert 교원자격 소지자 / other 기타)·교육청·교원자격·이메일
+    Column("affil_type", String(10), nullable=False, default=""),
+    Column("office", String(30), nullable=False, default=""),
+    Column("license", String(100), nullable=False, default=""),
+    Column("email", String(200), nullable=False, default=""),
     Column("pledge_at", Float),  # 개인정보 보호 서약에 동의한 시각
     Column("requested_at", Float, nullable=False),
     Column("decided_at", Float),
@@ -90,7 +95,7 @@ courses = Table(
     Column("id", Integer, primary_key=True),
     Column("teacher_id", Integer, nullable=False, index=True),
     Column("title", String(60), nullable=False),  # 강의명
-    Column("description", String(300), nullable=False, default=""),
+    Column("description", Text, nullable=False, default=""),  # 수업 소개
     Column("school", String(60), nullable=False, default=""),  # 개설한 선생님의 학교 (참고용)
     Column("instructor", String(30), nullable=False, default=""),  # 강사명
     Column("hub_school", String(60), nullable=False, default=""),  # 거점학교명
@@ -98,6 +103,25 @@ courses = Table(
     Column("end_date", String(10), nullable=False, default=""),  # 강의기간 끝
     Column("hub_id", Integer, index=True),  # 거점학교 강좌면 관리교사의 최종 승인이 필요
     Column("grades", String(10), nullable=False, default=""),  # 대상 학년 (예: "1,2"). 비면 모든 학년
+    # 과목 정보 (2022 개정 교육과정). title 이 과목명
+    Column("subject_group", String(40), nullable=False, default=""),  # 교과(군)
+    Column("subject_area", String(20), nullable=False, default=""),  # 교과(영역): 국어·수학·사회 등
+    Column("subject_type", String(10), nullable=False, default=""),  # 과목 구분: 일반선택·진로선택·융합선택
+    Column("custom_subject", Integer, nullable=False, default=0),  # 고시외 과목
+    Column("school_year", Integer),  # 학년도
+    Column("term", String(10), nullable=False, default=""),  # 수업 학기: 1학기·여름학기·2학기·겨울학기
+    Column("credits", Integer),  # 학점
+    Column("hours", Integer),  # 수업 시수 (학점 × 16)
+    Column("achievement", String(2), nullable=False, default=""),  # 성취도: 5(A~E) 3(A~C) P(P/F)
+    Column("capacity", Integer),  # 수강 인원 (비면 제한 없음)
+    Column("recruit_start", String(10), nullable=False, default=""),  # 모집 기간 (비면 제한 없음)
+    Column("recruit_end", String(10), nullable=False, default=""),
+    Column("exam_ratio", Integer),  # 지필평가 비율(%)
+    Column("perf_ratio", Integer),  # 수행평가 비율(%)
+    Column("syllabus_id", String(16), nullable=False, default=""),  # 수업계획서 파일 (FILES_DIR/syllabus/강좌번호/id)
+    Column("syllabus_name", String(150), nullable=False, default=""),
+    Column("team_teaching", Integer, nullable=False, default=0),  # 팀티칭
+    Column("co_teachers", String(300), nullable=False, default=""),  # 팀티칭 보조교사 사용자 번호 (",3,7,")
     Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
     Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
     Column("created_at", Float, nullable=False),
@@ -265,11 +289,36 @@ def init() -> None:
              ("courses", "grades", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("users", "withdraw_at", "FLOAT"),
              ("users", "withdraw_reason", "VARCHAR(300) NOT NULL DEFAULT ''"),
-             ("users", "withdraw_note", "VARCHAR(300) NOT NULL DEFAULT ''")]
+             ("users", "withdraw_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("courses", "subject_group", "VARCHAR(40) NOT NULL DEFAULT ''"),
+             ("courses", "subject_area", "VARCHAR(20) NOT NULL DEFAULT ''"),
+             ("courses", "subject_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "custom_subject", "INTEGER NOT NULL DEFAULT 0"),
+             ("courses", "school_year", "INTEGER"),
+             ("courses", "term", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "credits", "INTEGER"),
+             ("courses", "hours", "INTEGER"),
+             ("courses", "achievement", "VARCHAR(2) NOT NULL DEFAULT ''"),
+             ("courses", "capacity", "INTEGER"),
+             ("courses", "recruit_start", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "recruit_end", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "exam_ratio", "INTEGER"),
+             ("courses", "perf_ratio", "INTEGER"),
+             ("courses", "syllabus_id", "VARCHAR(16) NOT NULL DEFAULT ''"),
+             ("courses", "syllabus_name", "VARCHAR(150) NOT NULL DEFAULT ''"),
+             ("courses", "team_teaching", "INTEGER NOT NULL DEFAULT 0"),
+             ("courses", "co_teachers", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("memberships", "affil_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("memberships", "office", "VARCHAR(30) NOT NULL DEFAULT ''"),
+             ("memberships", "license", "VARCHAR(100) NOT NULL DEFAULT ''"),
+             ("memberships", "email", "VARCHAR(200) NOT NULL DEFAULT ''")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:
                 c.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {kind}"))
+    if engine.dialect.name == "postgresql":  # 수업 소개를 길게 쓸 수 있도록 (예전: 300자)
+        with engine.begin() as c:
+            c.execute(text("ALTER TABLE courses ALTER COLUMN description TYPE TEXT"))
     # 서버가 갑자기 꺼져 '접속 중'으로 남은 기록은 마지막 확인 시각에 나간 것으로 정리
     with engine.begin() as c:
         c.execute(update(attendance).where(attendance.c.left_at.is_(None))

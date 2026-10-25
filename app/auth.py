@@ -61,7 +61,7 @@ def public_user(u) -> dict:
         "school": d["school"], "grade": d["grade"], "class_no": d["class_no"], "number": d["number"],
         "student_no": student_no(d), "display": display_name(d), "needs_profile": needs_profile(d),
         "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
-        "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []),
+        "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []), "lead_hubs": d.get("lead_hubs", []),
         "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
         # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
         "role_choice": d["role"] == "student" and not d.get("self_role"),
@@ -105,7 +105,9 @@ def membership_view(m: dict, hub_names: dict) -> dict:
             "hub": hub_names.get(m["hub_id"]) or m["hub_name"], "status": membership_status(m),
             "valid_from": m["valid_from"], "valid_until": m["valid_until"],
             "wish_from": m["wish_from"], "wish_until": m["wish_until"],
-            "contact": m["contact"], "message": m["message"], "admin_note": m["admin_note"]}
+            "contact": m["contact"], "message": m["message"], "admin_note": m["admin_note"],
+            "kind": m.get("kind") or "", "affil_type": m.get("affil_type") or "", "office": m.get("office") or "",
+            "license": m.get("license") or "", "email": m.get("email") or ""}
 
 
 def student_no(u: dict) -> str:
@@ -166,6 +168,9 @@ def _load_with_role(uid: int) -> dict | None:
     u["coordinator_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
                                     if m["role"] == "coordinator"})
     u["teach_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active})
+    # 강좌를 직접 열 수 있는 거점학교 (팀티칭 보조교사로만 승인된 곳은 빠진다)
+    u["lead_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active if m.get("kind") != "assistant"})
+    u["lead_hubs"] = [{"id": i, "name": n} for i, n in u["lead_hubs"]]
     u["coordinator_hubs"] = [{"id": i, "name": n} for i, n in u["coordinator_hubs"]]
     u["teach_hubs"] = [{"id": i, "name": n} for i, n in u["teach_hubs"]]
     return u

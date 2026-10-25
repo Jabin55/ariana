@@ -515,3 +515,22 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .withdraw { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 0.9rem; }
 .withdraw summary { cursor: pointer; color: var(--muted); }
 .withdraw p { margin: 8px 0; line-height: 1.6; }
+
+/* 강좌 개설 양식 (과목·학기·모집·팀티칭) */
+.course-form-full fieldset { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px 14px; margin: 0; min-width: 0; }
+.course-form-full legend { font-weight: 700; color: var(--brand-deep); padding: 0 6px; }
+.course-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
+.course-grid .wide { grid-column: 1 / -1; }
+.course-form label.switch { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.course-form select, .course-form textarea { color: var(--text); width: 100%; }
+.course-form .row label:not(.switch) { display: grid; }
+.course-form .row > span { font-size: 0.9rem; color: var(--muted); }
+.co-teachers { display: grid; gap: 4px; }
+.edit-box { margin-top: 8px; }
+/* 강좌 안내 (과목·학점·평가·모집) */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: 0.85rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+.course-more summary { cursor: pointer; font-size: 0.85rem; color: var(--brand); }
+.tag.off { background: var(--surface-2); color: var(--muted); }
+.ct-desc { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }

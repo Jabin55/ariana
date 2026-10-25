@@ -19,7 +19,8 @@ from app import db
 from app.auth import KST, require_user
 from app import classroom
 from app.classroom import classes as live_classes, push
-from app.history import locked_course_ids
+from app.courses import taught_course_ids
+from app.history import locked_course_ids, my_class_filter
 
 router = APIRouter()
 
@@ -32,7 +33,7 @@ def _allowed_class_ids(c, u: dict, class_ids: list[int] | None = None) -> set[in
     """이 사람이 자료를 볼 수 있는 수업 번호."""
     cl = db.classes.c
     if u["role"] == "teacher":
-        q = select(cl.id, cl.course_id).where(cl.teacher_id == u["id"])
+        q = select(cl.id, cl.course_id).where(my_class_filter(c, u))
         if class_ids is not None:
             q = q.where(cl.id.in_(class_ids))
         locked = locked_course_ids(c, u)
@@ -105,7 +106,14 @@ async def class_materials(class_id: int, request: Request):
     boards = {key: v for key, v in boards.items() if v}
     wb_pages = max([int(x[3:]) for x in boards if x.startswith("wb:")] + [0])
     return {"class": _class_info(r, titles), "files": files, "boards": boards, "board_pages": wb_pages,
-            "can_delete": u["role"] == "teacher" and r.teacher_id == u["id"]}
+            "can_delete": u["role"] == "teacher" and await db.run(can_edit_class, r.id, u)}
+
+
+def can_edit_class(class_id: int, u: dict) -> bool:
+    """수업을 연 선생님 또는 그 강좌를 가르치는 선생님(팀티칭)"""
+    with db.engine.connect() as c:
+        r = c.execute(select(db.classes).where(db.classes.c.id == class_id)).first()
+        return bool(r) and (r.teacher_id == u["id"] or r.course_id in taught_course_ids(c, u["id"]))
 
 
 def _material(fid: str):
@@ -139,7 +147,7 @@ async def delete_material(fid: str, request: Request):
     """수업을 연 선생님이 자료를 지운다 (그 자료 위 판서도 함께)."""
     u = await require_user(request, "teacher")
     m = await db.run(_material, fid) if fid.isalnum() else None
-    if not m or m.owner != u["id"]:
+    if not m or not await db.run(can_edit_class, m.class_id, u):
         raise HTTPException(404, "자료를 찾을 수 없어요.")
 
     def run():

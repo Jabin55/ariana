@@ -8,16 +8,19 @@
 
 from __future__ import annotations
 
+import re
 import time
+import uuid
 from datetime import date, datetime
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, or_, select, update
 
-from app import db
-from app import auth
+from app import auth, db, subjects
 from app.auth import require_user, student_no
 
 router = APIRouter()
@@ -42,10 +45,36 @@ def hub_locked(course, t: dict) -> bool:
     return bool(course.hub_id) and not t["is_admin"] and course.hub_id not in {h["id"] for h in t["teach_hubs"]}
 
 
-def owned_course(course_id: int, t: dict):
+def co_teacher_ids(r) -> list[int]:
+    """팀티칭 보조교사 (사용자 번호)"""
+    return [int(x) for x in (getattr(r, "co_teachers", "") or "").split(",") if x.strip().isdigit()]
+
+
+def co_text(ids) -> str:
+    ids = sorted(set(ids))
+    return f",{','.join(map(str, ids))}," if ids else ""
+
+
+def teaches(r, uid: int) -> bool:
+    """강좌를 연 강사이거나 팀티칭 보조교사"""
+    return r.teacher_id == uid or uid in co_teacher_ids(r)
+
+
+def taught_filter(uid: int):
+    """SQL 조건: 내가 열었거나 보조교사로 참여한 강좌"""
+    co = db.courses.c
+    return or_(co.teacher_id == uid, co.co_teachers.like(f"%,{uid},%"))
+
+
+def taught_course_ids(c, uid: int) -> set[int]:
+    return set(c.execute(select(db.courses.c.id).where(taught_filter(uid))).scalars())
+
+
+def owned_course(course_id: int, t: dict, lead: bool = False):
+    """강좌를 관리할 수 있는지 확인한다. 팀티칭 보조교사도 관리할 수 있다(lead=True 면 강좌를 연 강사만)."""
     with db.engine.connect() as c:
         r = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
-    if not r or r.teacher_id != t["id"]:
+    if not r or not (r.teacher_id == t["id"] if lead else teaches(r, t["id"])):
         raise HTTPException(404, "강좌를 찾을 수 없어요.")
     if hub_locked(r, t):
         raise HTTPException(403, f"{r.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리할 수 없어요. "
@@ -58,10 +87,33 @@ def course_row(r, counts: dict | None = None) -> dict:
            "archived": bool(r.archived), "created_at": r.created_at,
            "instructor": r.instructor, "hub_school": r.hub_school,
            "start_date": r.start_date, "end_date": r.end_date, "hub_id": r.hub_id, "grades": course_grades(r),
-           "finished": bool(r.end_date and r.end_date < today_kst())}  # 강의기간이 지남
+           "finished": bool(r.end_date and r.end_date < today_kst()),  # 강의기간이 지남
+           **subject_info(r)}
     if counts is not None:
         out.update(counts.get(r.id, {"approved": 0, "pending": 0, "waiting": 0}))
     return out
+
+
+def recruit_state(r) -> str:
+    """모집 상태: open(모집 중) before(모집 전) closed(마감)"""
+    today = today_kst()
+    if not r.open or (r.end_date and r.end_date < today) or (r.recruit_end and r.recruit_end < today):
+        return "closed"
+    if r.recruit_start and today < r.recruit_start:
+        return "before"
+    return "open"
+
+
+def subject_info(r) -> dict:
+    """과목·학점·평가 등 강좌 안내 (누구에게나 보여도 되는 정보)"""
+    return {"subject_group": r.subject_group, "subject_area": r.subject_area, "subject_type": r.subject_type,
+            "custom_subject": bool(r.custom_subject), "school_year": r.school_year, "term": r.term,
+            "credits": r.credits, "hours": r.hours, "achievement": r.achievement,
+            "achievement_text": subjects.ACHIEVEMENTS.get(r.achievement, ""), "capacity": r.capacity,
+            "recruit_start": r.recruit_start, "recruit_end": r.recruit_end, "recruit": recruit_state(r),
+            "exam_ratio": r.exam_ratio, "perf_ratio": r.perf_ratio,
+            "syllabus": {"name": r.syllabus_name, "url": f"/api/courses/{r.id}/syllabus"} if r.syllabus_id else None,
+            "team_teaching": bool(r.team_teaching)}
 
 
 # ───────────────────────── 선생님 ─────────────────────────
@@ -89,8 +141,126 @@ class CourseReq(BaseModel):
     hub_school: str = Field(default="", max_length=60)  # 거점학교에 속하지 않은 강좌일 때만 직접 입력
     start_date: str = Field(pattern=DATE)  # 강의기간
     end_date: str = Field(pattern=DATE)
-    description: str = Field(default="", max_length=300)
+    description: str = Field(default="", max_length=3000)  # 수업 소개
     grades: list[int] = Field(default_factory=list)  # 대상 학년 (비우면 모든 학년)
+    # 과목 정보 (2022 개정 교육과정): 강좌 개설 화면에서는 모두 필수
+    custom_subject: bool = False  # 고시외 과목 (목록에 없는 과목을 직접 적음)
+    subject_group: str = Field(default="", max_length=40)  # 교과(군)
+    subject_area: str = Field(default="", max_length=20)  # 교과(영역)
+    subject_type: str = Field(default="", max_length=10)  # 일반선택·진로선택·융합선택
+    school_year: int | None = Field(default=None, ge=2020, le=2100)
+    term: str = Field(default="", max_length=10)
+    credits: int | None = Field(default=None, ge=1, le=10)
+    achievement: str = Field(default="", pattern="^(5|3|P)?$")
+    capacity: int | None = Field(default=None, ge=1, le=500)
+    recruit_start: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    recruit_end: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    exam_ratio: int | None = Field(default=None, ge=0, le=100)
+    perf_ratio: int | None = Field(default=None, ge=0, le=100)
+    team_teaching: bool = False
+    co_teachers: list[int] = Field(default_factory=list)  # 팀티칭 보조교사 (그 거점학교 강사 중에서)
+
+
+SUBJECT_KEYS = ("custom_subject", "subject_group", "subject_area", "subject_type", "school_year", "term", "credits",
+                "achievement", "capacity", "recruit_start", "recruit_end", "exam_ratio", "perf_ratio", "team_teaching")
+
+
+def subject_values(v: dict, cur=None) -> dict:
+    """과목 정보 확인 + 저장할 값 (cur: 고칠 때 지금 값)"""
+    get = lambda k: v[k] if k in v and v[k] is not None else (getattr(cur, k) if cur is not None else None)  # noqa: E731
+    out = {}
+    title = (v.get("title") or (cur.title if cur is not None else "")).strip()
+    custom = bool(get("custom_subject"))
+    if any(v.get(k) is not None for k in ("title", "custom_subject", "subject_group", "subject_area", "subject_type")):
+        found = next((x for x in subjects.SUBJECTS if x["name"] == title), None)
+        if not custom and get("subject_type") and not found:
+            raise HTTPException(400, f"'{title}'은(는) 2022 개정 교육과정 과목 목록에 없어요. 목록에서 고르거나 '고시외 과목'에 체크해 주세요.")
+        if found and not custom:  # 목록 과목이면 교과(군)·교과·과목 구분은 목록대로
+            out.update(subject_group=found["group"], subject_area=found["area"], subject_type=found["type"])
+        else:
+            if get("subject_group") and get("subject_group") not in subjects.GROUPS:
+                raise HTTPException(400, "교과(군)를 목록에서 골라 주세요.")
+            if get("subject_type") and get("subject_type") not in subjects.TYPES:
+                raise HTTPException(400, "과목 구분(일반선택·진로선택·융합선택)을 골라 주세요.")
+            for k in ("subject_group", "subject_area", "subject_type"):
+                if k in v and v[k] is not None:
+                    out[k] = v[k].strip()
+        out["custom_subject"] = int(custom)
+    if v.get("term") and v["term"] not in subjects.TERMS:
+        raise HTTPException(400, "수업 학기를 골라 주세요.")
+    for k in ("school_year", "term", "achievement", "capacity", "exam_ratio", "perf_ratio"):
+        if k in v and v[k] is not None:
+            out[k] = v[k]
+    if v.get("credits") is not None:
+        out.update(credits=v["credits"], hours=v["credits"] * subjects.HOURS_PER_CREDIT)  # 3학점 → 48시간
+    if v.get("team_teaching") is not None:
+        out["team_teaching"] = int(v["team_teaching"])
+    exam, perf = get("exam_ratio"), get("perf_ratio")
+    if exam is not None and perf is not None and exam + perf != 100:
+        raise HTTPException(400, f"지필평가와 수행평가 비율을 더하면 100%가 되어야 해요. (지금 {exam + perf}%)")
+    for k in ("recruit_start", "recruit_end"):
+        if k in v and v[k] is not None:
+            out[k] = v[k]
+    rs, re_ = get("recruit_start") or "", get("recruit_end") or ""
+    try:
+        for d in (rs, re_):
+            if d:
+                date.fromisoformat(d)
+    except ValueError:
+        raise HTTPException(400, "모집 기간 날짜가 올바르지 않아요.")
+    if rs and re_ and re_ < rs:
+        raise HTTPException(400, "모집 기간이 끝나는 날이 시작하는 날보다 빨라요.")
+    return out
+
+
+def check_co_teachers(c, hub_id: int | None, owner_id: int, ids: list[int]) -> str:
+    """보조교사는 그 거점학교에서 활동 중인 강사·관리교사만 (본인 제외)"""
+    ids = [i for i in dict.fromkeys(ids) if i != owner_id]
+    if not ids:
+        return ""
+    if hub_id is None:
+        raise HTTPException(400, "팀티칭 보조교사는 거점학교 강좌에서만 정할 수 있어요.")
+    ok = {x["id"] for x in hub_teachers(c, hub_id)}
+    if not set(ids) <= ok:
+        raise HTTPException(400, "보조교사는 이 거점학교에서 활동 중인 강사 중에서 골라 주세요.")
+    return co_text(ids)
+
+
+def hub_teachers(c, hub_id: int) -> list[dict]:
+    m = db.memberships.c
+    rows = c.execute(select(db.memberships, db.users.c.name, db.users.c.google_name, db.users.c.school)
+                     .join(db.users, db.users.c.id == m.user_id)
+                     .where(m.hub_id == hub_id, m.role.in_(["instructor", "coordinator"]))).all()
+    out = {}
+    for r in rows:
+        if auth.membership_active(dict(r._mapping)):
+            prev = out.get(r.user_id)
+            assistant = r.kind == "assistant" and (prev is None or prev["assistant"])
+            out[r.user_id] = {"id": r.user_id, "name": r.name or r.google_name, "affiliation": r.school,
+                              "assistant": assistant}
+    return sorted(out.values(), key=lambda x: x["name"])
+
+
+@router.get("/api/hubs/{hub_id}/teachers")
+async def hub_teacher_list(hub_id: int, request: Request):
+    """팀티칭 보조교사 고르기: 그 거점학교에서 활동 중인 강사"""
+    t = await require_user(request, "teacher")
+    if hub_id not in {h["id"] for h in t["teach_hubs"]} and not t["is_admin"]:
+        raise HTTPException(403, "그 거점학교 강사만 볼 수 있어요.")
+
+    def run():
+        with db.engine.connect() as c:
+            return hub_teachers(c, hub_id)
+
+    return {"teachers": [x for x in await db.run(run) if x["id"] != t["id"]]}
+
+
+@router.get("/api/subjects")
+async def subject_list():
+    """강좌 개설 화면: 2022 개정 교육과정 과목 (검색해서 고른다)"""
+    return {"subjects": subjects.SUBJECTS, "groups": subjects.GROUPS, "areas": subjects.AREAS,
+            "types": subjects.TYPES, "terms": subjects.TERMS, "achievements": subjects.ACHIEVEMENTS,
+            "offices": subjects.OFFICES, "hours_per_credit": subjects.HOURS_PER_CREDIT}
 
 
 def grades_text(grades: list[int] | None) -> str:
@@ -113,8 +283,11 @@ async def my_courses(request: Request):
 
     def run():
         with db.engine.connect() as c:
-            rows = c.execute(select(db.courses).where(db.courses.c.teacher_id == t["id"])
+            rows = c.execute(select(db.courses).where(taught_filter(t["id"]))
                              .order_by(db.courses.c.archived, db.courses.c.created_at.desc())).all()
+            ids = {i for r in rows for i in [r.teacher_id, *co_teacher_ids(r)]}
+            names = {u.id: u.name or u.google_name for u in c.execute(
+                select(db.users.c.id, db.users.c.name, db.users.c.google_name).where(db.users.c.id.in_(ids or [-1])))}
             counts: dict = {}
             e = db.enrollments.c
             for cid, status, n in c.execute(
@@ -124,10 +297,13 @@ async def my_courses(request: Request):
                 key = {"approved": "approved", "pending": "pending", "instructor_ok": "waiting"}.get(status)
                 if key:
                     counts[cid][key] = n
-            return rows, counts
+            return rows, counts, names
 
-    rows, counts = await db.run(run)
-    return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t)} for r in rows]}
+    rows, counts, names = await db.run(run)
+    return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t), "description": r.description,
+                         "lead": r.teacher_id == t["id"], "owner_name": names.get(r.teacher_id, ""),
+                         "co_teachers": [{"id": i, "name": names.get(i, "")} for i in co_teacher_ids(r)]}
+                        for r in rows]}
 
 
 @router.post("/api/courses")
@@ -135,17 +311,21 @@ async def create_course(req: CourseReq, request: Request):
     t = await require_user(request, "teacher")
     check_period(req.start_date, req.end_date)
     independent = t["email"].lower() in auth.ADMIN_EMAILS | auth.TEACHER_EMAILS  # 거점학교 밖에서도 강좌를 열 수 있음
-    teach_hubs = {h["id"]: h["name"] for h in t["teach_hubs"]}
+    teach_hubs = {h["id"]: h["name"] for h in t["lead_hubs"]}
     if req.hub_id is not None:
         if req.hub_id not in teach_hubs and not t["is_admin"]:
+            if req.hub_id in {h["id"] for h in t["teach_hubs"]}:
+                raise HTTPException(403, "팀티칭 보조교사는 강좌를 직접 열 수 없어요. 주강사가 강좌를 열 때 보조교사로 넣어 줘요.")
             raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
     elif not independent:
         raise HTTPException(400, "강좌를 개설할 거점학교를 골라 주세요.")
     elif not req.hub_school.strip():
         raise HTTPException(400, "거점학교명을 적어 주세요.")
+    extra = subject_values(req.model_dump())
 
     def run():
         with db.engine.begin() as c:
+            co_teachers = check_co_teachers(c, req.hub_id, t["id"], req.co_teachers) if req.team_teaching else ""
             hub_school = req.hub_school.strip()
             if req.hub_id is not None:
                 hub = c.execute(select(db.hubs).where(db.hubs.c.id == req.hub_id)).first()
@@ -156,7 +336,8 @@ async def create_course(req: CourseReq, request: Request):
                 teacher_id=t["id"], title=req.title.strip(), description=req.description.strip(),
                 instructor=req.instructor.strip(), hub_school=hub_school, hub_id=req.hub_id,
                 start_date=req.start_date, end_date=req.end_date, grades=grades_text(req.grades),
-                school=t["school"] or "", open=1, archived=0, created_at=time.time())).inserted_primary_key[0]
+                school=t["school"] or "", open=1, archived=0, created_at=time.time(),
+                co_teachers=co_teachers, **extra)).inserted_primary_key[0]
 
     return {"id": await db.run(run)}
 
@@ -167,18 +348,41 @@ class CourseUpdate(BaseModel):
     hub_school: str | None = Field(default=None, min_length=1, max_length=60)
     start_date: str | None = Field(default=None, pattern=DATE)
     end_date: str | None = Field(default=None, pattern=DATE)
-    description: str | None = Field(default=None, max_length=300)
+    description: str | None = Field(default=None, max_length=3000)
     open: bool | None = None
     archived: bool | None = None
     grades: list[int] | None = None
+    custom_subject: bool | None = None
+    subject_group: str | None = Field(default=None, max_length=40)
+    subject_area: str | None = Field(default=None, max_length=20)
+    subject_type: str | None = Field(default=None, max_length=10)
+    school_year: int | None = Field(default=None, ge=2020, le=2100)
+    term: str | None = Field(default=None, max_length=10)
+    credits: int | None = Field(default=None, ge=1, le=10)
+    achievement: str | None = Field(default=None, pattern="^(5|3|P)?$")
+    capacity: int | None = Field(default=None, ge=0, le=500)  # 0: 제한 없음
+    recruit_start: str | None = Field(default=None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    recruit_end: str | None = Field(default=None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    exam_ratio: int | None = Field(default=None, ge=0, le=100)
+    perf_ratio: int | None = Field(default=None, ge=0, le=100)
+    team_teaching: bool | None = None
+    co_teachers: list[int] | None = None
 
 
 @router.post("/api/courses/{course_id}")
 async def update_course(course_id: int, req: CourseUpdate, request: Request):
     t = await require_user(request, "teacher")
-    cur = await db.run(owned_course, course_id, t)
+    data = req.model_dump()
+    # 보조교사는 수강신청 받기만 바꿀 수 있고, 강좌 정보·팀티칭 구성은 강좌를 연 강사가 정한다
+    lead = any(data[k] is not None for k in data if k != "open")
+    cur = await db.run(owned_course, course_id, t, lead)
+    extra = subject_values(data, cur)
+    if data.get("capacity") == 0:
+        extra["capacity"] = None
+    simple = {k: v for k, v in data.items() if v is not None and k not in SUBJECT_KEYS and k != "co_teachers"}
     values = {k: (int(v) if isinstance(v, bool) else grades_text(v) if k == "grades" else v.strip())
-              for k, v in req.model_dump().items() if v is not None}
+              for k, v in simple.items()}
+    values.update(extra)
     if cur.hub_id:
         values.pop("hub_school", None)  # 등록된 거점학교 강좌는 거점학교를 바꾸지 않는다
     check_period(values.get("start_date", cur.start_date), values.get("end_date", cur.end_date))
@@ -187,11 +391,97 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
 
     def run():
         with db.engine.begin() as c:
+            team = values.get("team_teaching", cur.team_teaching)
+            if not team:
+                values["co_teachers"] = ""
+            elif data["co_teachers"] is not None:
+                values["co_teachers"] = check_co_teachers(c, cur.hub_id, cur.teacher_id, data["co_teachers"])
             c.execute(update(db.courses).where(db.courses.c.id == course_id).values(**values))
 
-    if values:
+    if values or data["co_teachers"] is not None:
         await db.run(run)
     return {"ok": True}
+
+
+# ───────────────────────── 수업계획서 파일 ─────────────────────────
+
+SYLLABUS_MAX = 20 * 1024 * 1024
+SYLLABUS_TYPES = {".pdf": "application/pdf", ".hwp": "application/x-hwp", ".hwpx": "application/haansofthwpx",
+                  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  ".doc": "application/msword"}
+
+
+def syllabus_path(course_id: int, fid: str):
+    from app.assignments import FILES_DIR  # 과제 파일과 같은 곳에 둔다
+    return FILES_DIR / "syllabus" / str(course_id) / fid
+
+
+@router.post("/api/courses/{course_id}/syllabus")
+async def upload_syllabus(course_id: int, request: Request, name: str = Query(default="수업계획서.pdf", max_length=150)):
+    """수업계획서 올리기 (PDF·한글·워드). 다시 올리면 바뀐다. 요청 본문 = 파일 그대로"""
+    t = await require_user(request, "teacher")
+    cur = await db.run(owned_course, course_id, t, True)
+    ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in SYLLABUS_TYPES:
+        raise HTTPException(415, "수업계획서는 PDF, 한글(hwp·hwpx), 워드(docx) 파일로 올려 주세요.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > SYLLABUS_MAX:
+            raise HTTPException(413, "파일이 너무 커요. 20MB 이하로 올려 주세요.")
+    if not data:
+        raise HTTPException(400, "빈 파일이에요.")
+    fid = uuid.uuid4().hex[:12]
+    fname = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name.strip())[:150]
+
+    def save():
+        path = syllabus_path(course_id, fid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        if cur.syllabus_id:
+            syllabus_path(course_id, cur.syllabus_id).unlink(missing_ok=True)
+        with db.engine.begin() as c:
+            c.execute(update(db.courses).where(db.courses.c.id == course_id)
+                      .values(syllabus_id=fid, syllabus_name=fname))
+
+    await db.run(save)
+    return {"name": fname}
+
+
+@router.post("/api/courses/{course_id}/syllabus/delete")
+async def delete_syllabus(course_id: int, request: Request):
+    t = await require_user(request, "teacher")
+    cur = await db.run(owned_course, course_id, t, True)
+
+    def run():
+        if cur.syllabus_id:
+            syllabus_path(course_id, cur.syllabus_id).unlink(missing_ok=True)
+        with db.engine.begin() as c:
+            c.execute(update(db.courses).where(db.courses.c.id == course_id).values(syllabus_id="", syllabus_name=""))
+
+    await db.run(run)
+    return {"ok": True}
+
+
+@router.get("/api/courses/{course_id}/syllabus")
+async def get_syllabus(course_id: int):
+    """수업계획서는 강좌 안내 자료라 로그인 없이도 받을 수 있다 (학생 개인정보 없음)"""
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
+
+    r = await db.run(run)
+    if not r or not r.syllabus_id or r.archived:
+        raise HTTPException(404, "수업계획서가 없어요.")
+    path = syllabus_path(course_id, r.syllabus_id)
+    if not path.is_file():
+        raise HTTPException(404, "수업계획서 파일을 찾을 수 없어요.")
+    ext = "." + r.syllabus_name.rsplit(".", 1)[-1].lower()
+    media = SYLLABUS_TYPES.get(ext, "application/octet-stream")
+    disp = "inline" if media == "application/pdf" else "attachment"
+    return FileResponse(path, media_type=media, headers={
+        "Content-Disposition": f"{disp}; filename*=UTF-8''{quote(r.syllabus_name)}",
+        "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/api/courses/{course_id}/enrollments")
@@ -292,7 +582,7 @@ async def available_courses(request: Request):
     for r in rows:
         status, note = mine.get(r.id, (None, ""))
         row = course_row(r)
-        if status is None and (not r.open or row["finished"] or not grade_ok(r, u["grade"])):
+        if status is None and (row["recruit"] == "closed" or not grade_ok(r, u["grade"])):
             continue  # 신청 마감·기간 끝남·대상 학년 아님 + 신청한 적 없음
         out.append({**row, "instructor": r.instructor or r.teacher_name, "status": status,
                     "note": note if status == "rejected" else ""})
@@ -312,8 +602,16 @@ async def enroll(course_id: int, request: Request):
             row = c.execute(select(db.enrollments).where(e.course_id == course_id, e.user_id == u["id"])).first()
             if row and row.status in ("approved", "pending", "instructor_ok"):
                 return row.status
-            if not co.open or (co.end_date and co.end_date < today_kst()):
+            state = recruit_state(co)
+            if state == "before":
+                raise HTTPException(409, f"모집 기간이 아니에요. ({co.recruit_start.replace('-', '.')}부터 신청할 수 있어요)")
+            if state == "closed":
                 raise HTTPException(409, "수강신청이 마감된 강좌예요.")
+            if co.capacity:
+                n = c.execute(select(func.count()).select_from(db.enrollments).where(
+                    e.course_id == course_id, e.status.in_(["pending", "instructor_ok", "approved"]))).scalar()
+                if n >= co.capacity:
+                    raise HTTPException(409, f"수강 인원({co.capacity}명)이 다 찼어요.")
             if not grade_ok(co, u["grade"]):
                 raise HTTPException(409, f"{'·'.join(map(str, course_grades(co)))}학년 대상 강좌예요.")
             if row:  # 거절됐던 강좌에 다시 신청

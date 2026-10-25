@@ -735,16 +735,35 @@ async def join_class(code: str, request: Request):
     return {"student_id": s.id, "name": s.name}
 
 
+def _teaches_course(course_id: int, uid: int) -> bool:
+    from app.courses import teaches  # 순환 import 를 피한다
+
+    with db.engine.connect() as c:
+        r = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
+    return bool(r) and teaches(r, uid)
+
+
+async def is_class_teacher(k: Klass, u: dict) -> bool:
+    """이 수업의 선생님: 수업을 연 사람, 또는 그 강좌를 함께 가르치는 팀티칭 선생님"""
+    if u["role"] != "teacher":
+        return False
+    if u["id"] == k.teacher_id:
+        return True
+    return bool(k.course_id) and await db.run(_teaches_course, k.course_id, u["id"])
+
+
 @router.post("/api/live/classes/{code}/token")
 async def livekit_token(code: str, req: TokenReq, request: Request):
     u = await require_user(request)
     k = await get_class(code)
     if not livekit_ready():
         raise HTTPException(503, "화상 서버(LiveKit)가 아직 설정되지 않았어요.")
-    if u["role"] == "teacher" and u["id"] == k.teacher_id:
+    if await is_class_teacher(k, u):
         if req.room != "main" and not any(g["id"] == req.room for g in k.groups):
             raise HTTPException(404, "없는 모둠이에요.")
-        identity, name, role = "teacher", "선생님", "teacher"
+        # 팀티칭: 수업을 연 선생님은 'teacher', 함께 가르치는 선생님은 따로 (같은 이름이면 서로 밀어냄)
+        identity, name, role = ("teacher", "선생님", "teacher") if u["id"] == k.teacher_id \
+            else (f"t-{u['id']}", f"{u['name'] or '보조'} 선생님", "teacher")
         sources = ["camera", "microphone", "screen_share", "screen_share_audio"]
     elif u["role"] == "student" and str(u["id"]) in k.students:
         s = k.students[str(u["id"])]
@@ -783,7 +802,7 @@ async def upload_file(code: str, request: Request, name: str = Query(default="�
     """선생님이 발표할 PDF를 올린다. (요청 본문 = PDF 파일 그대로)"""
     t = await require_user(request, "teacher")
     k = await get_class(code)
-    if t["id"] != k.teacher_id:
+    if not await is_class_teacher(k, t):
         raise HTTPException(403, "이 수업의 선생님만 올릴 수 있어요.")
     if len(k.files) >= MAX_FILES:
         raise HTTPException(409, f"한 수업에 자료는 {MAX_FILES}개까지 올릴 수 있어요.")
@@ -816,7 +835,7 @@ async def download_file(code: str, fid: str, request: Request):
     """이 수업의 선생님과 들어온 학생만 받을 수 있다."""
     u = await require_user(request)
     k = await get_class(code)
-    ok = (u["role"] == "teacher" and u["id"] == k.teacher_id) or (u["role"] == "student" and str(u["id"]) in k.students)
+    ok = await is_class_teacher(k, u) or (u["role"] == "student" and str(u["id"]) in k.students)
     if not ok:
         raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
     if not any(f["id"] == fid for f in k.files):
@@ -1019,7 +1038,7 @@ async def live_socket(ws: WebSocket, code: str):
     u = await current_user(ws)
     if not u:
         return await reject(ws, "login", "로그인이 필요해요.")
-    if u["role"] == "teacher" and u["id"] == k.teacher_id:
+    if await is_class_teacher(k, u):
         conn = Conn(ws=ws, role="teacher", sid=None)
     elif u["role"] == "student" and not needs_profile(u):
         try:

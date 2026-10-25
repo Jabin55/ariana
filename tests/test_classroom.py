@@ -1167,3 +1167,105 @@ def test_withdraw(monkeypatch, tmp_path):
     g = login("guest@gmail.com", name="손님")
     assert g.post("/api/me/withdraw", json={"confirm": "탈퇴"}).json()["requested"] is False
     assert g.get("/api/me").json()["user"] is None
+
+
+def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
+    import app.assignments as asg
+    from livekit import api as lk
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "가나고등학교\n다라고등학교"})
+
+    def guest(email):
+        g = TestClient(app)
+        g.post("/api/auth/dev", json={"email": email})
+        return g
+
+    base = {"name": "한선생", "contact": "010-1111-2222", "pledge": True, "affil_type": "school",
+            "office": "울산광역시교육청", "affiliation": "가나고등학교", "email": "han@use.go.kr"}
+    # 관리교사: 거점학교는 울산 학교 목록에서만, 소속 구분별 필수 칸
+    coord = guest("coord@gmail.com")
+    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고"}).status_code == 400
+    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고등학교", "office": ""}).status_code == 400
+    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고등학교", "email": "x"}).status_code == 400
+    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고등학교"}).status_code == 200
+    app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
+    assert app_["office"] == "울산광역시교육청" and app_["affil_type"] == "school" and app_["contact_email"] == "han@use.go.kr"
+    boss.post(f"/api/staff/{app_['id']}", json={"action": "approve"})
+    hub_id = coord.get("/api/me").json()["user"]["coordinator_hubs"][0]["id"]
+    # 강사: 대학 교원(주강사) / 미임용 교원자격 소지자(팀티칭 보조교사)
+    prof = guest("prof@univ.ac.kr")
+    pform = {**base, "role": "instructor", "hub_id": hub_id, "name": "김교수", "affil_type": "univ", "office": "",
+             "affiliation": "", "email": "kim@univ.ac.kr", "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
+    assert prof.post("/api/staff/apply", json=pform).status_code == 400  # 대학 이름 필요
+    assert prof.post("/api/staff/apply", json={**pform, "affiliation": "울산대학교"}).status_code == 200
+    asst = guest("asst@gmail.com")
+    aform = {**pform, "name": "이보조", "affil_type": "cert", "email": "lee@gmail.com", "assistant": True}
+    assert asst.post("/api/staff/apply", json=aform).status_code == 400  # 교원자격 필요
+    assert asst.post("/api/staff/apply", json={**aform, "license": "중등학교 2급 정교사(사회)"}).status_code == 200
+    for x in coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]:
+        assert coord.post(f"/api/staff/{x['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
+    ame = asst.get("/api/me").json()["user"]
+    assert ame["role"] == "teacher" and ame["lead_hubs"] == [] and ame["memberships"][0]["kind"] == "assistant"
+    asst_id = ame["id"]
+
+    # 강좌 개설: 2022 개정 과목을 고르면 교과(군)·교과·과목 구분이 정해지고, 학점 → 시수
+    course = {"title": "법과 사회", "instructor": "김교수", "hub_id": hub_id, "start_date": "2026-03-02",
+              "end_date": "2099-07-20", "subject_type": "일반선택", "school_year": 2026, "term": "1학기", "credits": 3,
+              "achievement": "5", "capacity": 2, "recruit_start": "2026-01-01", "recruit_end": "2099-03-01",
+              "exam_ratio": 40, "perf_ratio": 60, "grades": [2, 3], "description": "판례로 배우는 법\n화·목 7교시"}
+    assert prof.post("/api/courses", json={**course, "exam_ratio": 50}).status_code == 400  # 합이 100이 아님
+    assert prof.post("/api/courses", json={**course, "title": "법과 생활"}).status_code == 400  # 목록에 없음
+    assert asst.post("/api/courses", json=course).status_code == 403  # 보조교사는 강좌를 열 수 없음
+    r = prof.post("/api/courses", json={**course, "team_teaching": True, "co_teachers": [asst_id]})
+    assert r.status_code == 200, r.text
+    cid = r.json()["id"]
+    c = prof.get("/api/courses/mine").json()["courses"][0]
+    assert (c["subject_group"], c["subject_area"], c["subject_type"]) == ("사회(역사/도덕 포함)", "사회", "진로선택")
+    assert c["credits"] == 3 and c["hours"] == 48 and c["achievement_text"] == "5단계 (A~E)" and c["recruit"] == "open"
+    assert c["co_teachers"] == [{"id": asst_id, "name": "이보조"}] and c["lead"]
+    # 고시외 과목은 직접 적는다
+    r = prof.post("/api/courses", json={**course, "title": "울산 지역사 탐구", "custom_subject": True,
+                                        "subject_group": "사회(역사/도덕 포함)", "subject_area": "역사", "subject_type": "융합선택"})
+    assert r.status_code == 200, r.text
+    assert prof.post(f"/api/courses/{r.json()['id']}", json={"archived": True}).status_code == 200
+
+    # 수업계획서: 강사만 올리고, 누구나 받아 본다 (학생 개인정보 없음)
+    assert prof.post(f"/api/courses/{cid}/syllabus?name=a.exe", content=b"MZ").status_code == 415
+    assert prof.post(f"/api/courses/{cid}/syllabus?name=수업계획서.pdf", content=b"%PDF-1.4 plan").status_code == 200
+    assert TestClient(app).get(f"/api/courses/{cid}/syllabus").content == b"%PDF-1.4 plan"
+    cat = TestClient(app).get("/api/courses/catalog").json()["courses"]
+    assert [x["title"] for x in cat] == ["법과 사회"] and cat[0]["syllabus"]["name"] == "수업계획서.pdf"
+
+    # 모집: 대상 학년·정원
+    s1, s2, s3 = (login(f"st{n}@s.school.kr", name=f"학생{n}", school="가나고등학교", grade=2, class_no=1, number=n, agree=True)
+                  for n in (1, 2, 3))
+    assert s1.post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert s2.post(f"/api/courses/{cid}/enroll").status_code == 200
+    r = s3.post(f"/api/courses/{cid}/enroll")
+    assert r.status_code == 409 and "2명" in r.json()["detail"]
+    prof.post(f"/api/courses/{cid}", json={"recruit_start": "2099-01-01", "recruit_end": "2099-02-01", "capacity": 0})
+    r = s3.post(f"/api/courses/{cid}/enroll")
+    assert r.status_code == 409 and "모집 기간" in r.json()["detail"]
+
+    # 팀티칭: 보조교사도 강좌·수강생을 보고 수업에 선생님으로 들어간다. 강좌 정보는 주강사만 고친다
+    mine = asst.get("/api/courses/mine").json()["courses"]
+    assert [x["id"] for x in mine] == [cid] and not mine[0]["lead"] and mine[0]["owner_name"] == "김교수"
+    assert len(asst.get(f"/api/courses/{cid}/enrollments").json()["enrollments"]) == 2
+    assert asst.post(f"/api/courses/{cid}", json={"title": "정치"}).status_code == 404
+    assert asst.post(f"/api/courses/{cid}", json={"open": False}).status_code == 200
+    code = prof.post("/api/live/classes", json={"title": "1차시", "course_id": cid}).json()["code"]
+    verifier = lk.TokenVerifier(cr.LIVEKIT_API_KEY, cr.LIVEKIT_API_SECRET)
+    ids = {verifier.verify(x.post(f"/api/live/classes/{code}/token", json={"room": "main"}).json()["token"]).identity
+           for x in (prof, asst)}
+    assert ids == {"teacher", f"t-{asst_id}"}
+    assert [x["code"] for x in asst.get("/api/live/my-classes").json()["classes"]] == [code]
+    with asst.websocket_connect(f"/ws/live/{code}") as ws:
+        assert until(ws, lambda m: m["t"] == "hello")["role"] == "teacher"
+    # 팀티칭을 끄면 보조교사는 더 이상 이 강좌·수업에 들어가지 못한다
+    prof.post(f"/api/courses/{cid}", json={"team_teaching": False})
+    assert asst.get("/api/courses/mine").json()["courses"] == []
+    assert asst.post(f"/api/live/classes/{code}/token", json={"room": "main"}).status_code == 403
+    # 다른 거점학교 강사는 보조교사로 넣을 수 없다
+    assert prof.post(f"/api/courses/{cid}", json={"team_teaching": True, "co_teachers": [s1.get("/api/me").json()["user"]["id"]]}).status_code == 400

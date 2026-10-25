@@ -118,10 +118,26 @@
           <label class="switch"><input type="radio" name="a-role" value="coordinator"> <span><strong>거점학교 관리교사</strong> — 강사·수강신청 관리 (전체 관리자가 승인)</span></label>
         </div>
         <label class="wide" id="a-hub-pick">강의할 거점학교 <select id="a-hub" required></select></label>
-        <label class="wide" id="a-hub-name-wrap" hidden>관리할 거점학교명 <input id="a-hub-name" maxlength="60" placeholder="예: 가나고등학교"></label>
+        <div class="wide role-pick" id="a-kind-wrap">참여 형태
+          <label class="switch"><input type="radio" name="a-kind" value="main" checked> <span><strong>주강사</strong> — 강좌를 직접 열고 운영해요</span></label>
+          <label class="switch"><input type="radio" name="a-kind" value="assistant"> <span><strong>팀티칭 보조교사</strong> — 주강사가 연 강좌에 함께 들어가 수업을 도와요</span></label>
+        </div>
+        <label class="wide" id="a-hub-name-wrap" hidden>관리할 거점학교 (울산)
+          <input id="a-hub-name" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)"></label>
+        <datalist id="school-options"></datalist>
         <label>이름 <input id="a-name" maxlength="30" required></label>
-        <label>소속 (선택 — 없으면 비워 두세요) <input id="a-aff" maxlength="60" placeholder="예: 한국대학교 / 전 가나고 기간제 교사"></label>
-        <label class="wide">연락처 (승인하는 사람만 봐요) <input id="a-contact" maxlength="100" required placeholder="전화번호 또는 이메일"></label>
+        <label>소속 구분
+          <select id="a-affil-type" required>
+            <option value="school">학교 교원 (초·중·고 교사)</option>
+            <option value="univ">대학 교원 (교수·강사)</option>
+            <option value="cert">교원자격 소지자 (미임용)</option>
+            <option value="other">기타 (연구소·기관 등)</option>
+          </select></label>
+        <label id="a-office-wrap">소속 교육청 <select id="a-office"></select></label>
+        <label id="a-aff-wrap"><span id="a-aff-label">소속 학교</span> <input id="a-aff" maxlength="60"></label>
+        <label id="a-license-wrap" hidden>교원자격 <input id="a-license" maxlength="100" placeholder="예: 중등학교 2급 정교사(사회)"></label>
+        <label>이메일 <input id="a-email" type="email" maxlength="200" required placeholder="연락받을 이메일"></label>
+        <label>연락처 (승인하는 사람만 봐요) <input id="a-contact" maxlength="100" required placeholder="휴대전화 번호"></label>
         <div class="period wide" id="a-wish-wrap">희망 기간 (강의할 기간 — 관리교사가 확인하고 정해요)
           <div class="row"><input id="a-wish-from" type="date"> ~ <input id="a-wish-until" type="date"></div>
         </div>
@@ -210,25 +226,7 @@
           <div class="row"><h2 class="grow" style="margin:0 0 8px">새 강좌 개설</h2>
             <button class="small" type="button" id="more-roles">다른 거점학교·역할 신청</button></div>
           <p class="muted" style="margin:0 0 10px;font-size:0.9rem">학기 초에 강좌를 만들면 학생들이 첫 화면에서 수강신청해요. 승인한 학생은 수업 때 코드 없이 들어오고, 승인하지 않은 학생은 코드를 알아도 들어올 수 없어요.</p>
-          <form id="course-create" class="course-form">
-            <label>강의명 <input id="c-title" maxlength="60" required placeholder="예: 정치와 법 (공동교육과정)"></label>
-            <label>강사명 <input id="c-instructor" maxlength="30" required placeholder="예: 박선생"></label>
-            <label id="c-hub-pick">거점학교 <select id="c-hub-select"></select></label>
-            <label id="c-hub-text" hidden>거점학교명 <input id="c-hub" maxlength="60" placeholder="강의를 운영하는 학교 (강사 소속과 달라도 돼요)"></label>
-            <div class="period">강의기간
-              <div class="row"><input id="c-start" type="date" required> ~ <input id="c-end" type="date" required></div>
-            </div>
-            <div class="wide grade-pick">대상 학년 <span class="muted" style="font-size:0.85rem">(고르지 않으면 모든 학년)</span>
-              <div class="row">
-                <label class="switch"><input type="checkbox" name="c-grade" value="1"> 1학년</label>
-                <label class="switch"><input type="checkbox" name="c-grade" value="2"> 2학년</label>
-                <label class="switch"><input type="checkbox" name="c-grade" value="3"> 3학년</label>
-              </div>
-            </div>
-            <label class="wide">설명 (선택) <input id="c-desc" maxlength="300" placeholder="예: 화·목 7~8교시, 선거와 정당 단원"></label>
-            <button class="primary wide" type="submit">강좌 개설</button>
-          </form>
-          <p class="error" id="course-error"></p>
+          <div id="course-create-box"><p class="muted">불러오는 중…</p></div>
         </section>
         <div id="course-list"></div>
       </div>
@@ -260,6 +258,7 @@
   <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
   <script src="/static/live/common.js"></script>
   <script src="/static/live/assignments.js"></script>
+  <script src="/static/live/course-form.js"></script>
   <script src="/static/live/home.js"></script>
   <script src="/static/live/site.js"></script>
 </body>

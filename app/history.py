@@ -11,11 +11,11 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 
 from app import db
 from app.auth import require_user, student_no
-from app.courses import course_roster, hub_locked
+from app.courses import course_roster, hub_locked, taught_course_ids, taught_filter
 from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
 
 router = APIRouter()
@@ -55,11 +55,10 @@ async def my_classes(request: Request):
     def run():
         with db.engine.connect() as c:
             rows = c.execute(select(db.classes).where(
-                db.classes.c.teacher_id == t["id"], db.classes.c.ended_at.is_(None),
+                my_class_filter(c, t), db.classes.c.ended_at.is_(None),
                 db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT,
             ).order_by(db.classes.c.id.desc())).all()
-            titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)
-                                    .where(db.courses.c.teacher_id == t["id"])).all())
+            titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title).where(taught_filter(t["id"]))).all())
             return rows, titles
 
     rows, titles = await db.run(run)
@@ -74,7 +73,7 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
     def run():
         with db.engine.connect() as c:
             rows = c.execute(select(db.classes).where(
-                db.classes.c.teacher_id == t["id"],
+                my_class_filter(c, t),
                 db.classes.c.created_at >= start, db.classes.c.created_at < end,
             ).order_by(db.classes.c.created_at)).all()
             locked = locked_course_ids(c, t)
@@ -85,8 +84,7 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                                                  .where(db.attendance.c.class_id == r.id)).scalars()))
                 qcounts[r.id] = len(c.execute(select(db.questions.c.id)
                                               .where(db.questions.c.class_id == r.id)).all())
-            titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)
-                                    .where(db.courses.c.teacher_id == t["id"])).all())
+            titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title).where(taught_filter(t["id"]))).all())
             return rows, counts, qcounts, titles
 
     rows, counts, qcounts, titles = await db.run(run)
@@ -94,9 +92,14 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
                          "start": kst(r.created_at)} for r in rows]}
 
 
+def my_class_filter(c, t: dict):
+    """SQL 조건: 내가 연 수업 + 내가 가르치는(팀티칭 보조교사 포함) 강좌의 수업"""
+    return or_(db.classes.c.teacher_id == t["id"], db.classes.c.course_id.in_(taught_course_ids(c, t["id"]) or [-1]))
+
+
 def locked_course_ids(c, t: dict) -> set[int]:
     """그 거점학교 강사 활동 기간이 끝난 강좌: 수업 기록(학생 개인정보)도 볼 수 없다."""
-    rows = c.execute(select(db.courses).where(db.courses.c.teacher_id == t["id"], db.courses.c.hub_id.is_not(None))).all()
+    rows = c.execute(select(db.courses).where(taught_filter(t["id"]), db.courses.c.hub_id.is_not(None))).all()
     return {r.id for r in rows if hub_locked(r, t)}
 
 
@@ -104,7 +107,8 @@ def _owned_class(class_id: int, t: dict):
     with db.engine.connect() as c:
         r = c.execute(select(db.classes).where(db.classes.c.id == class_id)).first()
         locked = r is not None and r.course_id is not None and r.course_id in locked_course_ids(c, t)
-    if not r or r.teacher_id != t["id"]:
+        mine = r is not None and (r.teacher_id == t["id"] or r.course_id in taught_course_ids(c, t["id"]))
+    if not r or not mine:
         raise HTTPException(404, "수업 기록을 찾을 수 없어요.")
     if locked:
         raise HTTPException(403, "그 거점학교 강사 활동 기간이 끝나 이 수업 기록을 볼 수 없어요.")

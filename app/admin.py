@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import date
 
@@ -19,7 +20,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, select, update
 
 from app import db
-from app.auth import PLEDGE, current_user, membership_status, today_kst
+from app.auth import PLEDGE, current_user, get_schools, membership_status, today_kst
+from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
 
 router = APIRouter()
@@ -59,8 +61,14 @@ class ApplyReq(BaseModel):
     hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명
     hub_id: int | None = None  # 강사: 거점학교 고르기
     name: str = Field(min_length=1, max_length=30)
-    affiliation: str = Field(default="", max_length=60)  # 소속 (없으면 비움)
-    contact: str = Field(min_length=1, max_length=100)
+    affiliation: str = Field(default="", max_length=60)  # 소속 학교·대학·기관 (없으면 비움)
+    # 소속 구분: school 학교 교원 / univ 대학 교원 / cert 교원자격 소지자(미임용) / other 기타
+    affil_type: str = Field(default="", pattern="^(school|univ|cert|other)?$")
+    office: str = Field(default="", max_length=30)  # 소속 교육청 (학교 교원)
+    license: str = Field(default="", max_length=100)  # 교원자격 (교원자격 소지자)
+    email: str = Field(default="", max_length=200)  # 연락받을 이메일
+    contact: str = Field(min_length=1, max_length=100)  # 연락처 (전화번호)
+    assistant: bool = False  # 강사: 팀티칭 보조교사로 참여 (강좌를 직접 열지 않고 다른 강사의 강좌를 돕는다)
     message: str = Field(default="", max_length=500)  # 관리교사만 (강사 신청서에는 없음)
     wish_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 강사: 희망 기간
     wish_until: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
@@ -84,8 +92,23 @@ async def apply(req: ApplyReq, request: Request):
     if not req.pledge:
         raise HTTPException(400, "개인정보 보호 서약에 동의해야 신청할 수 있어요.")
     hub_name = req.hub_name.strip()
-    if req.role == "coordinator" and not hub_name:
-        raise HTTPException(400, "거점학교명을 적어 주세요.")
+    if req.role == "coordinator":
+        if not hub_name:
+            raise HTTPException(400, "거점학교를 골라 주세요.")
+        schools = await db.run(get_schools)  # 거점학교는 울산 시내 학교 목록에서만
+        if schools and hub_name not in schools:
+            raise HTTPException(400, "거점학교는 목록에 있는 학교 중에서 골라 주세요.")
+    if req.affil_type:  # 새 신청서: 소속 구분에 따라 필요한 칸
+        if req.affil_type == "school" and not (req.office and req.affiliation.strip()):
+            raise HTTPException(400, "소속 교육청과 소속 학교를 적어 주세요.")
+        if req.office and req.office not in OFFICES:
+            raise HTTPException(400, "소속 교육청을 목록에서 골라 주세요.")
+        if req.affil_type == "univ" and not req.affiliation.strip():
+            raise HTTPException(400, "소속 대학(학과)을 적어 주세요.")
+        if req.affil_type == "cert" and not req.license.strip():
+            raise HTTPException(400, "가지고 있는 교원자격을 적어 주세요. (예: 중등학교 2급 정교사(사회))")
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", req.email.strip()):
+            raise HTTPException(400, "연락받을 이메일 주소를 정확히 적어 주세요.")
     if req.role == "instructor":
         if not req.hub_id:
             raise HTTPException(400, "강의할 거점학교를 골라 주세요.")
@@ -107,13 +130,18 @@ async def apply(req: ApplyReq, request: Request):
                               terms_version=POLICY_VERSION, terms_at=now))
             same = (m.hub_id == req.hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
-            values = {"contact": req.contact.strip(), "pledge_at": now}
+            values = {"contact": req.contact.strip(), "pledge_at": now, "affil_type": req.affil_type,
+                      "office": req.office if req.affil_type == "school" else "",
+                      "license": req.license.strip() if req.affil_type == "cert" else "", "email": req.email.strip(),
+                      "kind": "assistant" if req.role == "instructor" and req.assistant else ""}
             if req.role == "instructor":
                 values.update(wish_from=req.wish_from, wish_until=req.wish_until)
             else:
                 values["message"] = req.message.strip()
             if row and membership_status(dict(row._mapping)) in ("approved", "scheduled"):
                 # 지금 활동 중(또는 시작 전)이면 연락처 등만 고친다. 기간이 끝났으면 아래에서 다시 '승인 대기'로.
+                # 참여 형태(주강사·보조교사)는 승인받은 그대로 둔다 (바꾸려면 다시 승인받아야 함)
+                values.pop("kind")
                 c.execute(update(db.memberships).where(m.id == row.id).values(**values))
             elif row:  # 대기 중 수정, 또는 거절·해제 뒤 다시 신청
                 c.execute(update(db.memberships).where(m.id == row.id)
@@ -160,6 +188,8 @@ async def applications(role: str, request: Request):
                     "status": membership_status(x), "valid_from": x["valid_from"], "valid_until": x["valid_until"],
                     "wish_from": x["wish_from"], "wish_until": x["wish_until"], "contact": x["contact"],
                     "message": x["message"], "admin_note": x["admin_note"], "pledged": bool(x["pledge_at"]),
+                    "kind": x["kind"], "affil_type": x["affil_type"], "office": x["office"], "license": x["license"],
+                    "contact_email": x["email"],
                     "requested_at": x["requested_at"]})
     return {"applications": out, "today": today_kst()}
 
