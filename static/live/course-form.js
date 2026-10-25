@@ -1,6 +1,13 @@
-/* 강좌 개설·수정 양식 (2022 개정 교육과정 과목 검색, 학점·시수, 평가, 모집, 팀티칭, 수업계획서) */
+/* 온라인 공동교육과정 수업 개설 신청 (3단계)
+   1. 학교 및 교사 정보  2. 수업 개설 정보  3. 회차 정보 */
 
-/** c: 고칠 강좌(없으면 새 강좌). done(): 저장한 뒤 할 일 */
+const DAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const pad2 = (n) => String(n).padStart(2, "0");
+const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const dayOf = (iso) => new Date(Date.parse(`${iso}T00:00:00Z`)).getUTCDay();
+const minutes = (t) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : 0);
+
+/** c: 고칠 강좌(없으면 새 강좌). done(id|null): 저장(또는 취소)한 뒤 할 일 */
 async function courseForm(c, done) {
   const meta = await subjectMeta();
   const isNew = !c;
@@ -9,49 +16,54 @@ async function courseForm(c, done) {
   const opt = (list, cur, first) => [first ? h("option", { value: "" }, first) : null,
     ...list.map((x) => (Array.isArray(x) ? h("option", { value: x[0], selected: x[0] === cur }, x[1])
       : h("option", { value: x, selected: x === cur }, x)))];
-  const field = (label, el, attrs = {}) => h("label", attrs, label, el);
-  const dl = h("datalist", { id: `subj-${c.id || "new"}` }, meta.subjects.map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
+  const row = (label, ...cells) => h("div", { class: "wz-row" }, h("div", { class: "wz-label" }, label), h("div", { class: "wz-cell" }, ...cells));
+  const toggle = (checked, on = "공개", off = "비공개") => {
+    const box = h("input", { type: "checkbox", checked });
+    const text = h("span", {}, checked ? on : off);
+    box.addEventListener("change", () => { text.textContent = box.checked ? on : off; });
+    return [h("label", { class: "wz-toggle" }, box, h("i"), text), box];
+  };
+  const schools = (typeof CONFIG !== "undefined" && CONFIG?.schools) || [];
 
-  const title = h("input", { name: "title", value: c.title || "", maxlength: 60, required: true, list: dl.id, autocomplete: "off",
-    placeholder: "과목명 일부를 입력해 검색 (예: 법과)" });
-  const custom = h("input", { type: "checkbox", checked: c.custom_subject });
-  const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)을 고르세요"));
-  const area = h("select", { required: true }, opt(meta.areas, c.subject_area, "교과를 고르세요"));
-  const type = h("select", { required: true }, opt(meta.types, c.subject_type, "과목 구분을 고르세요"));
-  const schoolYear = h("input", { type: "number", min: 2020, max: 2100, value: c.school_year || year, required: true, style: "width:6em" });
-  const term = h("select", { required: true }, opt(meta.terms, c.term, "학기를 고르세요"));
-  const credits = h("input", { type: "number", min: 1, max: 10, value: c.credits || 4, required: true, style: "width:5em" });
-  const hours = h("strong", {}, "");
-  const achievement = h("select", { required: true }, opt(Object.entries(meta.achievements), c.achievement, "성취도를 고르세요"));
-  const capacity = h("input", { type: "number", min: 1, max: 500, value: c.capacity || "", required: true, style: "width:6em", placeholder: "예: 20" });
-  const rStart = h("input", { type: "date", value: c.recruit_start || "", required: true });
-  const rEnd = h("input", { type: "date", value: c.recruit_end || "", required: true });
-  const start = h("input", { type: "date", value: c.start_date || "", required: true });
-  const end = h("input", { type: "date", value: c.end_date || "", required: true });
-  const exam = h("input", { type: "number", min: 0, max: 100, value: c.exam_ratio ?? 0, required: true, style: "width:5em" });
-  const perf = h("input", { type: "number", min: 0, max: 100, value: c.perf_ratio ?? 100, required: true, style: "width:5em" });
+  /* ───── 1. 학교 및 교사 정보 ───── */
+  const last = [...(ME.memberships || [])].reverse().find((m) => m.affil_type || m.email) || {};
+  const AFFIL = { school: "교사", univ: "대학 교원", cert: "교원자격 소지자", other: "기타" };
+  const kind = last.affil_type ? AFFIL[last.affil_type] : ME.is_admin ? "전체 관리자" : "교사";
   const instructor = h("input", { value: c.instructor || ME.name || "", maxlength: 30, required: true });
-  const desc = h("textarea", { rows: 5, maxlength: 3000, placeholder: "수업 목표, 진행 방식(요일·시간), 준비물, 이런 학생에게 추천 등" }, c.description || "");
-  desc.value = c.description || "";
-  const grades = [1, 2, 3].map((g) => h("input", { type: "checkbox", value: g, checked: (c.grades || []).includes(g) }));
-  const file = h("input", { type: "file", accept: ".pdf,.hwp,.hwpx,.docx,.doc" });
+  const email = h("input", { type: "email", value: c.contact_email || last.email || ME.email || "", maxlength: 200, required: true });
+  const phone = h("input", { value: c.contact_phone || last.contact || "", maxlength: 40, required: true, placeholder: "휴대전화 번호" });
+  const [emailToggle, showEmail] = toggle(!!c.show_email);
+  const [phoneToggle, showPhone] = toggle(!!c.show_phone);
 
-  // 거점학교: 새 강좌는 강의할 수 있는 거점학교 중에서 (보조교사로만 승인된 곳 제외)
-  // 거점학교는 반드시 울산 고등학교: 강사는 승인받은 거점학교 중에서, 전체 관리자는 울산 고등학교 목록 전체에서 고른다
+  // 거점학교는 반드시 울산 고등학교: 강사는 승인받은 거점학교 중에서, 전체 관리자는 울산 고등학교 목록 전체에서
   const leadHubs = ME.lead_hubs || [];
-  const byName = !leadHubs.length || ME.is_admin; // 학교 이름으로 고르기 (전체 관리자 등)
-  const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...((typeof CONFIG !== "undefined" && CONFIG?.schools) || [])])].sort();
-  const hubSel = h("select", { required: true }, h("option", { value: "" }, "거점학교를 고르세요"),
+  const byName = !leadHubs.length || ME.is_admin;
+  const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...schools])].sort();
+  const hubSel = h("select", { required: isNew }, h("option", { value: "" }, "거점학교를 고르세요"),
     byName ? schoolNames.map((n) => h("option", { value: n }, n)) : leadHubs.map((x) => h("option", { value: x.id }, x.name)));
   if (!byName && leadHubs.length === 1) hubSel.value = String(leadHubs[0].id);
-  const hubBox = isNew
-    ? h("div", { style: "display:grid;gap:4px" }, field("거점학교 (울산 고등학교)", hubSel),
-      byName && !schoolNames.length ? h("p", { class: "error", style: "margin:0" }, "울산 고등학교 목록이 비어 있어요. 전체 관리 → 🏫 울산 고등학교 목록을 먼저 채워 주세요.") : null)
-    : h("div", {}, "거점학교 ", h("strong", {}, c.hub_school || "-"));
   const hubIdNow = () => (isNew ? (byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value) || null) : c.hub_id);
 
-  // 팀티칭: 같은 거점학교에서 활동 중인 강사 중 보조교사를 고른다
-  const team = h("input", { type: "checkbox", checked: c.team_teaching });
+  // 참여 학교: 이 강좌를 함께 듣는 학교 (비우면 울산 모든 고등학교 학생이 신청)
+  const joined = [...(c.schools || [])];
+  const joinBox = h("div", { class: "chips" });
+  const dlId = `join-${c.id || "new"}-${Math.random().toString(36).slice(2, 7)}`;
+  const joinInput = h("input", { list: dlId, maxlength: 60, autocomplete: "off", placeholder: "학교명을 입력하세요 (예: 신정)" });
+  const drawJoined = () => joinBox.replaceChildren(...(joined.length ? joined.map((n, i) => h("span", { class: "chip" }, n,
+    h("button", { type: "button", "aria-label": `${n} 빼기`, onclick: () => { joined.splice(i, 1); drawJoined(); } }, "×")))
+    : [h("span", { class: "muted", style: "font-size:0.85rem" }, "추가하지 않으면 울산의 모든 고등학교 학생이 신청할 수 있어요.")]));
+  const addJoined = () => {
+    const n = joinInput.value.trim();
+    if (!n) return;
+    if (schools.length && !schools.includes(n)) { toast("울산 고등학교 목록에 있는 학교를 골라 주세요."); return; }
+    if (!joined.includes(n)) joined.push(n);
+    joinInput.value = "";
+    drawJoined();
+  };
+  drawJoined();
+
+  // 팀티칭: 같은 거점학교에서 승인받은 강사 중 보조교사
+  const [teamToggle, team] = toggle(!!c.team_teaching, "함", "안 함");
   const coBox = h("div", { class: "co-teachers" });
   const coChosen = new Set((c.co_teachers || []).map((x) => x.id));
   async function loadCo() {
@@ -61,25 +73,82 @@ async function courseForm(c, done) {
     if (!hubId) { coBox.append(h("p", { class: "muted" }, "이 거점학교에 승인된 강사가 아직 없어요. 강사가 이 학교로 등록 승인을 받으면 보조교사로 고를 수 있어요.")); return; }
     try {
       const { teachers } = await api(`/api/hubs/${hubId}/teachers`);
-      coBox.append(h("div", { class: "muted", style: "font-size:0.85rem" }, "보조교사 (이 거점학교에서 승인받은 강사 중에서 골라요)"),
-        ...(teachers.length ? teachers.map((x) => h("label", { class: "switch" },
-          h("input", { type: "checkbox", value: x.id, checked: coChosen.has(x.id),
-            onchange: (e) => { if (e.target.checked) coChosen.add(x.id); else coChosen.delete(x.id); } }),
-          ` ${x.name}`, h("span", { class: "muted", style: "font-size:0.8rem" }, `${x.assistant ? " · 보조교사" : " · 강사"}${x.affiliation ? ` · ${x.affiliation}` : ""}`)))
-          : [h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 거점학교에 승인된 다른 강사가 없어요. 보조교사가 '팀티칭 보조교사'로 강사 등록을 신청하고 관리교사 승인을 받으면 여기에 나와요.")]));
+      coBox.append(...(teachers.length ? teachers.map((x) => h("label", { class: "switch" },
+        h("input", { type: "checkbox", value: x.id, checked: coChosen.has(x.id),
+          onchange: (e) => { if (e.target.checked) coChosen.add(x.id); else coChosen.delete(x.id); } }),
+        ` ${x.name}`, h("span", { class: "muted", style: "font-size:0.8rem" }, `${x.assistant ? " · 보조교사" : " · 강사"}${x.affiliation ? ` · ${x.affiliation}` : ""}`)))
+        : [h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 거점학교에 승인된 다른 강사가 없어요. 보조교사가 '팀티칭 보조교사'로 강사 등록을 신청해 승인받으면 여기에 나와요.")]));
     } catch (err) { coBox.append(h("p", { class: "error" }, err.message)); }
   }
   team.addEventListener("change", loadCo);
   hubSel.addEventListener("change", loadCo);
   if (team.checked) loadCo();
 
-  // 과목을 고르면 교과(군)·교과·과목 구분·기본 학점·성취도를 채운다
+  const step1 = h("section", { class: "wz-step" },
+    h("h3", { class: "wz-h" }, "수업 담당 교강사 정보"),
+    h("div", { class: "wz-table two" },
+      row("교사명", h("strong", {}, ME.name || "-")), row("유형", kind),
+      row("소속 교육청", last.office || "-"), row("소속 학교", ME.school || "-"),
+      row("이메일", email, emailToggle), row("연락처", phone, phoneToggle)),
+    h("div", { class: "wz-table" }, row("학생에게 보일 강사명", instructor)),
+    h("h3", { class: "wz-h" }, "개설 및 참여 학교 정보"),
+    h("div", { class: "wz-table" },
+      row("거점학교", isNew ? [h("span", { class: "chip fixed" }, "울산광역시교육청"), hubSel] : h("strong", {}, c.hub_school || "-")),
+      row("참여 학교", h("div", { class: "row" }, joinInput, h("datalist", { id: dlId }, schools.map((n) => h("option", { value: n }))),
+        h("button", { type: "button", onclick: addJoined }, "추가")), joinBox)),
+    h("h3", { class: "wz-h" }, "팀 티칭 교강사 정보"),
+    h("div", { class: "wz-table" }, row("팀티칭 여부", teamToggle, coBox)));
+  joinInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addJoined(); } });
+
+  /* ───── 2. 수업 개설 정보 ───── */
+  const title = h("input", { name: "title", value: c.title || "", maxlength: 60, required: true, placeholder: "학생에게 보일 수업 이름 (예: 판례로 배우는 법과 사회)" });
+  const sdl = h("datalist", { id: `${dlId}-s` }, meta.subjects.map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
+  const subject = h("input", { value: c.subject || c.title || "", maxlength: 60, required: true, list: sdl.id, autocomplete: "off", placeholder: "과목명 일부를 입력해 검색" });
+  const custom = h("input", { type: "checkbox", checked: c.custom_subject });
+  const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)"));
+  const area = h("select", { required: true }, opt(meta.areas, c.subject_area, "교과"));
+  const type = h("select", { required: true }, opt(meta.types, c.subject_type, "과목 구분"));
+  // '찾기': 교과(군)을 고르면 과목이 버튼으로 나온다
+  const browse = h("div", { class: "subject-browse", hidden: true });
+  const browseGroup = h("select", {}, opt(meta.groups, c.subject_group || meta.groups[0]));
+  const browseList = h("div", { class: "subject-list" });
+  const drawBrowse = () => {
+    const list = meta.subjects.filter((x) => x.group === browseGroup.value);
+    browseList.replaceChildren(...meta.types.map((t) => {
+      const items = list.filter((x) => x.type === t);
+      return items.length ? h("div", {}, h("b", {}, t), h("div", { class: "row" }, items.map((x) => h("button", { type: "button", class: "small", onclick: () => {
+        subject.value = x.name;
+        if (!title.value.trim()) title.value = x.name;
+        subject.dispatchEvent(new Event("input"));
+        browse.hidden = true;
+      } }, x.name)))) : null;
+    }));
+  };
+  browseGroup.addEventListener("change", drawBrowse);
+  browse.append(h("div", { class: "row" }, "교과(군) ", browseGroup), browseList);
+  const schoolYear = h("input", { type: "number", min: 2020, max: 2100, value: c.school_year || year, required: true, style: "width:6.5em" });
+  const termName = `term-${dlId}`;
+  const terms = meta.terms.map((t) => h("label", { class: "switch" }, h("input", { type: "radio", name: termName, value: t, checked: (c.term || meta.terms[0]) === t }), ` ${t}`));
+  const credits = h("input", { type: "number", min: 1, max: 10, value: c.credits || 4, required: true, style: "width:5em" });
+  const achievement = h("select", { required: true }, opt(Object.entries(meta.achievements), c.achievement, "성취도를 고르세요"));
+  const grades = [1, 2, 3].map((g) => h("input", { type: "checkbox", value: g, checked: (c.grades || []).includes(g) }));
+  const capacity = h("input", { type: "number", min: 1, max: 500, value: c.capacity || "", required: true, style: "width:6em", placeholder: "예: 20" });
+  const rStart = h("input", { type: "date", value: c.recruit_start || "", required: true });
+  const rStartT = h("input", { type: "time", value: c.recruit_start_time || "09:00", required: true });
+  const rEnd = h("input", { type: "date", value: c.recruit_end || "", required: true });
+  const rEndT = h("input", { type: "time", value: c.recruit_end_time || "23:59", required: true });
+  const exam = h("input", { type: "number", min: 0, max: 100, value: c.exam_ratio ?? 0, required: true, style: "width:5em" });
+  const perf = h("input", { type: "number", min: 0, max: 100, value: c.perf_ratio ?? 100, required: true, style: "width:5em" });
+  const desc = h("textarea", { rows: 5, maxlength: 3000, placeholder: "수업 목표, 진행 방식, 준비물, 이런 학생에게 추천 등" });
+  desc.value = c.description || "";
+  const file = h("input", { type: "file", accept: ".pdf,.hwp,.hwpx,.docx,.doc" });
+
   const lockSubject = () => {
-    const found = !custom.checked && meta.subjects.find((x) => x.name === title.value.trim());
+    const found = !custom.checked && meta.subjects.find((x) => x.name === subject.value.trim());
     for (const el of [group, area, type]) el.disabled = !!found;
     return found;
   };
-  title.addEventListener("input", () => {
+  subject.addEventListener("input", () => {
     const found = lockSubject();
     if (found) {
       group.value = found.group;
@@ -87,43 +156,168 @@ async function courseForm(c, done) {
       type.value = found.type;
       credits.value = found.credits;
       achievement.value = found.achievement;
-      updateHours();
+      credits.dispatchEvent(new Event("input"));
     }
   });
   custom.addEventListener("change", lockSubject);
-  const updateHours = () => { hours.textContent = credits.value ? `${Number(credits.value) * meta.hours_per_credit}시간` : "-"; };
-  credits.addEventListener("input", updateHours);
   exam.addEventListener("input", () => { if (exam.value !== "") perf.value = Math.max(0, 100 - Number(exam.value)); });
   perf.addEventListener("input", () => { if (perf.value !== "") exam.value = Math.max(0, 100 - Number(perf.value)); });
   lockSubject();
-  updateHours();
 
+  const step2 = h("section", { class: "wz-step", hidden: true },
+    h("h3", { class: "wz-h" }, "수업 개설 정보"),
+    h("div", { class: "wz-table" },
+      row("수업명", title),
+      row("교육과정 / 과목", h("div", { class: "row" }, h("span", { class: "chip fixed" }, "2022 개정 교육과정"), subject, sdl,
+        h("button", { type: "button", onclick: () => { browse.hidden = !browse.hidden; if (!browse.hidden) drawBrowse(); } }, "찾기")),
+        browse, h("label", { class: "switch" }, custom, " 고시외 과목 (목록에 없는 과목 — 직접 적고 아래 칸을 골라요)"))),
+    h("div", { class: "wz-table two" },
+      row("교과(군)", group), row("교과 영역", area),
+      row("과목 선택 구분", type), row("학년도", schoolYear),
+      row("수업 단위 (학점)", credits), row("성취도", achievement)),
+    h("div", { class: "wz-table" },
+      row("수업 학기", h("div", { class: "row" }, terms)),
+      row("대상 학년", h("div", { class: "row" }, grades.map((x) => h("label", { class: "switch" }, x, ` ${x.value}학년`)),
+        h("span", { class: "muted", style: "font-size:0.85rem" }, "고르지 않으면 모든 학년"))),
+      row("수강 인원", h("div", { class: "row" }, capacity, "명")),
+      row("모집 기간", h("div", { class: "row" }, rStart, rStartT, "~", rEnd, rEndT)),
+      row("평가 비율", h("div", { class: "row" }, "지필", exam, "% · 수행", perf, "%")),
+      row("수업 소개", desc),
+      row("수업계획서", file, c.syllabus ? h("span", { class: "muted", style: "font-size:0.85rem" }, `지금 파일: ${c.syllabus.name} (새로 고르면 바뀌어요)`)
+        : h("span", { class: "muted", style: "font-size:0.85rem" }, "PDF·한글·워드, 20MB까지"))));
+
+  /* ───── 3. 회차 정보 ───── */
+  const hours = h("input", { type: "number", min: 1, max: 400, value: c.hours || (c.credits || 4) * meta.hours_per_credit, required: true, style: "width:6em" });
+  let hoursTouched = !!c.hours && c.hours !== (c.credits || 4) * meta.hours_per_credit;
+  hours.addEventListener("input", () => { hoursTouched = true; });
+  const unit = h("strong", {}, "");
+  credits.addEventListener("input", () => {
+    unit.textContent = `${credits.value || "-"}학점`;
+    if (!hoursTouched && credits.value) hours.value = Number(credits.value) * meta.hours_per_credit;
+  });
+  unit.textContent = `${credits.value}학점`;
+  const start = h("input", { type: "date", value: c.start_date || "", required: true });
+  const end = h("input", { type: "date", value: c.end_date || "", required: true });
+  const days = DAYS.map((d, i) => h("input", { type: "checkbox", value: i, checked: (c.class_days || []).includes(i) }));
+  const tStart = h("input", { type: "time", value: c.class_start || "16:00" });
+  const tEnd = h("input", { type: "time", value: c.class_end || "17:40" });
+  const count = h("input", { type: "number", min: 1, max: 200, style: "width:5em" });
+  const periodsPer = () => Math.max(1, Math.round((minutes(tEnd.value) - minutes(tStart.value)) / 50));
+  const updateCount = () => { count.value = Math.ceil(Number(hours.value || 0) / periodsPer()) || ""; };
+  [hours, tStart, tEnd, credits].forEach((el) => el.addEventListener("input", updateCount));
+  updateCount();
+  let sessions = (c.sessions || []).map((x) => ({ ...x }));
+  const sessBox = h("div", { class: "sessions" });
+  const drawSessions = () => {
+    sessions.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+    if (sessions.length) end.value = sessions[sessions.length - 1].date;
+    sessBox.replaceChildren(sessions.length ? h("table", { class: "sess-table" },
+      h("tr", {}, h("th", {}, "회차"), h("th", {}, "날짜"), h("th", {}, "시간"), h("th", {}, "주제 (선택)"), h("th", {}, "")),
+      sessions.map((x, i) => h("tr", {},
+        h("td", {}, `${i + 1}`),
+        h("td", {}, h("input", { type: "date", value: x.date, onchange: (e) => { x.date = e.target.value; drawSessions(); } }),
+          h("small", { class: "muted" }, ` (${DAYS[dayOf(x.date)]})`)),
+        h("td", { class: "nowrap" }, h("input", { type: "time", value: x.start, onchange: (e) => { x.start = e.target.value; } }), "~",
+          h("input", { type: "time", value: x.end, onchange: (e) => { x.end = e.target.value; } })),
+        h("td", {}, h("input", { value: x.topic || "", maxlength: 120, placeholder: `${i + 1}회차`, oninput: (e) => { x.topic = e.target.value; } })),
+        h("td", {}, h("button", { type: "button", class: "small danger", onclick: () => { sessions.splice(i, 1); drawSessions(); } }, "삭제"))))) :
+      h("p", { class: "muted" }, "요일과 시간을 고르고 '일괄 생성'을 누르면 회차표가 만들어져요. 회차마다 날짜·시간·주제를 고칠 수 있어요."),
+    h("div", { class: "row", style: "margin-top:6px" },
+      h("button", { type: "button", class: "small", onclick: () => {
+        const lastS = sessions[sessions.length - 1];
+        sessions.push({ date: lastS ? addDays(lastS.date, 7) : (start.value || addDays(new Date().toISOString().slice(0, 10), 1)), start: tStart.value, end: tEnd.value, topic: "" });
+        drawSessions();
+      } }, "+ 회차 추가"),
+      sessions.length ? h("span", { class: "muted", style: "font-size:0.85rem" }, `모두 ${sessions.length}회차 · ${sessions[0].date.replaceAll("-", ".")} ~ ${sessions[sessions.length - 1].date.replaceAll("-", ".")}`) : null));
+  };
+  const generate = () => {
+    const picked = days.filter((d) => d.checked).map((d) => Number(d.value));
+    if (!start.value) { toast("수업 시작일을 먼저 정해 주세요."); start.focus(); return; }
+    if (!picked.length) { toast("수업 요일을 하나 이상 골라 주세요."); return; }
+    if (minutes(tEnd.value) <= minutes(tStart.value)) { toast("수업 끝나는 시각이 시작 시각보다 늦어야 해요."); return; }
+    const n = Number(count.value) || 1;
+    if (sessions.length && !confirm(`지금 회차표(${sessions.length}회차)를 지우고 새로 만들까요?`)) return;
+    const out = [];
+    for (let d = start.value, guard = 0; out.length < n && guard < 800; d = addDays(d, 1), guard++) {
+      if (picked.includes(dayOf(d))) out.push({ date: d, start: tStart.value, end: tEnd.value, topic: "" });
+    }
+    sessions = out;
+    drawSessions();
+  };
+  drawSessions();
+
+  const step3 = h("section", { class: "wz-step", hidden: true },
+    h("h3", { class: "wz-h" }, "회차 운영 개요"),
+    h("div", { class: "wz-table" },
+      row("수업 단위", h("div", { class: "row" }, unit, "(이수 시간", hours, "시간)")),
+      row("수업 시작일", start),
+      row("수업 요일", h("div", { class: "row" }, days.map((x, i) => h("label", { class: "switch" }, x, ` ${DAYS[i]}`)))),
+      row("수업 시간", h("div", { class: "row" }, tStart, "~", tEnd)),
+      row("회차 수", h("div", { class: "row" }, count, "회", h("button", { type: "button", class: "primary", onclick: generate }, "일괄 생성"),
+        h("span", { class: "muted", style: "font-size:0.85rem" }, "이수 시간과 한 번의 수업 길이(50분 = 1차시)로 계산돼요"))),
+      row("수업 종료일", end, h("span", { class: "muted", style: "font-size:0.85rem" }, "회차를 만들면 마지막 회차 날짜로 채워져요"))),
+    h("h3", { class: "wz-h" }, "회차표"), sessBox);
+
+  /* ───── 단계 이동 ───── */
+  const stepEls = [step1, step2, step3];
+  const labels = ["1. 학교 및 교사 정보", "2. 수업 개설 정보", "3. 회차 정보"];
+  let cur = 0;
+  const bar = h("div", { class: "wz-steps" });
   const err = h("p", { class: "error" });
-  // 칸에서 엔터를 쳐도 개설·저장되지 않게: 버튼을 눌렀을 때만 (과목 목록에서 엔터로 고르는 것은 그대로)
+  const prev = h("button", { type: "button" }, "← 이전");
+  const next = h("button", { type: "button", class: "primary" }, "다음 →");
+  const submit = h("button", { type: "submit", class: "primary" }, isNew ? "수업 개설 신청" : "저장");
+  const go = (n) => {
+    cur = n;
+    stepEls.forEach((el, i) => { el.hidden = i !== n; });
+    bar.replaceChildren(...labels.map((l, i) => h("button", { type: "button", class: `wz-step-btn ${i <= n ? "on" : ""} ${i === n ? "now" : ""}`,
+      onclick: () => { if (i < n || validStep(n)) go(i); } }, l)));
+    prev.hidden = n === 0;
+    next.hidden = n === 2;
+    submit.hidden = n !== 2;
+    err.textContent = "";
+    bar.scrollIntoView({ block: "nearest" });
+  };
+  const validStep = (n) => {
+    for (const el of stepEls[n].querySelectorAll("input, select, textarea")) {
+      if (!el.disabled && !el.checkValidity()) { el.reportValidity(); return false; }
+    }
+    if (n === 0 && isNew && !hubSel.value) { err.textContent = "거점학교를 골라 주세요. 거점학교 없이는 수업을 열 수 없어요."; return false; }
+    if (n === 1 && Number(exam.value) + Number(perf.value) !== 100) { err.textContent = "지필평가와 수행평가 비율을 더하면 100%가 되어야 해요."; return false; }
+    return true;
+  };
+  prev.addEventListener("click", () => go(cur - 1));
+  next.addEventListener("click", () => { if (validStep(cur)) go(cur + 1); });
+
+  // 칸에서 엔터를 쳐도 개설·저장되지 않게: 버튼을 눌렀을 때만
   let enterAt = 0;
-  const form = h("form", { class: "course-form course-form-full", onsubmit: async (e) => {
+  const form = h("form", { class: "course-form-full wizard", novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     if (performance.now() - enterAt < 500) return;
-    err.textContent = "";
+    for (let i = 0; i < 3; i++) if (!validStep(i)) { if (cur !== i) go(i); validStep(i); return; }
+    if (!sessions.length && !end.value) { err.textContent = "수업 종료일을 정하거나 회차를 만들어 주세요."; return; }
     const body = {
-      title: title.value.trim(), custom_subject: custom.checked,
+      title: title.value.trim(), subject: subject.value.trim(), custom_subject: custom.checked,
       subject_group: group.value, subject_area: area.value, subject_type: type.value,
-      school_year: Number(schoolYear.value), term: term.value, credits: Number(credits.value), achievement: achievement.value,
+      school_year: Number(schoolYear.value), term: form.querySelector(`input[name="${termName}"]:checked`)?.value || meta.terms[0],
+      credits: Number(credits.value), hours: Number(hours.value), achievement: achievement.value,
       grades: grades.filter((x) => x.checked).map((x) => Number(x.value)), capacity: Number(capacity.value),
-      recruit_start: rStart.value, recruit_end: rEnd.value, start_date: start.value, end_date: end.value,
-      exam_ratio: Number(exam.value), perf_ratio: Number(perf.value), instructor: instructor.value.trim(),
-      description: desc.value.trim(), team_teaching: team.checked, co_teachers: team.checked ? [...coChosen] : [],
+      recruit_start: rStart.value, recruit_start_time: rStartT.value, recruit_end: rEnd.value, recruit_end_time: rEndT.value,
+      start_date: start.value, end_date: end.value, exam_ratio: Number(exam.value), perf_ratio: Number(perf.value),
+      instructor: instructor.value.trim(), description: desc.value.trim(),
+      contact_email: email.value.trim(), contact_phone: phone.value.trim(), show_email: showEmail.checked, show_phone: showPhone.checked,
+      schools: joined, team_teaching: team.checked, co_teachers: team.checked ? [...coChosen] : [],
+      class_days: days.filter((x) => x.checked).map((x) => Number(x.value)), class_start: tStart.value, class_end: tEnd.value,
+      sessions: sessions.map((x) => ({ date: x.date, start: x.start || "", end: x.end || "", topic: x.topic || "" })),
     };
     if (isNew) {
-      if (!hubSel.value) { err.textContent = "거점학교를 골라 주세요. 거점학교 없이는 강좌를 열 수 없어요."; return; }
       body.hub_id = byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value);
       body.hub_school = body.hub_id ? "" : hubSel.value;
     }
-    if (body.exam_ratio + body.perf_ratio !== 100) { err.textContent = "지필평가와 수행평가 비율을 더하면 100%가 되어야 해요."; return; }
-    // 같은 이름의 강좌가 이미 있으면 한 번 더 묻는다 (학생이 다른 강좌에 신청해 수업에 못 들어오는 일을 막기)
+    // 같은 이름의 수업이 이미 있으면 한 번 더 묻는다 (학생이 다른 쪽에 신청해 수업에 못 들어오는 일을 막기)
     const same = (typeof teacherCourses !== "undefined" ? teacherCourses : [])
       .filter((x) => !x.archived && x.id !== c.id && x.title.trim() === body.title);
-    if (same.length && !confirm(`'${body.title}' 강좌가 이미 ${same.length}개 있어요. 같은 이름의 강좌를 또 만들까요?\n(같은 강좌라면 '취소'를 누르세요. 학생이 다른 쪽 강좌에 신청하면 수업에 못 들어와요.)`)) return;
+    if (same.length && !confirm(`'${body.title}' 수업이 이미 ${same.length}개 있어요. 같은 이름의 수업을 또 만들까요?\n(같은 강좌라면 '취소'를 누르세요.)`)) return;
     try {
       let id = c.id;
       if (isNew) ({ id } = await api("/api/courses", body));
@@ -131,61 +325,49 @@ async function courseForm(c, done) {
       if (file.files[0]) {
         const f = file.files[0];
         const res = await fetch(`/api/courses/${id}/syllabus?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
-        if (!res.ok) toast(`강좌는 저장했지만 수업계획서를 올리지 못했어요: ${(await res.json().catch(() => ({}))).detail || res.status}`, 6000);
+        if (!res.ok) toast(`수업은 저장했지만 수업계획서를 올리지 못했어요: ${(await res.json().catch(() => ({}))).detail || res.status}`, 6000);
       }
       done(id);
     } catch (e2) { err.textContent = e2.message; }
   } },
-    h("fieldset", { class: "wide" }, h("legend", {}, "과목"),
-      h("div", { class: "course-grid" },
-        field("과목명 (2022 개정 교육과정)", title, { class: "wide" }), dl,
-        h("label", { class: "switch wide" }, custom, " 고시외 과목 (목록에 없는 과목 — 직접 적고 아래 칸을 골라요)"),
-        field("교과(군)", group), field("교과", area), field("과목 구분", type))),
-    h("fieldset", { class: "wide" }, h("legend", {}, "학기·학점·평가"),
-      h("div", { class: "course-grid" },
-        h("div", { class: "row" }, field("학년도", schoolYear), field("수업 학기", term)),
-        h("div", { class: "row" }, field("수업 학점", credits), h("span", {}, "수업 시수 ", hours)),
-        field("성취도", achievement),
-        h("div", { class: "row" }, field("지필평가 %", exam), field("수행평가 %", perf)))),
-    h("fieldset", { class: "wide" }, h("legend", {}, "모집"),
-      h("div", { class: "course-grid" },
-        h("div", { class: "grade-pick" }, "대상 학년 ", h("span", { class: "muted", style: "font-size:0.85rem" }, "(고르지 않으면 모든 학년)"),
-          h("div", { class: "row" }, grades.map((x) => h("label", { class: "switch" }, x, ` ${x.value}학년`)))),
-        field("수강 인원 (명)", capacity),
-        h("div", { class: "period" }, "모집 기간", h("div", { class: "row" }, rStart, " ~ ", rEnd)),
-        h("div", { class: "period" }, "수업 기간 (시작일 ~ 종료일)", h("div", { class: "row" }, start, " ~ ", end)))),
-    h("fieldset", { class: "wide" }, h("legend", {}, "강사·거점학교"),
-      h("div", { class: "course-grid" },
-        field("강사명", instructor), hubBox,
-        h("label", { class: "switch wide" }, team, " 팀티칭 (보조교사가 함께 수업에 들어와 도와요)"),
-        h("div", { class: "wide" }, coBox))),
-    h("fieldset", { class: "wide" }, h("legend", {}, "수업 소개·수업계획서"),
-      field("수업 소개", desc, { class: "wide" }),
-      h("label", { class: "wide" }, "수업계획서 파일 (PDF·한글·워드, 20MB까지)", file,
-        c.syllabus ? h("span", { class: "muted", style: "font-size:0.85rem" }, `지금 파일: ${c.syllabus.name} (새로 고르면 바뀌어요)`) : null)),
-    h("div", { class: "row wide" }, h("button", { class: "primary", type: "submit" }, isNew ? "강좌 개설" : "저장"),
-      isNew ? null : h("button", { type: "button", onclick: () => done(null) }, "취소")),
-    err);
+    h("h2", { class: "wz-title" }, isNew ? "온라인 공동교육과정 수업 개설 신청" : `수업 정보 수정 · ${c.title}`),
+    bar, step1, step2, step3, err,
+    h("div", { class: "row wz-nav" }, prev, h("span", { class: "grow" }),
+      isNew ? null : h("button", { type: "button", onclick: () => done(null) }, "취소"), next, submit));
   form.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.tagName === "INPUT") enterAt = performance.now();
   });
+  go(0);
   return form;
 }
 
-/** 강좌 안내 (학생·선생님 화면 공통): 과목·학점·평가·모집 */
+/** 강좌 안내 (학생·선생님 화면 공통): 과목·학점·평가·모집·일정 */
 function courseFacts(c) {
   const rows = [];
+  if (c.subject && c.subject !== c.title) rows.push(["과목", c.subject]);
   if (c.subject_area || c.subject_type) {
-    rows.push(["과목", [c.subject_group, c.subject_area, c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")]);
+    rows.push(["교과", [c.subject_group, c.subject_area, c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")]);
   }
   if (c.term) rows.push(["학기", `${c.school_year || ""}학년도 ${c.term}`]);
   if (c.credits) rows.push(["학점", `${c.credits}학점 (${c.hours}시간)`]);
+  if (c.class_days?.length) rows.push(["수업 시간", `매주 ${c.class_days.map((d) => DAYS[d]).join("·")} ${c.class_start || ""}~${c.class_end || ""}`]);
+  if (c.sessions?.length) rows.push(["회차", `${c.sessions.length}회 (${fmtDate(c.sessions[0].date)} ~ ${fmtDate(c.sessions[c.sessions.length - 1].date)})`]);
   if (c.achievement_text) rows.push(["성취도", c.achievement_text]);
   if (c.exam_ratio != null && c.perf_ratio != null) rows.push(["평가", `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%`]);
-  if (c.recruit_start || c.recruit_end) rows.push(["모집 기간", `${fmtDate(c.recruit_start)} ~ ${fmtDate(c.recruit_end)}`]);
+  if (c.recruit_start || c.recruit_end) {
+    rows.push(["모집 기간", `${fmtDate(c.recruit_start)} ${c.recruit_start_time || ""} ~ ${fmtDate(c.recruit_end)} ${c.recruit_end_time || ""}`]);
+  }
   if (c.capacity) rows.push(["수강 인원", `${c.capacity}명`]);
+  if (c.schools?.length) rows.push(["참여 학교", c.schools.join(", ")]);
   if (c.team_teaching) rows.push(["팀티칭", c.co_teachers?.length ? `보조교사 ${c.co_teachers.map((x) => x.name).join(", ")}` : "예"]);
+  const contact = [c.show_email !== false && c.contact_email, c.show_phone !== false && c.contact_phone].filter(Boolean);
+  if (contact.length) rows.push(["연락처", contact.join(" · ")]);
   if (!rows.length && !c.syllabus) return null;
-  return h("dl", { class: "facts" }, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]),
+  const dl = h("dl", { class: "facts" }, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]),
     c.syllabus ? [h("dt", {}, "수업계획서"), h("dd", {}, h("a", { href: c.syllabus.url, target: "_blank" }, `📄 ${c.syllabus.name}`))] : null);
+  if (!c.sessions?.length) return dl;
+  return h("div", {}, dl, h("details", { class: "course-more" }, h("summary", {}, `회차표 보기 (${c.sessions.length}회)`),
+    h("table", { class: "sess-table view" }, h("tr", {}, h("th", {}, "회차"), h("th", {}, "날짜"), h("th", {}, "시간"), h("th", {}, "주제")),
+      c.sessions.map((x) => h("tr", {}, h("td", {}, x.no), h("td", {}, `${fmtDate(x.date)} (${DAYS[dayOf(x.date)]})`),
+        h("td", {}, x.start ? `${x.start}~${x.end}` : ""), h("td", {}, x.topic))))));
 }

@@ -1412,3 +1412,35 @@ def test_instructor_applies_to_any_ulsan_school(monkeypatch):
     boss.post("/api/courses", json={**COURSE, "title": "정치", "hub_school": "신정고등학교"})
     hubs = {c["title"]: c["hub_id"] for c in boss.get("/api/hub/overview").json()["courses"]}
     assert hubs["정치"] and cid in [c["id"] for c in boss.get("/api/hub/overview").json()["courses"]]
+
+
+def test_course_sessions_joined_schools_and_recruit_time(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "신정고등학교\nX고등학교\nY고등학교"})
+    body = {**COURSE, "title": "판례로 배우는 법과 사회", "subject": "법과 사회", "subject_type": "진로선택", "hub_school": "신정고등학교",
+            "schools": ["X고등학교", "없는고"], "class_days": [2, 4], "class_start": "16:00", "class_end": "17:40",
+            "sessions": [{"date": "2026-03-05", "start": "16:00", "end": "17:40"},
+                         {"date": "2026-03-03", "start": "16:00", "end": "17:40", "topic": "오리엔테이션"}],
+            "contact_email": "koo@use.go.kr", "show_email": True, "contact_phone": "010-1", "show_phone": False}
+    assert boss.post("/api/courses", json=body).status_code == 400  # 목록에 없는 참여 학교
+    cid = boss.post("/api/courses", json={**body, "schools": ["X고등학교"]}).json()["id"]
+    c = boss.get("/api/courses/mine").json()["courses"][0]
+    assert c["subject"] == "법과 사회" and c["subject_area"] == "사회" and c["title"] == "판례로 배우는 법과 사회"
+    assert [(x["no"], x["date"], x["topic"]) for x in c["sessions"]] == [(1, "2026-03-03", "오리엔테이션"), (2, "2026-03-05", "2회차")]
+    cat = TestClient(app).get("/api/courses/catalog").json()["courses"][0]
+    assert cat["contact_email"] == "koo@use.go.kr" and cat["contact_phone"] == "" and len(cat["sessions"]) == 2  # 비공개 연락처는 안 보임
+    # 참여 학교(+ 거점학교) 학생만 신청
+    x = login("x@s.school.kr", name="엑스", school="X고등학교", grade=2, class_no=1, number=1, agree=True)
+    y = login("y@s.school.kr", name="와이", school="Y고등학교", grade=2, class_no=1, number=1, agree=True)
+    h = login("h@s.school.kr", name="거점", school="신정고등학교", grade=2, class_no=1, number=1, agree=True)
+    assert x.post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert h.post(f"/api/courses/{cid}/enroll").status_code == 200
+    r = y.post(f"/api/courses/{cid}/enroll")
+    assert r.status_code == 409 and "참여 학교" in r.json()["detail"]
+    # 회차 고치기, 모집 마감 시각이 지나면 마감
+    boss.post(f"/api/courses/{cid}", json={"sessions": [{"date": "2026-03-10"}]})
+    assert len(boss.get("/api/courses/mine").json()["courses"][0]["sessions"]) == 1
+    boss.post(f"/api/courses/{cid}", json={"recruit_start": "2026-01-01", "recruit_end": "2026-01-02", "recruit_end_time": "18:00",
+                                           "schools": []})
+    assert y.post(f"/api/courses/{cid}/enroll").status_code == 409

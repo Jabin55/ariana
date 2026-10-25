@@ -818,3 +818,51 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .preview .preview-off { position: absolute; inset: 0; display: none; place-items: center; color: #cfd6e0; font-size: 0.95rem; }
 .preview.off video { visibility: hidden; }
 .preview.off .preview-off { display: grid; }
+
+/* 수업 개설 신청 (3단계) */
+.wizard { display: grid; gap: 12px; }
+.wz-title { text-align: center; margin: 4px 0 4px; font-size: 1.35rem; color: var(--text); }
+.wz-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.wz-step-btn { position: relative; padding: 14px 10px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surface); color: var(--muted); font-weight: 800; cursor: pointer; }
+.wz-step-btn.on { background: #ec6a1e; border-color: #ec6a1e; color: #fff; }
+.wz-step-btn.now { box-shadow: 0 6px 14px rgba(236,106,30,0.3); }
+.wz-step-btn:not(:last-child)::after { content: "··· ›"; position: absolute; right: -19px; top: 50%; transform: translateY(-50%); color: #ec6a1e; font-weight: 800; font-size: 0.75rem; letter-spacing: -1px; }
+.wz-step { display: grid; gap: 10px; }
+.wz-h { margin: 10px 0 0; font-size: 1.02rem; padding-bottom: 6px; border-bottom: 2px solid var(--text); }
+.wz-table { display: grid; border-top: 1px solid var(--border); }
+.wz-table.two { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
+.wz-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--border); min-height: 46px; }
+.wz-label { padding: 8px 12px; background: var(--surface-2); align-self: stretch; display: flex; align-items: center; font-weight: 700; font-size: 0.9rem; }
+.wz-cell { padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.wz-cell > input:not([type=checkbox]):not([type=radio]), .wz-cell > select, .wz-cell > textarea { flex: 1; min-width: 160px; }
+.wz-cell textarea { width: 100%; }
+.wz-cell .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+.wz-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem; padding: 3px 10px 3px 4px; border: 1.5px solid var(--brand); border-radius: 999px; }
+.wz-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.wz-toggle i { width: 34px; height: 20px; border-radius: 999px; background: #c5ccd6; position: relative; transition: background .15s; }
+.wz-toggle i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+.wz-toggle input:checked + i { background: var(--brand); }
+.wz-toggle input:checked + i::after { left: 17px; }
+.wz-toggle input:focus-visible + i { outline: 2px solid var(--brand); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--brand-deep); font-size: 0.85rem; font-weight: 700; }
+.chip button { border: 0; background: none; padding: 0 2px; cursor: pointer; color: inherit; font-size: 1rem; line-height: 1; }
+.chip.fixed { background: var(--surface-2); color: var(--muted); }
+.subject-browse { width: 100%; padding: 10px; border-radius: 10px; background: var(--surface-2); display: grid; gap: 8px; }
+.subject-list { display: grid; gap: 8px; }
+.subject-list b { font-size: 0.85rem; color: var(--brand-deep); }
+.sess-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.sess-table th, .sess-table td { border-bottom: 1px solid var(--border); padding: 5px 6px; text-align: left; }
+.sess-table th { background: var(--surface-2); }
+.sess-table input { padding: 4px 6px; }
+.sess-table td:nth-child(4) input { width: 100%; }
+.sess-table .nowrap { white-space: nowrap; }
+.wz-nav { margin-top: 4px; }
+@media (max-width: 760px) {
+  .wz-table.two { grid-template-columns: minmax(0, 1fr); }
+  .wz-row { grid-template-columns: 96px minmax(0, 1fr); }
+  .wz-steps { gap: 10px; }
+  .wz-step-btn { font-size: 0.78rem; padding: 10px 4px; }
+  .wz-step-btn:not(:last-child)::after { right: -11px; content: "›"; }
+  .sess-table { display: block; overflow-x: auto; }
+}

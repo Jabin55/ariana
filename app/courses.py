@@ -102,11 +102,14 @@ def course_row(r, counts: dict | None = None) -> dict:
 
 
 def recruit_state(r) -> str:
-    """모집 상태: open(모집 중) before(모집 전) closed(마감)"""
+    """모집 상태: open(모집 중) before(모집 전) closed(마감). 모집 기간은 날짜와 시각까지 본다"""
     today = today_kst()
-    if not r.open or (r.end_date and r.end_date < today) or (r.recruit_end and r.recruit_end < today):
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+    if not r.open or (r.end_date and r.end_date < today):
         return "closed"
-    if r.recruit_start and today < r.recruit_start:
+    if r.recruit_end and now > f"{r.recruit_end} {r.recruit_end_time or '23:59'}":
+        return "closed"
+    if r.recruit_start and now < f"{r.recruit_start} {r.recruit_start_time or '00:00'}":
         return "before"
     return "open"
 
@@ -120,7 +123,30 @@ def subject_info(r) -> dict:
             "recruit_start": r.recruit_start, "recruit_end": r.recruit_end, "recruit": recruit_state(r),
             "exam_ratio": r.exam_ratio, "perf_ratio": r.perf_ratio,
             "syllabus": {"name": r.syllabus_name, "url": f"/api/courses/{r.id}/syllabus"} if r.syllabus_id else None,
-            "team_teaching": bool(r.team_teaching)}
+            "team_teaching": bool(r.team_teaching), "subject": r.subject or r.title,
+            "schools": [x for x in (r.schools or "").split("\n") if x],
+            "recruit_start_time": r.recruit_start_time, "recruit_end_time": r.recruit_end_time,
+            "class_days": [int(x) for x in (r.class_days or "").split(",") if x.isdigit()],
+            "class_start": r.class_start, "class_end": r.class_end,
+            # 담당 교강사 연락처: 공개로 정한 것만
+            "contact_email": r.contact_email if r.show_email else "", "contact_phone": r.contact_phone if r.show_phone else ""}
+
+
+def sessions_of(c, course_ids) -> dict:
+    """강좌별 회차 [{no, date, start, end, topic}]"""
+    out: dict = {}
+    for x in c.execute(select(db.course_sessions).where(db.course_sessions.c.course_id.in_(list(course_ids) or [-1]))
+                       .order_by(db.course_sessions.c.course_id, db.course_sessions.c.no)):
+        out.setdefault(x.course_id, []).append({"no": x.no, "date": x.date, "start": x.start, "end": x.end, "topic": x.topic})
+    return out
+
+
+def save_sessions(c, course_id: int, sessions: list) -> None:
+    c.execute(delete(db.course_sessions).where(db.course_sessions.c.course_id == course_id))
+    rows = sorted(sessions, key=lambda x: (x.date, x.start))
+    for i, x in enumerate(rows, 1):
+        c.execute(insert(db.course_sessions).values(course_id=course_id, no=i, date=x.date, start=x.start, end=x.end,
+                                                    topic=x.topic.strip() or f"{i}회차"))
 
 
 # ───────────────────────── 선생님 ─────────────────────────
@@ -139,6 +165,16 @@ def check_period(start: str | None, end: str | None) -> None:
         raise HTTPException(400, "강의기간 날짜가 올바르지 않아요.")
     if start and end and end < start:
         raise HTTPException(400, "강의기간이 끝나는 날이 시작하는 날보다 빨라요.")
+
+
+TIME = r"^(([01]\d|2[0-3]):[0-5]\d)?$"
+
+
+class SessionIn(BaseModel):
+    date: str = Field(pattern=DATE)
+    start: str = Field(default="", pattern=TIME)
+    end: str = Field(default="", pattern=TIME)
+    topic: str = Field(default="", max_length=120)
 
 
 class CourseReq(BaseModel):
@@ -166,22 +202,67 @@ class CourseReq(BaseModel):
     perf_ratio: int | None = Field(default=None, ge=0, le=100)
     team_teaching: bool = False
     co_teachers: list[int] = Field(default_factory=list)  # 팀티칭 보조교사 (그 거점학교 강사 중에서)
+    subject: str = Field(default="", max_length=60)  # 과목 (비면 수업명과 같음)
+    schools: list[str] = Field(default_factory=list, max_length=80)  # 참여 학교 (비면 울산 모든 고등학교)
+    contact_email: str = Field(default="", max_length=200)
+    contact_phone: str = Field(default="", max_length=40)
+    show_email: bool = False
+    show_phone: bool = False
+    recruit_start_time: str = Field(default="", pattern=TIME)
+    recruit_end_time: str = Field(default="", pattern=TIME)
+    class_days: list[int] = Field(default_factory=list)
+    class_start: str = Field(default="", pattern=TIME)
+    class_end: str = Field(default="", pattern=TIME)
+    hours: int | None = Field(default=None, ge=1, le=400)  # 이수 시간 (비면 학점 × 16)
+    sessions: list[SessionIn] | None = Field(default=None, max_length=200)  # 회차
 
 
 SUBJECT_KEYS = ("custom_subject", "subject_group", "subject_area", "subject_type", "school_year", "term", "credits",
-                "achievement", "capacity", "recruit_start", "recruit_end", "exam_ratio", "perf_ratio", "team_teaching")
+                "achievement", "capacity", "recruit_start", "recruit_end", "exam_ratio", "perf_ratio", "team_teaching",
+                "subject", "schools", "contact_email", "contact_phone", "show_email", "show_phone",
+                "recruit_start_time", "recruit_end_time", "class_days", "class_start", "class_end", "hours", "sessions")
+
+
+def extra_values(v: dict, schools: list[str]) -> dict:
+    """참여 학교·연락처·모집 시각·수업 요일과 시각"""
+    out = {}
+    if v.get("schools") is not None:
+        names = list(dict.fromkeys(" ".join(x.split()) for x in v["schools"] if x.strip()))
+        bad = [x for x in names if schools and x not in schools]
+        if bad:
+            raise HTTPException(400, f"참여 학교는 울산 고등학교 목록에서 골라 주세요. ({', '.join(bad)})")
+        out["schools"] = "\n".join(names)
+    for k in ("contact_email", "contact_phone", "recruit_start_time", "recruit_end_time", "class_start", "class_end"):
+        if v.get(k) is not None:
+            out[k] = v[k].strip()
+    for k in ("show_email", "show_phone"):
+        if v.get(k) is not None:
+            out[k] = int(v[k])
+    if v.get("class_days") is not None:
+        out["class_days"] = ",".join(str(d) for d in sorted({d for d in v["class_days"] if 0 <= d <= 6}))
+    if out.get("class_start") and out.get("class_end") and out["class_end"] <= out["class_start"]:
+        raise HTTPException(400, "수업 끝나는 시각이 시작 시각보다 빨라요.")
+    return out
 
 
 def subject_values(v: dict, cur=None) -> dict:
     """과목 정보 확인 + 저장할 값 (cur: 고칠 때 지금 값)"""
     get = lambda k: v[k] if k in v and v[k] is not None else (getattr(cur, k) if cur is not None else None)  # noqa: E731
     out = {}
-    title = (v.get("title") or (cur.title if cur is not None else "")).strip()
+    # 과목: 따로 고르지 않았으면 수업명을 과목으로 본다 (예전 강좌·간단한 개설)
+    if v.get("subject"):
+        title = v["subject"]
+    elif cur is not None and cur.subject:
+        title = cur.subject
+    else:
+        title = v.get("title") or (cur.title if cur is not None else "")
+    title = " ".join(title.split())
     custom = bool(get("custom_subject"))
-    if any(v.get(k) is not None for k in ("title", "custom_subject", "subject_group", "subject_area", "subject_type")):
+    if any(v.get(k) is not None for k in ("title", "subject", "custom_subject", "subject_group", "subject_area", "subject_type")):
         found = next((x for x in subjects.SUBJECTS if x["name"] == title), None)
         if not custom and get("subject_type") and not found:
             raise HTTPException(400, f"'{title}'은(는) 2022 개정 교육과정 과목 목록에 없어요. 목록에서 고르거나 '고시외 과목'에 체크해 주세요.")
+        out["subject"] = title
         if found and not custom:  # 목록 과목이면 교과(군)·교과·과목 구분은 목록대로
             out.update(subject_group=found["group"], subject_area=found["area"], subject_type=found["type"])
         else:
@@ -200,6 +281,8 @@ def subject_values(v: dict, cur=None) -> dict:
             out[k] = v[k]
     if v.get("credits") is not None:
         out.update(credits=v["credits"], hours=v["credits"] * subjects.HOURS_PER_CREDIT)  # 3학점 → 48시간
+    if v.get("hours") is not None:
+        out["hours"] = v["hours"]  # 이수 시간을 따로 정함
     if v.get("team_teaching") is not None:
         out["team_teaching"] = int(v["team_teaching"])
     exam, perf = get("exam_ratio"), get("perf_ratio")
@@ -304,12 +387,14 @@ async def my_courses(request: Request):
                 key = {"approved": "approved", "pending": "pending", "instructor_ok": "waiting"}.get(status)
                 if key:
                     counts[cid][key] = n
-            return rows, counts, names
+            return rows, counts, names, sessions_of(c, [r.id for r in rows])
 
-    rows, counts, names = await db.run(run)
+    rows, counts, names, sess = await db.run(run)
     return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t), "description": r.description,
                          "lead": r.teacher_id == t["id"], "owner_name": names.get(r.teacher_id, ""),
                          "can_finalize": bool(r.hub_id) and can_finalize(r, t),
+                         "sessions": sess.get(r.id, []), "show_email": bool(r.show_email), "show_phone": bool(r.show_phone),
+                         "contact_email": r.contact_email, "contact_phone": r.contact_phone,
                          "co_teachers": [{"id": i, "name": names.get(i, "")} for i in co_teacher_ids(r)]}
                         for r in rows]}
 
@@ -333,7 +418,7 @@ async def create_course(req: CourseReq, request: Request):
         raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
     elif not (t["is_admin"] or independent):
         raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
-    extra = subject_values(req.model_dump())
+    extra = {**subject_values(req.model_dump()), **extra_values(req.model_dump(), schools)}
 
     def run():
         with db.engine.begin() as c:
@@ -347,12 +432,15 @@ async def create_course(req: CourseReq, request: Request):
                 if not hub:
                     raise HTTPException(404, "거점학교를 찾을 수 없어요.")
                 name = hub.name
-            return c.execute(insert(db.courses).values(
+            new_id = c.execute(insert(db.courses).values(
                 teacher_id=t["id"], title=req.title.strip(), description=req.description.strip(),
                 instructor=req.instructor.strip(), hub_school=name, hub_id=hub_id,
                 start_date=req.start_date, end_date=req.end_date, grades=grades_text(req.grades),
                 school=t["school"] or "", open=1, archived=0, created_at=time.time(),
                 co_teachers=co_teachers, **extra)).inserted_primary_key[0]
+            if req.sessions:
+                save_sessions(c, new_id, req.sessions)
+            return new_id
 
     return {"id": await db.run(run)}
 
@@ -382,6 +470,19 @@ class CourseUpdate(BaseModel):
     perf_ratio: int | None = Field(default=None, ge=0, le=100)
     team_teaching: bool | None = None
     co_teachers: list[int] | None = None
+    subject: str | None = Field(default=None, max_length=60)
+    schools: list[str] | None = Field(default=None, max_length=80)
+    contact_email: str | None = Field(default=None, max_length=200)
+    contact_phone: str | None = Field(default=None, max_length=40)
+    show_email: bool | None = None
+    show_phone: bool | None = None
+    recruit_start_time: str | None = Field(default=None, pattern=TIME)
+    recruit_end_time: str | None = Field(default=None, pattern=TIME)
+    class_days: list[int] | None = None
+    class_start: str | None = Field(default=None, pattern=TIME)
+    class_end: str | None = Field(default=None, pattern=TIME)
+    hours: int | None = Field(default=None, ge=1, le=400)
+    sessions: list[SessionIn] | None = Field(default=None, max_length=200)
 
 
 @router.post("/api/courses/{course_id}")
@@ -391,7 +492,7 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
     # 보조교사는 수강신청 받기만 바꿀 수 있고, 강좌 정보·팀티칭 구성은 강좌를 연 강사가 정한다
     lead = any(data[k] is not None for k in data if k != "open")
     cur = await db.run(owned_course, course_id, t, lead)
-    extra = subject_values(data, cur)
+    extra = {**subject_values(data, cur), **extra_values(data, await db.run(auth.get_schools))}
     if data.get("capacity") == 0:
         extra["capacity"] = None
     simple = {k: v for k, v in data.items() if v is not None and k not in SUBJECT_KEYS and k != "co_teachers"}
@@ -412,8 +513,10 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
             elif data["co_teachers"] is not None:
                 values["co_teachers"] = check_co_teachers(c, cur.hub_id, cur.teacher_id, data["co_teachers"])
             c.execute(update(db.courses).where(db.courses.c.id == course_id).values(**values))
+            if data["sessions"] is not None:
+                save_sessions(c, course_id, req.sessions)
 
-    if values or data["co_teachers"] is not None:
+    if values or data["co_teachers"] is not None or data["sessions"] is not None:
         await db.run(run)
     return {"ok": True}
 
@@ -605,16 +708,16 @@ async def available_courses(request: Request):
                 .order_by(co.start_date.desc(), co.title)).all()
             mine = {e.course_id: (e.status, e.note) for e in c.execute(
                 select(db.enrollments).where(db.enrollments.c.user_id == u["id"]))}
-            return rows, mine
+            return rows, mine, sessions_of(c, [r.id for r in rows])
 
-    rows, mine = await db.run(run)
+    rows, mine, sess = await db.run(run)
     out = []
     for r in rows:
         status, note = mine.get(r.id, (None, ""))
         row = course_row(r)
         if status is None and (row["recruit"] == "closed" or not grade_ok(r, u["grade"])):
             continue  # 신청 마감·기간 끝남·대상 학년 아님 + 신청한 적 없음
-        out.append({**row, "instructor": r.instructor or r.teacher_name, "status": status,
+        out.append({**row, "instructor": r.instructor or r.teacher_name, "status": status, "sessions": sess.get(r.id, []),
                     "note": note if status == "rejected" else ""})
     return {"courses": out}
 
@@ -642,6 +745,9 @@ async def enroll(course_id: int, request: Request):
                     e.course_id == course_id, e.status.in_(["pending", "instructor_ok", "approved"]))).scalar()
                 if n >= co.capacity:
                     raise HTTPException(409, f"수강 인원({co.capacity}명)이 다 찼어요.")
+            joined = [x for x in (co.schools or "").split("\n") if x]
+            if joined and u["school"] not in joined and u["school"] != co.hub_school:
+                raise HTTPException(409, f"이 강좌는 참여 학교({', '.join(joined[:5])}{' 등' if len(joined) > 5 else ''}) 학생만 신청할 수 있어요.")
             if not grade_ok(co, u["grade"]):
                 raise HTTPException(409, f"{'·'.join(map(str, course_grades(co)))}학년 대상 강좌예요.")
             if row:  # 거절됐던 강좌에 다시 신청

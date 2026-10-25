@@ -16,7 +16,7 @@ from sqlalchemy import delete, insert, select, update
 
 from app import db
 from app.auth import KST, require_user, today_kst
-from app.courses import course_grades, subject_info
+from app.courses import course_grades, sessions_of, subject_info
 from app.policy import settings
 
 router = APIRouter()
@@ -311,11 +311,16 @@ async def catalog():
             return c.execute(select(db.courses).where(co.archived == 0, co.open == 1)
                              .order_by(co.hub_school, co.title)).all()
 
+    def sess(ids):
+        with db.engine.connect() as c:
+            return sessions_of(c, ids)
+
     today = today_kst()
     rows = [r for r in await db.run(run) if not (r.end_date and r.end_date < today)]
+    ss = await db.run(sess, [r.id for r in rows])
     return {"courses": [{"id": r.id, "title": r.title, "instructor": r.instructor, "hub_school": r.hub_school,
                          "start_date": r.start_date, "end_date": r.end_date, "grades": course_grades(r),
-                         "description": r.description, **subject_info(r)} for r in rows]}
+                         "description": r.description, "sessions": ss.get(r.id, []), **subject_info(r)} for r in rows]}
 
 
 @router.get("/live/courses", response_class=HTMLResponse)

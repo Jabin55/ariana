@@ -56,6 +56,17 @@ site_settings = Table(
     Column("value", Text, nullable=False),
 )
 
+course_sessions = Table(
+    "course_sessions", metadata,  # 강좌 회차 (날짜·시각·주제)
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("no", Integer, nullable=False),
+    Column("date", String(10), nullable=False),
+    Column("start", String(5), nullable=False, default=""),
+    Column("end", String(5), nullable=False, default=""),
+    Column("topic", String(120), nullable=False, default=""),
+)
+
 course_requests = Table(
     "course_requests", metadata,  # 학생이 듣고 싶은 과목 개설 요청 (관리교사·전체 관리자가 모아 본다)
     Column("id", Integer, primary_key=True),
@@ -142,6 +153,17 @@ courses = Table(
     Column("syllabus_name", String(150), nullable=False, default=""),
     Column("team_teaching", Integer, nullable=False, default=0),  # 팀티칭
     Column("co_teachers", String(300), nullable=False, default=""),  # 팀티칭 보조교사 사용자 번호 (",3,7,")
+    Column("subject", String(60), nullable=False, default=""),  # 과목 (2022 개정 교육과정). title 은 수업명
+    Column("schools", Text, nullable=False, default=""),  # 참여 학교 (한 줄에 하나). 비면 울산 모든 고등학교
+    Column("contact_email", String(200), nullable=False, default=""),  # 담당 교강사 연락처
+    Column("contact_phone", String(40), nullable=False, default=""),
+    Column("show_email", Integer, nullable=False, default=0),  # 수강생·방문자에게 공개
+    Column("show_phone", Integer, nullable=False, default=0),
+    Column("recruit_start_time", String(5), nullable=False, default=""),  # 모집 시작·끝 시각 (HH:MM)
+    Column("recruit_end_time", String(5), nullable=False, default=""),
+    Column("class_days", String(20), nullable=False, default=""),  # 수업 요일 (0=일 … 6=토, 예: "2,4")
+    Column("class_start", String(5), nullable=False, default=""),  # 수업 시각
+    Column("class_end", String(5), nullable=False, default=""),
     Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
     Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
     Column("created_at", Float, nullable=False),
@@ -328,6 +350,17 @@ def init() -> None:
              ("courses", "syllabus_name", "VARCHAR(150) NOT NULL DEFAULT ''"),
              ("courses", "team_teaching", "INTEGER NOT NULL DEFAULT 0"),
              ("courses", "co_teachers", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("courses", "subject", "VARCHAR(60) NOT NULL DEFAULT ''"),
+             ("courses", "schools", "TEXT NOT NULL DEFAULT ''"),
+             ("courses", "contact_email", "VARCHAR(200) NOT NULL DEFAULT ''"),
+             ("courses", "contact_phone", "VARCHAR(40) NOT NULL DEFAULT ''"),
+             ("courses", "show_email", "INTEGER NOT NULL DEFAULT 0"),
+             ("courses", "show_phone", "INTEGER NOT NULL DEFAULT 0"),
+             ("courses", "recruit_start_time", "VARCHAR(5) NOT NULL DEFAULT ''"),
+             ("courses", "recruit_end_time", "VARCHAR(5) NOT NULL DEFAULT ''"),
+             ("courses", "class_days", "VARCHAR(20) NOT NULL DEFAULT ''"),
+             ("courses", "class_start", "VARCHAR(5) NOT NULL DEFAULT ''"),
+             ("courses", "class_end", "VARCHAR(5) NOT NULL DEFAULT ''"),
              ("memberships", "affil_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "office", "VARCHAR(30) NOT NULL DEFAULT ''"),
              ("memberships", "license", "VARCHAR(100) NOT NULL DEFAULT ''"),

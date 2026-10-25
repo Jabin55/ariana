@@ -620,11 +620,8 @@ function render() {
   const course = !!S.course_id;
   $("#code").hidden = course;
   $("#copy-link").hidden = course;
-  $("#share-code").hidden = course;
-  $("#share-label").textContent = course ? "🔒 수강생 전용 수업" : "학생 입장 코드";
-  $("#share-url").textContent = course
-    ? "입장 코드가 없어요. 이 강좌에 수강 확정된 학생만 마이페이지 '지금 들어갈 수 있는 수업'에서 들어와요."
-    : studentLink;
+  $(".sharebox").hidden = course; // 강좌 수업은 입장 코드 안내 칸 자체를 보이지 않는다
+  $("#share-url").textContent = studentLink;
   $("#history-link").href = `/live?tab=history&class=${S.class_id}`;
 
   const banners = $("#banners");
