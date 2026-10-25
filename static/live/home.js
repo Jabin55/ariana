@@ -3,7 +3,7 @@ const params = new URLSearchParams(location.search);
 let ME = null;
 let CONFIG = null;
 
-const views = ["login-view", "consent-view", "done-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
+const views = ["login-view", "consent-view", "done-view", "denied-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
   $("#mypage-bar").hidden = id === "login-view"; // 로그인 전에는 첫 화면(소개·시작하기)만
@@ -44,6 +44,13 @@ async function boot() {
   if (ME.role === "guest") return showGuest();
   if (params.get("apply")) return showGuest(true);
   if (ME.needs_profile) return showProfile();
+  // [교무실]은 선생님 화면: 학생에게는 권한 없음
+  if (params.get("office") && ME.role === "student") {
+    show("denied-view");
+    $("#lead").hidden = true;
+    $(".mypage-title").textContent = "교무실";
+    return;
+  }
   if (ME.role === "teacher") {
     if (params.get("wish")) toast("듣고 싶은 과목 요청은 학생 계정으로 할 수 있어요. 요청 현황은 메인 화면에서 볼 수 있어요.", 6000);
     return showTeacher();

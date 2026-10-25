@@ -6,10 +6,12 @@
     ["/live/guide", "수강안내"],
     ["/live/courses", "수업신청"],
     ["/live/help", "이용안내"],
-    ["/live", "마이페이지"],
+    ["/live?office=1", "교무실"], // 선생님 화면 (학생이 누르면 '접근 권한이 없습니다.')
   ];
   const path = location.pathname.replace(/\/$/, "");
-  const active = (href) => (href === "/live" ? path === "/live" || path.startsWith("/live/materials") : path === href);
+  const office = new URLSearchParams(location.search).has("office");
+  const mine = path === "/live" || path.startsWith("/live/materials"); // 로그인 뒤 화면 (학생: 마이페이지 · 선생님: 교무실)
+  const active = (href) => (href.startsWith("/live?office") ? mine && office : path === href);
   const el = (tag, attrs = {}, ...kids) => {
     const n = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
@@ -40,10 +42,15 @@
     return names.join("·") || "강의교사";
   };
   function render(u) {
-    // 선생님에게는 '마이페이지' 대신 '교무실'
+    // 메뉴의 [교무실]은 모두에게 보인다. 학생에게는 [마이페이지]를 따로 둔다
     const staff = !!u && (u.role === "teacher" || u.is_admin);
-    const mine = nav.querySelector('a[href="/live"]');
-    if (mine) mine.textContent = staff ? "교무실" : "마이페이지";
+    const officeLink = nav.querySelector('a[href^="/live?office"]');
+    nav.querySelector(".nav-mine")?.remove();
+    if (u?.role === "student") {
+      officeLink.before(el("a", { href: "/live", class: `nav-mine ${mine && !office ? "on" : ""}` }, "마이페이지"));
+    } else if (staff && mine) {
+      officeLink.classList.add("on"); // 선생님의 /live 는 곧 교무실
+    }
     user.replaceChildren();
     if (!u) {
       user.append(el("a", { class: "site-user", href: "/live" }, "로그인"));
