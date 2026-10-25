@@ -18,12 +18,14 @@
       <span class="grow"></span>
       <span class="status" id="online"></span>
       <span class="status" id="status">연결 중…</span>
+      <span class="status" id="rtc-status" title="화상(영상·음성) 연결 상태">📡 화상 연결 전</span>
       <button class="danger small" id="end-class">수업 종료</button>
     </header>
 
     <div class="workspace">
       <main class="mainarea">
         <div id="banners"></div>
+        <div class="banner warn" id="rtc-warn" hidden></div>
         <div id="activity-mini"></div>
 
         <div id="main-view" style="display:contents">
@@ -64,7 +66,7 @@
         <!-- 학생 -->
         <section class="panel" data-panel="people">
           <div class="box sharebox">
-            <span class="muted">학생 입장 코드</span>
+            <span class="muted" id="share-label">학생 입장 코드</span>
             <span class="big" id="share-code"></span>
             <span class="muted" id="share-url" style="font-size:0.85rem"></span>
           </div>
@@ -144,6 +146,7 @@
 
     <footer class="controls">
       <button id="mic">🎤 마이크</button>
+      <span class="meter small" id="mic-meter" title="내 마이크 소리 크기" hidden><i></i></span>
       <button id="cam">📷 카메라</button>
       <button id="screen">🖥️ 화면 공유</button>
       <button id="present-btn" title="PDF 자료를 띄우고 그 위에 판서하며 설명">📄 자료 발표</button>
@@ -157,6 +160,10 @@
   <div class="overlay" id="prejoin">
     <form class="card" id="prejoin-form">
       <h2 style="margin:0">수업 시작</h2>
+      <div class="preview"><video id="pre-video" autoplay muted playsinline></video><span class="preview-off">📷 카메라 꺼짐</span></div>
+      <div class="meter" id="pre-meter" title="마이크 소리 크기"><i></i></div>
+      <p class="muted" style="margin:0;font-size:0.85rem">말해 보세요. 초록 막대가 움직이면 마이크가 잘 되는 거예요.</p>
+      <p class="error" id="pre-err" style="margin:0"></p>
       <label class="switch"><input type="checkbox" id="pre-cam" checked> 카메라 켜기</label>
       <label class="switch"><input type="checkbox" id="pre-mic" checked> 마이크 켜기</label>
       <p class="muted" style="margin:0;font-size:0.85rem">모둠 활동을 관찰할 때 여러 모둠 소리를 들으려면 이어폰을 쓰는 것이 좋아요.</p>

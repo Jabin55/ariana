@@ -808,3 +808,13 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
   .credit-badge b { font-size: 2.4rem; }
 }
 @media (max-width: 420px) { .credit-badge { display: none; } }
+/* 마이크 소리 막대 · 들어가기 전 카메라 미리보기 */
+.meter { display: block; height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; border: 1px solid var(--border); }
+.meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3fbf7f, #1b9e5a); transition: width 0.06s linear; }
+.meter.small { display: inline-block; width: 70px; height: 8px; vertical-align: middle; align-self: center; }
+.meter.loud { border-color: #3fbf7f; }
+.preview { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #1d2330; }
+.preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.preview .preview-off { position: absolute; inset: 0; display: none; place-items: center; color: #cfd6e0; font-size: 0.95rem; }
+.preview.off video { visibility: hidden; }
+.preview.off .preview-off { display: grid; }

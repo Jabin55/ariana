@@ -32,8 +32,13 @@ $("#share-url").textContent = studentLink;
 
 /* ───── 시작 ───── */
 
+// 들어가기 전에 내 카메라·마이크가 되는지 바로 보여 준다
+const stopPreview = devicePreview({ video: $("#pre-video"), meter: $("#pre-meter"), err: $("#pre-err"),
+  camBox: $("#pre-cam"), micBox: $("#pre-mic") });
+
 $("#prejoin-form").addEventListener("submit", (e) => {
   e.preventDefault();
+  stopPreview(); // 미리보기로 잡고 있던 카메라를 놓아 줘야 수업에서 켤 수 있다
   prefs.cam = $("#pre-cam").checked;
   prefs.mic = $("#pre-mic").checked;
   $("#prejoin").hidden = true;
@@ -88,26 +93,52 @@ function finish(text) {
 
 /* ───── 전체 교실 화상 ───── */
 
+/** 화상 연결·카메라 문제를 화면에 계속 보여 준다 (잠깐 뜨는 알림만으로는 놓치기 쉬움) */
+function rtcState(text, bad = false) {
+  $("#rtc-status").textContent = text;
+  $("#rtc-status").classList.toggle("bad", bad);
+}
+let mediaProblem = { cam: "", mic: "" };
+function showMediaProblem() {
+  const msgs = [...new Set([mediaProblem.cam, mediaProblem.mic].filter(Boolean))];
+  $("#rtc-warn").hidden = !msgs.length;
+  $("#rtc-warn").replaceChildren(h("span", {}, "⚠️ ", msgs.join(" "),
+    " 해결한 뒤 아래 '📷 카메라' 버튼을 다시 누르거나 새로고침하세요."));
+}
+let rtcFails = 0;
+
 async function connectMain() {
-  if (!S.livekit) return;
+  if (!S.livekit) { rtcState("📡 화상 서버 없음", true); return; }
   try {
+    rtcState(rtcFails ? `📡 화상 다시 연결 중… (${rtcFails}번째)` : "📡 화상 연결 중…");
     const { url, token } = await api(`/api/live/classes/${CODE}/token`, { room: "main" });
     const room = createRoom(renderMain);
     room.on(RoomEvent.Disconnected, () => {
       if (mainRoom !== room) return;
       mainRoom = null;
+      rtcState("📡 화상 끊김 · 다시 연결 중", true);
       toast("화상 연결이 끊겼어요. 다시 연결할게요.");
       setTimeout(connectMain, 2000);
     });
     mainRoom = room;
     await room.connect(url, token);
+    rtcFails = 0;
+    rtcState("📡 화상 연결됨");
+    $("#rtc-warn").hidden = true;
     await setCam(prefs.cam);
     await setMic(prefs.mic);
     renderMain(room);
   } catch (err) {
     console.error(err);
     mainRoom = null;
-    toast(`화상 연결 실패: ${err.message}`);
+    rtcFails += 1;
+    rtcState("📡 화상 연결 실패", true);
+    // 여러 번 실패하면 원인을 화면에 남긴다 (학교망이 막았거나 화상 서버가 꺼져 있을 수 있음)
+    if (rtcFails >= 2) {
+      $("#rtc-warn").hidden = false;
+      $("#rtc-warn").replaceChildren(h("span", {}, `⚠️ 화상 서버에 연결하지 못하고 있어요 (${err.message || err}). `,
+        "다른 인터넷(휴대폰 핫스팟 등)에서도 안 되면 서버 콘솔에서 'cd /opt/live && docker compose ps'로 livekit이 켜져 있는지 확인해 주세요."));
+    }
     setTimeout(connectMain, 4000);
   }
 }
@@ -115,8 +146,25 @@ async function connectMain() {
 async function setMic(on) {
   prefs.mic = on;
   if (on && talking) await toggleTalk(talking); // 모둠에서 말하는 중이면 그만두고 전체로
-  try { await mainRoom?.localParticipant.setMicrophoneEnabled(on); } catch (err) { prefs.mic = false; toast(mediaError(err), 5000); }
+  try {
+    await mainRoom?.localParticipant.setMicrophoneEnabled(on);
+    mediaProblem.mic = "";
+  } catch (err) { prefs.mic = false; mediaProblem.mic = mediaError(err); toast(mediaProblem.mic, 5000); }
+  showMediaProblem();
+  updateMicMeter();
   renderControls();
+}
+
+// 마이크 버튼 옆 소리 막대: 내 목소리가 실제로 나가고 있는지 보여 준다
+let stopMicMeter = () => {};
+let meterTrack = null;
+function updateMicMeter() {
+  const track = prefs.mic ? mainRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack : null;
+  if (track === meterTrack) return;
+  stopMicMeter();
+  meterTrack = track || null;
+  $("#mic-meter").hidden = !track;
+  stopMicMeter = track ? micMeter(track, $("#mic-meter")) : () => {};
 }
 
 let camLowbw = null; // 지금 켜진 카메라의 화질 설정
@@ -131,10 +179,13 @@ async function setCam(on) {
     if (on && pub?.track && camLowbw !== lowbw) await lp.unpublishTrack(pub.track, true); // 꺼 둔 사이 화질 설정이 바뀜
     await lp?.setCameraEnabled(on, capture, publish);
     if (on) camLowbw = lowbw;
+    mediaProblem.cam = "";
   } catch (err) {
     prefs.cam = false;
-    toast(mediaError(err), 5000);
+    mediaProblem.cam = mediaError(err);
+    toast(mediaProblem.cam, 5000);
   }
+  showMediaProblem();
   renderControls();
 }
 
@@ -565,8 +616,14 @@ function render() {
   const online = S.students.filter((s) => s.online).length;
   $("#online").textContent = `👥 ${online}명 접속`;
   $("#csv-link").href = `/api/live/history/${S.class_id}/results.csv`;
-  $("#share-url").textContent = S.course_id
-    ? "강좌 수강생은 첫 화면에서 코드 없이 바로 들어와요 (수강생만 입장 가능)"
+  // 강좌 수업은 입장 코드가 없다: 수강 확정된 학생만 마이페이지에서 들어온다. 특강·모임만 코드로 입장
+  const course = !!S.course_id;
+  $("#code").hidden = course;
+  $("#copy-link").hidden = course;
+  $("#share-code").hidden = course;
+  $("#share-label").textContent = course ? "🔒 수강생 전용 수업" : "학생 입장 코드";
+  $("#share-url").textContent = course
+    ? "입장 코드가 없어요. 이 강좌에 수강 확정된 학생만 마이페이지 '지금 들어갈 수 있는 수업'에서 들어와요."
     : studentLink;
   $("#history-link").href = `/live?tab=history&class=${S.class_id}`;
 

@@ -574,7 +574,7 @@ async function loadLive() {
   const { classes } = await api("/api/live/my-classes");
   const box = $("#live-classes");
   box.replaceChildren(...classes.map((c) => h("a", { href: `/live/teacher/${c.code}` },
-    `▶ ${c.course_title ? `[${c.course_title}] ` : ""}${c.title} (${c.code}) · ${fmtTime(c.created_at)} 시작`)));
+    `▶ ${c.course_title ? `[${c.course_title}] ` : ""}${c.title}${c.course_id ? "" : ` (코드 ${c.code})`} · ${fmtTime(c.created_at)} 시작`)));
   if (!classes.length) box.append(h("span", { class: "muted" }, "없어요."));
 }
 
@@ -628,7 +628,7 @@ function updateCourseHint() {
   const id = Number($("#t-course").value);
   const c = teacherCourses.find((x) => x.id === id);
   $("#t-course-hint").textContent = c
-    ? `수강 확정된 학생 ${c.approved}명은 첫 화면에서 바로 들어와요(코드 필요 없음). 확정되지 않은 학생은 들어올 수 없어요.`
+    ? `수강 확정된 학생 ${c.approved}명은 마이페이지에서 바로 들어와요(입장 코드 없음). 확정되지 않은 학생은 들어올 수 없어요.`
     : teacherCourses.length ? "특강·보충수업·상담처럼 한 번 여는 수업이에요. 수업 코드를 아는 학생은 누구나 들어와요."
       : "강좌를 먼저 개설하면 수강생이 코드 없이 들어올 수 있어요 ('강좌·수강생' 탭). 지금 열면 특강·모임(코드로 입장)이 돼요.";
   document.querySelectorAll(".no-course").forEach((el) => { el.hidden = !!c; });

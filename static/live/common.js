@@ -257,9 +257,9 @@ function disposeRoom(room) {
 function mediaError(err) {
   console.error(err);
   const name = err?.name || "";
-  if (name === "NotAllowedError") return "카메라·마이크 권한이 막혀 있어요. 주소창 왼쪽 자물쇠 아이콘에서 허용해 주세요.";
-  if (name === "NotFoundError") return "카메라나 마이크를 찾을 수 없어요.";
-  if (name === "NotReadableError") return "다른 프로그램이 카메라·마이크를 쓰고 있어요.";
+  if (name === "NotAllowedError") return "카메라·마이크 권한이 막혀 있어요. 주소창 왼쪽 자물쇠(또는 설정) 아이콘 → 카메라·마이크 '허용'으로 바꿔 주세요.";
+  if (name === "NotFoundError") return "카메라나 마이크를 찾을 수 없어요. 컴퓨터에 웹캠·마이크가 연결돼 있는지 확인해 주세요.";
+  if (name === "NotReadableError") return "다른 프로그램(줌·팀즈·카메라 앱 등)이 카메라·마이크를 쓰고 있어요. 그 프로그램을 닫아 주세요.";
   return "카메라·마이크를 켜지 못했어요.";
 }
 
@@ -432,4 +432,79 @@ function screenOptions(lowbw, extra = {}) {
   if (!lowbw) return [{ audio: true, ...extra }, {}];
   return [{ audio: true, contentHint: "detail", resolution: { width: 1280, height: 720, frameRate: 5 }, ...extra },
     { screenShareEncoding: { maxBitrate: 500_000, maxFramerate: 5 }, screenShareSimulcastLayers: [] }];
+}
+
+/* ───────────────────────── 마이크 소리 막대 · 들어가기 전 장치 확인 ───────────────────────── */
+
+let meterCtx = null;
+function audioCtx() {
+  meterCtx = meterCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (meterCtx.state === "suspended") meterCtx.resume().catch(() => {});
+  return meterCtx;
+}
+// 브라우저는 사용자가 한 번 누르기 전에는 소리 분석을 멈춰 두므로, 처음 누를 때 깨운다
+["pointerdown", "keydown"].forEach((ev) => document.addEventListener(ev, () => { if (meterCtx?.state === "suspended") meterCtx.resume().catch(() => {}); }, { capture: true }));
+
+/** 마이크 소리 크기를 막대(el 안의 <i>)로 보여 준다. 멈추는 함수를 돌려준다 */
+function micMeter(track, el) {
+  if (!track || !el) return () => {};
+  let stopped = false;
+  let src = null;
+  const bar = el.querySelector("i") || el.appendChild(document.createElement("i"));
+  try {
+    const ctx = audioCtx();
+    src = ctx.createMediaStreamSource(new MediaStream([track]));
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    src.connect(an);
+    const data = new Uint8Array(an.fftSize);
+    let level = 0;
+    const tick = () => {
+      if (stopped) return;
+      an.getByteTimeDomainData(data);
+      let peak = 0;
+      for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
+      level = Math.max(peak / 128, level * 0.85); // 천천히 내려가게
+      bar.style.width = `${Math.min(100, Math.round(level * 160))}%`;
+      el.classList.toggle("loud", level > 0.08);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  } catch { el.hidden = true; }
+  el.hidden = false;
+  return () => { stopped = true; try { src?.disconnect(); } catch { /* 무시 */ } bar.style.width = "0"; el.classList.remove("loud"); };
+}
+
+/** 들어가기 전 화면: 내 카메라 미리보기 + 마이크 막대. 문제가 있으면 이유를 err 칸에 남긴다 */
+function devicePreview({ video, meter, err, camBox, micBox }) {
+  let stream = null;
+  let stopMeter = () => {};
+  const stop = () => {
+    stopMeter();
+    stream?.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
+  };
+  const start = async () => {
+    stop();
+    err.textContent = "";
+    const want = { video: camBox.checked, audio: micBox.checked };
+    video.closest(".preview").classList.toggle("off", !want.video);
+    meter.hidden = !want.audio;
+    if (!want.video && !want.audio) return;
+    if (!navigator.mediaDevices?.getUserMedia) { err.textContent = "이 브라우저에서는 카메라·마이크를 쓸 수 없어요. 크롬으로 열어 주세요."; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: want.video ? { width: 640, height: 360 } : false, audio: want.audio });
+      if (want.video) video.srcObject = stream;
+      const a = stream.getAudioTracks()[0];
+      if (a) stopMeter = micMeter(a, meter);
+    } catch (e) {
+      err.textContent = mediaError(e);
+      video.closest(".preview").classList.add("off");
+    }
+  };
+  camBox.addEventListener("change", start);
+  micBox.addEventListener("change", start);
+  start();
+  return stop;
 }
