@@ -167,13 +167,13 @@ function renderMain(room) {
   const presenting = !!S?.present;
   stage.hidden = !sc || presenting;
   syncTiles(stage, sc && !presenting ? [sc] : []);
-  const hands = new Set((S?.students || []).filter((s) => s.hand).map((s) => `s-${s.id}`));
+  const flags = new Map((S?.students || []).map((s) => [`s-${s.id}`, `${s.mic_req ? "🎙️" : ""}${s.hand ? "✋" : ""}`]));
   const students = [...room.remoteParticipants.values()].filter((p) => !isTeacher(p));
   // 발표 중에 '학생 화면 보기'를 끄면 영상을 받지 않는다(소리는 계속)
   const hideGrid = presenting && !showStudents;
   $("#grid").hidden = hideGrid;
   syncTiles($("#grid"), hideGrid ? [] : [cameraItem(room, lp, { name: "선생님" }),
-    ...students.map((p) => cameraItem(room, p, { flag: hands.has(p.identity) ? "✋" : "" }))]);
+    ...students.map((p) => cameraItem(room, p, { flag: flags.get(p.identity) || "" }))]);
   // 학생 마이크·카메라가 켜졌는지는 화상 연결에서 알 수 있다 → 바뀌었을 때만 학생 목록을 다시 그린다
   const devSig = students.map((p) => `${p.identity}:${+p.isMicrophoneEnabled}${+p.isCameraEnabled}`).join(",");
   if (devSig !== lastDevSig) { lastDevSig = devSig; if (S) renderPeople(); }
@@ -625,15 +625,18 @@ function deviceButtons(s) {
 }
 
 function renderPeople() {
+  // 마이크 요청(🎙️)·손 든 학생(✋)을 위로
   const list = S.students.slice().sort((a, b) =>
-    (b.hand - a.hand) || (b.online - a.online) || a.name.localeCompare(b.name, "ko"));
+    (b.mic_req - a.mic_req) || (b.hand - a.hand) || (b.online - a.online) || a.name.localeCompare(b.name, "ko"));
   const hands = S.students.filter((s) => s.hand).length;
-  $("#hand-badge").textContent = `✋${hands}`;
-  $("#hand-badge").hidden = !hands;
+  const reqs = S.students.filter((s) => s.mic_req).length;
+  $("#hand-badge").textContent = [reqs ? `🎙️${reqs}` : "", hands ? `✋${hands}` : ""].filter(Boolean).join(" ");
+  $("#hand-badge").hidden = !hands && !reqs;
   const mixed = new Set(S.students.map((s) => s.school || "")).size > 1; // 다른 학교 학생이 섞이면 학교도 표시
-  $("#people").replaceChildren(...list.map((s) => h("div", { class: `person ${s.hand ? "hand" : ""}` },
+  $("#people").replaceChildren(...list.map((s) => h("div", { class: `person ${s.hand || s.mic_req ? "hand" : ""}` },
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
-    h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
+    h("span", {}, s.mic_req ? h("span", { title: "마이크를 켜 달라고 요청했어요 — 🔇를 누르면 켜져요" }, "🎙️ ") : null,
+      s.hand ? h("span", { title: "할 말이 있어요" }, "✋ ") : null, `${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
       mixed && s.school ? `${s.school} · ` : "", roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },
       s.hand ? h("button", { title: "손 내리기", onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "✋↓") : null,

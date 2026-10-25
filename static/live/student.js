@@ -148,7 +148,7 @@ async function applyPrefs() {
 function retryable(err) { return !MEDIA_ERRORS.has(err?.name); }
 
 async function setMic(on, quiet = false, attempt = 0) {
-  if (on && !micAllowed()) { toast("마이크는 선생님이 켜 줘요. 말하고 싶으면 ✋ 손을 들어 주세요."); return; }
+  if (on && !micAllowed()) { toast("마이크는 선생님이 켜 줘요. '🔒 마이크 요청'을 눌러 주세요."); return; }
   prefs.mic = on;
   const lp = media.room?.localParticipant;
   if (lp && media.room.state === "connected") {
@@ -291,8 +291,9 @@ function renderControls() {
   mic.classList.toggle("on", prefs.mic);
   mic.disabled = !connected;
   if (S && !micAllowed()) {
-    mic.textContent = S.me.hand ? "✋ 요청 중" : "🔒 마이크 요청";
-    mic.title = "마이크는 선생님이 켜 줘요. 누르면 손을 들어 선생님께 요청해요";
+    mic.textContent = S.me.mic_req ? "🎙️ 요청 중" : "🔒 마이크 요청";
+    mic.title = S.me.mic_req ? "선생님께 마이크를 요청했어요. 누르면 요청을 취소해요" : "마이크는 선생님이 켜 줘요. 누르면 선생님께 켜 달라고 요청해요";
+    mic.classList.toggle("on", S.me.mic_req);
   } else mic.title = "마이크";
   const cam = $("#cam");
   const camOk = camAllowed();
@@ -332,7 +333,8 @@ function renderBanners() {
   if (S.settings.mic_lock && S.room === "main") {
     box.append(h("div", { class: "banner warn" }, S.me.can_speak
       ? "🎤 선생님이 마이크를 켜 줬어요. 말해 보세요."
-      : "🔒 마이크는 선생님이 켜 줘요. 말하고 싶으면 '🔒 마이크 요청'(✋ 손 들기)을 눌러 주세요."));
+      : S.me.mic_req ? "🎙️ 선생님께 마이크를 요청했어요. 선생님이 켜 주면 바로 말할 수 있어요."
+        : "🔒 마이크는 선생님이 켜 줘요. 말하고 싶으면 '🔒 마이크 요청'을, 할 말이 있다고 알리려면 '✋ 손 들기'를 눌러 주세요."));
   }
 }
 
@@ -449,9 +451,10 @@ $("#askform").addEventListener("submit", (e) => {
 submitOnEnter($("#askinput"), $("#askform"));
 
 $("#mic").addEventListener("click", () => {
-  if (S && !micAllowed() && !prefs.mic) { // 선생님이 켜 줘야 함 → 손 들기로 요청
-    if (!S.me.hand) { sock?.send({ t: "hand", up: true }); toast("✋ 선생님께 마이크를 요청했어요. 선생님이 켜 주면 바로 말할 수 있어요."); }
-    else { sock?.send({ t: "hand", up: false }); toast("요청을 취소했어요."); }
+  if (S && !micAllowed() && !prefs.mic) { // 선생님이 켜 줘야 함 → 마이크 요청 (손 들기와 따로)
+    const on = !S.me.mic_req;
+    sock?.send({ t: "mic_req", on });
+    toast(on ? "🎙️ 선생님께 마이크를 요청했어요. 선생님이 켜 주면 바로 말할 수 있어요." : "마이크 요청을 취소했어요.");
     return;
   }
   setMic(!prefs.mic);

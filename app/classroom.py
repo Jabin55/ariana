@@ -91,7 +91,8 @@ class Student:
     name: str  # 화면에 보이는 이름 (예: 20315 김민준)
     school: str = ""  # 다른 학교 학생도 함께 들을 수 있어 학번만으로는 구분이 안 될 때 쓴다
     conns: int = 0
-    hand: bool = False
+    hand: bool = False  # ✋ 손 들기: 할 말이 있어요
+    mic_req: bool = False  # 🎙️ 마이크를 켜 달라는 요청 (손 들기와 따로)
     help: bool = False  # 모둠 활동 중 '선생님 호출'
     can_speak: bool = False  # 선생님이 마이크를 켜 줌 (마이크 통제 중에도 말할 수 있음)
     can_cam: bool = False  # 선생님이 카메라를 켜 줌 (데이터 절약 모드에서도 카메라를 쓸 수 있음)
@@ -421,7 +422,7 @@ def teacher_state(k: Klass) -> dict:
         "course_id": k.course_id,
         "settings": k.settings, "livekit": livekit_ready(),
         "students": [
-            {"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand,
+            {"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand, "mic_req": s.mic_req,
              "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "group": s.group, "room": k.room_of(s),
              "sessions": s.sessions}
             for s in k.students.values()
@@ -448,7 +449,7 @@ def student_state(k: Klass, s: Student) -> dict:
     return {
         "t": "state", "role": "student", "code": k.code, "title": k.title,
         "settings": k.settings, "livekit": livekit_ready(),
-        "me": {"id": s.id, "name": s.name, "hand": s.hand, "help": s.help,
+        "me": {"id": s.id, "name": s.name, "hand": s.hand, "mic_req": s.mic_req, "help": s.help,
                "can_speak": s.can_speak, "can_cam": s.can_cam},
         "room": room, "group": group, "breakout": k.breakout, "ends_at": k.ends_at,
         "teacher_online": k.teacher_online(),
@@ -1081,6 +1082,8 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
     t = m.get("t")
     if t == "hand":
         s.hand = bool(m.get("up"))
+    elif t == "mic_req":  # 마이크 통제 중 '마이크 요청' (이미 켜 줬으면 무시)
+        s.mic_req = bool(m.get("on")) and k.settings["mic_lock"] and not s.can_speak
     elif t == "help":
         s.help = bool(m.get("on")) and k.room_of(s) != "main"
     elif t == "chat":
@@ -1122,6 +1125,9 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         for name in ("chat", "ai", "mic_lock", "lowbw"):
             if name in m:
                 k.settings[name] = bool(m[name])
+        if "mic_lock" in m:  # 통제를 바꾸면 남아 있는 마이크 요청은 지운다
+            for s in k.students.values():
+                s.mic_req = False
         if m.get("mic_lock"):  # 통제를 켜면 지금 켜진 마이크를 모두 끈다
             for s in k.students.values():
                 s.can_speak = False
@@ -1276,8 +1282,9 @@ def device_cmd(k: Klass, cmd: str | None, target, quiet: bool = False) -> None:
     on = cmd.endswith("_on")
     for s in targets:
         if mic:
+            s.mic_req = False  # 요청을 처리했으므로 지운다 (✋ 손 들기는 그대로 둔다)
             if on:
-                s.can_speak, s.hand = True, False
+                s.can_speak = True
             elif k.settings["mic_lock"]:
                 s.can_speak = False
         else:

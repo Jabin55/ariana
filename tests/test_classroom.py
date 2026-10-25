@@ -856,12 +856,16 @@ def test_groups_by_size_and_teacher_controls_mic():
         with who.websocket_connect(f"/ws/live/{code}") as sw:
             assert state(sw)["settings"]["mic_lock"] is True
             assert grants(who, "main").can_publish is False
-            sw.send_json({"t": "hand", "up": True})  # '마이크 요청' = 손 들기
-            state(tw, lambda m: any(x["hand"] for x in m["students"]))
+            # 마이크 요청(🎙️)과 손 들기(✋, 할 말 있음)는 따로
+            sw.send_json({"t": "mic_req", "on": True})
+            sw.send_json({"t": "hand", "up": True})
+            st2 = state(tw, lambda m: any(x["mic_req"] and x["hand"] for x in m["students"]))
+            assert sum(x["mic_req"] for x in st2["students"]) == 1
             tw.send_json({"t": "cmd", "cmd": "mic_on", "target": sid})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mic_on"
             me = state(sw, lambda m: m["me"]["can_speak"])["me"]
-            assert me["hand"] is False and me["can_cam"] is False
+            assert me["mic_req"] is False and me["hand"] is True and me["can_cam"] is False  # 손은 그대로
+            sw.send_json({"t": "mic_req", "on": True})  # 이미 켜 줬으면 요청은 무시
             assert grants(who, "main").can_publish_sources == ["microphone"]
             # 카메라도 선생님이 켠다 (데이터 절약 모드)
             tw.send_json({"t": "cmd", "cmd": "cam_on", "target": sid})
