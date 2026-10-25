@@ -45,7 +45,11 @@ users = Table(
     # 학교 계정으로 처음 로그인했을 때 고른 것: student(학생) staff(선생님 → 강사·관리교사 신청). 비면 아직 안 고름
     Column("self_role", String(10), nullable=False, default=""),
     # 학생 탈퇴 신청: 거점학교 관리교사(또는 전체 관리자)가 승인하면 계정과 기록을 지운다
-    Column("birth", String(10), nullable=False, default=""),  # 생년월일 (선생님 가입 정보, YYYY-MM-DD)
+    Column("birth", String(10), nullable=False, default=""),
+    Column("name_locked", Integer, nullable=False, default=0),
+    Column("gender", String(2), nullable=False, default=""),  # 성별 (선생님 회원 정보: 남·여)
+    Column("contact_email", String(200), nullable=False, default=""),  # 연락받을 이메일 (선생님)
+    Column("phone", String(100), nullable=False, default=""),  # 연락처 (선생님)  # 가입 때 적은 실명은 바꿀 수 없다 (전체 관리자만)  # 생년월일 (선생님 가입 정보, YYYY-MM-DD)
     Column("withdraw_at", Float),  # 신청한 시각 (비면 신청 안 함)
     Column("withdraw_reason", String(300), nullable=False, default=""),
     Column("withdraw_note", String(300), nullable=False, default=""),  # 반려 사유 (학생에게 보임)
@@ -418,12 +422,21 @@ def init() -> None:
              ("memberships", "email", "VARCHAR(200) NOT NULL DEFAULT ''"),
              ("courses", "approval", "VARCHAR(10) NOT NULL DEFAULT 'approved'"),
              ("users", "birth", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("users", "name_locked", "INTEGER NOT NULL DEFAULT 0"),
+             ("users", "gender", "VARCHAR(2) NOT NULL DEFAULT ''"),
+             ("users", "contact_email", "VARCHAR(200) NOT NULL DEFAULT ''"),
+             ("users", "phone", "VARCHAR(100) NOT NULL DEFAULT ''"),
              ("courses", "approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("courses", "approved_by", "INTEGER")]
+    fresh = set()
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:
                 c.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {kind}"))
+            fresh.add((table, col))
+    if ("users", "name_locked") in fresh:  # 이미 가입을 마친 사람의 이름은 그대로 굳힌다
+        with engine.begin() as c:
+            c.execute(update(users).where(users.c.name != "").values(name_locked=1))
     if engine.dialect.name == "postgresql":  # 수업 소개를 길게 쓸 수 있도록 (예전: 300자)
         with engine.begin() as c:
             c.execute(text("ALTER TABLE courses ALTER COLUMN description TYPE TEXT"))

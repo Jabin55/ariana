@@ -1702,3 +1702,32 @@ def test_learning_overview():
     cl = r["classes"][0]
     assert cl["title"] == "1차시 헌법" and cl["attended"] == 2 and cl["rate"] == 67 and cl["notices"][0]["text"] == "5분 뒤 퀴즈"
     assert a.get(f"/api/courses/{cid}/learning").status_code == 403
+
+
+def test_name_is_locked_and_teacher_profile(monkeypatch):
+    """가입 때 적은 실명은 바꿀 수 없다 (전체 관리자만). 선생님 내 정보: 생년월일·성별·이메일·연락처"""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    s = student(1)
+    me = s.get("/api/me").json()["user"]
+    assert me["name_locked"] is True
+    r = s.post("/api/me/profile", json={"name": "다른이름", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 1})
+    assert r.status_code == 400 and "바꿀 수 없어요" in r.json()["detail"]
+    assert s.post("/api/me/profile", json={"name": "학생1", "school": SCHOOL, "grade": 3, "class_no": 3, "number": 1}).status_code == 200
+    # 선생님: 등록 신청 때 이름이 정해지고, 내 정보에서 나머지를 고친다 (신청서 연락처도 함께)
+    g = TestClient(app)
+    g.post("/api/auth/dev", json={"email": "t@gmail.com"})
+    form = {"role": "coordinator", "hub_name": "가나고등학교", "name": "한선생", "contact": "010-1", "pledge": True, "gender": "여", "birth": "1980-01-02"}
+    assert g.post("/api/staff/apply", json=form).status_code == 200
+    assert g.post("/api/staff/apply", json={**form, "name": "한바꿈"}).status_code == 400
+    boss = login("boss@gmail.com", name="관리자")
+    mid = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]["id"]
+    boss.post(f"/api/staff/{mid}", json={"action": "approve"})
+    r = g.post("/api/me/profile", json={"name": "한선생", "school": "가나고등학교", "birth": "1980-01-03", "gender": "여",
+                                        "email": "han@use.go.kr", "phone": "010-9999-0000"})
+    assert r.status_code == 200, r.text
+    me = r.json()
+    assert (me["birth"], me["gender"], me["contact_email"], me["phone"]) == ("1980-01-03", "여", "han@use.go.kr", "010-9999-0000")
+    app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
+    assert (app_["contact"], app_["contact_email"], app_["gender"]) == ("010-9999-0000", "han@use.go.kr", "여")
+    # 전체 관리자는 자기 이름을 바꿀 수 있다
+    assert boss.post("/api/me/profile", json={"name": "새관리자", "school": ""}).json()["name"] == "새관리자"

@@ -497,7 +497,7 @@ def teacher_state(k: Klass) -> dict:
         "course_id": k.course_id,
         "settings": k.settings, "livekit": livekit_ready(), "layout": k.layout,
         "students": roster_rows(k),
-        "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at,
+        "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at, "started_at": k.created,
         "present": present_view(k), "files": k.files, "recording": k.recording,
         "media": k.media, "media_files": k.media_files,
         "activity": activity_for_teacher(k, k.activity),

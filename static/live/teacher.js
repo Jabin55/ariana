@@ -258,7 +258,7 @@ function renderControls() {
   $("#mic").classList.toggle("on", prefs.mic);
   $("#cam").textContent = prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐";
   $("#cam").classList.toggle("on", prefs.cam);
-  $("#screen").textContent = prefs.screen ? "🖥️ 공유 중지" : "🖥️ 화면 공유";
+  $("#screen .rl").textContent = prefs.screen ? "공유 중지" : "화면공유";
   $("#screen").classList.toggle("on", prefs.screen);
   for (const id of ["#mic", "#cam", "#screen"]) $(id).disabled = !ok;
   if (rec.micGain) rec.micGain.gain.value = prefs.mic ? 1 : 0; // 마이크를 끄면 녹화에도 목소리가 안 들어간다
@@ -1013,7 +1013,7 @@ function deviceButtons(s) {
   const micOn = inMain ? !!p?.isMicrophoneEnabled : null; // 모둠에 있는 학생은 이 화면에서 상태를 모름
   const camOn = inMain ? !!p?.isCameraEnabled : null;
   const btn = (on, icon, offIcon, name, cmd) => h("button", {
-    class: on ? "on" : on === false ? "off" : "",
+    class: `dev-btn ${on ? "on" : on === false ? "off" : ""}`,
     title: on === null ? `${name} 끄기` : on ? `${name} 켜짐 — 누르면 꺼요` : `${name} 꺼짐 — 누르면 선생님이 켜요`,
     onclick: () => {
       const turnOn = on === false;
@@ -1022,11 +1022,12 @@ function deviceButtons(s) {
     },
   }, on === false ? offIcon : icon);
   if (s.mic_blocked) {  // 선생님이 끈 마이크: 다시 켜 줄 때까지 학생이 못 켬
-    return [h("button", { class: "off", title: "선생님이 마이크를 껐어요 — 누르면 다시 켜요(학생도 다시 켤 수 있게 돼요)",
-      onclick: () => { sock.send({ t: "cmd", cmd: "mic_on", target: s.id }); toast(`${s.name} 학생의 마이크를 켰어요.`); } }, "🔒"),
-    btn(camOn, "📷", "📷", "카메라", "cam")];
+    return [btn(camOn, "🎥", "🎥", "카메라", "cam"),
+      h("button", { class: "dev-btn off locked", title: "선생님이 마이크를 껐어요 — 누르면 다시 켜요(학생도 다시 켤 수 있게 돼요)",
+        onclick: () => { sock.send({ t: "cmd", cmd: "mic_on", target: s.id }); toast(`${s.name} 학생의 마이크를 켰어요.`); } }, "🎤")];
   }
-  return [btn(micOn, "🎤", "🔇", "마이크", "mic"), btn(camOn, "📷", "📷", "카메라", "cam")];
+  // 참여자 목록: 🎥 카메라 · 🎤 마이크 (꺼진 것은 흐리게 · 사선, 누르면 켜고 끔)
+  return [btn(camOn, "🎥", "🎥", "카메라", "cam"), btn(micOn, "🎤", "🎤", "마이크", "mic")];
 }
 
 function renderPeople() {
@@ -1234,7 +1235,7 @@ function addChat(m, live) {
   }
   log.append(bubble);
   if (stick || m.role === "teacher") log.scrollTop = log.scrollHeight;
-  if (live && activeTab !== "chat" && m.role !== "teacher") {
+  if (live && activeTab !== "people" && m.role !== "teacher") {
     unreadChat++;
     $("#chat-badge").textContent = unreadChat;
     $("#chat-badge").hidden = false;
@@ -1357,11 +1358,20 @@ $("#bo-start").addEventListener("click", () => {
 
 /* ───── 탭·기타 ───── */
 
+/** 왼쪽 위 시계: 수업을 연 뒤 지난 시간 */
+setInterval(() => {
+  if (!S?.started_at) return;
+  const sec = Math.max(0, Math.floor(clock.now() - S.started_at));
+  const pad = (n) => String(n).padStart(2, "0");
+  $("#class-clock").textContent = `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}`;
+}, 1000);
+
 function showTab(name) {
+  if (name === "chat") name = "people"; // 채팅은 참여자 목록 아래에 늘 함께 보인다
   activeTab = name;
   for (const b of $("#tabs").children) b.classList.toggle("active", b.dataset.tab === name);
-  for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== name;
-  if (name === "chat") { unreadChat = 0; $("#chat-badge").hidden = true; $("#chatlog").scrollTop = $("#chatlog").scrollHeight; }
+  for (const p of document.querySelectorAll("[data-panel]")) p.hidden = !(p.dataset.panel === name || (name === "people" && p.dataset.panel === "chat"));
+  if (name === "people") { unreadChat = 0; $("#chat-badge").hidden = true; $("#chatlog").scrollTop = $("#chatlog").scrollHeight; }
 }
 $("#tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");

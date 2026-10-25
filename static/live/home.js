@@ -217,12 +217,26 @@ function showProfile() {
   $("#withdraw-box").open = false;
   const student = ME.role === "student";
   document.querySelectorAll(".student-only").forEach((el) => { el.hidden = !student; });
+  document.querySelectorAll(".teacher-only").forEach((el) => { el.hidden = student; });
+  if (!student) {
+    const last = ME.memberships[ME.memberships.length - 1];
+    $("#p-birth").value = ME.birth || "";
+    $("#p-birth").max = new Date().toISOString().slice(0, 10);
+    $("#p-gender").value = ME.gender || "";
+    $("#p-email").value = ME.contact_email || last?.email || ME.email || "";
+    $("#p-phone").value = ME.phone || last?.contact || "";
+  }
   for (const id of ["#p-grade", "#p-class", "#p-number"]) $(id).required = student;
+  $("#profile-hint").hidden = !student;
   $("#profile-hint").textContent = student
     ? "선생님이 출석을 확인할 수 있도록 정확하게 적어 주세요. 새 학년이 되면 여기서 고칠 수 있어요."
-    : "학생들에게 보일 이름을 적어 주세요. 소속은 있으면 적고, 없으면 비워 두세요(대학교수, 현재 학교에 소속되지 않은 강사 등 누구나 강의할 수 있어요).";
+    : "";
   $("#p-name").value = ME.name || "";
-  $("#p-school-label").textContent = student ? "학교" : "소속 (선택 — 없으면 비워 두세요)";
+  // 이름은 가입할 때 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
+  $("#p-name").readOnly = !!ME.name_locked;
+  $("#p-name-note").textContent = ME.name_locked ? "이름은 가입할 때 적은 실명으로 정해져 바꿀 수 없어요. 꼭 바꿔야 하면 전체 관리자에게 요청해 주세요."
+    : "실명으로 적어 주세요. 가입한 뒤에는 이름을 바꿀 수 없어요.";
+  $("#p-school-label").textContent = student ? "학교" : "소속";
   $("#p-school").placeholder = student ? "예: 가나중학교" : "예: 한국대학교 정치외교학과";
   const sel = $("#p-school-select");
   sel.hidden = true;
@@ -265,6 +279,8 @@ $("#profile").addEventListener("submit", async (e) => {
   };
   if (ME.role === "student") {
     Object.assign(body, { grade: Number($("#p-grade").value), class_no: Number($("#p-class").value), number: Number($("#p-number").value) });
+  } else {
+    Object.assign(body, { birth: $("#p-birth").value, gender: $("#p-gender").value, email: $("#p-email").value.trim(), phone: $("#p-phone").value.trim() });
   }
   const first = ME.needs_profile; // 처음 가입이면 '가입완료' 안내로
   try {
@@ -344,6 +360,7 @@ async function showGuest(fromTeacher = false) {
   $("#guest-title").textContent = firstApply ? "교사 가입정보 입력" : "역할 추가 신청 · 신청 현황";
   $("#a-birth").max = new Date().toISOString().slice(0, 10);
   if (ME.birth) $("#a-birth").value = ME.birth;
+  if (ME.gender) $("#a-gender").value = ME.gender;
   $("#guest-hint").hidden = fromTeacher;
   $("#to-student").hidden = fromTeacher || !ME.can_be_student;
   if (sessionGet("signup_as") === "student" && !ME.can_be_student) {
@@ -353,6 +370,8 @@ async function showGuest(fromTeacher = false) {
   sessionDel("signup_as");
   $("#pledge-text").textContent = CONFIG.pledge;
   $("#a-name").value = ME.name || "";
+  $("#a-name").readOnly = !!ME.name_locked;
+  $("#a-name").title = ME.name_locked ? "이름은 가입할 때 적은 실명으로 정해져 바꿀 수 없어요." : "실명으로 적어 주세요. 가입한 뒤에는 바꿀 수 없어요.";
   $("#a-aff").value = ME.school || "";
   const last = ME.memberships[ME.memberships.length - 1];
   $("#a-contact").value = last?.contact || "";
@@ -449,7 +468,7 @@ $("#apply").addEventListener("submit", async (e) => {
     await api("/api/staff/apply", {
       role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
       hub_name: role !== "instructor" ? $("#a-hub-name").value : role === "instructor" && CONFIG.schools.length ? $("#a-hub-search").value.trim() : "",
-      name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value,
+      name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value, gender: $("#a-gender").value,
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
       assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",

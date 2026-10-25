@@ -97,6 +97,7 @@
       <form id="profile">
         <label class="muted" for="p-name">이름 (실명)</label>
         <input id="p-name" maxlength="30" required>
+        <p class="muted" id="p-name-note" style="margin:-4px 0 0;font-size:0.82rem"></p>
         <label class="muted" for="p-school" id="p-school-label">학교</label>
         <select id="p-school-select" hidden></select>
         <input id="p-school" maxlength="60" placeholder="예: 가나중학교">
@@ -106,6 +107,12 @@
           <label>번호 <input id="p-number" type="number" min="1" max="60" required style="width:4.5em"></label>
         </div>
         <p class="muted student-only" style="margin:0;font-size:0.9rem">학번: <strong id="p-no">-</strong></p>
+        <div class="teacher-only profile-grid">
+          <label class="muted">생년월일 <input id="p-birth" type="date" min="1920-01-01"></label>
+          <label class="muted">성별 <select id="p-gender"><option value="">고르세요</option><option value="남">남</option><option value="여">여</option></select></label>
+          <label class="muted">이메일 <input id="p-email" type="email" maxlength="200" placeholder="연락받을 이메일"></label>
+          <label class="muted">연락처 <input id="p-phone" maxlength="100" placeholder="휴대전화 번호"></label>
+        </div>
         <p class="muted agree-box" style="margin:0;font-size:0.85rem" id="p-agree-note" hidden></p>
         <button class="primary" type="submit">저장</button>
         <p class="error" id="profile-error"></p>
@@ -153,8 +160,9 @@
           <input id="a-hub-name" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)"></label>
         <datalist id="school-options"></datalist>
         <h3 class="wide form-sec">2) 회원 정보</h3>
-        <label>이름 (실명) <input id="a-name" maxlength="30" required></label>
+        <label>이름 (실명 · 가입 뒤 바꿀 수 없어요) <input id="a-name" maxlength="30" required></label>
         <label>생년월일 <input id="a-birth" type="date" min="1920-01-01" required></label>
+        <label>성별 <select id="a-gender" required><option value="">고르세요</option><option value="남">남</option><option value="여">여</option></select></label>
         <label>소속 구분
           <select id="a-affil-type" required>
             <option value="cert">교원자격 소지자 (미임용)</option>
@@ -296,7 +304,6 @@
       </div>
 
       <div data-panel="students" hidden>
-        <p class="muted">내 강좌에 수강신청한 학생을 찾아보고 승인해요. 강의교사가 승인하면 바로 수강 확정돼요.</p>
         <div id="students-list"></div>
       </div>
 

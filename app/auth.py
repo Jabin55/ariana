@@ -68,6 +68,9 @@ def public_user(u) -> dict:
         "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
         "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []), "lead_hubs": d.get("lead_hubs", []),
         "participant_schools": d.get("participant_schools", []), "birth": d.get("birth") or "",
+        # 이름은 가입 때 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
+        "name_locked": bool(d.get("name_locked")) and not d.get("is_admin"),
+        "gender": d.get("gender") or "", "contact_email": d.get("contact_email") or "", "phone": d.get("phone") or "",
         "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
         # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
         "role_choice": d["role"] == "student" and not d.get("self_role"),
@@ -290,6 +293,11 @@ class Profile(BaseModel):
     class_no: int | None = Field(default=None, ge=1, le=30)
     number: int | None = Field(default=None, ge=1, le=60)
     agree: bool = False  # 이용약관·개인정보 처리방침 확인(동의)
+    # 선생님 내 정보: 생년월일 · 성별 · 이메일 · 연락처 (None 이면 그대로 둔다)
+    birth: str | None = Field(default=None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    gender: str | None = Field(default=None, pattern="^(남|여)?$")
+    email: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=100)
 
 
 @router.post("/api/me/profile")
@@ -302,6 +310,10 @@ async def save_profile(p: Profile, request: Request):
     if u["role"] == "student" and schools and school not in schools:
         raise HTTPException(400, "목록에 있는 학교를 골라 주세요. 학교가 목록에 없으면 선생님께 알려 주세요.")
     values = {"name": name, "school": school}
+    if u.get("name_locked") and not u["is_admin"] and name != (u["name"] or ""):
+        raise HTTPException(400, NAME_LOCKED)
+    if name and not u["is_admin"]:
+        values["name_locked"] = 1
     if needs_terms(u):
         if not p.agree:
             raise HTTPException(400, "먼저 이용약관과 개인정보 수집·이용에 동의해 주세요.")
@@ -311,10 +323,27 @@ async def save_profile(p: Profile, request: Request):
         if not (school and p.grade and p.class_no and p.number):
             raise HTTPException(400, "학교, 학년, 반, 번호를 모두 입력해 주세요.")
         values.update(grade=p.grade, class_no=p.class_no, number=p.number)
+    else:  # 선생님: 생년월일 · 성별 · 이메일 · 연락처
+        if p.birth:
+            if not ("1920-01-01" <= p.birth <= today_kst()):
+                raise HTTPException(400, "생년월일을 확인해 주세요.")
+            values["birth"] = p.birth
+        if p.gender is not None:
+            values["gender"] = p.gender
+        if p.email is not None:
+            if p.email.strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", p.email.strip()):
+                raise HTTPException(400, "이메일 주소를 정확히 적어 주세요.")
+            values["contact_email"] = p.email.strip()
+        if p.phone is not None:
+            values["phone"] = p.phone.strip()
 
     def save():
         with db.engine.begin() as c:
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**values))
+            # 승인하는 사람이 보는 등록 신청서의 연락처도 함께 고친다
+            ms = {k: v for k, v in (("email", values.get("contact_email")), ("contact", values.get("phone"))) if v}
+            if ms:
+                c.execute(update(db.memberships).where(db.memberships.c.user_id == u["id"]).values(**ms))
 
     await db.run(save)
     return public_user(await db.run(_load_with_role, u["id"]))
@@ -373,6 +402,9 @@ async def choose_self_role(req: SelfRole, request: Request):
 
     await db.run(save)
     return public_user(await db.run(_load_with_role, u["id"]))
+
+
+NAME_LOCKED = "이름은 가입할 때 적은 실명으로 정해져 바꿀 수 없어요. 꼭 바꿔야 하면 전체 관리자에게 요청해 주세요."
 
 
 class Withdraw(BaseModel):

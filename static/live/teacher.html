@@ -8,21 +8,47 @@
   <link rel="stylesheet" href="/static/live/live.css">
   <script src="/static/vendor/livekit-client-2.23.0.umd.js"></script>
 </head>
-<body>
+<body class="class-t">
   <div class="app">
     <header class="topbar">
       <h1 id="title">실시간 수업</h1>
       <span class="code" id="code"></span>
+      <span class="tb-count" id="online"></span>
       <button class="small" id="copy-link">참여 링크 복사</button>
-      <a class="button small" id="history-link" target="_blank">출결 기록</a>
       <span class="grow"></span>
-      <span class="status" id="online"></span>
+      <div class="tb-center">
+        <button class="tb-btn" id="mic" title="내 마이크 켜고 끄기">🎤 마이크</button>
+        <span class="meter small" id="mic-meter" title="내 마이크 소리 크기" hidden><i></i></span>
+        <button class="tb-btn" id="cam" title="내 카메라 켜고 끄기">📷 카메라</button>
+        <label class="layout-pick" title="선생님·학생 모두의 화면에 얼굴이 어떻게 보일지">🖼️
+          <select id="layout-sel">
+            <option value="teacher">선생님 크게</option>
+            <option value="grid">모두 나열</option>
+            <option value="debate">토론 (학생 둘 나란히)</option>
+          </select></label>
+      </div>
+      <span class="grow"></span>
       <span class="status" id="status">연결 중…</span>
       <span class="status" id="rtc-status" title="화상(영상·음성) 연결 상태">📡 화상 연결 전</span>
+      <a class="button small" id="history-link" target="_blank">출결 기록</a>
+      <button class="small" id="sound" hidden>🔊 소리 켜기</button>
+      <button class="small rec-btn" id="rec-btn" title="이 수업 화면과 소리를 선생님 컴퓨터에 녹화 (학생 화면에 '녹화 중' 표시)" hidden>⏺ REC</button>
       <button class="danger small" id="end-class">수업 종료</button>
     </header>
 
     <div class="workspace">
+      <!-- 왼쪽 도구: 화면공유 · 문서공유 · 미디어공유 · 화이트보드 · 설문/퀴즈 · 스티커 -->
+      <nav class="rail" aria-label="수업 도구">
+        <div class="rail-clock" id="class-clock" title="수업을 연 뒤 지난 시간">00:00:00</div>
+        <button class="rail-btn" id="screen" title="내 컴퓨터 화면이나 창을 학생들에게 보여 주기"><span class="ri">🖥️</span><span class="rl">화면공유</span></button>
+        <button class="rail-btn" id="present-btn" title="PDF 문서를 띄우고 그 위에 판서하며 설명"><span class="ri">📄</span><span class="rl">문서공유</span></button>
+        <button class="rail-btn" id="media-btn" title="동영상·음악 파일이나 유튜브 영상을 다 같이 보기"><span class="ri">🎬</span><span class="rl">미디어공유</span></button>
+        <button class="rail-btn" id="board-btn" title="빈 화이트보드에 그리며 설명"><span class="ri">🖊️</span><span class="rl">화이트보드</span></button>
+        <button class="rail-btn" id="quiz-btn" title="설문(투표)이나 퀴즈 내기"><span class="ri">📊</span><span class="rl">설문/퀴즈</span></button>
+        <span class="sticker-wrap"><button class="rail-btn" id="sticker-btn" title="학생에게 칭찬 스티커 보내기"><span class="ri">🏅</span><span class="rl">스티커</span></button>
+          <div class="sticker-pop" id="sticker-pop" hidden></div></span>
+      </nav>
+
       <main class="mainarea">
         <div id="banners"></div>
         <div class="banner" id="debate-bar" hidden>
@@ -60,14 +86,15 @@
 
       <aside class="sidebar">
         <nav class="tabs" id="tabs">
-          <button data-tab="people" class="active">학생 <span class="badge" id="hand-badge" hidden></span></button>
+          <button data-tab="people" class="active">참여자·채팅 <span class="badge" id="hand-badge" hidden></span></button>
           <button data-tab="activity">설문/퀴즈</button>
-          <button data-tab="chat">채팅 <span class="badge" id="chat-badge" hidden></span></button>
+          <button data-tab="chat" hidden>채팅 <span class="badge" id="chat-badge" hidden></span></button>
           <button data-tab="groups">모둠</button>
         </nav>
 
-        <!-- 학생 -->
-        <section class="panel" data-panel="people">
+        <!-- 참여자 목록 (위) -->
+        <section class="panel people-panel" data-panel="people">
+          <div class="panel-h"><strong>참여자 목록</strong> <span class="muted" id="people-count"></span></div>
           <div class="box sharebox">
             <span class="muted" id="share-label">학생 입장 코드</span>
             <span class="big" id="share-code"></span>
@@ -77,9 +104,19 @@
             <label class="switch" title="학생 화면의 AI 조교 탭"><input type="checkbox" id="set-ai"> AI 조교</label>
             <button id="mute-all" title="모든 학생 마이크 끄기 (학생이 다시 켤 수 있어요)">🔇 모두 음소거</button>
             <button id="lower-all">✋ 손 모두 내리기</button>
-            <span class="grow"></span><span class="muted" id="people-count"></span>
           </div>
           <div class="people" id="people"></div>
+        </section>
+
+        <!-- 채팅 (아래) -->
+        <section class="panel chatlike chat-panel" data-panel="chat">
+          <div class="panel-h"><strong>채팅</strong></div>
+          <div class="chatlog" id="chatlog"></div>
+          <form class="chatform" id="chatform">
+            <select id="chat-scope" title="보낼 곳"></select>
+            <textarea id="chatinput" rows="1" maxlength="500" placeholder="메시지"></textarea>
+            <button class="primary" type="submit">보내기</button>
+          </form>
         </section>
 
         <!-- 설문/퀴즈 -->
@@ -100,17 +137,6 @@
           <a id="csv-link" class="muted" style="font-size:0.9rem">📥 지금까지 활동 결과 내려받기 (엑셀용 CSV)</a>
         </section>
 
-        <!-- 채팅 -->
-        <section class="panel chatlike" data-panel="chat" hidden>
-          <div class="chatlog" id="chatlog"></div>
-          <form class="chatform" id="chatform">
-            <select id="chat-scope" title="보낼 곳"></select>
-            <textarea id="chatinput" rows="1" maxlength="500" placeholder="메시지"></textarea>
-            <button class="primary" type="submit">보내기</button>
-          </form>
-        </section>
-
-
         <!-- 모둠 -->
         <section class="panel" data-panel="groups" hidden>
           <div class="box">
@@ -127,31 +153,8 @@
         </section>
       </aside>
     </div>
-
-    <footer class="controls">
-      <button id="mic">🎤 마이크</button>
-      <span class="meter small" id="mic-meter" title="내 마이크 소리 크기" hidden><i></i></span>
-      <button id="cam">📷 카메라</button>
-      <span class="tool-sep"></span>
-      <button id="screen" title="내 컴퓨터 화면이나 창을 학생들에게 보여 주기">🖥️ 화면공유</button>
-      <button id="present-btn" title="PDF 문서를 띄우고 그 위에 판서하며 설명">📄 문서공유</button>
-      <button id="media-btn" title="동영상·음악 파일이나 유튜브 영상을 다 같이 보기">🎬 미디어공유</button>
-      <button id="board-btn" title="빈 화이트보드에 그리며 설명">🖊️ 화이트보드</button>
-      <button id="quiz-btn" title="설문(투표)이나 퀴즈 내기">📊 설문/퀴즈</button>
-      <span class="sticker-wrap"><button id="sticker-btn" title="학생에게 칭찬 스티커 보내기">🏅 스티커</button>
-        <div class="sticker-pop" id="sticker-pop" hidden></div></span>
-      <span class="tool-sep"></span>
-      <label class="layout-pick" title="선생님·학생 모두의 화면에 얼굴이 어떻게 보일지">🖼️ 화면 구성
-        <select id="layout-sel">
-          <option value="teacher">선생님 크게</option>
-          <option value="grid">모두 나열</option>
-          <option value="debate">토론 (학생 둘 나란히)</option>
-        </select></label>
-      <button id="rec-btn" title="이 수업 화면과 소리를 선생님 컴퓨터에 녹화 (학생 화면에 '녹화 중' 표시)" hidden>⏺ 녹화</button>
-      <button id="sound" class="primary" hidden>🔊 소리 켜기</button>
-      <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>
-      <input type="file" id="media-input" accept="video/mp4,video/webm,video/quicktime,.m4v,audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a" hidden>
-    </footer>
+    <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>
+    <input type="file" id="media-input" accept="video/mp4,video/webm,video/quicktime,.m4v,audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a" hidden>
   </div>
 
   <div class="overlay" id="prejoin">

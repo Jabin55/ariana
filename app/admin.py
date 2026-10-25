@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, select, update
 
 from app import db
-from app.auth import PLEDGE, current_user, get_schools, membership_status, today_kst
+from app.auth import NAME_LOCKED, PLEDGE, current_user, get_schools, membership_status, today_kst
 from app.courses import hub_for_school
 from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
@@ -76,6 +76,7 @@ class ApplyReq(BaseModel):
     email: str = Field(default="", max_length=200)  # 연락받을 이메일
     contact: str = Field(min_length=1, max_length=100)  # 연락처 (전화번호)
     birth: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 생년월일
+    gender: str = Field(default="", pattern="^(남|여)?$")  # 성별
     assistant: bool = False  # 강사: 팀티칭 보조교사로 참여 (강좌를 직접 열지 않고 다른 강사의 강좌를 돕는다)
     message: str = Field(default="", max_length=500)  # 관리교사만 (강사 신청서에는 없음)
     wish_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 강사: 희망 기간
@@ -146,9 +147,19 @@ async def apply(req: ApplyReq, request: Request):
             if req.role == "instructor" and not c.execute(select(db.hubs.c.id).where(db.hubs.c.id == hub_id)).first():
                 raise HTTPException(404, "거점학교를 찾을 수 없어요.")
             # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
-            who = {"name": req.name.strip(), "school": req.affiliation.strip(), "terms_version": POLICY_VERSION, "terms_at": now}
+            # 이름은 처음 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
+            locked = u.get("name_locked") and not u["is_admin"]
+            if locked and req.name.strip() != (u["name"] or ""):
+                raise HTTPException(400, NAME_LOCKED)
+            who = {"name": req.name.strip(), "school": req.affiliation.strip(), "terms_version": POLICY_VERSION, "terms_at": now,
+                   **({} if u["is_admin"] else {"name_locked": 1})}
             if req.birth:
                 who["birth"] = req.birth
+            if req.gender:
+                who["gender"] = req.gender
+            if req.email.strip():
+                who["contact_email"] = req.email.strip()
+            who["phone"] = req.contact.strip()
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**who))
             same = (m.hub_id == hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
@@ -195,7 +206,7 @@ async def applications(role: str, request: Request):
         m = db.memberships.c
         with db.engine.connect() as c:
             q = (select(db.memberships, db.users.c.name, db.users.c.email, db.users.c.school, db.users.c.google_name,
-                        db.users.c.birth)
+                        db.users.c.birth, db.users.c.gender)
                  .join(db.users, db.users.c.id == m.user_id).where(m.role == role))
             if not u["is_admin"] and role == "instructor":
                 q = q.where(m.hub_id.in_(hubs))
@@ -213,7 +224,7 @@ async def applications(role: str, request: Request):
                     "wish_from": x["wish_from"], "wish_until": x["wish_until"], "contact": x["contact"],
                     "message": x["message"], "admin_note": x["admin_note"], "pledged": bool(x["pledge_at"]),
                     "kind": x["kind"], "affil_type": x["affil_type"], "office": x["office"], "license": x["license"],
-                    "contact_email": x["email"], "birth": x["birth"] or "",
+                    "contact_email": x["email"], "birth": x["birth"] or "", "gender": x["gender"] or "",
                     "requested_at": x["requested_at"]})
     return {"applications": out, "today": today_kst()}
 
