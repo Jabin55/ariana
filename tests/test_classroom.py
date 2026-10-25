@@ -1648,3 +1648,17 @@ def test_media_share_and_stickers(monkeypatch, tmp_path):
         tw.send_json({"t": "end_class"})
         until(tw, lambda m: m["t"] == "ended")
     assert not list((tmp_path).rglob("*.mp4"))  # 수업이 끝나면 올린 미디어는 지운다
+
+
+def test_teacher_signup_birth(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    g = TestClient(app)
+    g.post("/api/auth/dev", json={"email": "t@gmail.com"})
+    form = {"role": "coordinator", "hub_name": "가나고등학교", "name": "한선생", "contact": "010", "pledge": True}
+    assert g.post("/api/staff/apply", json={**form, "birth": "1985-13-01"}).status_code == 400
+    assert g.post("/api/staff/apply", json={**form, "birth": "2999-01-01"}).status_code == 400
+    assert g.post("/api/staff/apply", json={**form, "birth": "1985-03-07"}).status_code == 200
+    assert g.get("/api/me").json()["user"]["birth"] == "1985-03-07"
+    app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
+    assert app_["birth"] == "1985-03-07"

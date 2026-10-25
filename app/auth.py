@@ -67,7 +67,7 @@ def public_user(u) -> dict:
         "student_no": student_no(d), "display": display_name(d), "needs_profile": needs_profile(d),
         "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
         "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []), "lead_hubs": d.get("lead_hubs", []),
-        "participant_schools": d.get("participant_schools", []),
+        "participant_schools": d.get("participant_schools", []), "birth": d.get("birth") or "",
         "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
         # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
         "role_choice": d["role"] == "student" and not d.get("self_role"),
@@ -77,7 +77,7 @@ def public_user(u) -> dict:
 
 
 def membership_active(m: dict) -> bool:
-    # 거점학교 관리교사·강사는 거점학교(hub_id), 참여학교 교사는 학교 이름(hub_name)이 있어야 한다
+    # 거점학교 관리교사·강사는 거점학교(hub_id), 참여학교 담당자는 학교 이름(hub_name)이 있어야 한다
     if m["status"] != "approved" or not (m.get("hub_id") or (m["role"] == "participant" and m.get("hub_name"))):
         return False
     today = today_kst()
@@ -171,7 +171,7 @@ def _load_with_role(uid: int) -> dict | None:
     u["is_admin"] = u["email"].lower() in ADMIN_EMAILS
     u["memberships"] = [membership_view(m, hub_names) for m in ms]
     active = [m for m in ms if membership_active(m)]
-    # 역할은 서로 따로다: 거점학교 관리교사(거점학교 운영) · 강사(강좌 개설·운영) · 참여학교 교사(우리 학교 학생 관리).
+    # 역할은 서로 따로다: 거점학교 관리교사(거점학교 운영) · 강사(강좌 개설·운영) · 참여학교 담당자(우리 학교 학생 관리).
     # 관리교사가 강의도 하려면 강사로도 등록해야 한다.
     u["coordinator_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
                                     if m["role"] == "coordinator"})
@@ -419,7 +419,7 @@ def owns_classes(uid: int) -> bool:
 @router.post("/api/me/withdraw")
 async def withdraw(req: Withdraw, request: Request):
     """회원 탈퇴.
-    - 학생: 탈퇴 신청만 한다. 그 학생 소속 학교의 참여학교 교사(없으면 전체 관리자)가 승인하면 지워진다.
+    - 학생: 탈퇴 신청만 한다. 그 학생 소속 학교의 참여학교 담당자(없으면 전체 관리자)가 승인하면 지워진다.
       강좌 중간에 기록이 사라지는 일을 막기 위해서다.
     - 그 밖의 사람: 바로 지운다. 다만 직접 연 강좌·수업이 있으면(학생 기록이 딸려 있음) 탈퇴할 수 없다."""
     u = await current_user(request)

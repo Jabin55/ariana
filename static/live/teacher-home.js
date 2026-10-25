@@ -16,7 +16,7 @@ function today() {
 /** replaceChildren에 null·false가 섞여도 글자로 찍히지 않게 */
 function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "")); }
 
-/* 권한: 강의교사는 [특강/회의]~[강좌 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 교사는 [참여학교 운영].
+/* 권한: 강의교사는 [특강/회의]~[강좌 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 담당자는 [참여학교 운영].
    역할이 여럿이면 그 탭들이 모두 열리고, 전체 관리자는 모두 열린다. 권한이 없는 탭은 '권한이 없습니다.' */
 function canHub() { return ME.is_admin || ME.coordinator_hubs.length > 0; }
 function canSchool() { return ME.is_admin || (ME.participant_schools || []).length > 0; }
@@ -492,7 +492,7 @@ async function loadHub() {
   else fill(box, ...hubStudents(ov, log.classes));
 }
 
-/** 강의교사 승인: 강좌 개설 신청 · 강의교사 등록 · 참여학교 교사 등록 */
+/** 강의교사 승인: 강좌 개설 신청 · 강의교사 등록 · 참여학교 담당자 등록 */
 function hubApprove(ov, inst, part) {
   const decide = async (c, action) => {
     let note = "";
@@ -523,9 +523,9 @@ function hubApprove(ov, inst, part) {
     done.length ? h("details", {}, h("summary", { class: "muted" }, `처리한 강좌 ${done.length}개`), done.map(courseCard)) : null,
     h("h2", { style: "margin:24px 0 0" }, "👩‍🏫 강의교사 등록"),
     staffSections(inst.applications, inst.today, loadHub, "강의교사"),
-    h("h2", { style: "margin:24px 0 0" }, "🏫 참여학교 교사 등록"),
-    h("p", { class: "muted", style: "font-size:0.9rem;margin:4px 0" }, "참여학교 교사는 자기 학교 학생의 수강 현황을 보고 학생 탈퇴를 승인해요. 그 학교 선생님이 맞는지 확인하고 승인해 주세요."),
-    staffSections(part.applications, part.today, loadHub, "참여학교 교사"),
+    h("h2", { style: "margin:24px 0 0" }, "🏫 참여학교 담당자 등록"),
+    h("p", { class: "muted", style: "font-size:0.9rem;margin:4px 0" }, "참여학교 담당자는 자기 학교 학생의 수강 현황을 보고 학생 탈퇴를 승인해요. 그 학교 선생님이 맞는지 확인하고 승인해 주세요."),
+    staffSections(part.applications, part.today, loadHub, "참여학교 담당자"),
   ];
 }
 

@@ -93,7 +93,7 @@ async def about():
     <li><strong>학생</strong> — 울산 지역 고등학생. 학교 구글 계정으로 가입하고 강좌를 수강신청해요.</li>
     <li><strong>강사</strong> — 거점학교에서 강의하는 선생님(학교 교사, 대학교수 등). 등록을 신청해 승인받아요.</li>
     <li><strong>거점학교 관리교사</strong> — 강사 등록과 강좌 개설을 승인하고, 수업 기록을 살펴봐요.</li>
-    <li><strong>참여학교 교사</strong> — 우리 학교 학생의 수강 현황을 보고, 학생 탈퇴를 승인해요.</li>
+    <li><strong>참여학교 담당자</strong> — 우리 학교 학생의 수강 현황을 보고, 학생 탈퇴를 승인해요.</li>
   </ul>
 </section>
 <section class="cta-row">

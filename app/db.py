@@ -45,6 +45,7 @@ users = Table(
     # 학교 계정으로 처음 로그인했을 때 고른 것: student(학생) staff(선생님 → 강사·관리교사 신청). 비면 아직 안 고름
     Column("self_role", String(10), nullable=False, default=""),
     # 학생 탈퇴 신청: 거점학교 관리교사(또는 전체 관리자)가 승인하면 계정과 기록을 지운다
+    Column("birth", String(10), nullable=False, default=""),  # 생년월일 (선생님 가입 정보, YYYY-MM-DD)
     Column("withdraw_at", Float),  # 신청한 시각 (비면 신청 안 함)
     Column("withdraw_reason", String(300), nullable=False, default=""),
     Column("withdraw_note", String(300), nullable=False, default=""),  # 반려 사유 (학생에게 보임)
@@ -121,9 +122,9 @@ memberships = Table(
     "memberships", metadata,  # 관리교사·강사 등록 신청과 승인 (한 사람이 여러 거점학교·역할을 가질 수 있음)
     Column("id", Integer, primary_key=True),
     Column("user_id", Integer, nullable=False, index=True),
-    Column("role", String(12), nullable=False),  # coordinator(거점학교 관리교사) instructor(강사) participant(참여학교 교사)
+    Column("role", String(12), nullable=False),  # coordinator(거점학교 관리교사) instructor(강사) participant(참여학교 담당자)
     Column("hub_id", Integer, index=True),  # 강사: 신청한 거점학교 / 관리교사: 승인 때 정해짐
-    Column("hub_name", String(60), nullable=False, default=""),  # 관리교사: 신청한 거점학교명 / 참여학교 교사: 소속 학교
+    Column("hub_name", String(60), nullable=False, default=""),  # 관리교사: 신청한 거점학교명 / 참여학교 담당자: 소속 학교
     Column("status", String(10), nullable=False),  # pending(대기) approved(승인) rejected(거절) revoked(해제)
     Column("kind", String(15), nullable=False, default=""),  # (더 이상 쓰지 않음: 예전 정규·보충수업 구분)
     Column("contact", String(100), nullable=False, default=""),
@@ -394,6 +395,7 @@ def init() -> None:
              ("memberships", "license", "VARCHAR(100) NOT NULL DEFAULT ''"),
              ("memberships", "email", "VARCHAR(200) NOT NULL DEFAULT ''"),
              ("courses", "approval", "VARCHAR(10) NOT NULL DEFAULT 'approved'"),
+             ("users", "birth", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("courses", "approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("courses", "approved_by", "INTEGER")]
     for table, col, kind in added:

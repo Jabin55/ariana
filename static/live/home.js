@@ -3,7 +3,7 @@ const params = new URLSearchParams(location.search);
 let ME = null;
 let CONFIG = null;
 
-const views = ["login-view", "consent-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
+const views = ["login-view", "consent-view", "done-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
   $("#mypage-bar").hidden = id === "login-view"; // 로그인 전에는 첫 화면(소개·시작하기)만
@@ -28,8 +28,7 @@ async function boot() {
   ME = CONFIG.user;
   window.WaesolHeader?.render(ME); // 이름·내 정보·로그아웃은 맨 위 머리글에만
   if (!ME) return showLogin();
-  if (ME.needs_terms) return showConsent(); // 회원가입 첫 단계: 학생·선생님 모두 약관 동의부터
-  if (params.get("profile") && !ME.role_choice) return showProfile();
+  // 회원가입: [회원 유형 선택] → [약관 동의] → [가입정보 입력] → [가입완료 안내]
   if (ME.role_choice) {
     // 학교 계정으로 처음 들어옴: 첫 화면에서 고른 것(학생/선생님)이 있으면 그대로, 없으면 물어본다
     const pick = sessionGet("signup_as");
@@ -38,6 +37,8 @@ async function boot() {
     }
     return showRoleChoice();
   }
+  if (ME.needs_terms) return showConsent(); // 학생·선생님 모두 약관 동의 (동의해야 다음 단계)
+  if (params.get("profile")) return showProfile();
   if (ME.role === "guest") return showGuest();
   if (params.get("apply")) return showGuest(true);
   if (ME.needs_profile) return showProfile();
@@ -45,7 +46,38 @@ async function boot() {
   return showStudent();
 }
 
-/* ───── 회원가입 1단계: 이용약관 · 개인정보 수집·이용 동의 ───── */
+/* ───── 회원가입 4단계: 가입완료 안내 ───── */
+
+function showDone(kind, role, place) {
+  show("done-view");
+  $("#lead").hidden = true;
+  const go = (label, fn, primary) => h("button", { class: primary ? "primary" : "", onclick: fn }, label);
+  if (kind === "student") {
+    $("#done-ico").textContent = "🎉";
+    $("#done-title").textContent = "가입이 완료되었어요!";
+    $("#done-body").replaceChildren(
+      h("p", {}, `${ME.name} 학생, 외솔온닷에 오신 걸 환영해요.`),
+      h("ul", { class: "done-list" },
+        h("li", {}, "마이페이지 '수강신청'에서 듣고 싶은 강좌를 신청하세요."),
+        h("li", {}, "강의교사 선생님이 승인하면 수강이 확정되고, 수업 시간에 '지금 들어갈 수 있는 수업'에서 바로 들어가요."),
+        h("li", {}, "듣고 싶은 과목이 없으면 '과목 개설 요청'을 남겨 주세요.")));
+    $("#done-actions").replaceChildren(go("수강신청하러 가기", () => boot(), true), h("a", { class: "button", href: "/live/courses" }, "개설 강좌 둘러보기"));
+    return;
+  }
+  const WHO = { instructor: `${place || "거점학교"} 관리교사`, coordinator: "전체 관리자", participant: "거점학교 관리교사" };
+  const NAME = { instructor: "강의교사", coordinator: "거점학교 관리교사", participant: "참여학교 담당자" };
+  $("#done-ico").textContent = "📨";
+  $("#done-title").textContent = "가입 신청이 완료되었어요";
+  $("#done-body").replaceChildren(
+    h("p", {}, `${ME.name} 선생님의 `, h("strong", {}, `${place ? `${place} ` : ""}${NAME[role] || "교사"}`), " 가입 신청을 받았어요."),
+    h("ul", { class: "done-list" },
+      h("li", {}, h("strong", {}, WHO[role] || "관리자"), "가 확인하고 승인하면 바로 이용할 수 있어요."),
+      h("li", {}, "승인 상황은 로그인하면 이 화면(신청 현황)에서 볼 수 있어요."),
+      role === "instructor" ? h("li", {}, "승인되면 마이페이지 '강좌 개설'에서 강좌를 열 수 있어요.") : null));
+  $("#done-actions").replaceChildren(go("신청 현황 보기", () => boot(), true), h("a", { class: "button", href: "/live/home" }, "처음 화면으로"));
+}
+
+/* ───── 회원가입 2단계: 이용약관 · 개인정보 수집·이용 동의 ───── */
 
 async function showConsent() {
   show("consent-view");
@@ -231,9 +263,11 @@ $("#profile").addEventListener("submit", async (e) => {
   if (ME.role === "student") {
     Object.assign(body, { grade: Number($("#p-grade").value), class_no: Number($("#p-class").value), number: Number($("#p-number").value) });
   }
+  const first = ME.needs_profile; // 처음 가입이면 '가입완료' 안내로
   try {
-    await api("/api/me/profile", body);
-    boot();
+    ME = await api("/api/me/profile", body);
+    if (first && ME.role === "student") showDone("student");
+    else boot();
   } catch (err) { $("#profile-error").textContent = err.message; }
 });
 window.showProfile = showProfile; // 머리글의 '내 정보' 버튼
@@ -290,7 +324,7 @@ $("#withdraw").addEventListener("submit", async (e) => {
 
 /* ───── 관리교사·강사 등록 신청 ───── */
 
-const ROLE_NAME = { coordinator: "거점학교 관리교사", instructor: "강의교사", participant: "참여학교 교사" };
+const ROLE_NAME = { coordinator: "거점학교 관리교사", instructor: "강의교사", participant: "참여학교 담당자" };
 const MEMBER_STATUS = {
   pending: ["pending", "승인 대기"], approved: ["approved", "활동 중"], scheduled: ["pending", "활동 시작 전"],
   expired: ["rejected", "기간 끝남"], rejected: ["rejected", "거절됨"], revoked: ["rejected", "해제됨"],
@@ -302,7 +336,11 @@ async function showGuest(fromTeacher = false) {
   show("guest-view");
   $("#lead").hidden = true;
   $("#apply-back").hidden = !fromTeacher;
-  $("#guest-steps").hidden = fromTeacher || ME.memberships.length > 0;
+  const firstApply = !fromTeacher && !ME.memberships.length;
+  $("#guest-steps").hidden = !firstApply;
+  $("#guest-title").textContent = firstApply ? "교사 가입정보 입력" : "역할 추가 신청 · 신청 현황";
+  $("#a-birth").max = new Date().toISOString().slice(0, 10);
+  if (ME.birth) $("#a-birth").value = ME.birth;
   $("#guest-hint").hidden = fromTeacher;
   $("#to-student").hidden = fromTeacher || !ME.can_be_student;
   if (sessionGet("signup_as") === "student" && !ME.can_be_student) {
@@ -401,11 +439,14 @@ $("#apply").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("#apply-error").textContent = "";
   const role = document.querySelector("input[name=a-role]:checked").value;
+  const first = !ME.memberships.length; // 처음 가입 신청이면 '가입완료' 안내로
+  const place = role === "instructor" ? (CONFIG.schools.length ? $("#a-hub-search").value.trim() : $("#a-hub").selectedOptions[0]?.textContent || "")
+    : $("#a-hub-name").value.trim();
   try {
     await api("/api/staff/apply", {
       role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
       hub_name: role !== "instructor" ? $("#a-hub-name").value : role === "instructor" && CONFIG.schools.length ? $("#a-hub-search").value.trim() : "",
-      name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value,
+      name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value,
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
       assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",
@@ -419,6 +460,7 @@ $("#apply").addEventListener("submit", async (e) => {
         : "신청했어요. 거점학교 관리교사가 승인하면 강좌를 개설할 수 있어요.");
     CONFIG = await api("/api/me");
     ME = CONFIG.user;
+    if (first) return showDone("teacher", role, place);
     showGuest(!$("#apply-back").hidden);
   } catch (err) { $("#apply-error").textContent = err.message; }
 });
@@ -661,6 +703,7 @@ function applicantInfo(x) {
   if (x.affil_type) bits.push(AFFIL_NAME[x.affil_type]);
   if (x.office) bits.push(x.office);
   bits.push(`소속 ${x.affiliation || "없음"}`);
+  if (x.birth) bits.push(`생년월일 ${x.birth.replaceAll("-", ".")}`);
   if (x.license) bits.push(`자격 ${x.license}`);
   bits.push(`이메일 ${x.contact_email || x.email}`);
   if (x.contact_email && x.contact_email !== x.email) bits.push(`(로그인 ${x.email})`);
@@ -670,7 +713,7 @@ function applicantInfo(x) {
 
 function staffCard(x, today, reload) {
   const isCoord = x.role === "coordinator";
-  const named = x.role !== "instructor"; // 관리교사: 거점학교명 / 참여학교 교사: 소속 학교를 고쳐 승인할 수 있다
+  const named = x.role !== "instructor"; // 관리교사: 거점학교명 / 참여학교 담당자: 소속 학교를 고쳐 승인할 수 있다
   const decide = async (body) => {
     try {
       await api(`/api/staff/${x.id}`, body);

@@ -23,11 +23,12 @@
           <p><a href="/live/home">← 처음 화면으로</a></p>
         </div>
         <div class="start-box card" id="start-box">
-          <h2 style="margin:0 0 4px">시작하기</h2>
-          <p class="muted" style="margin:0 0 12px;font-size:0.9rem">처음이면 가입, 이미 가입했으면 같은 버튼으로 로그인돼요.</p>
+<ol class="join-steps"><li class="now">회원 유형 선택</li><li>약관 동의</li><li>가입정보 입력</li><li>가입완료</li></ol>
+          <h2 style="margin:0 0 4px">회원 유형 선택</h2>
+          <p class="muted" style="margin:0 0 12px;font-size:0.9rem">처음이면 가입, 이미 가입했으면 같은 버튼으로 로그인돼요. 구글 계정으로 로그인한 뒤 약관 동의로 넘어가요.</p>
           <div class="start-choices">
-            <button type="button" class="start-choice" data-role="student"><span class="sc-ico">🎒</span><strong>학생으로 시작하기</strong><small>학교 구글 계정으로 수강신청·수업 듣기</small></button>
-            <button type="button" class="start-choice" data-role="staff"><span class="sc-ico">👩‍🏫</span><strong>선생님으로 시작하기</strong><small>강의교사·참여학교 교사·거점학교 관리교사 등록 신청</small></button>
+            <button type="button" class="start-choice" data-role="student"><span class="sc-ico">🎒</span><strong>학생 가입</strong><small>학교 구글 계정으로 수강신청·수업 듣기</small></button>
+            <button type="button" class="start-choice" data-role="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>강의교사 · 거점학교 관리교사 · 참여학교 담당자</small></button>
           </div>
           <div id="login-step" hidden>
             <p class="login-chosen" id="login-chosen"></p>
@@ -47,7 +48,7 @@
 
     <!-- 회원가입 1단계: 약관 동의 (학생·선생님 모두, 동의해야 다음 단계) -->
     <section class="card narrow consent-card" id="consent-view" hidden>
-      <ol class="join-steps"><li class="done">구글 로그인</li><li class="now">약관 동의</li><li>회원 정보 입력</li></ol>
+      <ol class="join-steps"><li class="done">회원 유형 선택</li><li class="now">약관 동의</li><li>가입정보 입력</li><li>가입완료</li></ol>
       <h2 style="margin:6px 0 4px">회원가입 약관 동의</h2>
       <p class="muted" style="margin:0 0 12px;font-size:0.9rem">외솔온닷을 이용하려면 아래 두 가지에 모두 동의해 주세요.</p>
       <label class="switch consent-all"><input type="checkbox" id="c-all"> <strong>전체 동의</strong></label>
@@ -67,20 +68,30 @@
       <p class="error" id="consent-error"></p>
     </section>
 
+    <!-- 4단계: 가입완료 안내 -->
+    <section class="card narrow done-card" id="done-view" hidden>
+      <ol class="join-steps"><li class="done">회원 유형 선택</li><li class="done">약관 동의</li><li class="done">가입정보 입력</li><li class="now">가입완료</li></ol>
+      <div class="done-ico" id="done-ico">🎉</div>
+      <h2 id="done-title">가입이 완료되었어요</h2>
+      <div id="done-body"></div>
+      <div class="row" style="justify-content:center;margin-top:16px" id="done-actions"></div>
+    </section>
+
     <!-- 학교 계정으로 들어왔는데 학생·선생님을 아직 안 고름 -->
     <section class="card narrow" id="role-view" hidden>
-      <h2>어떤 분이세요?</h2>
+      <ol class="join-steps"><li class="now">회원 유형 선택</li><li>약관 동의</li><li>가입정보 입력</li><li>가입완료</li></ol>
+      <h2>회원 유형 선택</h2>
       <p class="muted" style="margin:0 0 12px">학교 구글 계정으로 들어오셨어요. 학생과 선생님이 같은 계정 주소를 쓰는 경우가 있어 한 번만 골라 주세요.</p>
       <div class="start-choices">
-        <button type="button" class="start-choice" data-self="student"><span class="sc-ico">🎒</span><strong>학생이에요</strong><small>수강신청하고 수업 듣기</small></button>
-        <button type="button" class="start-choice" data-self="staff"><span class="sc-ico">👩‍🏫</span><strong>선생님이에요</strong><small>강사·거점학교 관리교사 등록 신청 (승인 뒤 강의)</small></button>
+        <button type="button" class="start-choice" data-self="student"><span class="sc-ico">🎒</span><strong>학생 가입</strong><small>수강신청하고 수업 듣기</small></button>
+        <button type="button" class="start-choice" data-self="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>강의교사 · 거점학교 관리교사 · 참여학교 담당자</small></button>
       </div>
       <p class="error" id="role-error"></p>
     </section>
 
     <!-- 내 정보 -->
     <section class="card narrow" id="profile-view" hidden>
-      <ol class="join-steps" id="profile-steps" hidden><li class="done">구글 로그인</li><li class="done">약관 동의</li><li class="now">회원 정보 입력</li></ol>
+      <ol class="join-steps" id="profile-steps" hidden><li class="done">회원 유형 선택</li><li class="done">약관 동의</li><li class="now">가입정보 입력</li><li>가입완료</li></ol>
       <h2>내 정보</h2>
       <p class="muted" id="profile-hint">선생님이 출석을 확인할 수 있도록 정확하게 적어 주세요.</p>
       <form id="profile">
@@ -99,7 +110,7 @@
         <button class="primary" type="submit">저장</button>
         <p class="error" id="profile-error"></p>
       </form>
-      <button type="button" class="link-btn student-only" id="to-staff" hidden>선생님이신가요? 강사·관리교사 등록 신청으로 →</button>
+      <button type="button" class="link-btn student-only" id="to-staff" hidden>선생님이신가요? 교사 가입으로 →</button>
       <details class="withdraw" id="withdraw-box">
         <summary>회원 탈퇴</summary>
         <p id="withdraw-text"></p>
@@ -117,18 +128,19 @@
 
     <!-- 손님: 강사 등록 신청 -->
     <section class="card narrow" id="guest-view" hidden>
-      <ol class="join-steps" id="guest-steps" hidden><li class="done">구글 로그인</li><li class="done">약관 동의</li><li class="now">회원 정보 입력</li><li>승인</li></ol>
-      <div class="row"><h2 class="grow" style="margin:0">관리교사·강사 등록 신청</h2>
+      <ol class="join-steps" id="guest-steps" hidden><li class="done">회원 유형 선택</li><li class="done">약관 동의</li><li class="now">가입정보 입력</li><li>가입완료</li></ol>
+      <div class="row"><h2 class="grow" style="margin:0" id="guest-title">교사 가입정보 입력</h2>
         <button class="small" id="apply-back" hidden>← 돌아가기</button>
         <button class="small" id="to-student" hidden>학생이에요 →</button></div>
       <div id="my-apps" style="margin:10px 0"></div>
-      <p class="muted" style="font-size:0.9rem;margin:0 0 10px" id="guest-hint">학교 소속이 아니어도(대학교수, 보충수업 강사 등) 강사로 신청할 수 있어요.<br>
+      <p class="muted" style="font-size:0.9rem;margin:0 0 10px" id="guest-hint">학교 소속이 아니어도(대학교수, 보충수업 강사 등) 강의교사로 가입할 수 있어요.<br>
         <strong>학생이라면</strong> 맨 위 오른쪽 <strong>로그아웃</strong>을 누르고 학교에서 받은 구글 계정으로 다시 로그인하세요.</p>
       <form id="apply" class="course-form">
+        <h3 class="wide form-sec">1) 회원 구분</h3>
         <div class="wide role-pick">
           <label class="switch"><input type="radio" name="a-role" value="instructor" checked> <span><strong>강의교사</strong> — 거점학교에서 강의 (그 학교 관리교사가 승인)</span></label>
-          <label class="switch"><input type="radio" name="a-role" value="participant"> <span><strong>참여학교 교사</strong> — 우리 학교 학생의 수강 현황 확인·탈퇴 승인 (거점학교 관리교사가 승인)</span></label>
           <label class="switch"><input type="radio" name="a-role" value="coordinator"> <span><strong>거점학교 관리교사</strong> — 강의교사·강좌 개설 승인 (전체 관리자가 승인)</span></label>
+          <label class="switch"><input type="radio" name="a-role" value="participant"> <span><strong>참여학교 담당자</strong> — 우리 학교 학생의 수강 현황 확인·탈퇴 승인 (거점학교 관리교사가 승인)</span></label>
         </div>
         <label class="wide" id="a-hub-pick">강의할 거점학교 (울산)
           <input id="a-hub-search" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)">
@@ -140,7 +152,9 @@
         <label class="wide" id="a-hub-name-wrap" hidden><span id="a-hub-name-label">관리할 거점학교 (울산)</span>
           <input id="a-hub-name" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)"></label>
         <datalist id="school-options"></datalist>
-        <label>이름 <input id="a-name" maxlength="30" required></label>
+        <h3 class="wide form-sec">2) 회원 정보</h3>
+        <label>이름 (실명) <input id="a-name" maxlength="30" required></label>
+        <label>생년월일 <input id="a-birth" type="date" min="1920-01-01" required></label>
         <label>소속 구분
           <select id="a-affil-type" required>
             <option value="cert">교원자격 소지자 (미임용)</option>
@@ -158,7 +172,7 @@
         </div>
         <label class="wide" id="a-msg-wrap" hidden>하고 싶은 말 (선택) <textarea id="a-msg" maxlength="500" rows="3"></textarea></label>
         <label class="wide pledge"><span><input type="checkbox" id="a-pledge" required> <strong>개인정보 보호 서약</strong>에 동의 <span class="muted">(필수)</span></span><span id="pledge-text" class="muted"></span></label>
-        <button class="primary wide" type="submit" id="apply-btn">신청하기</button>
+        <button class="primary wide" type="submit" id="apply-btn">가입 신청</button>
       </form>
       <p class="error" id="apply-error"></p>
     </section>
@@ -297,7 +311,7 @@
       </div>
 
       <div data-panel="school" hidden>
-        <p class="muted">참여학교 교사 화면이에요. 우리 학교 학생의 수강 현황을 보고, 학생 탈퇴를 승인해요.</p>
+        <p class="muted">참여학교 담당자 화면이에요. 우리 학교 학생의 수강 현황을 보고, 학생 탈퇴를 승인해요.</p>
         <div id="school-list"></div>
       </div>
 

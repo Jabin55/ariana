@@ -6,7 +6,7 @@
 - 강사 신청: 등록된 거점학교 하나를 고르고 희망 기간을 적는다. 그 거점학교 관리교사(또는 전체 관리자)가
   활동 기간(희망 기간이 미리 채워짐, 끝나는 날 필수)을 정해 승인한다.
 - 활동 기간이 지나거나 해제되면 바로 권한이 꺼진다(그 거점학교 강좌 관리·수업 열기도 막힌다. 기록은 남는다).
-- 참여학교 교사 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 거점학교 관리교사(또는 전체 관리자)가 승인하면 그 학교 학생의
+- 참여학교 담당자 신청: 울산 고등학교 목록에서 소속 학교를 고른다. 거점학교 관리교사(또는 전체 관리자)가 승인하면 그 학교 학생의
   수강 현황을 보고 탈퇴를 승인한다.
 - 한 사람이 여러 거점학교·역할을 가질 수 있다(예: A고 관리교사이면서 B고 강사).
 """
@@ -32,7 +32,7 @@ from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
 
 router = APIRouter()
-ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사", "participant": "참여학교 교사"}
+ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사", "participant": "참여학교 담당자"}
 
 
 async def login_required(request: Request) -> dict:
@@ -44,7 +44,7 @@ async def login_required(request: Request) -> dict:
 
 def can_manage(u: dict, m) -> bool:
     """관리교사 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자,
-    참여학교 교사 신청은 거점학교 관리교사(어느 학교든)나 전체 관리자가 처리한다."""
+    참여학교 담당자 신청은 거점학교 관리교사(어느 학교든)나 전체 관리자가 처리한다."""
     if u["is_admin"]:
         return True
     if m.role == "participant":
@@ -68,7 +68,7 @@ async def list_hubs(request: Request):
 
 class ApplyReq(BaseModel):
     role: str = Field(pattern="^(coordinator|instructor|participant)$")
-    hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 교사: 소속 학교
+    hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 담당자: 소속 학교
     hub_id: int | None = None  # 강사: 거점학교 고르기
     name: str = Field(min_length=1, max_length=30)
     affiliation: str = Field(default="", max_length=60)  # 소속 학교·대학·기관 (없으면 비움)
@@ -78,6 +78,7 @@ class ApplyReq(BaseModel):
     license: str = Field(default="", max_length=100)  # 교원자격 (교원자격 소지자)
     email: str = Field(default="", max_length=200)  # 연락받을 이메일
     contact: str = Field(min_length=1, max_length=100)  # 연락처 (전화번호)
+    birth: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 생년월일
     assistant: bool = False  # 강사: 팀티칭 보조교사로 참여 (강좌를 직접 열지 않고 다른 강사의 강좌를 돕는다)
     message: str = Field(default="", max_length=500)  # 관리교사만 (강사 신청서에는 없음)
     wish_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 강사: 희망 기간
@@ -101,6 +102,10 @@ async def apply(req: ApplyReq, request: Request):
     u = await login_required(request)
     if not req.pledge:
         raise HTTPException(400, "개인정보 보호 서약에 동의해야 신청할 수 있어요.")
+    if req.birth:
+        check_dates(req.birth, "", "생년월일")
+        if not ("1920-01-01" <= req.birth <= today_kst()):
+            raise HTTPException(400, "생년월일을 확인해 주세요.")
     hub_name = req.hub_name.strip()
     if req.role in ("coordinator", "participant"):
         what = "거점학교" if req.role == "coordinator" else "소속 학교"
@@ -144,9 +149,10 @@ async def apply(req: ApplyReq, request: Request):
             if req.role == "instructor" and not c.execute(select(db.hubs.c.id).where(db.hubs.c.id == hub_id)).first():
                 raise HTTPException(404, "거점학교를 찾을 수 없어요.")
             # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
-            c.execute(update(db.users).where(db.users.c.id == u["id"])
-                      .values(name=req.name.strip(), school=req.affiliation.strip(),
-                              terms_version=POLICY_VERSION, terms_at=now))
+            who = {"name": req.name.strip(), "school": req.affiliation.strip(), "terms_version": POLICY_VERSION, "terms_at": now}
+            if req.birth:
+                who["birth"] = req.birth
+            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**who))
             same = (m.hub_id == hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
             values = {"contact": req.contact.strip(), "pledge_at": now, "affil_type": req.affil_type,
@@ -191,7 +197,8 @@ async def applications(role: str, request: Request):
     def run():
         m = db.memberships.c
         with db.engine.connect() as c:
-            q = (select(db.memberships, db.users.c.name, db.users.c.email, db.users.c.school, db.users.c.google_name)
+            q = (select(db.memberships, db.users.c.name, db.users.c.email, db.users.c.school, db.users.c.google_name,
+                        db.users.c.birth)
                  .join(db.users, db.users.c.id == m.user_id).where(m.role == role))
             if not u["is_admin"] and role == "instructor":
                 q = q.where(m.hub_id.in_(hubs))
@@ -209,7 +216,7 @@ async def applications(role: str, request: Request):
                     "wish_from": x["wish_from"], "wish_until": x["wish_until"], "contact": x["contact"],
                     "message": x["message"], "admin_note": x["admin_note"], "pledged": bool(x["pledge_at"]),
                     "kind": x["kind"], "affil_type": x["affil_type"], "office": x["office"], "license": x["license"],
-                    "contact_email": x["email"],
+                    "contact_email": x["email"], "birth": x["birth"] or "",
                     "requested_at": x["requested_at"]})
     return {"applications": out, "today": today_kst()}
 

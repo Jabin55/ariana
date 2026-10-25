@@ -1035,3 +1035,8 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
   80% { opacity: 1; transform: translate(-50%, -55%) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -75%) scale(0.9); }
 }
+.form-sec { margin: 8px 0 0; padding-bottom: 6px; border-bottom: 2px solid var(--accent); font-size: 1rem; color: var(--accent); }
+.done-card { text-align: center; }
+.done-card .join-steps { justify-content: center; }
+.done-ico { font-size: 3.4rem; margin: 6px 0 0; }
+.done-list { text-align: left; display: inline-block; margin: 6px auto 0; line-height: 1.9; }

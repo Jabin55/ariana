@@ -30,11 +30,11 @@
     if (u.is_admin) return "전체 관리자";
     if (u.role_choice) return "가입 중";
     if (u.role !== "teacher") return { student: "학생", guest: "등록 신청" }[u.role] || "";
-    // 선생님: 가진 역할을 모두 (강의교사 · 거점학교 관리교사 · 참여학교 교사)
+    // 선생님: 가진 역할을 모두 (강의교사 · 거점학교 관리교사 · 참여학교 담당자)
     const names = [];
     if (u.lead_hubs?.length || u.teach_hubs?.length) names.push("강의교사");
     if (u.coordinator_hubs?.length) names.push("관리교사");
-    if (u.participant_schools?.length) names.push("참여학교 교사");
+    if (u.participant_schools?.length) names.push("참여학교 담당자");
     return names.join("·") || "강의교사";
   };
   function render(u) {
