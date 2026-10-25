@@ -327,8 +327,7 @@ async def catalog():
 async def courses_page():
     return site_page("수업신청", """
 <section class="info-block">
-  <div class="row"><p class="grow" style="margin:0">지금 수강신청을 받는 강좌예요. 신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
-  <a class="button primary" href="/live">로그인하고 신청하기</a></div>
+  <p style="margin:0">지금 수강신청을 받는 강좌예요. 신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
   <div class="row" style="margin-top:12px">
     <input id="q" placeholder="강좌·선생님·학교 검색" style="flex:1;min-width:180px">
     <select id="g"><option value="">모든 학년</option><option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option></select>
