@@ -37,12 +37,18 @@ async function courseForm(c, done) {
   const file = h("input", { type: "file", accept: ".pdf,.hwp,.hwpx,.docx,.doc" });
 
   // 거점학교: 새 강좌는 강의할 수 있는 거점학교 중에서 (보조교사로만 승인된 곳 제외)
+  // 거점학교는 반드시 울산 고등학교: 강사는 승인받은 거점학교 중에서, 전체 관리자는 울산 고등학교 목록 전체에서 고른다
   const leadHubs = ME.lead_hubs || [];
-  const hubSel = h("select", {}, leadHubs.map((x) => h("option", { value: x.id }, x.name)));
-  const hubText = h("input", { maxlength: 60, placeholder: "강의를 운영하는 학교" });
+  const byName = !leadHubs.length || ME.is_admin; // 학교 이름으로 고르기 (전체 관리자 등)
+  const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...((typeof CONFIG !== "undefined" && CONFIG?.schools) || [])])].sort();
+  const hubSel = h("select", { required: true }, h("option", { value: "" }, "거점학교를 고르세요"),
+    byName ? schoolNames.map((n) => h("option", { value: n }, n)) : leadHubs.map((x) => h("option", { value: x.id }, x.name)));
+  if (!byName && leadHubs.length === 1) hubSel.value = String(leadHubs[0].id);
   const hubBox = isNew
-    ? (leadHubs.length ? field("거점학교", hubSel) : field("거점학교명", hubText))
+    ? h("div", { style: "display:grid;gap:4px" }, field("거점학교 (울산 고등학교)", hubSel),
+      byName && !schoolNames.length ? h("p", { class: "error", style: "margin:0" }, "울산 고등학교 목록이 비어 있어요. 전체 관리 → 🏫 울산 고등학교 목록을 먼저 채워 주세요.") : null)
     : h("div", {}, "거점학교 ", h("strong", {}, c.hub_school || "-"));
+  const hubIdNow = () => (isNew ? (byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value) || null) : c.hub_id);
 
   // 팀티칭: 같은 거점학교에서 활동 중인 강사 중 보조교사를 고른다
   const team = h("input", { type: "checkbox", checked: c.team_teaching });
@@ -51,8 +57,8 @@ async function courseForm(c, done) {
   async function loadCo() {
     coBox.replaceChildren();
     if (!team.checked) return;
-    const hubId = isNew ? Number(hubSel.value) : c.hub_id;
-    if (!hubId) { coBox.append(h("p", { class: "muted" }, "팀티칭은 거점학교 강좌에서만 할 수 있어요.")); return; }
+    const hubId = hubIdNow();
+    if (!hubId) { coBox.append(h("p", { class: "muted" }, "이 거점학교에 승인된 강사가 아직 없어요. 강사가 이 학교로 등록 승인을 받으면 보조교사로 고를 수 있어요.")); return; }
     try {
       const { teachers } = await api(`/api/hubs/${hubId}/teachers`);
       coBox.append(h("div", { class: "muted", style: "font-size:0.85rem" }, "보조교사 (이 거점학교에서 승인받은 강사 중에서 골라요)"),
@@ -109,10 +115,15 @@ async function courseForm(c, done) {
       description: desc.value.trim(), team_teaching: team.checked, co_teachers: team.checked ? [...coChosen] : [],
     };
     if (isNew) {
-      body.hub_id = leadHubs.length ? Number(hubSel.value) : null;
-      body.hub_school = leadHubs.length ? "" : hubText.value;
+      if (!hubSel.value) { err.textContent = "거점학교를 골라 주세요. 거점학교 없이는 강좌를 열 수 없어요."; return; }
+      body.hub_id = byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || null) : Number(hubSel.value);
+      body.hub_school = body.hub_id ? "" : hubSel.value;
     }
     if (body.exam_ratio + body.perf_ratio !== 100) { err.textContent = "지필평가와 수행평가 비율을 더하면 100%가 되어야 해요."; return; }
+    // 같은 이름의 강좌가 이미 있으면 한 번 더 묻는다 (학생이 다른 강좌에 신청해 수업에 못 들어오는 일을 막기)
+    const same = (typeof teacherCourses !== "undefined" ? teacherCourses : [])
+      .filter((x) => !x.archived && x.id !== c.id && x.title.trim() === body.title);
+    if (same.length && !confirm(`'${body.title}' 강좌가 이미 ${same.length}개 있어요. 같은 이름의 강좌를 또 만들까요?\n(같은 강좌라면 '취소'를 누르세요. 학생이 다른 쪽 강좌에 신청하면 수업에 못 들어와요.)`)) return;
     try {
       let id = c.id;
       if (isNew) ({ id } = await api("/api/courses", body));

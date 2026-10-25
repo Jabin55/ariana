@@ -305,9 +305,15 @@ async function showGuest(fromTeacher = false) {
         m.role === "coordinator" ? "전체 관리자가 승인하면 관리교사 기능이 켜져요." : `${m.hub} 관리교사가 승인하면 강좌를 개설할 수 있어요.`) : null);
   }));
   // 거점학교 목록 (강사 신청용)
-  const { hubs } = await api("/api/hubs");
-  $("#a-hub").replaceChildren(...(hubs.length ? hubs.map((x) => h("option", { value: x.id }, x.name))
-    : [h("option", { value: "" }, "아직 등록된 거점학교가 없어요")]));
+  // 강사 거점학교: 울산 고등학교 목록에서 검색해 고른다 (목록이 아직 없으면 등록된 거점학교 중에서)
+  const useList = CONFIG.schools.length > 0;
+  $("#a-hub-search").hidden = !useList;
+  $("#a-hub").hidden = useList;
+  if (!useList) {
+    const { hubs } = await api("/api/hubs");
+    $("#a-hub").replaceChildren(...(hubs.length ? hubs.map((x) => h("option", { value: x.id }, x.name))
+      : [h("option", { value: "" }, "아직 등록된 거점학교가 없어요")]));
+  }
   updateApplyRole();
 }
 
@@ -341,7 +347,9 @@ function updateApplyRole() {
   const role = document.querySelector("input[name=a-role]:checked").value;
   $("#a-kind-wrap").hidden = role !== "instructor";
   $("#a-hub-pick").hidden = role !== "instructor";
-  $("#a-hub").required = role === "instructor";
+  const useList = CONFIG.schools.length > 0;
+  $("#a-hub").required = role === "instructor" && !useList;
+  $("#a-hub-search").required = role === "instructor" && useList;
   $("#a-hub-name-wrap").hidden = role !== "coordinator";
   $("#a-hub-name").required = role === "coordinator";
   $("#a-wish-wrap").hidden = role !== "instructor";
@@ -357,8 +365,8 @@ $("#apply").addEventListener("submit", async (e) => {
   const role = document.querySelector("input[name=a-role]:checked").value;
   try {
     await api("/api/staff/apply", {
-      role, hub_id: role === "instructor" ? Number($("#a-hub").value) || null : null,
-      hub_name: role === "coordinator" ? $("#a-hub-name").value : "",
+      role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
+      hub_name: role === "coordinator" ? $("#a-hub-name").value : role === "instructor" && CONFIG.schools.length ? $("#a-hub-search").value.trim() : "",
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value,
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
@@ -729,7 +737,10 @@ async function renderMembers(c, box) {
   const { enrollments } = await api(`/api/courses/${c.id}/enrollments`);
   const decide = async (e, status) => {
     if (status === "removed" && !confirm(`${e.name} 학생을 이 강좌에서 뺄까요?`)) return;
-    await api(`/api/courses/${c.id}/enrollments/${e.user_id}`, { status });
+    try {
+      await api(`/api/courses/${c.id}/enrollments/${e.user_id}`, { status });
+      if (status === "approved") toast(c.hub_id && !c.can_finalize ? `${e.name} 학생을 승인했어요. 거점학교 관리교사가 최종 승인하면 수강 확정돼요.` : `${e.name} 학생이 수강 확정됐어요.`);
+    } catch (err) { toast(err.message, 6000); }
     loadTeacherCourses();
   };
   const group = (status, title, actions) => {
@@ -737,9 +748,11 @@ async function renderMembers(c, box) {
     if (!list.length) return null;
     return h("div", { class: "box", style: "margin-top:8px" },
       h("div", { class: "row" }, h("strong", { class: "grow" }, `${title} ${list.length}명`),
-        status === "pending" ? h("button", { class: "small primary", onclick: async () => {
-          const r = await api(`/api/courses/${c.id}/approve-all`, {});
-          toast(`${r.approved}명을 승인했어요.`);
+        status === "pending" || (status === "instructor_ok" && c.can_finalize) ? h("button", { class: "small primary", onclick: async () => {
+          try {
+            const r = await api(`/api/courses/${c.id}/approve-all`, {});
+            toast(`${r.approved}명을 승인했어요.`);
+          } catch (err) { toast(err.message, 6000); }
           loadTeacherCourses();
         } }, "모두 승인") : null),
       h("div", { class: "people" }, list.map((e) => h("div", { class: "person" },
@@ -749,7 +762,7 @@ async function renderMembers(c, box) {
   };
   box.replaceChildren(...[
     group("pending", "승인 대기 (강사 1차 승인)", [["승인", "approved", "primary"], ["거절", "rejected"]]),
-    group("instructor_ok", "관리교사 최종 승인 대기", [["빼기", "removed", "danger"]]),
+    group("instructor_ok", "관리교사 최종 승인 대기", c.can_finalize ? [["최종 승인", "approved", "primary"], ["빼기", "removed", "danger"]] : [["빼기", "removed", "danger"]]),
     group("approved", "수강 확정", [["빼기", "removed", "danger"]]),
     group("rejected", "거절함", [["승인", "approved"], ["삭제", "removed"]]),
   ].filter(Boolean));
@@ -834,8 +847,8 @@ function schoolsEditor() {
   const ta = h("textarea", { rows: 8, placeholder: "한 줄에 학교 하나씩, 정식 이름으로\n예)\n신정고등학교\n울산고등학교", value: (CONFIG.schools || []).join("\n") });
   const count = h("span", { class: "muted" }, `지금 ${CONFIG.schools.length}개`);
   return h("details", { class: "card", style: "margin:12px 0", open: !CONFIG.schools.length || null },
-    h("summary", {}, h("strong", {}, "🏫 학생 학교 목록 "), count),
-    h("p", { class: "muted", style: "font-size:0.9rem" }, "학생은 가입할 때 이 목록에서 학교를 골라요(직접 쓸 수 없어 이름이 줄여 쓰이지 않아요). 비워 두면 학생이 직접 적어요."),
+    h("summary", {}, h("strong", {}, "🏫 울산 고등학교 목록 "), count),
+    h("p", { class: "muted", style: "font-size:0.9rem" }, "학생 소속 학교, 관리교사·강사가 고르는 거점학교, 강좌의 거점학교를 모두 이 목록에서 골라요(직접 쓸 수 없어 이름이 줄여 쓰이지 않아요). 정식 이름으로 한 줄에 하나씩 적어 주세요."),
     ta,
     h("div", { class: "row", style: "margin-top:8px" }, h("button", { class: "primary", onclick: async () => {
       try {

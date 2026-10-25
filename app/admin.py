@@ -21,6 +21,7 @@ from sqlalchemy import delete, func, insert, select, update
 
 from app import db
 from app.auth import PLEDGE, current_user, get_schools, membership_status, today_kst
+from app.courses import hub_for_school
 from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
 
@@ -110,8 +111,13 @@ async def apply(req: ApplyReq, request: Request):
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", req.email.strip()):
             raise HTTPException(400, "연락받을 이메일 주소를 정확히 적어 주세요.")
     if req.role == "instructor":
-        if not req.hub_id:
+        # 강사: 울산 고등학교 목록에서 거점학교를 고른다 (관리교사가 아직 없는 학교면 전체 관리자가 승인)
+        if not req.hub_id and not hub_name:
             raise HTTPException(400, "강의할 거점학교를 골라 주세요.")
+        if not req.hub_id:
+            schools = await db.run(get_schools)
+            if schools and hub_name not in schools:
+                raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
         if not (req.wish_from and req.wish_until):
             raise HTTPException(400, "희망 기간(시작일·종료일)을 적어 주세요.")
         check_dates(req.wish_from, req.wish_until, "희망 기간")
@@ -122,13 +128,16 @@ async def apply(req: ApplyReq, request: Request):
     def run():
         m = db.memberships.c
         with db.engine.begin() as c:
-            if req.role == "instructor" and not c.execute(select(db.hubs.c.id).where(db.hubs.c.id == req.hub_id)).first():
+            hub_id = req.hub_id
+            if req.role == "instructor" and not hub_id:
+                hub_id = hub_for_school(c, hub_name)
+            if req.role == "instructor" and not c.execute(select(db.hubs.c.id).where(db.hubs.c.id == hub_id)).first():
                 raise HTTPException(404, "거점학교를 찾을 수 없어요.")
             # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
             c.execute(update(db.users).where(db.users.c.id == u["id"])
                       .values(name=req.name.strip(), school=req.affiliation.strip(),
                               terms_version=POLICY_VERSION, terms_at=now))
-            same = (m.hub_id == req.hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
+            same = (m.hub_id == hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
             values = {"contact": req.contact.strip(), "pledge_at": now, "affil_type": req.affil_type,
                       "office": req.office if req.affil_type == "school" else "",
@@ -149,7 +158,8 @@ async def apply(req: ApplyReq, request: Request):
             else:
                 c.execute(insert(db.memberships).values(
                     user_id=u["id"], role=req.role, status="pending", requested_at=now,
-                    hub_id=req.hub_id if req.role == "instructor" else None, hub_name=hub_name, **values))
+                    hub_id=hub_id if req.role == "instructor" else None,
+                    hub_name=hub_name if req.role == "coordinator" else "", **values))
 
     await db.run(run)
     return {"ok": True}

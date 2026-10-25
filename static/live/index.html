@@ -108,7 +108,9 @@
           <label class="switch"><input type="radio" name="a-role" value="instructor" checked> <span><strong>강사</strong> — 거점학교에서 강의 (그 학교 관리교사가 승인)</span></label>
           <label class="switch"><input type="radio" name="a-role" value="coordinator"> <span><strong>거점학교 관리교사</strong> — 강사·수강신청 관리 (전체 관리자가 승인)</span></label>
         </div>
-        <label class="wide" id="a-hub-pick">강의할 거점학교 <select id="a-hub" required></select></label>
+        <label class="wide" id="a-hub-pick">강의할 거점학교 (울산)
+          <input id="a-hub-search" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)">
+          <select id="a-hub" hidden></select></label>
         <div class="wide role-pick" id="a-kind-wrap">참여 형태
           <label class="switch"><input type="radio" name="a-kind" value="main" checked> <span><strong>주강사</strong> — 강좌를 직접 열고 운영해요</span></label>
           <label class="switch"><input type="radio" name="a-kind" value="assistant"> <span><strong>팀티칭 보조교사</strong> — 주강사가 연 강좌에 함께 들어가 수업을 도와요</span></label>

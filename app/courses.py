@@ -45,6 +45,13 @@ def hub_locked(course, t: dict) -> bool:
     return bool(course.hub_id) and not t["is_admin"] and course.hub_id not in {h["id"] for h in t["teach_hubs"]}
 
 
+def hub_for_school(c, name: str) -> int:
+    """울산 고등학교 이름으로 거점학교 번호를 찾고, 아직 없으면 만든다 (관리교사가 없어도 전체 관리자가 승인)"""
+    name = " ".join(name.split())
+    hub = c.execute(select(db.hubs).where(func.lower(db.hubs.c.name) == name.lower())).first()
+    return hub.id if hub else c.execute(insert(db.hubs).values(name=name, created_at=time.time())).inserted_primary_key[0]
+
+
 def co_teacher_ids(r) -> list[int]:
     """팀티칭 보조교사 (사용자 번호)"""
     return [int(x) for x in (getattr(r, "co_teachers", "") or "").split(",") if x.strip().isdigit()]
@@ -302,6 +309,7 @@ async def my_courses(request: Request):
     rows, counts, names = await db.run(run)
     return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t), "description": r.description,
                          "lead": r.teacher_id == t["id"], "owner_name": names.get(r.teacher_id, ""),
+                         "can_finalize": bool(r.hub_id) and can_finalize(r, t),
                          "co_teachers": [{"id": i, "name": names.get(i, "")} for i in co_teacher_ids(r)]}
                         for r in rows]}
 
@@ -312,29 +320,36 @@ async def create_course(req: CourseReq, request: Request):
     check_period(req.start_date, req.end_date)
     independent = t["email"].lower() in auth.ADMIN_EMAILS | auth.TEACHER_EMAILS  # 거점학교 밖에서도 강좌를 열 수 있음
     teach_hubs = {h["id"]: h["name"] for h in t["lead_hubs"]}
+    schools = await db.run(auth.get_schools)
+    hub_school = " ".join(req.hub_school.split())
     if req.hub_id is not None:
         if req.hub_id not in teach_hubs and not t["is_admin"]:
             if req.hub_id in {h["id"] for h in t["teach_hubs"]}:
                 raise HTTPException(403, "팀티칭 보조교사는 강좌를 직접 열 수 없어요. 주강사가 강좌를 열 때 보조교사로 넣어 줘요.")
             raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
-    elif not independent:
-        raise HTTPException(400, "강좌를 개설할 거점학교를 골라 주세요.")
-    elif not req.hub_school.strip():
-        raise HTTPException(400, "거점학교명을 적어 주세요.")
+    elif not hub_school:
+        raise HTTPException(400, "거점학교를 골라 주세요. 거점학교 없이는 강좌를 열 수 없어요.")
+    elif schools and hub_school not in schools:
+        raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
+    elif not (t["is_admin"] or independent):
+        raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
     extra = subject_values(req.model_dump())
 
     def run():
         with db.engine.begin() as c:
-            co_teachers = check_co_teachers(c, req.hub_id, t["id"], req.co_teachers) if req.team_teaching else ""
-            hub_school = req.hub_school.strip()
-            if req.hub_id is not None:
-                hub = c.execute(select(db.hubs).where(db.hubs.c.id == req.hub_id)).first()
+            hub_id = req.hub_id
+            if hub_id is None and t["is_admin"]:  # 전체 관리자: 울산 고등학교 이름 → 거점학교 (없으면 만든다)
+                hub_id = hub_for_school(c, hub_school)
+            co_teachers = check_co_teachers(c, hub_id, t["id"], req.co_teachers) if req.team_teaching else ""
+            name = hub_school
+            if hub_id is not None:
+                hub = c.execute(select(db.hubs).where(db.hubs.c.id == hub_id)).first()
                 if not hub:
                     raise HTTPException(404, "거점학교를 찾을 수 없어요.")
-                hub_school = hub.name
+                name = hub.name
             return c.execute(insert(db.courses).values(
                 teacher_id=t["id"], title=req.title.strip(), description=req.description.strip(),
-                instructor=req.instructor.strip(), hub_school=hub_school, hub_id=req.hub_id,
+                instructor=req.instructor.strip(), hub_school=name, hub_id=hub_id,
                 start_date=req.start_date, end_date=req.end_date, grades=grades_text(req.grades),
                 school=t["school"] or "", open=1, archived=0, created_at=time.time(),
                 co_teachers=co_teachers, **extra)).inserted_primary_key[0]
@@ -510,9 +525,17 @@ class DecideReq(BaseModel):
     note: str = Field(default="", max_length=300)  # 거절 사유 (학생에게 보임)
 
 
-def after_instructor_ok(course) -> str:
-    """강사가 승인한 뒤 상태: 거점학교 강좌면 관리교사 최종 승인 대기, 아니면 바로 확정"""
-    return "instructor_ok" if course.hub_id else "approved"
+def can_finalize(course, t: dict) -> bool:
+    """이 사람이 그 거점학교의 최종 승인 권한(관리교사·전체 관리자)도 가졌는지"""
+    return bool(t["is_admin"] or course.hub_id in {h["id"] for h in t["coordinator_hubs"]})
+
+
+def after_instructor_ok(course, t: dict) -> dict:
+    """강사가 승인한 뒤 상태: 거점학교 강좌면 관리교사 최종 승인 대기, 아니면 바로 확정.
+    승인한 강사가 그 거점학교 관리교사(또는 전체 관리자)이기도 하면 두 번 승인할 필요 없이 바로 확정."""
+    if course.hub_id and not can_finalize(course, t):
+        return {"status": "instructor_ok"}
+    return {"status": "approved", "coordinator_by": t["id"] if course.hub_id else None}
 
 
 @router.post("/api/courses/{course_id}/enrollments/{user_id}")
@@ -535,7 +558,10 @@ async def decide(course_id: int, user_id: int, req: DecideReq, request: Request)
                     status="rejected", decided_at=time.time(), instructor_by=t["id"], note=req.note.strip()))
             elif row.status in ("pending", "rejected"):
                 c.execute(update(db.enrollments).where(cond).values(
-                    status=after_instructor_ok(course), decided_at=time.time(), instructor_by=t["id"], note=""))
+                    **after_instructor_ok(course, t), decided_at=time.time(), instructor_by=t["id"], note=""))
+            elif row.status == "instructor_ok" and can_finalize(course, t):  # 관리교사이기도 하면 여기서 최종 승인
+                c.execute(update(db.enrollments).where(cond).values(
+                    status="approved", decided_at=time.time(), coordinator_by=t["id"]))
 
     await db.run(run)
     return {"ok": True}
@@ -549,9 +575,13 @@ async def approve_all(course_id: int, request: Request):
     def run():
         e = db.enrollments.c
         with db.engine.begin() as c:
-            return c.execute(update(db.enrollments).where(e.course_id == course_id, e.status == "pending")
-                             .values(status=after_instructor_ok(course), decided_at=time.time(),
-                                     instructor_by=t["id"])).rowcount
+            n = c.execute(update(db.enrollments).where(e.course_id == course_id, e.status == "pending")
+                          .values(**after_instructor_ok(course, t), decided_at=time.time(),
+                                  instructor_by=t["id"])).rowcount
+            if can_finalize(course, t):  # 관리교사이기도 하면 최종 승인 대기 학생도 함께 확정
+                n += c.execute(update(db.enrollments).where(e.course_id == course_id, e.status == "instructor_ok")
+                               .values(status="approved", decided_at=time.time(), coordinator_by=t["id"])).rowcount
+            return n
 
     return {"approved": await db.run(run)}
 
