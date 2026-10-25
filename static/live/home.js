@@ -460,6 +460,25 @@ async function loadCourses() {
     } catch (err) { toast(err.message); }
     loadCourses();
   };
+  // 수강신청 목록: 대상학년 · 학기 · 강좌명 · 학점 · 인원 · 거점학교 · 성취도 · 평가방식만
+  const enrollLine = (c) => {
+    const grades = c.grades?.length ? `${c.grades.join("·")}학년` : "전 학년";
+    const term = c.term ? `${c.school_year ? `${c.school_year}학년도 ` : ""}${c.term}` : "";
+    const bits = [
+      c.credits ? `${c.credits}학점` : "",
+      c.capacity ? `정원 ${c.capacity}명` : "인원 제한 없음",
+      c.hub_school,
+      c.achievement_text ? `성취도 ${c.achievement_text}` : "",
+      c.exam_ratio != null && c.perf_ratio != null ? `평가 지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "",
+    ].filter(Boolean);
+    return h("div", { class: "course-line enroll-line" },
+      h("div", { class: "grow" },
+        h("div", { class: "enroll-head" }, h("span", { class: "chip" }, grades), term ? h("span", { class: "chip" }, term) : null,
+          h("strong", {}, c.title)),
+        h("div", { class: "muted enroll-facts" }, bits.flatMap((x, i) => [i ? " · " : "", h("span", { class: "nowrap" }, x)])),
+        c.status ? h("span", { class: `status ${c.status}`, title: c.note ? `사유: ${c.note}` : "" },
+          ENROLL_STATUS[c.status] + (c.note ? ` (${c.note})` : "")) : null));
+  };
   const line = (c) => h("div", { class: "course-line" },
     h("div", { class: "grow" }, h("strong", {}, c.title), courseInfo(c),
       (c.description || courseFacts(c)) ? h("details", { class: "course-more" }, h("summary", {}, "자세히 보기"),
@@ -473,7 +492,7 @@ async function loadCourses() {
   $("#my-courses").replaceChildren(...mine.map((c) => h("div", { class: "row" }, line(c),
     h("button", { class: "small", onclick: () => enrollBtn(c, "DELETE") }, c.status === "pending" ? "신청 취소" : "수강 취소"))));
   if (!mine.length) $("#my-courses").append(h("span", { class: "muted" }, "아직 수강 중인 강좌가 없어요."));
-  $("#open-courses").replaceChildren(...others.map((c) => h("div", { class: "row" }, line(c),
+  $("#open-courses").replaceChildren(...others.map((c) => h("div", { class: "row" }, enrollLine(c),
     c.recruit === "open" ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
       : c.recruit === "before" ? h("span", { class: "muted" }, `모집 예정 (${fmtDate(c.recruit_start)}부터)`)
         : h("span", { class: "muted" }, "마감"))));

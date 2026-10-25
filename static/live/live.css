@@ -939,3 +939,8 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .log-table .pick-row:hover, .log-table .pick-row.on { background: var(--accent-soft); }
 .log-table td.num { text-align: center; width: 4em; }
 .link { color: var(--accent); text-decoration: underline; font-size: 0.85rem; }
+.enroll-line { align-items: flex-start; }
+.enroll-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.enroll-head .chip { font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.enroll-facts { font-size: 0.85rem; margin-top: 3px; }
+.nowrap { white-space: nowrap; }
