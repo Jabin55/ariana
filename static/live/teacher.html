@@ -25,6 +25,11 @@
     <div class="workspace">
       <main class="mainarea">
         <div id="banners"></div>
+        <div class="banner" id="debate-bar" hidden>
+          <strong>🗣️ 토론 화면</strong>
+          <select id="debate-a"></select> <span>vs</span> <select id="debate-b"></select>
+          <button class="small primary" id="debate-apply" type="button">학생 화면에 띄우기</button>
+        </div>
         <div class="banner warn" id="rtc-warn" hidden></div>
         <div id="activity-mini"></div>
 
@@ -70,16 +75,11 @@
             <span class="big" id="share-code"></span>
             <span class="muted" id="share-url" style="font-size:0.85rem"></span>
           </div>
-          <div class="box">
-            <label class="switch"><input type="checkbox" id="set-chat"> 학생 채팅 허용</label>
-            <label class="switch"><input type="checkbox" id="set-ai"> AI 조교 허용</label>
-            <label class="switch"><input type="checkbox" id="set-lowbw"> 데이터 절약 모드</label>
-            <p class="muted hint">학생 카메라는 모둠 활동 때와 선생님이 켜 줄 때만 켜지고, 영상 화질을 낮춰요. 학생 한 명이 받는 데이터가 약 1/2~1/3로 줄어요(4시간 수업에 약 0.5~1.3GB). 화상 서버 비용을 줄이려면 켜 두세요.</p>
-          </div>
-          <div class="row">
-            <button id="mute-all">🔇 모두 음소거</button>
-            <button id="camoff-all">📷 모두 카메라 끄기</button>
+          <div class="row people-tools">
+            <label class="switch" title="학생 화면의 AI 조교 탭"><input type="checkbox" id="set-ai"> AI 조교</label>
+            <button id="mute-all" title="모든 학생 마이크 끄기 (학생이 다시 켤 수 있어요)">🔇 모두 음소거</button>
             <button id="lower-all">✋ 손 모두 내리기</button>
+            <span class="grow"></span><span class="muted" id="people-count"></span>
           </div>
           <div class="people" id="people"></div>
           <details class="box" open>
@@ -149,6 +149,12 @@
       <button id="screen">🖥️ 화면 공유</button>
       <button id="present-btn" title="PDF 자료를 띄우고 그 위에 판서하며 설명">📄 자료 발표</button>
       <button id="board-btn" title="빈 화이트보드에 그리며 설명">🖊️ 화이트보드</button>
+      <label class="layout-pick" title="학생들 화면에 얼굴이 어떻게 보일지">🖼️ 학생 화면
+        <select id="layout-sel">
+          <option value="teacher">선생님 크게</option>
+          <option value="grid">모두 나열</option>
+          <option value="debate">토론 (학생 둘 나란히)</option>
+        </select></label>
       <button id="rec-btn" title="이 수업 화면과 소리를 선생님 컴퓨터에 녹화 (학생 화면에 '녹화 중' 표시)" hidden>⏺ 녹화</button>
       <button id="sound" class="primary" hidden>🔊 소리 켜기</button>
       <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>

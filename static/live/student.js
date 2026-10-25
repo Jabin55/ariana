@@ -93,15 +93,15 @@ function finish(text) {
 
 /* ───── 화상 방 들어가기·옮기기 ───── */
 
+/** 마이크는 자유. 다만 선생님이 내 마이크를 끈 동안(🔒)은 선생님이 다시 켜 줄 때까지 못 켠다 (모둠에서는 자유) */
 function micAllowed() {
   if (!S) return true;
-  return !(S.settings.mic_lock && S.room === "main" && !S.me.can_speak);
+  return !(S.me.mic_blocked && S.room === "main");
 }
 
-/** 저대역폭 모드에서는 전체 교실에서 카메라를 쓸 수 없다(발언권을 받으면 가능). 모둠에서는 언제나 가능. */
+/** 카메라는 언제나 내가 켜고 끈다 (데이터 절약 모드는 화질만 낮춘다) */
 function camAllowed() {
-  if (!S) return true;
-  return !(S.settings.lowbw && S.room === "main" && !S.me.can_cam);
+  return true;
 }
 
 async function reconcileRoom() {
@@ -148,7 +148,7 @@ async function applyPrefs() {
 function retryable(err) { return !MEDIA_ERRORS.has(err?.name); }
 
 async function setMic(on, quiet = false, attempt = 0) {
-  if (on && !micAllowed()) { toast("마이크는 선생님이 켜 줘요. '🔒 마이크 요청'을 눌러 주세요."); return; }
+  if (on && !micAllowed()) { toast("선생님이 마이크를 껐어요. 말하고 싶으면 '✋ 손 들기'를 눌러 주세요."); return; }
   prefs.mic = on;
   const lp = media.room?.localParticipant;
   if (lp && media.room.state === "connected") {
@@ -233,15 +233,30 @@ function renderMedia(room) {
     grid.classList.add("big");
     syncTiles(grid, items);
   } else {
-    grid.classList.remove("big");
+    // 선생님이 고른 화면 구성: teacher(선생님 크게) grid(모두 나열) debate(토론: 학생 둘 나란히)
+    const mode = S?.layout?.mode || "teacher";
+    const sc = teacher ? screenItem(room, teacher) : null;
     const stageItems = [];
-    if (teacher) {
-      const sc = screenItem(room, teacher);
+    if (mode === "debate" && !sc) {
+      for (const x of S.layout.pair || []) {
+        const p = x.id === S.me.id ? room.localParticipant : room.remoteParticipants.get(x.identity);
+        if (p) stageItems.push(cameraItem(room, p, { name: x.name, flag: "🗣️" }));
+      }
+    } else if (teacher && (mode === "teacher" || sc)) {
       if (sc) stageItems.push(sc, cameraItem(room, teacher, { pip: true, name: "선생님" }));
       else stageItems.push(cameraItem(room, teacher, { name: "선생님" }));
     }
+    stage.hidden = !stageItems.length && mode === "grid";
+    stage.classList.toggle("duo", mode === "debate" && stageItems.length === 2);
+    grid.classList.toggle("big", mode === "grid");
     syncTiles(stage, stageItems);
-    $("#stage-empty").hidden = stageItems.length > 0;
+    $("#stage-empty").hidden = stageItems.length > 0 || mode === "grid";
+    if (mode === "teacher" && !sc) { // 선생님만 크게: 친구 영상은 받지 않고 내 화면만 작게
+      syncTiles(grid, [cameraItem(room, room.localParticipant, { flag: S?.me?.hand ? "✋" : "" })]);
+      $("#sound").hidden = room.canPlaybackAudio;
+      renderControls();
+      return;
+    }
     // 데이터 절약: 친구 영상은 최대 MAX_PEER_VIDEOS명만 받는다(말하는 친구 우선). 나머지는 이름만.
     const peers = people.filter((p) => !isTeacher(p) && p !== room.localParticipant);
     const ids = new Set(peers.map((p) => p.identity));
@@ -252,7 +267,11 @@ function renderMedia(room) {
       videoSlots.push(p.identity);
     }
     for (const p of peers) if (videoSlots.length < MAX_PEER_VIDEOS && !videoSlots.includes(p.identity)) videoSlots.push(p.identity);
-    syncTiles(grid, [room.localParticipant, ...peers].map((p) => {
+    const others = mode === "grid" && teacher ? [teacher] : [];
+    const debaters = new Set(mode === "debate" ? (S.layout.pair || []).map((x) => x.identity) : []);
+    const me = debaters.has(room.localParticipant.identity) ? [] : [room.localParticipant];
+    syncTiles(grid, [...others, ...me, ...peers.filter((p) => !debaters.has(p.identity))].map((p) => {
+      if (p === teacher) return cameraItem(room, p, { name: "선생님", flag: "👩‍🏫" });
       const it = cameraItem(room, p, { flag: S?.me && p === room.localParticipant && S.me.hand ? "✋" : "" });
       if (p !== room.localParticipant && !videoSlots.includes(p.identity)) it.track = null;
       return it;
@@ -277,11 +296,9 @@ function render() {
   if (!micAllowed() && prefs.mic) setMic(false);
   syncCamera(); // 방 이동·설정 변경·발언권에 맞춰 카메라를 켜고 끈다
   renderMedia(media.room);
-  const note = $("#chat-note");
-  note.hidden = S.settings.chat;
-  note.textContent = "선생님이 채팅을 잠시 막아 두었어요.";
-  $("#chatinput").disabled = !S.settings.chat;
-  $("#chatinput").placeholder = S.room === "main" ? "모두에게 보내기" : `${S.group?.name || "모둠"}에 보내기`;
+  const toAll = $("#chat-to").querySelector("option[value=all]");
+  toAll.textContent = S.room === "main" ? "모두에게" : `${S.group?.name || "모둠"}에게`;
+  $("#chatinput").placeholder = $("#chat-to").value === "teacher" ? "선생님에게만 보내기 (1:1)" : `${toAll.textContent} 보내기`;
 }
 
 function renderControls() {
@@ -291,14 +308,14 @@ function renderControls() {
   mic.classList.toggle("on", prefs.mic);
   mic.disabled = !connected;
   if (S && !micAllowed()) {
-    mic.textContent = S.me.mic_req ? "🎙️ 요청 중" : "🔒 마이크 요청";
-    mic.title = S.me.mic_req ? "선생님께 마이크를 요청했어요. 누르면 요청을 취소해요" : "마이크는 선생님이 켜 줘요. 누르면 선생님께 켜 달라고 요청해요";
-    mic.classList.toggle("on", S.me.mic_req);
+    mic.textContent = "🔒 마이크 꺼짐";
+    mic.title = "선생님이 마이크를 껐어요. 선생님이 다시 켜 주면 쓸 수 있어요";
+    mic.classList.remove("on");
   } else mic.title = "마이크";
   const cam = $("#cam");
   const camOk = camAllowed();
-  cam.textContent = !camOk ? (prefs.cam ? "📷 모둠 때 켜짐" : "📷 카메라 꺼짐") : (prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐");
-  cam.title = camOk ? "카메라" : "데이터 절약 모드: 전체 교실에서는 카메라를 쓰지 않아요";
+  cam.textContent = prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐";
+  cam.title = "카메라";
   cam.classList.toggle("on", prefs.cam && camOk);
   cam.disabled = !connected;
   if (!S) return;
@@ -332,11 +349,8 @@ function renderBanners() {
     else if (S.teacher_listening) box.append(h("div", { class: "banner" }, "🎧 선생님이 우리 모둠 이야기를 듣고 있어요."));
     tickTimer();
   }
-  if (S.settings.mic_lock && S.room === "main") {
-    box.append(h("div", { class: "banner warn" }, S.me.can_speak
-      ? "🎤 선생님이 마이크를 켜 줬어요. 말해 보세요."
-      : S.me.mic_req ? "🎙️ 선생님께 마이크를 요청했어요. 선생님이 켜 주면 바로 말할 수 있어요."
-        : "🔒 마이크는 선생님이 켜 줘요. 말하고 싶으면 '🔒 마이크 요청'을, 할 말이 있다고 알리려면 '✋ 손 들기'를 눌러 주세요."));
+  if (S.me.mic_blocked && S.room === "main") {
+    box.append(h("div", { class: "banner warn" }, "🔒 선생님이 내 마이크를 껐어요. 말하고 싶으면 '✋ 손 들기'를 눌러 주세요."));
   }
 }
 
@@ -425,7 +439,10 @@ $("#tabs").addEventListener("click", (e) => {
 function addChat(m, live) {
   const log = $("#chatlog");
   const stick = nearBottom(log);
-  log.append(chatBubble(m, { mine: m.sid === S?.me?.id }));
+  const dm = m.scope?.startsWith("dm:");
+  const bubble = chatBubble(m, { mine: m.sid === S?.me?.id, scopeName: dm ? (m.role === "teacher" ? "🔒 나에게 1:1" : "🔒 선생님에게 1:1") : null });
+  if (dm) bubble.classList.add("private");
+  log.append(bubble);
   if (stick || m.sid === S?.me?.id) log.scrollTop = log.scrollHeight;
   if (live && activeTab !== "chat") {
     unread++;
@@ -440,7 +457,8 @@ $("#chatform").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("#chatinput");
   const text = input.value.trim();
-  if (text && sock?.send({ t: "chat", text })) input.value = "";
+  const to = $("#chat-to").value === "teacher" ? "teacher" : undefined;
+  if (text && sock?.send({ t: "chat", text, to })) input.value = "";
 });
 submitOnEnter($("#chatinput"), $("#chatform"));
 
@@ -452,15 +470,7 @@ $("#askform").addEventListener("submit", (e) => {
 });
 submitOnEnter($("#askinput"), $("#askform"));
 
-$("#mic").addEventListener("click", () => {
-  if (S && !micAllowed() && !prefs.mic) { // 선생님이 켜 줘야 함 → 마이크 요청 (손 들기와 따로)
-    const on = !S.me.mic_req;
-    sock?.send({ t: "mic_req", on });
-    toast(on ? "🎙️ 선생님께 마이크를 요청했어요. 선생님이 켜 주면 바로 말할 수 있어요." : "마이크 요청을 취소했어요.");
-    return;
-  }
-  setMic(!prefs.mic);
-});
+$("#mic").addEventListener("click", () => setMic(!prefs.mic));
 $("#cam").addEventListener("click", () => setCam(!prefs.cam));
 $("#hand").addEventListener("click", () => sock?.send({ t: "hand", up: !S?.me.hand }));
 $("#help").addEventListener("click", () => sock?.send({ t: "help", on: !S?.me.help }));
@@ -488,4 +498,9 @@ $("#leave").addEventListener("click", () => {
   sock?.stop();
   disposeRoom(media.room);
   location.href = "/live";
+});
+
+$("#chat-to").addEventListener("change", () => {
+  $("#chatinput").placeholder = $("#chat-to").value === "teacher" ? "선생님에게만 보내기 (1:1)" : "모두에게 보내기";
+  $("#chatinput").focus();
 });

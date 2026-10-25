@@ -48,7 +48,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (필수) | Claude API 키 |
-| `CHATBOT_MODEL` | `claude-opus-5-5` | 사용할 모델 |
+| `CHATBOT_MODEL` | `claude-haiku-5-5` | 사용할 모델 (기본: 가장 저렴한 모델) |
 | `CHATBOT_EFFORT` | `low` | 답변 깊이(`low`/`medium`/`high`). 높을수록 느리고 비용이 늘어납니다. |
 
 ## 참고

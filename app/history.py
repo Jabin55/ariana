@@ -201,8 +201,24 @@ def attendance_report(cls, teacher_id: int) -> dict:
         for u in roster if u.id not in people
     ]
     absent.sort(key=lambda a: (a["school"], a["student_no"]))
+    # 출결 목록: 들어오고 나간 기록 하나당 한 줄 (학교 → 학번 → 이름 → 접속 시각 순)
+    flat = []
+    for p in people.values():
+        for x in sorted(p["sessions"], key=lambda x: x["joined"]):
+            flat.append({"school": p["school"] or "", "student_no": p["student_no"], "name": p["name"],
+                         "joined": kst(x["joined"]), "left": "접속 중" if x["online"] else kst(x["end"]),
+                         "online": x["online"], "seconds": round(max(0.0, x["end"] - x["joined"])), "_t": x["joined"]})
+    flat.sort(key=lambda r: (r["school"], r["student_no"] or "~", r["name"], r["_t"]))
+    for r in flat:
+        r.pop("_t")
     return {"class": {**class_row(cls), "start": kst(cls.created_at), "end": kst(cls.ended_at)},
-            "students": out, "absent": absent}
+            "students": out, "absent": absent, "rows": flat}
+
+
+def listen_text(seconds: int) -> str:
+    """청취 시간: 12분 30초"""
+    m, sec = divmod(int(seconds), 60)
+    return f"{m}분 {sec:02d}초" if m else f"{sec}초"
 
 
 @router.get("/api/live/history/{class_id}")
@@ -221,20 +237,16 @@ def csv_response(rows: list[list], filename: str) -> Response:
 
 @router.get("/api/live/history/{class_id}/attendance.csv")
 async def attendance_csv(class_id: int, request: Request):
-    """학생 한 명당 한 줄: 첫 접속·마지막 종료·접속 시간·재입장 횟수·자리 비운 시간"""
+    """들어오고 나간 기록 하나당 한 줄: 학교·학번·이름·접속 시각·종료 시각·청취 시간 (학교·학번·이름 순)"""
     t = await require_user(request, "teacher")
     cls = await db.run(_owned_class, class_id, t)
     rep = await db.run(attendance_report, cls, t["id"])
     day = datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d")
-    rows = [["날짜", "수업", "학번", "이름", "학교", "이메일", "첫 접속", "마지막 종료", "마지막 종료 사유",
-             "접속 시간(분)", "중간 이탈 시간(분)", "재입장 횟수", "접속 기록"]]
-    for p in rep["students"]:
-        rows.append([day, cls.title, p["student_no"], p["name"], p["school"], p["email"],
-                     p["first_join_text"], p["last_leave_text"], p["last_reason_text"],
-                     p["minutes"], p["away_minutes"], p["rejoins"],
-                     " / ".join(f"{s['joined']}~{s['left']}({s['reason_text']})" for s in p["sessions"])])
+    rows = [["학교", "학번", "이름", "접속 시각", "종료 시각", "청취 시간"]]
+    for r in rep["rows"]:
+        rows.append([r["school"], r["student_no"], r["name"], r["joined"], r["left"], listen_text(r["seconds"])])
     for a in rep["absent"]:
-        rows.append([day, cls.title, a["student_no"], a["name"], a["school"], a["email"], "미접속", "", "", 0, 0, 0, ""])
+        rows.append([a["school"], a["student_no"], a["name"], "미접속", "", ""])
     return csv_response(rows, f"attendance-{day}-{cls.code}.csv")
 
 

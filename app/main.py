@@ -33,7 +33,8 @@ from app.grading import router as grading_router
 from app.history import router as history_router
 from app.prompts import SYSTEM_PROMPT
 
-MODEL = os.environ.get("CHATBOT_MODEL", "claude-opus-5-5")
+# AI 조교는 비용을 아끼기 위해 가장 가벼운(저렴한) 모델을 쓴다. 바꾸려면 CHATBOT_MODEL 설정
+MODEL = os.environ.get("CHATBOT_MODEL", "claude-haiku-5-5")
 # 채팅은 깊은 추론보다 빠른 응답이 중요하므로 low부터 시작한다.
 EFFORT = os.environ.get("CHATBOT_EFFORT", "low")
 MAX_TURNS = 40  # 브라우저에서 보내는 대화 기록 최대 길이(메시지 수)
@@ -141,12 +142,12 @@ async def chat(req: ChatRequest) -> StreamingResponse:
 
     async def generate():
         try:
+            # 정책상 거절되면 서버에서 다른 모델로 자동 재시도한다 (Haiku 는 이 기능이 없어 보내지 않는다)
+            fallback = {} if "haiku" in MODEL else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
             async with client.beta.messages.stream(
                 model=MODEL,
                 max_tokens=16000,
-                # 정책상 거절되면 서버에서 다른 모델로 자동 재시도한다.
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
+                **fallback,
                 system=[{
                     "type": "text",
                     "text": SYSTEM_PROMPT,

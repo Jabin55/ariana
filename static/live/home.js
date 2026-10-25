@@ -1068,36 +1068,26 @@ async function loadDetail(id) {
   for (const b of document.querySelectorAll(".class-pick")) b.classList.toggle("on", Number(b.dataset.id) === id);
   const r = await api(`/api/live/history/${id}`);
   const c = r.class;
-  const mixed = mixedSchools(r.students, r.absent);
-  const rows = r.students.map((p) => h("tr", { class: p.rejoins ? "rejoined" : "" },
-    h("td", {}, p.student_no || "-"), nameTd(p, mixed), h("td", {}, p.first_join_text),
-    h("td", {}, p.online ? h("strong", { class: "ok-text" }, "접속 중") : `${p.last_leave_text} `,
-      p.online ? null : h("span", { class: "muted" }, `(${p.last_reason_text})`)),
-    h("td", { class: "num" }, `${p.minutes}분`),
-    h("td", { class: "num" }, p.rejoins ? h("strong", {}, `${p.rejoins}회`) : "-"),
-    h("td", { class: "num" }, p.away_minutes ? `${p.away_minutes}분` : "-"),
-    h("td", {}, h("details", { open: p.rejoins > 0 }, h("summary", { class: "muted" }, `기록 ${p.count}건`),
-      h("div", { class: "sessions" }, p.sessions.map((s, i) => h("div", {},
-        i && s.gap_before !== null ? h("div", { class: "gap" }, `… ${fmtGap(s.gap_before)} 뒤 다시 들어옴`) : null,
-        `${s.joined} 들어옴 → ${s.left}${s.reason_text !== "접속 중" ? ` 나감 (${s.reason_text})` : ""}`)))))));
+  // 들어오고 나간 기록 하나당 한 줄 (학교 → 학번 → 이름 순, 같은 학생이 여러 번 들어오면 여러 줄)
+  const listen = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, "0")}초` : `${sec}초`);
+  const rows = r.rows.map((x) => h("tr", {},
+    h("td", {}, x.school || "-"), h("td", {}, x.student_no || "-"), h("td", {}, x.name),
+    h("td", {}, x.joined), h("td", {}, x.online ? h("strong", { class: "ok-text" }, "접속 중") : x.left),
+    h("td", { class: "num" }, listen(x.seconds))));
   const absent = r.absent.map((a) => h("tr", { class: "absent" },
-    h("td", {}, a.student_no), nameTd(a, mixed), h("td", { colspan: 6 }, "미접속")));
+    h("td", {}, a.school || "-"), h("td", {}, a.student_no), h("td", {}, a.name), h("td", { colspan: 3 }, "미접속")));
   $("#h-detail").replaceChildren(h("section", { class: "card", style: "margin-top:12px" },
     h("div", { class: "row" },
       h("h2", { class: "grow", style: "margin:0" }, c.title),
-      h("a", { href: `/api/live/history/${id}/attendance.csv`, class: "button" }, "📥 출결 요약 CSV"),
-      h("a", { href: `/api/live/history/${id}/attendance-log.csv`, class: "button" }, "📥 입·퇴장 전체 기록 CSV"),
+      h("a", { href: `/api/live/history/${id}/attendance.csv`, class: "button" }, "📥 출결 CSV"),
       h("a", { href: `/api/live/history/${id}/results.csv`, class: "button" }, "📥 퀴즈 결과 CSV"),
       h("a", { href: `/live/materials?class=${id}`, class: "button", target: "_blank" }, "📄 수업 자료·판서")),
     h("p", { class: "muted" }, `코드 ${c.code} · ${c.start} 시작 · ${c.end ? `${c.end} 종료` : (c.live ? "진행 중" : "종료 기록 없음")} · 참여 ${r.students.length}명`
       + (c.target_grade ? ` · 대상 ${c.target_grade}학년 ${c.target_class}반 (미접속 ${r.absent.length}명)` : "")),
     h("div", { class: "table-wrap" }, h("table", { class: "att" },
-      h("thead", {}, h("tr", {}, ["학번", "이름", "첫 접속", "마지막 종료 (사유)", "접속 시간", "재입장", "중간 이탈", "입·퇴장 기록"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, ["학교", "학번", "이름", "접속 시각", "종료 시각", "청취 시간"].map((t) => h("th", {}, t)))),
       h("tbody", {}, rows, absent))),
-    !rows.length && !absent.length ? h("p", { class: "muted" }, "접속한 학생이 없어요.") : null,
-    h("p", { class: "muted", style: "font-size:0.85rem;margin-bottom:0" },
-      "접속 시간은 실제로 수업에 들어와 있던 시간의 합, 중간 이탈은 첫 접속부터 마지막 종료 사이에 나가 있던 시간이에요. "
-      + "새로고침·인터넷 끊김도 모두 한 번의 나감·들어옴으로 기록되고, 연결이 끊긴 경우 나간 시각은 학생 기기에서 마지막으로 신호가 온 때예요.")));
+    !rows.length && !absent.length ? h("p", { class: "muted" }, "접속한 학생이 없어요.") : null));
   await loadGrades(id);
   loadClassQuestions(id);
 }

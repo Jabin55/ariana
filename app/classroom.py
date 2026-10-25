@@ -34,7 +34,7 @@ from livekit import api as lk
 
 from app import db
 from app.auth import current_user, display_name, needs_profile, require_user
-from app.courses import is_enrolled, owned_course
+from app.courses import course_roster, is_enrolled, owned_course
 
 log = logging.getLogger("live-class")
 router = APIRouter()
@@ -59,7 +59,8 @@ STALE_AFTER = 30
 TEXT_LIMIT = 500
 # 저대역폭 모드 기본값: 전체 교실에서는 학생 카메라를 끄고(모둠 활동 때만 허용) 영상 화질을 낮춘다.
 # 화상 서버 데이터 비용과 학생 휴대폰 데이터를 크게 줄인다. LOW_BANDWIDTH=0 이면 기본으로 끔.
-LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
+# 지금은 언제나 데이터 절약 모드(영상 화질을 낮춤). 학생 카메라는 언제든 학생이 켜고 끌 수 있다.
+LOW_BANDWIDTH_DEFAULT = True
 # 마이크 통제 기본값: 전체 교실에서 학생 마이크는 선생님이 켜 줘야 쓸 수 있다(학생은 손 들기로 요청).
 # 학생은 언제나 스스로 마이크를 켜고 끈다. 선생님은 학생 목록에서 마이크를 켜거나 끌 수 있다.
 # (예전의 '학생 마이크는 선생님이 켜고 끄기' 설정은 없앴다. MIC_LOCK 설정은 무시)
@@ -97,7 +98,8 @@ class Student:
     mic_req: bool = False  # 🎙️ 마이크를 켜 달라는 요청 (손 들기와 따로)
     help: bool = False  # 모둠 활동 중 '선생님 호출'
     can_speak: bool = False  # 선생님이 마이크를 켜 줌 (마이크 통제 중에도 말할 수 있음)
-    can_cam: bool = False  # 선생님이 카메라를 켜 줌 (데이터 절약 모드에서도 카메라를 쓸 수 있음)
+    can_cam: bool = False  # (예전 설정의 흔적: 카메라는 이제 언제나 학생이 켜고 끈다)
+    mic_blocked: bool = False  # 선생님이 이 학생 마이크를 강제로 껐다 → 선생님이 다시 켜 줄 때까지 못 켬
     group: str | None = None
     last_chat: float = 0.0
     att_id: int | None = None  # 지금 열려 있는 출결 기록
@@ -143,6 +145,9 @@ class Klass:
     listening: list[str] = field(default_factory=list)  # 선생님이 듣고 있는 모둠
     talking: str | None = None  # 선생님이 말하고 있는 모둠
     broadcasting: bool = False  # 선생님이 모든 방에 동시에 말하는 중
+    # 학생 화면 구성: teacher(선생님 크게) grid(모두 나열) debate(토론: 학생 둘 크게 나란히)
+    layout: dict = field(default_factory=lambda: {"mode": "teacher", "pair": []})
+    roster: list = field(default_factory=list)  # 강좌 수업: 수강 확정 학생 명단 [{id, name, school}] (안 들어온 학생도 보이게)
     recording: bool = False  # 선생님이 수업을 녹화하는 중 (학생 화면에 표시)
     events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)
     # 발표(PDF)·화이트보드: {"mode": "slides"|"board", "file": 파일 id, "page": 쪽} / 없으면 None
@@ -460,13 +465,8 @@ def teacher_state(k: Klass) -> dict:
     return {
         "t": "state", "role": "teacher", "code": k.code, "title": k.title, "class_id": k.db_id,
         "course_id": k.course_id,
-        "settings": k.settings, "livekit": livekit_ready(),
-        "students": [
-            {"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand, "mic_req": s.mic_req,
-             "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "group": s.group, "room": k.room_of(s),
-             "sessions": s.sessions}
-            for s in k.students.values()
-        ],
+        "settings": k.settings, "livekit": livekit_ready(), "layout": k.layout,
+        "students": roster_rows(k),
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at,
         "present": present_view(k), "files": k.files, "recording": k.recording,
         "activity": activity_for_teacher(k, k.activity),
@@ -490,13 +490,14 @@ def student_state(k: Klass, s: Student) -> dict:
         "t": "state", "role": "student", "code": k.code, "title": k.title,
         "settings": k.settings, "livekit": livekit_ready(),
         "me": {"id": s.id, "name": s.name, "hand": s.hand, "mic_req": s.mic_req, "help": s.help,
-               "can_speak": s.can_speak, "can_cam": s.can_cam},
+               "can_speak": s.can_speak, "can_cam": s.can_cam, "mic_blocked": s.mic_blocked},
         "room": room, "group": group, "breakout": k.breakout, "ends_at": k.ends_at,
         "teacher_online": k.teacher_online(),
         "teacher_listening": room != "main" and (room in k.listening or k.talking == room),
         "teacher_talking": room != "main" and k.talking == room,
         "teacher_broadcast": k.broadcasting,
         "recording": k.recording,
+        "layout": layout_for(k),
         "activity": activity_for_student(k.activity, s.id),
         "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
         "announce": k.announce,
@@ -505,7 +506,40 @@ def student_state(k: Klass, s: Student) -> dict:
     }
 
 
-def chat_visible(msg: dict, room: str) -> bool:
+def load_roster(course_id: int | None) -> list[dict]:
+    if not course_id:
+        return []
+    return [{"id": str(u.id), "name": display_name(dict(u._mapping)), "school": u.school or ""}
+            for u in course_roster(course_id)]
+
+
+def roster_rows(k: Klass) -> list[dict]:
+    """선생님 학생 목록: 들어온 학생 + 아직 안 들어온 수강생(회색)"""
+    rows = [{"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand, "mic_req": s.mic_req,
+             "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "mic_blocked": s.mic_blocked,
+             "group": s.group, "room": k.room_of(s), "sessions": s.sessions, "absent": False}
+            for s in k.students.values()]
+    rows += [{"id": r["id"], "name": r["name"], "school": r["school"], "online": False, "hand": False, "mic_req": False,
+              "help": False, "can_speak": False, "can_cam": False, "mic_blocked": False, "group": None, "room": None,
+              "sessions": 0, "absent": True}
+             for r in k.roster if r["id"] not in k.students]
+    return rows
+
+
+def layout_for(k: Klass) -> dict:
+    """학생 화면 구성 (토론이면 두 학생의 화상 이름표도 함께)"""
+    out = {"mode": k.layout["mode"], "pair": []}
+    for sid in k.layout.get("pair", []):
+        s = k.students.get(sid)
+        if s:
+            out["pair"].append({"id": sid, "identity": f"s-{sid}", "name": s.name})
+    return out
+
+
+def chat_visible(msg: dict, room: str, sid: str | None = None) -> bool:
+    """1:1 채팅(학생 ↔ 선생님)은 그 학생에게만, 나머지는 같은 방 사람에게"""
+    if msg["scope"].startswith("dm:"):
+        return sid is not None and msg["scope"] == f"dm:{sid}"
     return msg["scope"] == room
 
 
@@ -552,7 +586,7 @@ def flush(k: Klass) -> None:
             room = k.room_of(s)
             if c.chat_room != room:
                 c.chat_room = room
-                send(c, {"t": "chat_init", "msgs": [m for m in k.chat if chat_visible(m, room)][-100:]})
+                send(c, {"t": "chat_init", "msgs": [m for m in k.chat if chat_visible(m, room, s.id)][-100:]})
         if data != c.last_state:
             c.last_state = data
             send(c, data)
@@ -566,7 +600,7 @@ def post_chat(k: Klass, msg: dict) -> None:
             send(c, {"t": "chat", "msg": msg})
         else:
             s = k.students.get(c.sid or "")
-            if s and chat_visible(msg, k.room_of(s)):
+            if s and chat_visible(msg, k.room_of(s), s.id):
                 send(c, {"t": "chat", "msg": msg})
 
 
@@ -605,10 +639,9 @@ def student_sources(k: Klass, s: Student, room: str) -> list[str]:
     if room != "main":  # 모둠: 카메라·마이크·화면 공유(발표) 모두 가능
         return ["camera", "microphone", "screen_share", "screen_share_audio"]
     out = []
-    if not (k.settings["mic_lock"] and not s.can_speak):
+    if not s.mic_blocked:  # 선생님이 이 학생 마이크를 강제로 끈 동안은 못 켠다
         out.append("microphone")
-    if not (k.settings["lowbw"] and not s.can_cam):  # 데이터 절약 모드: 선생님이 켜 준 학생만 카메라
-        out.append("camera")
+    out.append("camera")  # 카메라는 언제나 학생이 켜고 끈다 (데이터 절약 모드는 화질만 낮춘다)
     return out
 
 
@@ -1049,6 +1082,7 @@ async def live_socket(ws: WebSocket, code: str):
         return await reject(ws, "login", "로그인이 필요해요.")
     if await is_class_teacher(k, u):
         conn = Conn(ws=ws, role="teacher", sid=None)
+        k.roster = await db.run(load_roster, k.course_id)  # 선생님이 들어올 때마다 수강생 명단을 새로 읽는다
     elif u["role"] == "student" and not needs_profile(u):
         try:
             await ensure_enrolled(k, u)
@@ -1171,11 +1205,12 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
     elif t == "chat":
         text = clean(m.get("text"))
         now = time.time()
-        if not text or not k.settings["chat"] or now - s.last_chat < CHAT_INTERVAL:
+        if not text or now - s.last_chat < CHAT_INTERVAL:
             return
         s.last_chat = now
-        post_chat(k, {"id": k.next_id(), "role": "student", "sid": s.id, "name": s.name,
-                      "text": text, "scope": k.room_of(s), "ts": now})
+        private = m.get("to") == "teacher"  # 선생님에게만 1:1 (학생끼리 1:1 채팅은 없다)
+        post_chat(k, {"id": k.next_id(), "role": "student", "sid": s.id, "name": s.name, "text": text,
+                      "scope": f"dm:{s.id}" if private else k.room_of(s), "private": private, "ts": now})
     elif t == "question":
         text = clean(m.get("text"))
         if text:
@@ -1204,7 +1239,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     if handle_present(k, conn, m):
         return
     if t == "settings":
-        for name in ("chat", "ai", "lowbw"):
+        for name in ("ai",):  # 학생 채팅·데이터 절약 모드는 언제나 켜져 있다
             if name in m:
                 k.settings[name] = bool(m[name])
         if "mic_lock" in m:  # 통제를 바꾸면 남아 있는 마이크 요청은 지운다
@@ -1251,9 +1286,16 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "chat":
         text = clean(m.get("text"))
         scope = m.get("scope") or "main"
-        if text and (scope == "main" or scope in group_ids):
+        dm = scope.startswith("dm:") and scope[3:] in k.students  # 한 학생에게만 1:1 답장
+        if text and (scope == "main" or scope in group_ids or dm):
             post_chat(k, {"id": k.next_id(), "role": "teacher", "sid": None, "name": "선생님",
-                          "text": text, "scope": scope, "ts": time.time()})
+                          "text": text, "scope": scope, "private": dm,
+                          "to_name": k.students[scope[3:]].name if dm else None, "ts": time.time()})
+    elif t == "layout":  # 학생 화면 구성
+        mode = m.get("mode")
+        if mode in ("teacher", "grid", "debate"):
+            pair = [str(x) for x in (m.get("pair") or []) if str(x) in k.students][:2] if mode == "debate" else []
+            k.layout = {"mode": mode, "pair": pair}
     elif t == "broadcast":  # 모든 방 채팅에 같은 공지
         text = clean(m.get("text"))
         if text:
@@ -1380,15 +1422,11 @@ def device_cmd(k: Klass, cmd: str | None, target, quiet: bool = False) -> None:
     for s in targets:
         if mic:
             s.mic_req = False  # 요청을 처리했으므로 지운다 (✋ 손 들기는 그대로 둔다)
-            if on:
-                s.can_speak = True
-            elif k.settings["mic_lock"]:
-                s.can_speak = False
+            s.can_speak = on
+            # 한 학생의 마이크를 끄면 선생님이 다시 켜 줄 때까지 그 학생은 못 켠다 (모두 음소거는 끄기만)
+            s.mic_blocked = (not on) and target != "all"
         else:
-            if on:
-                s.can_cam = True
-            elif k.settings["lowbw"]:
-                s.can_cam = False
+            s.can_cam = on  # 카메라는 켜고 끄기만 한다. 학생이 언제든 다시 켤 수 있다
     enforce_sources(k, targets)
     if not quiet or on:
         # 예전 화면과 맞추기 위해 끄기는 mute·cam_off 이름으로 보낸다

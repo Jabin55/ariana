@@ -866,3 +866,17 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
   .wz-step-btn:not(:last-child)::after { right: -11px; content: "›"; }
   .sess-table { display: block; overflow-x: auto; }
 }
+
+/* 학생 화면 구성 · 1:1 채팅 · 수강생 명단 */
+.stage.duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stage.duo > * { min-height: 0; }
+.chatmsg.private { border-left: 3px solid #7a4fd6; background: color-mix(in srgb, #7a4fd6 8%, var(--surface)); }
+.chatmsg.private > button { margin-top: 4px; }
+.chatform select { flex: 0 0 auto; max-width: 9.5em; }
+.layout-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; white-space: nowrap; }
+.layout-pick select { padding: 4px 6px; }
+.people-tools { gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.people-tools button { padding: 4px 10px; font-size: 0.85rem; }
+.person.absent { opacity: 0.55; }
+#debate-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#debate-bar[hidden] { display: none; }

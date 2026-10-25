@@ -37,8 +37,8 @@
         </nav>
         <section class="panel chatlike" data-panel="chat">
           <div class="chatlog" id="chatlog"></div>
-          <div class="chat-note" id="chat-note" hidden></div>
           <form class="chatform" id="chatform">
+            <select id="chat-to" title="받는 사람"><option value="all">모두에게</option><option value="teacher">🔒 선생님에게만</option></select>
             <textarea id="chatinput" rows="1" maxlength="500" placeholder="모두에게 보내기"></textarea>
             <button class="primary" type="submit">보내기</button>
           </form>

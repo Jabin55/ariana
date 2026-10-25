@@ -55,6 +55,8 @@ function onMessage(msg) {
     case "state": {
       const first = !S;
       S = msg;
+      S.everyone = msg.students; // 수강생 명단 전체 (안 들어온 학생 포함)
+      S.students = msg.students.filter((x) => !x.absent); // 수업에 들어온 적 있는 학생
       render();
       if (first) connectMain();
       break;
@@ -220,8 +222,13 @@ function renderMain(room) {
   const sc = screenItem(room, lp);
   prefs.screen = !!lp.getTrackPublication(Track.Source.ScreenShare);
   const presenting = !!S?.present;
-  stage.hidden = !sc || presenting;
-  syncTiles(stage, sc && !presenting ? [sc] : []);
+  // 토론 화면이면 선생님 화면에도 두 학생을 크게 나란히
+  const duo = S?.layout?.mode === "debate" && !sc
+    ? (S.layout.pair || []).map((id) => room.remoteParticipants.get(`s-${id}`)).filter(Boolean).map((p) => cameraItem(room, p, { flag: "🗣️" }))
+    : [];
+  stage.hidden = (!sc && !duo.length) || presenting;
+  stage.classList.toggle("duo", duo.length === 2);
+  syncTiles(stage, presenting ? [] : sc ? [sc] : duo);
   const flags = new Map((S?.students || []).map((s) => [`s-${s.id}`, `${s.mic_req ? "🎙️" : ""}${s.hand ? "✋" : ""}`]));
   const students = [...room.remoteParticipants.values()].filter((p) => !isTeacher(p));
   // 발표 중에 '학생 화면 보기'를 끄면 영상을 받지 않는다(소리는 계속)
@@ -640,9 +647,8 @@ function render() {
   syncMonitors();
   tickTimer();
 
-  $("#set-chat").checked = S.settings.chat;
   $("#set-ai").checked = S.settings.ai;
-  $("#set-lowbw").checked = S.settings.lowbw;
+  renderLayout();
   applyQuality();
   renderPeople();
   renderActivity();
@@ -920,19 +926,30 @@ function deviceButtons(s) {
       if (turnOn) toast(`${s.name} 학생의 ${name}를 켰어요.`);
     },
   }, on === false ? offIcon : icon);
+  if (s.mic_blocked) {  // 선생님이 끈 마이크: 다시 켜 줄 때까지 학생이 못 켬
+    return [h("button", { class: "off", title: "선생님이 마이크를 껐어요 — 누르면 다시 켜요(학생도 다시 켤 수 있게 돼요)",
+      onclick: () => { sock.send({ t: "cmd", cmd: "mic_on", target: s.id }); toast(`${s.name} 학생의 마이크를 켰어요.`); } }, "🔒"),
+    btn(camOn, "📷", "📷", "카메라", "cam")];
+  }
   return [btn(micOn, "🎤", "🔇", "마이크", "mic"), btn(camOn, "📷", "📷", "카메라", "cam")];
 }
 
 function renderPeople() {
   // 마이크 요청(🎙️)·손 든 학생(✋)을 위로
-  const list = S.students.slice().sort((a, b) =>
-    (b.mic_req - a.mic_req) || (b.hand - a.hand) || (b.online - a.online) || a.name.localeCompare(b.name, "ko"));
+  // 강좌 수업은 수강생 명단이 모두 보이고, 들어온 학생은 초록불 (손 든 학생은 위로)
+  const everyone = S.everyone || S.students;
+  const list = everyone.slice().sort((a, b) =>
+    (b.mic_req - a.mic_req) || (b.hand - a.hand) || (a.school || "").localeCompare(b.school || "", "ko") || a.name.localeCompare(b.name, "ko"));
+  const onlineN = everyone.filter((x) => x.online).length;
+  $("#people-count").textContent = S.course_id ? `접속 ${onlineN} / ${everyone.length}명` : `접속 ${onlineN}명`;
   const hands = S.students.filter((s) => s.hand).length;
   const reqs = S.students.filter((s) => s.mic_req).length;
   $("#hand-badge").textContent = [reqs ? `🎙️${reqs}` : "", hands ? `✋${hands}` : ""].filter(Boolean).join(" ");
   $("#hand-badge").hidden = !hands && !reqs;
-  const mixed = new Set(S.students.map((s) => s.school || "")).size > 1; // 다른 학교 학생이 섞이면 학교도 표시
-  $("#people").replaceChildren(...list.map((s) => h("div", { class: `person ${s.hand || s.mic_req ? "hand" : ""}` },
+  const mixed = new Set(everyone.map((s) => s.school || "")).size > 1; // 다른 학교 학생이 섞이면 학교도 표시
+  $("#people").replaceChildren(...list.map((s) => s.absent ? h("div", { class: "person absent" },
+    h("span", { class: "dot", title: "아직 안 들어옴" }), h("span", {}, `${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
+      mixed && s.school ? `${s.school} · ` : "", "미접속"))) : h("div", { class: `person ${s.hand || s.mic_req ? "hand" : ""}` },
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
     h("span", {}, s.mic_req ? h("span", { title: "마이크를 켜 달라고 요청했어요 — 🔇를 누르면 켜져요" }, "🎙️ ") : null,
       s.hand ? h("span", { title: "할 말이 있어요" }, "✋ ") : null, `${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
@@ -943,15 +960,42 @@ function renderPeople() {
       h("button", { title: "내보내기", class: "danger", onclick: () => {
         if (confirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });
       } }, "✕")))));
-  if (!list.length) $("#people").append(h("p", { class: "muted", style: "margin:0" }, "아직 들어온 학생이 없어요."));
+  if (!list.length) $("#people").append(h("p", { class: "muted", style: "margin:0" }, S.course_id ? "수강 확정된 학생이 없어요." : "아직 들어온 학생이 없어요."));
   renderEvents();
 }
 
-$("#set-chat").addEventListener("change", (e) => sock.send({ t: "settings", chat: e.target.checked }));
 $("#set-ai").addEventListener("change", (e) => sock.send({ t: "settings", ai: e.target.checked }));
-$("#set-lowbw").addEventListener("change", (e) => sock.send({ t: "settings", lowbw: e.target.checked }));
 $("#mute-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "mute", target: "all" }); toast("모든 학생의 마이크를 껐어요."); });
-$("#camoff-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "cam_off", target: "all" }); toast("모든 학생의 카메라를 껐어요."); });
+
+/* ───── 학생 화면 구성: 선생님 크게 / 모두 나열 / 토론(학생 둘) ───── */
+
+function renderLayout() {
+  const mode = S.layout?.mode || "teacher";
+  if (document.activeElement !== $("#layout-sel")) $("#layout-sel").value = mode;
+  const debating = $("#layout-sel").value === "debate";
+  $("#debate-bar").hidden = !debating;
+  if (!debating) return;
+  const online = S.students.filter((x) => x.online && x.room === "main");
+  const sig = JSON.stringify(online.map((x) => [x.id, x.name]));
+  for (const [sel, i] of [[$("#debate-a"), 0], [$("#debate-b"), 1]]) {
+    if (sel.dataset.sig === sig && document.activeElement === sel) continue;
+    const cur = sel.value || (S.layout?.pair || [])[i] || "";
+    sel.dataset.sig = sig;
+    sel.replaceChildren(h("option", { value: "" }, "학생 고르기"), ...online.map((x) => h("option", { value: x.id, selected: x.id === cur }, x.name)));
+  }
+}
+$("#layout-sel").addEventListener("change", (e) => {
+  const mode = e.target.value;
+  if (mode === "debate") { renderLayout(); toast("토론할 학생 둘을 고르고 '학생 화면에 띄우기'를 눌러 주세요."); return; }
+  sock.send({ t: "layout", mode });
+  toast(mode === "grid" ? "학생 화면에 모두가 나란히 보여요." : "학생 화면에 선생님이 크게 보여요.");
+});
+$("#debate-apply").addEventListener("click", () => {
+  const pair = [$("#debate-a").value, $("#debate-b").value].filter(Boolean);
+  if (pair.length !== 2 || pair[0] === pair[1]) { toast("서로 다른 학생 둘을 골라 주세요."); return; }
+  sock.send({ t: "layout", mode: "debate", pair });
+  toast("학생 화면에 두 학생이 나란히 크게 보여요.");
+});
 $("#lower-all").addEventListener("click", () => sock.send({ t: "lower_hand", target: "all" }));
 
 /* ───── 퀴즈·투표 ───── */
@@ -1054,6 +1098,8 @@ function renderActivity() {
 
 /* ───── 채팅 ───── */
 
+const dmTargets = new Map(); // 1:1로 보낼 수 있는 학생 (학생이 먼저 1:1을 보냈거나 선생님이 '답장'을 누름)
+
 function renderScopes() {
   const sel = $("#chat-scope");
   const opts = [["main", "전체 교실"]];
@@ -1061,6 +1107,7 @@ function renderScopes() {
     S.groups.forEach((g) => opts.push([g.id, g.name]));
     opts.push(["*", "📢 모든 방"]);
   }
+  for (const [sid, name] of dmTargets) opts.push([`dm:${sid}`, `🔒 ${name}에게 1:1`]);
   const sig = JSON.stringify(opts);
   if (sel.dataset.sig === sig) return;
   sel.dataset.sig = sig;
@@ -1071,8 +1118,20 @@ function renderScopes() {
 function addChat(m, live) {
   const log = $("#chatlog");
   const stick = nearBottom(log);
-  const scopeName = m.broadcast ? null : (m.scope === "main" ? (S?.groups.length ? "전체" : null) : groupName(m.scope));
-  log.append(chatBubble(m, { mine: m.role === "teacher", scopeName }));
+  const dm = m.scope?.startsWith("dm:");
+  const scopeName = m.broadcast ? null : dm ? (m.role === "teacher" ? `🔒 ${m.to_name || "학생"}에게 1:1` : "🔒 선생님에게 1:1")
+    : (m.scope === "main" ? (S?.groups.length ? "전체" : null) : groupName(m.scope));
+  const bubble = chatBubble(m, { mine: m.role === "teacher", scopeName });
+  if (dm) bubble.classList.add("private");
+  if (dm && m.role === "student") {
+    dmTargets.set(m.sid, m.name);
+    bubble.append(h("button", { class: "small", onclick: () => {
+      renderScopes();
+      $("#chat-scope").value = `dm:${m.sid}`;
+      $("#chatinput").focus();
+    } }, "↩ 1:1 답장"));
+  }
+  log.append(bubble);
   if (stick || m.role === "teacher") log.scrollTop = log.scrollHeight;
   if (live && activeTab !== "chat" && m.role !== "teacher") {
     unreadChat++;
