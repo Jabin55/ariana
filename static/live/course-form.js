@@ -95,9 +95,9 @@ async function courseForm(c, done) {
     h("div", { class: "wz-table" }, row("팀티칭 여부", teamToggle, coBox)));
 
   /* ───── 2. 수업 개설 정보 ───── */
-  const title = h("input", { name: "title", value: c.title || "", maxlength: 60, required: true, placeholder: "학생에게 보일 수업 이름 (예: 판례로 배우는 법과 사회)" });
+  // 수업명은 교육과정 문서상의 과목명 그대로 쓴다 (따로 적지 않음)
   const sdl = h("datalist", { id: `${dlId}-s` }, koSort(meta.subjects, (x) => x.name).map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
-  const subject = h("input", { value: c.subject || c.title || "", maxlength: 60, required: true, list: sdl.id, autocomplete: "off", placeholder: "과목명 일부를 입력해 검색" });
+  const subject = h("input", { value: c.subject || c.title || "", maxlength: 60, required: true, list: sdl.id, autocomplete: "off", placeholder: "과목명을 입력해 검색 (예: 법과 사회)" });
   const custom = h("input", { type: "checkbox", checked: c.custom_subject });
   const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)"));
   const area = h("select", { required: true }, opt(meta.areas, c.subject_area, "교과"));
@@ -112,7 +112,6 @@ async function courseForm(c, done) {
       const items = list.filter((x) => x.type === t);
       return items.length ? h("div", {}, h("b", {}, t), h("div", { class: "row" }, koSort(items, (x) => x.name).map((x) => h("button", { type: "button", class: "small", onclick: () => {
         subject.value = x.name;
-        if (!title.value.trim()) title.value = x.name;
         subject.dispatchEvent(new Event("input"));
         browse.hidden = true;
       } }, x.name)))) : null;
@@ -161,8 +160,7 @@ async function courseForm(c, done) {
   const step2 = h("section", { class: "wz-step", hidden: true },
     h("h3", { class: "wz-h" }, "수업 개설 정보"),
     h("div", { class: "wz-table" },
-      row("수업명", title),
-      row("교육과정 / 과목", h("div", { class: "row" }, h("span", { class: "chip fixed" }, "2022 개정 교육과정"), subject, sdl,
+      row("과목명", h("div", { class: "row" }, subject, sdl,
         h("button", { type: "button", onclick: () => { browse.hidden = !browse.hidden; if (!browse.hidden) drawBrowse(); } }, "찾기")),
         browse, h("label", { class: "switch" }, custom, " 고시외 과목 (목록에 없는 과목 — 직접 적고 아래 칸을 골라요)"))),
     h("div", { class: "wz-table two" },
@@ -291,7 +289,7 @@ async function courseForm(c, done) {
     for (let i = 0; i < 3; i++) if (!validStep(i)) { if (cur !== i) go(i); validStep(i); return; }
     if (!sessions.length && !end.value) { err.textContent = "수업 종료일을 정하거나 회차를 만들어 주세요."; return; }
     const body = {
-      title: title.value.trim(), subject: subject.value.trim(), custom_subject: custom.checked,
+      title: subject.value.trim(), subject: subject.value.trim(), custom_subject: custom.checked,
       subject_group: group.value, subject_area: area.value, subject_type: type.value,
       school_year: Number(schoolYear.value), term: form.querySelector(`input[name="${termName}"]:checked`)?.value || meta.terms[0],
       credits: Number(credits.value), hours: Number(hours.value), achievement: achievement.value,
