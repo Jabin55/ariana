@@ -1670,8 +1670,10 @@ def test_teacher_signup_birth(monkeypatch):
     assert app_["birth"] == "1985-03-07"
 
 
-def test_learning_overview():
-    """학습 관리: 수업 참석률·공지·설문·퀴즈·활동 횟수와 참여율"""
+def test_learning_overview(monkeypatch, tmp_path):
+    """학습 관리: 수업 참석률·공지·설문·퀴즈 횟수와 참여율, 활동 = 평가 활동(과제) 제출률"""
+    import app.assignments as asg
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
     t = teacher()
     cid = t.post("/api/courses", json=COURSE).json()["id"]
     a, b, c = student(1), student(2), student(3)
@@ -1694,11 +1696,15 @@ def test_learning_overview():
         tw.send_json({"t": "end_class"})
         until(tw, lambda m: m["t"] == "ended")
     time.sleep(0.3)
+    aid = t.post(f"/api/courses/{cid}/assignments", json={"title": "보고서"}).json()["id"]
+    a.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF a", headers={"Content-Type": "application/pdf"})
     r = t.get(f"/api/courses/{cid}/learning").json()
+    assert r["summary"]["activity"] == {"count": 1, "graded": 0, "rate": 33}
+    assert [(x["title"], x["submitted"]) for x in r["assignments"]] == [("보고서", 1)]
     s = r["summary"]
     assert s["classes"] == 1 and s["enrolled"] == 3 and s["attendance"] == 67  # 3명 중 2명
     assert s["notices"] == 2 and s["class_notices"] == 1 and s["course_notices"] == 1
-    assert s["quiz"] == {"count": 1, "classes": 1, "rate": 50} and s["survey"]["count"] == 1 and s["activity"]["count"] == 0
+    assert s["quiz"] == {"count": 1, "classes": 1, "rate": 50} and s["survey"]["count"] == 1
     cl = r["classes"][0]
     assert cl["title"] == "1차시 헌법" and cl["attended"] == 2 and cl["rate"] == 67 and cl["notices"][0]["text"] == "5분 뒤 퀴즈"
     assert a.get(f"/api/courses/{cid}/learning").status_code == 403

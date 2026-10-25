@@ -444,7 +444,7 @@ async function renderOpenClass(c, box) {
 
 const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
 const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "활동" };
-const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice"], activity: ["text"] };
+const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '활동'은 평가 활동(과제) 제출
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
@@ -458,7 +458,7 @@ async function renderLearning(c, box) {
     ["notice", "📢 공지", `${S.notices}회`, `수업 중 ${S.class_notices} · 공지사항 ${S.course_notices}`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
-    ["activity", "✍️ 활동", `${S.activity.count}회`, `참여율 ${pct(S.activity.rate)} · ${S.activity.classes}개 수업`],
+    ["activity", "✍️ 활동", `${S.activity.count}회`, `과제 제출률 ${pct(S.activity.rate)} · 채점 ${S.activity.graded}건`],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -466,6 +466,7 @@ async function renderLearning(c, box) {
       onclick: () => { st.card = k; st.open.clear(); renderLearning(c, box); } },
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
+  if (st.card === "activity") { learnAssignments(c, d, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "attend") learnAttendance(d, st, detail);
   else if (st.card === "notice") learnNotices(d, detail);
@@ -539,15 +540,57 @@ function learnNotices(d, box) {
       : h("p", { class: "muted" }, "'공지사항' 칸에서 올린 공지가 없어요."));
 }
 
+/** 활동 = 평가 활동(과제): 낸 과제마다 제출·채점 현황, 펼치면 학생별 제출 내역 */
+function learnAssignments(c, d, st, box) {
+  const list = d.assignments;
+  const n = d.summary.enrolled;
+  const COLS = 8;
+  const draw = () => fill(box,
+    h("div", { class: "row", style: "margin:4px 0 8px" }, h("h3", { class: "section-title grow", style: "margin:0" }, `✍️ 평가 활동(과제) ${list.length}개`),
+      h("button", { class: "small", onclick: () => { runSub = "assess"; renderRun(); } }, "📝 평가 활동에서 과제 내기·채점")),
+    list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+      h("thead", {}, h("tr", {}, ["연번", "낸 날", "과제", "마감", "제출", "제출률", "채점", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, list.flatMap((a, i) => {
+        const key = `a${a.id}`;
+        const open = st.open.has(key);
+        const sub = h("td", { colspan: COLS });
+        const row = h("tr", { class: open ? "on" : "" },
+          h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(a.date)), h("td", { style: "white-space:normal;text-align:left" }, a.title),
+          h("td", {}, a.due ? a.due.replaceAll("-", ".") : "없음"),
+          h("td", { class: "num" }, `${a.submitted}명${n ? ` / ${n}명` : ""}`),
+          h("td", { class: "num" }, h("strong", {}, n ? `${Math.round((a.submitted / n) * 100)}%` : "-")),
+          h("td", { class: "num" }, `${a.graded}명`),
+          h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, key, draw) }, open ? "접기" : "제출 내역")));
+        if (open) submissionsOf(a.id, sub);
+        return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
+      })))) : h("p", { class: "muted" }, "아직 낸 과제가 없어요. '평가 활동'에서 과제를 내면 학생들의 제출 현황이 여기에 쌓여요."));
+  draw();
+}
+
+/** 한 과제의 학생별 제출 내역 */
+async function submissionsOf(aid, box) {
+  fill(box, h("span", { class: "muted" }, "불러오는 중…"));
+  const { submissions } = await api(`/api/assignments/${aid}/submissions`);
+  const fmt = (v) => (v == null ? "-" : `${Math.round(v * 100) / 100}점`);
+  fill(box, h("table", { class: "att inner-table" },
+    h("thead", {}, h("tr", {}, ["소속학교", "학번", "이름", "제출", "제출 시각", "점수", "피드백"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, submissions.length ? submissions.map((x) => h("tr", { class: x.submitted ? "" : "absent" },
+      h("td", {}, x.school || "-"), h("td", {}, x.student_no || "-"), h("td", {}, x.name),
+      h("td", {}, x.submitted ? (x.late ? "지각 제출" : "제출") : "미제출"),
+      h("td", {}, x.submitted_at || "-"), h("td", { class: "num" }, x.graded ? fmt(x.score) : x.submitted ? "미채점" : "-"),
+      h("td", { style: "white-space:normal;text-align:left" }, x.feedback || "-")))
+      : h("tr", {}, h("td", { colspan: 7, class: "muted" }, "수강생이 없어요.")))));
+}
+
 function learnActivities(d, st, key, box) {
   const label = ACT_LABEL[key];
   const list = d.classes.filter((x) => x.acts[key].count);
   const COLS = 7;
   const rate = (x) => (x.possible ? `${Math.round((x.answered / x.possible) * 100)}%` : "-");
   const draw = () => fill(box,
-    h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `${label}을(를) 한 수업 ${list.length}개`),
+    h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `${label}${key === "quiz" ? "를" : "을"} 한 수업 ${list.length}개`),
     list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
-      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", `${label} 수`, key === "activity" ? "참여율" : "응답률", ""].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", `${label} 수`, "응답률", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.flatMap((x, i) => {
         const open = st.open.has(x.id);
         const sub = h("td", { colspan: COLS });
@@ -558,7 +601,7 @@ function learnActivities(d, st, key, box) {
           h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, x.id, draw) }, open ? "접기" : "내역 보기")));
         if (open) activitiesOf(x.id, key, sub);
         return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
-      })))) : h("p", { class: "muted" }, `아직 ${label}을(를) 한 수업이 없어요. 수업 화면의 '📊 설문/퀴즈'에서 낼 수 있어요.`));
+      })))) : h("p", { class: "muted" }, `아직 ${label}${key === "quiz" ? "를" : "을"} 한 수업이 없어요. 수업 화면의 '📊 설문/퀴즈'에서 낼 수 있어요.`));
   draw();
 }
 

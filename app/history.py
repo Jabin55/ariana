@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from app import db
 from app.auth import require_user, student_no
@@ -120,7 +120,8 @@ async def course_classes(course_id: int, request: Request):
 
 
 QUIZ_KINDS = {"ox", "choice"}  # 퀴즈: 정답이 있는 문제
-ACT_GROUP = {"poll": "survey", "ox": "quiz", "choice": "quiz", "text": "activity"}  # 설문(투표) · 퀴즈 · 활동(주관식)
+# 수업 중 활동: 설문(투표) · 퀴즈(OX·객관식·주관식). '활동'은 평가 활동(과제) 제출로 따로 센다
+ACT_GROUP = {"poll": "survey", "ox": "quiz", "choice": "quiz", "text": "quiz"}
 
 
 @router.get("/api/courses/{course_id}/learning")
@@ -147,9 +148,17 @@ async def course_learning(course_id: int, request: Request):
                               .order_by(db.announcements.c.created_at)).all()
             enrolled = c.execute(select(db.enrollments.c.user_id).where(
                 db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved")).all()
-            return rows, present, acts, notes, len(enrolled), course_notices_of(c, [course_id]).get(course_id, [])
+            tasks = c.execute(select(db.assignments).where(db.assignments.c.course_id == course_id)
+                              .order_by(db.assignments.c.created_at)).all()
+            sub = db.submissions.c
+            done = {r.assignment_id: (r.n, r.g) for r in c.execute(
+                select(sub.assignment_id, func.count().label("n"), func.count(sub.graded_at).label("g"))
+                .where(sub.assignment_id.in_([x.id for x in tasks] or [-1]), sub.submitted_at.is_not(None))
+                .group_by(sub.assignment_id))}
+            return (rows, present, acts, notes, len(enrolled), course_notices_of(c, [course_id]).get(course_id, []),
+                    tasks, done)
 
-    rows, present, acts, notes, enrolled, course_notes = await db.run(run)
+    rows, present, acts, notes, enrolled, course_notes, tasks, done = await db.run(run)
     by_class: dict = {}
     for a in acts:
         g = by_class.setdefault(a.class_id, {k: {"count": 0, "answered": 0, "possible": 0} for k in ("survey", "quiz", "activity")})
@@ -173,11 +182,18 @@ async def course_learning(course_id: int, request: Request):
     summary = {"classes": len(out), "enrolled": enrolled,
                "attendance": pct(sum(x["attended"] for x in out), enrolled * len(out)),
                "notices": len(notes) + len(course_notes), "class_notices": len(notes), "course_notices": len(course_notes)}
-    for k in ("survey", "quiz", "activity"):
+    # 활동 = 평가 활동(과제): 낸 과제 수와 제출률
+    assignments = [{"id": a.id, "title": a.title, "date": datetime.fromtimestamp(a.created_at, KST).strftime("%Y-%m-%d"),
+                    "due": datetime.fromtimestamp(a.due_at, KST).strftime("%Y-%m-%d %H:%M") if a.due_at else "",
+                    "closed": bool(a.closed), "submitted": done.get(a.id, (0, 0))[0], "graded": done.get(a.id, (0, 0))[1]}
+                   for a in tasks]
+    summary["activity"] = {"count": len(assignments), "graded": sum(x["graded"] for x in assignments),
+                           "rate": pct(sum(x["submitted"] for x in assignments), enrolled * len(assignments))}
+    for k in ("survey", "quiz"):
         cnt = sum(x["acts"][k]["count"] for x in out)
         summary[k] = {"count": cnt, "classes": sum(1 for x in out if x["acts"][k]["count"]),
                       "rate": pct(sum(x["acts"][k]["answered"] for x in out), sum(x["acts"][k]["possible"] for x in out))}
-    return {"summary": summary, "classes": out, "course_notices": course_notes}
+    return {"summary": summary, "classes": out, "course_notices": course_notes, "assignments": assignments}
 
 
 @router.get("/api/live/meetings-history")
