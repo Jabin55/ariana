@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -19,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 
 from app import db
 from app.policy import POLICY_VERSION, policy_ready
@@ -65,6 +66,7 @@ def public_user(u) -> dict:
         # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
         "role_choice": d["role"] == "student" and not d.get("self_role"),
         "can_be_student": school_account(d["email"]) and d["role"] != "teacher",
+        "withdraw_requested": bool(d.get("withdraw_at")), "withdraw_note": d.get("withdraw_note") or "",
     }
 
 
@@ -336,3 +338,83 @@ async def choose_self_role(req: SelfRole, request: Request):
 
     await db.run(save)
     return public_user(await db.run(_load_with_role, u["id"]))
+
+
+class Withdraw(BaseModel):
+    confirm: str
+    reason: str = Field(default="", max_length=300)
+
+
+def _withdraw(uid: int) -> None:
+    """탈퇴: 이 사람의 계정과 기록을 모두 지운다 (되살릴 수 없음)."""
+    from app.assignments import file_path  # 순환 import 를 피한다
+
+    with db.engine.begin() as c:
+        class_ids = {r.class_id for r in c.execute(select(db.attendance.c.class_id).where(db.attendance.c.user_id == uid))}
+        # 퀴즈·투표 답은 활동마다 {학생번호: 답} 으로 들어 있다
+        if class_ids:
+            for a in c.execute(select(db.activities.c.id, db.activities.c.responses)
+                               .where(db.activities.c.class_id.in_(class_ids))):
+                resp = json.loads(a.responses or "{}")
+                if str(uid) in resp:
+                    resp.pop(str(uid))
+                    c.execute(update(db.activities).where(db.activities.c.id == a.id)
+                              .values(responses=json.dumps(resp, ensure_ascii=False)))
+        subs = c.execute(select(db.submissions.c.id, db.submissions.c.assignment_id)
+                         .where(db.submissions.c.user_id == uid)).all()
+        files = c.execute(select(db.submission_files.c.id, db.submission_files.c.submission_id)
+                          .where(db.submission_files.c.submission_id.in_([s.id for s in subs] or [-1]))).all()
+        aid_of = {s.id: s.assignment_id for s in subs}
+        c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(list(aid_of) or [-1])))
+        c.execute(delete(db.submissions).where(db.submissions.c.user_id == uid))
+        for t in (db.grades, db.questions, db.attendance, db.enrollments, db.memberships):
+            c.execute(delete(t).where(t.c.user_id == uid))
+        c.execute(delete(db.users).where(db.users.c.id == uid))
+    for f in files:
+        file_path(aid_of[f.submission_id], f.id).unlink(missing_ok=True)
+
+
+def owns_classes(uid: int) -> bool:
+    """직접 연 강좌·수업이 있는지 (있으면 학생 기록이 딸려 있어 탈퇴로 지울 수 없다)"""
+    with db.engine.connect() as c:
+        return bool(c.execute(select(db.courses.c.id).where(db.courses.c.teacher_id == uid).limit(1)).first()
+                    or c.execute(select(db.classes.c.id).where(db.classes.c.teacher_id == uid).limit(1)).first())
+
+
+@router.post("/api/me/withdraw")
+async def withdraw(req: Withdraw, request: Request):
+    """회원 탈퇴.
+    - 학생: 탈퇴 신청만 한다. 수강신청한 강좌의 거점학교 관리교사(어느 거점학교와도 상관없으면 전체 관리자)가
+      승인하면 지워진다. 강좌 중간에 기록이 사라지는 일을 막기 위해서다.
+    - 그 밖의 사람: 바로 지운다. 다만 직접 연 강좌·수업이 있으면(학생 기록이 딸려 있음) 탈퇴할 수 없다."""
+    u = await current_user(request)
+    if not u:
+        raise HTTPException(401, "로그인이 필요해요.")
+    if req.confirm.strip() != "탈퇴":
+        raise HTTPException(400, "확인 칸에 '탈퇴'라고 적어 주세요.")
+    if await db.run(owns_classes, u["id"]):
+        raise HTTPException(409, "직접 연 강좌나 수업이 있어 바로 탈퇴할 수 없어요. 학생들의 출결·과제 기록이 함께 지워지기 때문이에요. "
+                                 "개인정보 보호책임자(이용안내의 문의처)에게 요청해 주세요.")
+    if u["role"] == "student":
+        def ask():
+            with db.engine.begin() as c:
+                c.execute(update(db.users).where(db.users.c.id == u["id"]).values(
+                    withdraw_at=time.time(), withdraw_reason=req.reason.strip(), withdraw_note=""))
+
+        await db.run(ask)
+        return {"ok": True, "requested": True}
+    await db.run(_withdraw, u["id"])
+    request.session.clear()
+    return {"ok": True, "requested": False}
+
+
+@router.post("/api/me/withdraw/cancel")
+async def withdraw_cancel(request: Request):
+    u = await require_user(request, profile=False)
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(withdraw_at=None, withdraw_note=""))
+
+    await db.run(run)
+    return {"ok": True}

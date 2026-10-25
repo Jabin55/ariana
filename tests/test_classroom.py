@@ -1101,3 +1101,69 @@ def test_signup_choice_schools_and_grades(monkeypatch):
     assert [x["grades"] for x in t.get("/api/courses/mine").json()["courses"] if x["id"] == c2] == [[2, 3]]
     t.post(f"/api/courses/{c1}", json={"grades": []})  # 학년 제한을 풀면 보인다
     assert "1학년 강좌" in [x["title"] for x in s.get("/api/courses/available").json()["courses"]]
+
+
+def test_withdraw(monkeypatch, tmp_path):
+    import app.assignments as asg
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    # 거점학교 두 곳: 가나고(관리교사 coord), 다라고(관리교사 other)
+    hubs = {}
+    for email, hub in (("coord@gmail.com", "가나고등학교"), ("coord2@gmail.com", "다라고등학교")):
+        c = TestClient(app)
+        c.post("/api/auth/dev", json={"email": email})
+        r = c.post("/api/staff/apply", json={"role": "coordinator", "name": "관리", "hub_name": hub, "contact": "010", "pledge": True})
+        assert r.status_code == 200, r.text
+        mid = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]["id"]
+        assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
+        hubs[hub] = c
+    coord, other = hubs["가나고등학교"], hubs["다라고등학교"]
+    hub_id = {h["name"]: h["id"] for h in boss.get("/api/hubs").json()["hubs"]}["가나고등학교"]
+    t = boss  # 전체 관리자가 가나고등학교 강좌를 연다 (강사 승인 → 관리교사 최종 승인)
+    cid = t.post("/api/courses", json={**COURSE, "hub_id": hub_id}).json()["id"]
+    a, b = student(1), student(2)
+    for s in (a, b):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    coord.post("/api/hub/approve-all", json={"course_id": cid})
+    aid = t.post(f"/api/courses/{cid}/assignments", json={"title": "보고서"}).json()["id"]
+    a.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF a", headers={"Content-Type": "application/pdf"})
+    b.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF b", headers={"Content-Type": "application/pdf"})
+    # 확인 글자가 없으면 안 되고, 강좌를 연 선생님은 바로 탈퇴할 수 없다
+    assert a.post("/api/me/withdraw", json={"confirm": "네"}).status_code == 400
+    assert t.post("/api/me/withdraw", json={"confirm": "탈퇴"}).status_code == 409
+    # 학생은 신청만 → 그 강좌 거점학교 관리교사·전체 관리자에게만 보인다
+    r = a.post("/api/me/withdraw", json={"confirm": "탈퇴", "reason": "전학"}).json()
+    assert r["requested"] and a.get("/api/me").json()["user"]["withdraw_requested"]
+    q = coord.get("/api/hub/withdrawals").json()["requests"]
+    assert [x["student_no"] for x in q] == ["20301"] and q[0]["reason"] == "전학" and q[0]["studying"] == ["강좌"]
+    assert other.get("/api/hub/withdrawals").json()["requests"] == []
+    assert other.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 404
+    assert a.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 403
+    # 반려하면 사유가 학생에게 보이고, 다시 신청·취소할 수 있다
+    coord.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "reject", "note": "학기 끝나고 해요"})
+    me = a.get("/api/me").json()["user"]
+    assert not me["withdraw_requested"] and me["withdraw_note"] == "학기 끝나고 해요"
+    a.post("/api/me/withdraw", json={"confirm": "탈퇴"})
+    a.post("/api/me/withdraw/cancel")
+    assert coord.get("/api/hub/withdrawals").json()["requests"] == []
+    a.post("/api/me/withdraw", json={"confirm": "탈퇴"})
+    # 승인하면 그 학생의 기록·파일만 모두 지워진다
+    assert coord.post(f"/api/hub/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 200
+    assert a.get("/api/me").json()["user"] is None
+    subs = t.get(f"/api/assignments/{aid}/submissions").json()["submissions"]
+    assert [s["student_no"] for s in subs] == ["20302"] and subs[0]["submitted"]
+    assert len(list((tmp_path / "assignments" / str(aid)).iterdir())) == 1
+    again = login("st1@s.school.kr")  # 같은 계정으로 다시 로그인하면 새로 가입
+    assert again.get("/api/me").json()["user"]["needs_profile"]
+    # 어느 거점학교와도 상관없는 학생은 전체 관리자가 승인
+    c = student(5)
+    c.post("/api/me/withdraw", json={"confirm": "탈퇴"})
+    assert coord.get("/api/hub/withdrawals").json()["requests"] == []
+    uid = boss.get("/api/hub/withdrawals").json()["requests"][0]["user_id"]
+    assert boss.post(f"/api/hub/withdrawals/{uid}", json={"action": "approve"}).status_code == 200
+    # 학생이 아닌 사람(강사 신청만 한 사람)은 바로 탈퇴
+    g = login("guest@gmail.com", name="손님")
+    assert g.post("/api/me/withdraw", json={"confirm": "탈퇴"}).json()["requested"] is False
+    assert g.get("/api/me").json()["user"] is None

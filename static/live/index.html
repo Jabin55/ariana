@@ -89,6 +89,19 @@
         <p class="error" id="profile-error"></p>
       </form>
       <button type="button" class="link-btn student-only" id="to-staff" hidden>선생님이신가요? 강사·관리교사 등록 신청으로 →</button>
+      <details class="withdraw" id="withdraw-box">
+        <summary>회원 탈퇴</summary>
+        <p id="withdraw-text"></p>
+        <div id="withdraw-status"></div>
+        <form id="withdraw">
+          <input id="withdraw-reason" class="student-only" maxlength="300" placeholder="탈퇴하는 이유 (선택 — 관리교사 선생님이 봐요)">
+          <div class="row">
+            <input id="withdraw-confirm" placeholder="확인을 위해 '탈퇴'라고 적어 주세요" autocomplete="off" style="flex:1;min-width:200px">
+            <button class="danger" type="submit" id="withdraw-btn">탈퇴하기</button>
+          </div>
+        </form>
+        <p class="error" id="withdraw-error"></p>
+      </details>
     </section>
 
     <!-- 손님: 강사 등록 신청 -->

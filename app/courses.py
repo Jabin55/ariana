@@ -477,3 +477,62 @@ async def final_approve_all(req: FinalAllReq, request: Request):
                              .values(status="approved", decided_at=time.time(), coordinator_by=u["id"])).rowcount
 
     return {"approved": await db.run(run)}
+
+
+# ───────────────────────── 학생 탈퇴 신청 (관리교사 승인) ─────────────────────────
+
+
+def withdraw_requests(hubs: set[int] | None, uid: int | None = None) -> list[dict]:
+    """탈퇴를 신청한 학생. 관리교사는 자기 거점학교 강좌에 수강신청한 적 있는 학생만,
+    전체 관리자는 모두(어느 거점학교와도 상관없는 학생 포함) 본다."""
+    today = auth.today_kst()
+    with db.engine.connect() as c:
+        u = db.users.c
+        q = select(db.users).where(u.withdraw_at.is_not(None), u.role == "student")
+        if uid is not None:
+            q = q.where(u.id == uid)
+        users = c.execute(q.order_by(u.withdraw_at)).all()
+        ids = [x.id for x in users] or [-1]
+        e, co = db.enrollments.c, db.courses.c
+        rows = c.execute(select(e.user_id, e.status, co.title, co.end_date, co.archived, co.hub_id)
+                         .select_from(db.enrollments.join(db.courses, co.id == e.course_id))
+                         .where(e.user_id.in_(ids))).all()
+    out = []
+    for x in users:
+        mine = [r for r in rows if r.user_id == x.id]
+        if hubs is not None and not any(r.hub_id in hubs for r in mine):
+            continue
+        studying = [r.title for r in mine if r.status == "approved" and not r.archived and not (r.end_date and r.end_date < today)]
+        out.append({"user_id": x.id, "name": x.name, "school": x.school, "student_no": student_no(dict(x._mapping)),
+                    "email": x.email, "reason": x.withdraw_reason, "requested_at": x.withdraw_at,
+                    "courses": sorted({r.title for r in mine}), "studying": studying})
+    return out
+
+
+@router.get("/api/hub/withdrawals")
+async def hub_withdrawals(request: Request):
+    u = await require_user(request)
+    return {"requests": await db.run(withdraw_requests, managed_hubs(u))}
+
+
+class WithdrawDecide(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = Field(default="", max_length=300)  # 반려 사유 (학생에게 보임)
+
+
+@router.post("/api/hub/withdrawals/{uid}")
+async def hub_withdraw_decide(uid: int, req: WithdrawDecide, request: Request):
+    """관리교사: 학생 탈퇴 승인(계정과 기록을 모두 지움) 또는 반려"""
+    u = await require_user(request)
+    hubs = managed_hubs(u)
+    if not await db.run(withdraw_requests, hubs, uid):
+        raise HTTPException(404, "탈퇴 신청을 찾을 수 없어요.")
+    if req.action == "approve":
+        await db.run(auth._withdraw, uid)
+    else:
+        def run():
+            with db.engine.begin() as c:
+                c.execute(update(db.users).where(db.users.c.id == uid).values(withdraw_at=None, withdraw_note=req.note.strip()))
+
+        await db.run(run)
+    return {"ok": True}

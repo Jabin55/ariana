@@ -44,6 +44,10 @@ users = Table(
     Column("ai_ok_at", Float),  # AI 조교 국외 전송 안내를 확인한 시각
     # 학교 계정으로 처음 로그인했을 때 고른 것: student(학생) staff(선생님 → 강사·관리교사 신청). 비면 아직 안 고름
     Column("self_role", String(10), nullable=False, default=""),
+    # 학생 탈퇴 신청: 거점학교 관리교사(또는 전체 관리자)가 승인하면 계정과 기록을 지운다
+    Column("withdraw_at", Float),  # 신청한 시각 (비면 신청 안 함)
+    Column("withdraw_reason", String(300), nullable=False, default=""),
+    Column("withdraw_note", String(300), nullable=False, default=""),  # 반려 사유 (학생에게 보임)
 )
 
 site_settings = Table(
@@ -258,7 +262,10 @@ def init() -> None:
              ("users", "terms_at", "FLOAT"),
              ("users", "ai_ok_at", "FLOAT"),
              ("users", "self_role", "VARCHAR(10) NOT NULL DEFAULT ''"),
-             ("courses", "grades", "VARCHAR(10) NOT NULL DEFAULT ''")]
+             ("courses", "grades", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("users", "withdraw_at", "FLOAT"),
+             ("users", "withdraw_reason", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("users", "withdraw_note", "VARCHAR(300) NOT NULL DEFAULT ''")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:

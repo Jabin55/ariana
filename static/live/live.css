@@ -510,3 +510,8 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .faq p { color: var(--muted); line-height: 1.7; margin: 8px 0 0; }
 .doc-links { font-size: 0.9rem; }
 .grade-pick .row { gap: 14px; margin-top: 4px; }
+
+/* 회원 탈퇴 (내 정보 맨 아래, 접혀 있음) */
+.withdraw { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 0.9rem; }
+.withdraw summary { cursor: pointer; color: var(--muted); }
+.withdraw p { margin: 8px 0; line-height: 1.6; }

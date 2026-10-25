@@ -148,6 +148,7 @@ $("#logout").addEventListener("click", async () => {
 
 function showProfile() {
   show("profile-view");
+  $("#withdraw-box").open = false;
   const student = ME.role === "student";
   document.querySelectorAll(".student-only").forEach((el) => { el.hidden = !student; });
   for (const id of ["#p-grade", "#p-class", "#p-number"]) $(id).required = student;
@@ -181,6 +182,7 @@ function showProfile() {
   $("#p-class").value = ME.class_no || "";
   $("#p-number").value = ME.number || "";
   updateNo();
+  drawWithdraw();
 }
 
 function updateNo() {
@@ -206,6 +208,56 @@ $("#profile").addEventListener("submit", async (e) => {
   } catch (err) { $("#profile-error").textContent = err.message; }
 });
 $("#edit-profile").addEventListener("click", showProfile);
+
+const WITHDRAW_TEXT = {
+  student: "탈퇴를 신청하면 수강한 강좌의 <b>거점학교 관리교사 선생님이 승인</b>한 뒤 탈퇴돼요. 승인되면 내 정보와 출결, 질문, 퀴즈 답·점수, 과제 제출물, 수강신청 기록이 <b>모두 지워지고 되살릴 수 없어요.</b> 승인 전에는 신청을 취소할 수 있어요.",
+  other: "탈퇴하면 내 정보와 등록 신청 기록이 <b>바로 지워지고 되살릴 수 없어요.</b> 직접 연 강좌나 수업이 있으면 학생 기록 보호를 위해 바로 탈퇴할 수 없어요.",
+};
+
+function drawWithdraw() {
+  const student = ME.role === "student";
+  $("#withdraw-box").hidden = !!ME.needs_profile;
+  $("#withdraw-text").innerHTML = WITHDRAW_TEXT[student ? "student" : "other"] + " 같은 구글 계정으로 다시 로그인하면 새로 가입돼요.";
+  $("#withdraw-btn").textContent = student ? "탈퇴 신청" : "탈퇴하기";
+  $("#withdraw").hidden = !!ME.withdraw_requested;
+  $("#withdraw-error").textContent = "";
+  const st = $("#withdraw-status");
+  st.replaceChildren();
+  if (ME.withdraw_requested) {
+    $("#withdraw-box").open = true;
+    st.append(h("div", { class: "row" }, h("span", { class: "status pending grow" }, "탈퇴 신청함 · 관리교사 승인 대기 중"),
+      h("button", { class: "small", onclick: async () => {
+        try { await api("/api/me/withdraw/cancel", {}); ME = (await api("/api/me")).user; drawWithdraw(); toast("탈퇴 신청을 취소했어요."); } catch (err) { toast(err.message); }
+      } }, "신청 취소")));
+  } else if (ME.withdraw_note) {
+    $("#withdraw-box").open = true;
+    st.append(h("p", { class: "error" }, `탈퇴 신청이 반려됐어요: ${ME.withdraw_note}`));
+  }
+}
+
+$("#withdraw").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#withdraw-error").textContent = "";
+  if ($("#withdraw-confirm").value.trim() !== "탈퇴") {
+    $("#withdraw-error").textContent = "확인 칸에 '탈퇴'라고 적어 주세요.";
+    return;
+  }
+  const student = ME.role === "student";
+  if (!confirm(student ? "탈퇴를 신청할까요? 관리교사 선생님이 승인하면 내 기록이 모두 지워져요." : "정말 탈퇴할까요? 내 기록이 모두 지워지고 되살릴 수 없어요.")) return;
+  try {
+    const r = await api("/api/me/withdraw", { confirm: "탈퇴", reason: $("#withdraw-reason").value.trim() });
+    if (r.requested) {
+      ME = (await api("/api/me")).user;
+      $("#withdraw-confirm").value = "";
+      drawWithdraw();
+      toast("탈퇴를 신청했어요. 관리교사 선생님이 승인하면 탈퇴돼요.");
+      return;
+    }
+    try { google.accounts.id.disableAutoSelect(); } catch { /* 구글 스크립트 없음 */ }
+    alert("탈퇴했어요. 그동안 이용해 주셔서 고마워요.");
+    location.href = "/live/about";
+  } catch (err) { $("#withdraw-error").textContent = err.message; }
+});
 
 /* ───── 관리교사·강사 등록 신청 ───── */
 
@@ -724,13 +776,13 @@ async function loadAdmin() {
 
 /* 거점학교 관리교사: 강사 승인 + 수강신청 최종 승인 */
 async function loadHub() {
-  const [{ applications, today }, ov] = await Promise.all([
-    api("/api/staff/applications?role=instructor"), api("/api/hub/overview")]);
+  const [{ applications, today }, ov, { requests: quits }] = await Promise.all([
+    api("/api/staff/applications?role=instructor"), api("/api/hub/overview"), api("/api/hub/withdrawals")]);
   applications.forEach((x) => { x.role = "instructor"; });
   const waiting = ov.enrollments.filter((e) => e.status === "instructor_ok");
   const pendingStaff = applications.filter((x) => x.status === "pending").length;
-  $("#hub-badge").textContent = pendingStaff + waiting.length;
-  $("#hub-badge").hidden = !(pendingStaff + waiting.length);
+  $("#hub-badge").textContent = pendingStaff + waiting.length + quits.length;
+  $("#hub-badge").hidden = !(pendingStaff + waiting.length + quits.length);
   const final = async (e, status) => {
     let note = "";
     if (status === "rejected") note = prompt(`${e.name} 학생의 수강신청을 거절하는 사유 (학생에게 보여요)`, "") ?? null;
@@ -768,7 +820,25 @@ async function loadHub() {
     h("h2", { style: "margin:8px 0" }, `📋 수강신청 최종 승인${waiting.length ? ` (${waiting.length}명 대기)` : ""}`),
     ...(courseBoxes.length ? courseBoxes : [h("p", { class: "muted" }, "아직 개설된 강좌가 없어요.")]),
     h("h2", { style: "margin:20px 0 0" }, "👩‍🏫 강사 등록"),
-    ...staffSections(applications, today, loadHub, "강사"));
+    ...staffSections(applications, today, loadHub, "강사"),
+    h("h2", { style: "margin:20px 0 8px" }, `🚪 학생 탈퇴 신청${quits.length ? ` (${quits.length}명)` : ""}`),
+    quits.length ? h("div", { class: "people" }, quits.map((q) => withdrawRow(q))) : h("p", { class: "muted" }, "없어요."));
+}
+
+function withdrawRow(q) {
+  const decide = async (action) => {
+    let note = "";
+    if (action === "approve" && !confirm(`${q.name} 학생의 탈퇴를 승인할까요?\n출결·과제·점수 등 이 학생의 기록이 모두 지워지고 되살릴 수 없어요.`)) return;
+    if (action === "reject") { note = prompt(`${q.name} 학생의 탈퇴 신청을 반려하는 사유 (학생에게 보여요)`, ""); if (note === null) return; }
+    try { await api(`/api/hub/withdrawals/${q.user_id}`, { action, note }); toast(action === "approve" ? "탈퇴를 승인했어요." : "반려했어요."); loadHub(); } catch (err) { toast(err.message); }
+  };
+  return h("div", { class: "person", style: "flex-wrap:wrap" }, h("span", { class: "dot" }),
+    h("span", { class: "grow" }, `${q.student_no || "-"} ${q.name} `, h("span", { class: "muted", style: "font-size:0.8rem" }, `${q.school} · ${new Date(q.requested_at * 1000).toLocaleDateString("ko-KR")} 신청`),
+      q.reason ? h("div", { style: "font-size:0.85rem" }, `사유: ${q.reason}`) : null,
+      h("div", { class: "muted", style: "font-size:0.8rem" }, q.courses.length ? `신청한 강좌: ${q.courses.join(", ")}` : "수강신청한 강좌 없음"),
+      q.studying.length ? h("div", { class: "status pending", style: "font-size:0.8rem" }, `⚠️ 아직 수강 중: ${q.studying.join(", ")} — 승인하면 이 강좌 출결·과제 기록도 지워져요`) : null),
+    h("span", { class: "acts" }, h("button", { class: "danger", onclick: () => decide("approve") }, "탈퇴 승인"),
+      h("button", { onclick: () => decide("reject") }, "반려")));
 }
 
 /* 출결 기록 */
