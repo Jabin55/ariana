@@ -904,3 +904,9 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
   /* 강좌 개설: 표 두 칸 */
   .wz-row { grid-template-columns: 150px minmax(0, 1fr); }
 }
+
+/* 글자 줄 간격을 넉넉하게 (읽기 편하게). 버튼·입력칸은 너무 커지지 않게 그대로 */
+body { line-height: 1.75; }
+button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-height: 1.4; }
+.info-block, .faq p, .hero-sub, .g-points p, .credit-joint, .notice-body, .doc { line-height: 1.9; }
+.info-card p, .feature p, .withdraw p, .facts, .course-info, .chatmsg .text, .sys-col li { line-height: 1.75; }
