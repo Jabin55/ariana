@@ -435,8 +435,7 @@ async function renderOpenClass(c, box) {
           location.href = `/live/teacher/${res.code}`;
         } catch (err) { toast(err.message); }
       } }, "▶ 지금 온라인 수업 열기")),
-    h("p", { class: "muted", style: "font-size:0.9rem" }, `수강 확정 학생 ${c.approved}명은 마이페이지 '지금 들어갈 수 있는 수업'에서 바로 들어와요 (입장 코드 없음).`
-      + (notYet ? ` ⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.` : "")),
+    notYet ? h("p", { class: "muted", style: "font-size:0.9rem" }, `⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.`) : null,
     next ? h("p", {}, `다음 회차: ${next.no}회차 ${fmtDate(next.date)} ${next.start || ""}~${next.end || ""}${next.topic ? ` · ${next.topic}` : ""}`) : null,
     courseFacts({ sessions: c.sessions }));
 }
