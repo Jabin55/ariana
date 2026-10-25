@@ -450,6 +450,7 @@ async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
   let d;
   try { d = await api(`/api/courses/${c.id}/learning`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
+  d.classes.reverse(); // 첫 수업(연번 1)부터 차례로
   const S = d.summary;
   const pct = (v) => (v == null ? "-" : `${v}%`);
   const cards = [
@@ -478,7 +479,6 @@ function toggleRow(st, id, draw) {
 }
 
 function learnAttendance(d, st, box) {
-  const n = d.classes.length;
   const COLS = 7;
   const draw = () => fill(box,
     h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `🙋 수업별 출석 (수강생 ${d.summary.enrolled}명)`),
@@ -488,7 +488,7 @@ function learnAttendance(d, st, box) {
         const open = st.open.has(x.id);
         const sub = h("td", { colspan: COLS });
         const row = h("tr", { class: open ? "on" : "" },
-          h("td", { class: "num" }, n - i), h("td", {}, fmtDate(x.date)),
+          h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(x.date)),
           h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "")}`), h("td", {}, x.title),
           h("td", { class: "num" }, `${x.attended}명${d.summary.enrolled ? ` / ${d.summary.enrolled}명` : ""}`),
           h("td", { class: "num" }, h("strong", {}, x.rate == null ? "-" : `${x.rate}%`)),
@@ -529,7 +529,7 @@ function learnNotices(d, box) {
     inClass.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
       h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "공지 내용"].map((t) => h("th", {}, t)))),
       h("tbody", {}, inClass.map((x, i) => h("tr", {},
-        h("td", { class: "num" }, inClass.length - i), h("td", {}, fmtDate(x.cls.date)), h("td", {}, x.time),
+        h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(x.cls.date)), h("td", {}, x.time),
         h("td", {}, x.cls.title), h("td", { style: "white-space:normal;text-align:left" }, x.text))))))
       : h("p", { class: "muted" }, "수업 중에 띄운 공지가 없어요. (수업 화면의 '📢 공지'로 띄운 것이 여기에 남아요)"),
     h("h3", { class: "section-title", style: "margin:20px 0 8px" }, `📌 과목 공지사항 ${d.course_notices.length}건`),
@@ -552,7 +552,7 @@ function learnActivities(d, st, key, box) {
         const open = st.open.has(x.id);
         const sub = h("td", { colspan: COLS });
         const row = h("tr", { class: open ? "on" : "" },
-          h("td", { class: "num" }, list.length - i), h("td", {}, fmtDate(x.date)), h("td", {}, x.start),
+          h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(x.date)), h("td", {}, x.start),
           h("td", {}, x.title), h("td", { class: "num" }, `${x.acts[key].count}개`),
           h("td", { class: "num" }, h("strong", {}, rate(x.acts[key]))),
           h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, x.id, draw) }, open ? "접기" : "내역 보기")));
