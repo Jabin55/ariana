@@ -44,21 +44,28 @@ def public_user(u) -> dict:
         "id": d["id"], "email": d["email"], "role": d["role"], "name": d["name"],
         "school": d["school"], "grade": d["grade"], "class_no": d["class_no"], "number": d["number"],
         "student_no": student_no(d), "display": display_name(d), "needs_profile": needs_profile(d),
-        "is_admin": bool(d.get("is_admin")), "instructor": d.get("instructor"),
+        "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
+        "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []),
     }
 
 
-def instructor_active(inst: dict | None) -> bool:
-    if not inst or inst["status"] != "approved":
+def membership_active(m: dict) -> bool:
+    if m["status"] != "approved" or not m.get("hub_id"):
         return False
     today = today_kst()
-    return (not inst["valid_from"] or inst["valid_from"] <= today) and \
-        (not inst["valid_until"] or today <= inst["valid_until"])
+    return (not m["valid_from"] or m["valid_from"] <= today) and (not m["valid_until"] or today <= m["valid_until"])
 
 
-def effective_role(email: str, inst: dict | None) -> str:
+def membership_status(m: dict) -> str:
+    """화면용 상태: pending approved scheduled(시작 전) expired(기간 끝) rejected revoked"""
+    if m["status"] == "approved" and not membership_active(m):
+        return "expired" if m["valid_until"] and m["valid_until"] < today_kst() else "scheduled"
+    return m["status"]
+
+
+def effective_role(email: str, memberships: list[dict]) -> str:
     email = email.lower()
-    if email in ADMIN_EMAILS or email in TEACHER_EMAILS or instructor_active(inst):
+    if email in ADMIN_EMAILS or email in TEACHER_EMAILS or any(membership_active(m) for m in memberships):
         return "teacher"
     domain = email.rsplit("@", 1)[-1]
     if not ALLOWED_DOMAINS or domain in ALLOWED_DOMAINS:
@@ -66,15 +73,11 @@ def effective_role(email: str, inst: dict | None) -> str:
     return "guest"
 
 
-def instructor_view(inst: dict | None) -> dict | None:
-    if not inst:
-        return None
-    status = inst["status"]
-    if status == "approved" and not instructor_active(inst):
-        status = "expired" if inst["valid_until"] and inst["valid_until"] < today_kst() else "scheduled"
-    return {"status": status, "kind": inst["kind"], "valid_from": inst["valid_from"],
-            "valid_until": inst["valid_until"], "contact": inst["contact"], "message": inst["message"],
-            "admin_note": inst["admin_note"]}
+def membership_view(m: dict, hub_names: dict) -> dict:
+    return {"id": m["id"], "role": m["role"], "hub_id": m["hub_id"],
+            "hub": hub_names.get(m["hub_id"]) or m["hub_name"], "status": membership_status(m),
+            "kind": m["kind"], "valid_from": m["valid_from"], "valid_until": m["valid_until"],
+            "contact": m["contact"], "message": m["message"], "admin_note": m["admin_note"]}
 
 
 def student_no(u: dict) -> str:
@@ -92,7 +95,7 @@ def display_name(u: dict) -> str:
 
 def needs_profile(u: dict) -> bool:
     if u.get("role") == "guest":
-        return False  # 손님은 강사 등록 신청서에서 이름을 적는다
+        return False  # 손님은 관리교사·강사 등록 신청서에서 이름을 적는다
     if not u.get("name"):
         return True
     if u.get("role") == "student":
@@ -106,20 +109,28 @@ def _get_user(uid: int):
 
 
 def _load_with_role(uid: int) -> dict | None:
-    """사용자 + 강사 신청 정보를 읽고, 지금 역할을 판단한다(바뀌었으면 저장해 둔다)."""
+    """사용자 + 관리교사·강사 등록 정보를 읽고, 지금 역할을 판단한다(바뀌었으면 저장해 둔다)."""
     with db.engine.begin() as c:
         row = c.execute(select(db.users).where(db.users.c.id == uid)).first()
         if not row:
             return None
         u = dict(row._mapping)
-        inst = c.execute(select(db.instructors).where(db.instructors.c.user_id == uid)).first()
-        inst = dict(inst._mapping) if inst else None
-        role = effective_role(u["email"], inst)
+        ms = [dict(r._mapping) for r in c.execute(
+            select(db.memberships).where(db.memberships.c.user_id == uid).order_by(db.memberships.c.id))]
+        hub_names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
+        role = effective_role(u["email"], ms)
         if role != u["role"]:
             c.execute(update(db.users).where(db.users.c.id == uid).values(role=role))
             u["role"] = role
     u["is_admin"] = u["email"].lower() in ADMIN_EMAILS
-    u["instructor"] = instructor_view(inst)
+    u["memberships"] = [membership_view(m, hub_names) for m in ms]
+    active = [m for m in ms if membership_active(m)]
+    # 관리교사로 맡은 거점학교 / 강좌를 열 수 있는 거점학교 (관리교사도 강의할 수 있다)
+    u["coordinator_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
+                                    if m["role"] == "coordinator"})
+    u["teach_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active})
+    u["coordinator_hubs"] = [{"id": i, "name": n} for i, n in u["coordinator_hubs"]]
+    u["teach_hubs"] = [{"id": i, "name": n} for i, n in u["teach_hubs"]]
     return u
 
 
@@ -135,7 +146,7 @@ async def require_user(request: Request, role: str | None = None, profile: bool 
     if not u:
         raise HTTPException(401, "로그인이 필요해요.")
     if role and u["role"] != role:
-        raise HTTPException(403, "선생님만 할 수 있어요." if role == "teacher" else "학생 계정으로 로그인해 주세요.")
+        raise HTTPException(403, "강사만 할 수 있어요." if role == "teacher" else "학생 계정으로 로그인해 주세요.")
     if profile and needs_profile(u):
         raise HTTPException(409, "먼저 내 정보를 입력해 주세요.")
     return u
@@ -162,7 +173,7 @@ def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
 async def login_with_identity(request: Request, sub: str, email: str, gname: str, hd: str | None) -> dict:
     # 누구나 로그인은 된다. 학교 계정이 아니고 강사로 승인되지 않았으면 '손님'으로 강사 등록 신청만 할 수 있다.
     email = email.lower()
-    uid = await db.run(_upsert_user, sub, email, gname, effective_role(email, None))
+    uid = await db.run(_upsert_user, sub, email, gname, effective_role(email, []))
     request.session.clear()
     request.session["uid"] = uid
     return public_user(await db.run(_load_with_role, uid))

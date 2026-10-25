@@ -41,15 +41,25 @@ users = Table(
     Column("last_login", Float),
 )
 
-instructors = Table(
-    "instructors", metadata,  # 강사 등록 신청과 관리자 승인
+hubs = Table(
+    "hubs", metadata,  # 거점학교 (전체 관리자가 관리교사를 승인할 때 만들어진다)
     Column("id", Integer, primary_key=True),
-    Column("user_id", Integer, nullable=False, unique=True),
+    Column("name", String(60), nullable=False, unique=True),
+    Column("created_at", Float, nullable=False),
+)
+
+memberships = Table(
+    "memberships", metadata,  # 관리교사·강사 등록 신청과 승인 (한 사람이 여러 거점학교·역할을 가질 수 있음)
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("role", String(12), nullable=False),  # coordinator(거점학교 관리교사) instructor(강사)
+    Column("hub_id", Integer, index=True),  # 강사: 신청한 거점학교 / 관리교사: 승인 때 정해짐
+    Column("hub_name", String(60), nullable=False, default=""),  # 관리교사가 신청서에 적은 거점학교명
     Column("status", String(10), nullable=False),  # pending(대기) approved(승인) rejected(거절) revoked(해제)
-    Column("kind", String(15), nullable=False, default=""),  # regular(정규 강사) supplementary(보충수업 강사)
+    Column("kind", String(15), nullable=False, default=""),  # 강사 구분: regular(정규) supplementary(보충수업)
     Column("contact", String(100), nullable=False, default=""),
     Column("message", String(500), nullable=False, default=""),
-    Column("valid_from", String(10), nullable=False, default=""),  # 활동 기간 (YYYY-MM-DD, 비우면 제한 없음)
+    Column("valid_from", String(10), nullable=False, default=""),  # 활동 기간 (비우면 제한 없음)
     Column("valid_until", String(10), nullable=False, default=""),
     Column("pledge_at", Float),  # 개인정보 보호 서약에 동의한 시각
     Column("requested_at", Float, nullable=False),
@@ -69,6 +79,7 @@ courses = Table(
     Column("hub_school", String(60), nullable=False, default=""),  # 거점학교명
     Column("start_date", String(10), nullable=False, default=""),  # 강의기간 시작 (YYYY-MM-DD)
     Column("end_date", String(10), nullable=False, default=""),  # 강의기간 끝
+    Column("hub_id", Integer, index=True),  # 거점학교 강좌면 관리교사의 최종 승인이 필요
     Column("open", Integer, nullable=False, default=1),  # 수강신청을 받는 중
     Column("archived", Integer, nullable=False, default=0),  # 학기가 끝나 보관함으로
     Column("created_at", Float, nullable=False),
@@ -79,9 +90,13 @@ enrollments = Table(
     Column("id", Integer, primary_key=True),
     Column("course_id", Integer, nullable=False, index=True),
     Column("user_id", Integer, nullable=False, index=True),
-    Column("status", String(10), nullable=False),  # pending(승인 대기) approved(승인) rejected(거절)
+    # pending(강사 승인 대기) instructor_ok(강사 승인 → 관리교사 최종 승인 대기) approved(수강 확정) rejected(거절)
+    Column("status", String(15), nullable=False),
     Column("requested_at", Float, nullable=False),
     Column("decided_at", Float),
+    Column("instructor_by", Integer),  # 1차 승인한 강사
+    Column("coordinator_by", Integer),  # 최종 승인한 관리교사
+    Column("note", String(300), nullable=False, default=""),  # 거절 사유 등 (학생에게 보임)
     UniqueConstraint("course_id", "user_id"),
 )
 
@@ -161,7 +176,11 @@ def init() -> None:
              ("courses", "instructor", "VARCHAR(30) NOT NULL DEFAULT ''"),
              ("courses", "hub_school", "VARCHAR(60) NOT NULL DEFAULT ''"),
              ("courses", "start_date", "VARCHAR(10) NOT NULL DEFAULT ''"),
-             ("courses", "end_date", "VARCHAR(10) NOT NULL DEFAULT ''")]
+             ("courses", "end_date", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("courses", "hub_id", "INTEGER"),
+             ("enrollments", "instructor_by", "INTEGER"),
+             ("enrollments", "coordinator_by", "INTEGER"),
+             ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''")]
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:
             with engine.begin() as c:
