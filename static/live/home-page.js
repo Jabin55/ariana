@@ -29,7 +29,7 @@
   };
   const DEFAULTS = [
     { kicker: "울산 거점학교 공동교육과정", title: "울산 어디서나, 함께 듣는 실시간 수업", text: "우리 학교에 없는 과목도 집에서 거점학교 선생님과!", button: "수업 신청하기", link: "/live/courses", theme: "green", art: "live" },
-    { kicker: "처음 오셨나요?", title: "가입 → 수강신청 → 승인 → 수업", text: "학교 구글 계정으로 가입하고 수강신청하면, 선생님이 승인한 뒤 수업에 들어가요.", button: "수강 안내 보기", link: "/live/guide", theme: "orange", art: "books" },
+    { kicker: "온라인 공동교육과정", title: "학교의 벽을 넘어, 듣고 싶은 과목을 골라 들어요", text: "실시간으로 묻고 답하고 토론하는 쌍방향 수업 — 내 적성과 진로에 맞는 배움을 넓혀요.", button: "외솔온닷 알아보기", link: "/live/about", theme: "orange", art: "books" },
     { kicker: "선생님 모집", title: "외솔온닷에서 강의해 주세요", text: "거점학교 강사·팀티칭 보조교사로 등록을 신청할 수 있어요.", button: "선생님으로 시작", link: "/live?start=staff", theme: "blue", art: "rocket" },
   ];
 
