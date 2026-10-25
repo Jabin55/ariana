@@ -170,6 +170,12 @@ class Klass:
 classes: dict[str, Klass] = {}
 
 
+def _ended_class(code: str) -> bool:
+    """이 코드로 열렸다가 끝난(또는 너무 오래된) 수업이 있었는지"""
+    with db.engine.connect() as c:
+        return c.execute(select(db.classes.c.id).where(db.classes.c.code == code)).first() is not None
+
+
 def _load_class(code: str):
     with db.engine.connect() as c:
         return c.execute(
@@ -187,7 +193,9 @@ async def get_class(code: str) -> Klass:
         return k
     row = await db.run(_load_class, code) if code.isalnum() and len(code) <= 8 else None
     if not row:
-        raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요.")
+        if code.isalnum() and len(code) <= 8 and await db.run(_ended_class, code):
+            raise HTTPException(404, "이미 끝난 수업이에요. 선생님이 새 수업을 열면 다시 들어올 수 있어요.")
+        raise HTTPException(404, "수업을 찾을 수 없어요. 코드를 다시 확인해 주세요. (강좌 수업은 코드 없이 마이페이지 '지금 들어갈 수 있는 수업'에서 들어가요)")
     saved_questions = await db.run(_load_questions, row.id)  # 서버가 다시 켜져도 질문답변은 이어진다
     saved_files, saved_boards = await db.run(_load_materials, row.id)  # 발표 자료·판서도
     k = classes.get(code)  # 기다리는 사이 다른 요청이 먼저 살렸을 수 있다
@@ -721,7 +729,7 @@ def add_student(k: Klass, u: dict) -> Student:
 async def ensure_enrolled(k: Klass, u: dict) -> None:
     """강좌 수업이면 수강 승인된 학생만 들어온다(코드를 알아도 안 됨)."""
     if k.course_id and not await db.run(is_enrolled, k.course_id, u["id"]):
-        raise HTTPException(403, "이 강좌에 수강신청이 승인된 학생만 들어올 수 있어요.")
+        raise HTTPException(403, "이 강좌에 수강이 확정된 학생만 들어올 수 있어요. 마이페이지 '내 강좌'에서 승인 상태를 확인해 주세요.")
 
 
 @router.post("/api/live/classes/{code}/join")

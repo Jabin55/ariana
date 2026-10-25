@@ -648,16 +648,23 @@ async def live_now(request: Request):
     def run():
         with db.engine.connect() as c:
             e, cl, co = db.enrollments.c, db.classes.c, db.courses.c
+            # 신청만 하고 아직 확정 전인 강좌의 수업도 알려 준다 (들어갈 수는 없음 → 왜 못 들어가는지 보여 주기)
             return c.execute(
-                select(cl.code, cl.title, cl.created_at, co.title.label("course_title"), co.instructor, co.hub_school)
+                select(cl.code, cl.title, cl.created_at, co.title.label("course_title"), co.instructor, co.hub_school,
+                       e.status)
                 .join(db.courses, co.id == cl.course_id)
-                .join(db.enrollments, and_(e.course_id == cl.course_id, e.user_id == u["id"], e.status == "approved"))
+                .join(db.enrollments, and_(e.course_id == cl.course_id, e.user_id == u["id"],
+                                           e.status.in_(["approved", "pending", "instructor_ok"])))
                 .where(cl.ended_at.is_(None), cl.created_at > time.time() - LIVE_LIMIT)
                 .order_by(cl.created_at.desc())).all()
 
+    rows = await db.run(run)
     return {"classes": [{"code": r.code, "title": r.title, "course_title": r.course_title, "started_at": r.created_at,
                          "instructor": r.instructor, "hub_school": r.hub_school}
-                        for r in await db.run(run)]}
+                        for r in rows if r.status == "approved"],
+            # 수업은 열렸지만 아직 수강 확정 전 (코드는 알려 주지 않는다)
+            "waiting": [{"title": r.title, "course_title": r.course_title, "status": r.status}
+                        for r in rows if r.status != "approved"]}
 
 
 def course_roster(course_id: int) -> list:

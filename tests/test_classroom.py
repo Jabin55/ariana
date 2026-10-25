@@ -1334,3 +1334,27 @@ def test_course_requests_and_info_pages(monkeypatch):
     for page in ("/live/about", "/live/credit", "/live/guide"):
         assert c.get(page).status_code == 200
     assert "192" in c.get("/live/credit").text and "시스템 특징" in c.get("/live/about").text
+
+
+def test_student_sees_why_cannot_enter():
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a = student(1)
+    a.post(f"/api/courses/{cid}/enroll")  # 신청만 함 (승인 전)
+    code = t.post("/api/live/classes", json={"title": "1차시", "course_id": cid}).json()["code"]
+    now = a.get("/api/courses/live-now").json()
+    assert now["classes"] == [] and now["waiting"] == [{"title": "1차시", "course_title": "강좌", "status": "pending"}]
+    assert "code" not in now["waiting"][0]  # 확정 전에는 코드를 알려 주지 않는다
+    r = a.post(f"/api/live/classes/{code}/join")
+    assert r.status_code == 403 and "확정" in r.json()["detail"]
+    uid = a.get("/api/me").json()["user"]["id"]
+    t.post(f"/api/courses/{cid}/enrollments/{uid}", json={"status": "approved"})
+    now = a.get("/api/courses/live-now").json()
+    assert [c["code"] for c in now["classes"]] == [code] and now["waiting"] == []
+    # 끝난 수업 코드 / 없는 코드는 서로 다르게 알려 준다
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        state(tw)
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    assert "끝난 수업" in a.post(f"/api/live/classes/{code}/join").json()["detail"]
+    assert "코드를 다시" in a.post("/api/live/classes/ZZZZZZ/join").json()["detail"]

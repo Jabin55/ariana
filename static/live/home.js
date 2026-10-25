@@ -398,14 +398,20 @@ function showStudent() {
 /* 수강 승인된 강좌에서 지금 열린 수업 → 코드 없이 입장 */
 async function loadLiveNow() {
   try {
-    const { classes } = await api("/api/courses/live-now");
+    const { classes, waiting = [] } = await api("/api/courses/live-now");
     const box = $("#live-now");
+    const WAIT = { pending: "강사 선생님 승인 대기", instructor_ok: "거점학교 관리교사 최종 승인 대기" };
     box.replaceChildren(...classes.map((c) => h("div", { class: "live-item" },
       h("div", { class: "grow" }, h("div", { class: "muted", style: "font-size:0.85rem" },
         `${c.course_title}${c.instructor ? ` · ${c.instructor}` : ""} · ${fmtTime(c.started_at)} 시작`),
         h("strong", {}, c.title)),
       h("button", { class: "primary", onclick: () => join(c.code) }, "입장하기"))));
-    if (!classes.length) {
+    // 수업은 열렸는데 아직 수강 확정 전: 왜 못 들어가는지 알려 준다
+    box.append(...waiting.map((c) => h("div", { class: "live-item waiting" },
+      h("div", { class: "grow" }, h("div", { class: "muted", style: "font-size:0.85rem" }, `${c.course_title} · 수업이 열렸어요`),
+        h("strong", {}, c.title),
+        h("div", { style: "font-size:0.88rem;color:var(--warn)" }, `🔒 아직 수강 확정 전이라 들어갈 수 없어요 (${WAIT[c.status] || "승인 대기"}). 선생님께 승인을 요청해 주세요.`)))));
+    if (!classes.length && !waiting.length) {
       box.append(h("span", { class: "muted" }, "지금 열린 수업이 없어요. 선생님이 수업을 열면 여기에 바로 나타나요."));
     }
   } catch { /* 다음 새로고침 때 다시 시도 */ }
@@ -628,7 +634,8 @@ function updateCourseHint() {
   const id = Number($("#t-course").value);
   const c = teacherCourses.find((x) => x.id === id);
   $("#t-course-hint").textContent = c
-    ? `수강 확정된 학생 ${c.approved}명은 마이페이지에서 바로 들어와요(입장 코드 없음). 확정되지 않은 학생은 들어올 수 없어요.`
+    ? `수강 확정된 학생 ${c.approved}명은 마이페이지에서 바로 들어와요(입장 코드 없음). 확정되지 않은 학생은 들어올 수 없어요.` +
+      ((c.pending || 0) + (c.waiting || 0) ? ` ⚠️ 아직 승인 안 된 신청 학생 ${(c.pending || 0) + (c.waiting || 0)}명이 있어요 — '강좌·수강생' 탭에서 승인하세요.` : "")
     : teacherCourses.length ? "특강·보충수업·상담처럼 한 번 여는 수업이에요. 수업 코드를 아는 학생은 누구나 들어와요."
       : "강좌를 먼저 개설하면 수강생이 코드 없이 들어올 수 있어요 ('강좌·수강생' 탭). 지금 열면 특강·모임(코드로 입장)이 돼요.";
   document.querySelectorAll(".no-course").forEach((el) => { el.hidden = !!c; });
@@ -660,6 +667,14 @@ async function openCourseClass(c) {
     const open = classes.find((x) => x.course_id === c.id);
     if (open && confirm(`'${c.title}' 수업(${open.title})이 이미 열려 있어요. 그 수업으로 들어갈까요?\n(취소를 누르면 새 수업을 하나 더 열어요)`)) {
       location.href = `/live/teacher/${open.code}`;
+      return;
+    }
+    const notYet = (c.pending || 0) + (c.waiting || 0);
+    if (notYet && !confirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요` +
+      `${c.pending ? ` (내 승인 대기 ${c.pending}명` : " ("}${c.waiting ? `${c.pending ? ", " : ""}관리교사 승인 대기 ${c.waiting}명` : ""}).\n` +
+      "이 학생들은 수업에 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?")) {
+      openCourse.add(c.id);
+      renderCourseList();
       return;
     }
     const title = prompt(`'${c.title}' 수업을 열어요. 수업 이름 (예: 3차시 헌법과 기본권, 비워도 돼요)`, "");
