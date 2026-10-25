@@ -32,7 +32,8 @@ def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_cla
 <title>{html.escape(title)} · 외솔온닷</title>
 <link rel="icon" href="/static/live/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/live/live.css">
-<script src="/static/live/thumbs.js"></script></head>
+<script src="/static/live/thumbs.js"></script>
+<script src="/static/live/course-search.js"></script></head>
 <body class="site">
 <main class="{main_class}">
 {head}
@@ -338,11 +339,8 @@ async def catalog():
 async def courses_page():
     return site_page("수강신청", """
 <section class="info-block">
-  <p style="margin:0">지금 수강신청을 받는 강좌예요. 신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
-  <div class="row" style="margin-top:12px">
-    <input id="q" placeholder="강좌·선생님·학교 검색" style="flex:1;min-width:180px">
-    <select id="g"><option value="">모든 학년</option><option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option></select>
-  </div>
+  <p style="margin:0 0 12px">지금 수강신청을 받는 강좌예요. 신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
+  <div id="course-search"></div>
 </section>
 <section class="catalog" id="catalog"><p class="muted">불러오는 중…</p></section>
 <script>
@@ -352,11 +350,9 @@ async def courses_page():
   const d = (s) => (s || "").replaceAll("-", ".");
   let list = [];
   try { list = (await (await fetch("/api/courses/catalog")).json()).courses; } catch { box.innerHTML = '<p class="error">강좌 목록을 불러오지 못했어요.</p>'; return; }
-  const draw = () => {
-    const q = document.getElementById("q").value.trim();
-    const g = Number(document.getElementById("g").value);
-    const shown = list.filter((c) => (!q || [c.title, c.instructor, c.hub_school, c.description, c.subject_area, c.subject_group].join(" ").includes(q))
-      && (!g || !c.grades.length || c.grades.includes(g)));
+  const search = window.courseSearch(list, (shown) => draw(shown));
+  document.getElementById("course-search").append(search.form);
+  const draw = (shown) => {
     box.innerHTML = shown.length ? shown.map((c) => {
       // 대상학년 · 학기 · 강좌명 · 학점 · 인원 · 거점학교 · 성취도 · 평가방식만
       // 학년만 하나씩 (학년도·학기는 머리 띠에 있다). 대상 학년을 안 정했으면 1~3학년 모두
@@ -375,9 +371,7 @@ async def courses_page():
     </div></article>`;
     }).join("") : '<p class="muted">조건에 맞는 강좌가 없어요.</p>';
   };
-  document.getElementById("q").addEventListener("input", draw);
-  document.getElementById("g").addEventListener("change", draw);
-  draw();
+  draw(search.filter());
 })();
 </script>
 """, "지금 신청할 수 있는 강좌")

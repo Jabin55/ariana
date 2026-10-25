@@ -232,6 +232,7 @@ courses = Table(
     # 강좌 개설 승인 (거점학교 관리교사): pending(대기) approved(승인) rejected(반려). 승인돼야 수강신청·수업을 받는다
     Column("approval", String(10), nullable=False, default="approved"),
     Column("approval_note", String(300), nullable=False, default=""),  # 반려 사유 (강사에게 보임)
+    Column("delivery", String(20), nullable=False, default="실시간 온라인"),  # 운영방식
     Column("approved_by", Integer),
     Column("created_at", Float, nullable=False),
 )
@@ -443,7 +444,8 @@ def init() -> None:
              ("users", "position", "VARCHAR(30) NOT NULL DEFAULT ''"),
              ("users", "photo", "VARCHAR(40) NOT NULL DEFAULT ''"),
              ("courses", "approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
-             ("courses", "approved_by", "INTEGER")]
+             ("courses", "approved_by", "INTEGER"),
+             ("courses", "delivery", "VARCHAR(20) NOT NULL DEFAULT '실시간 온라인'")]
     fresh = set()
     for table, col, kind in added:
         if col not in {c["name"] for c in inspect(engine).get_columns(table)}:

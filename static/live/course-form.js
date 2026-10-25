@@ -121,6 +121,7 @@ async function courseForm(c, done) {
   browse.append(h("div", { class: "row" }, "교과(군) ", browseGroup), browseList);
   const schoolYear = h("input", { type: "number", min: 2020, max: 2100, value: c.school_year || year, required: true, style: "width:6.5em" });
   const termName = `term-${dlId}`;
+  const delivery = h("select", {}, (meta.delivery || ["실시간 온라인"]).map((x) => h("option", { value: x, selected: (c.delivery || "실시간 온라인") === x }, x)));
   const terms = meta.terms.map((t) => h("label", { class: "switch" }, h("input", { type: "radio", name: termName, value: t, checked: (c.term || meta.terms[0]) === t }), ` ${t}`));
   const credits = h("input", { type: "number", min: 1, max: 10, value: c.credits || 4, required: true, style: "width:5em" });
   const achievement = h("select", { required: true }, opt(Object.entries(meta.achievements), c.achievement, "성취도를 고르세요"));
@@ -174,6 +175,7 @@ async function courseForm(c, done) {
       row("학점", credits), row("수업 시수", hoursText), row("성취도", achievement)),
     h("div", { class: "wz-table" },
       row("수업 학기", h("div", { class: "row" }, terms)),
+      row("운영방식", delivery),
       row("대상 학년", h("div", { class: "row" }, grades.map((x) => h("label", { class: "switch" }, x, ` ${x.value}학년`)),
         h("span", { class: "muted", style: "font-size:0.85rem" }, "고르지 않으면 모든 학년"))),
       row("수강 인원", h("div", { class: "row" }, capacity, "명")),
@@ -296,7 +298,7 @@ async function courseForm(c, done) {
     const body = {
       title: subject.value.trim(), subject: subject.value.trim(), custom_subject: custom.checked,
       subject_group: group.value, subject_area: area.value, subject_type: type.value,
-      school_year: Number(schoolYear.value), term: form.querySelector(`input[name="${termName}"]:checked`)?.value || meta.terms[0],
+      school_year: Number(schoolYear.value), term: form.querySelector(`input[name="${termName}"]:checked`)?.value || meta.terms[0], delivery: delivery.value,
       credits: Number(credits.value), hours: Number(hours.value), achievement: achievement.value,
       grades: grades.filter((x) => x.checked).map((x) => Number(x.value)), capacity: Number(capacity.value),
       recruit_start: rStart.value, recruit_start_time: rStartT.value, recruit_end: rEnd.value, recruit_end_time: rEndT.value,
@@ -350,6 +352,7 @@ function courseFacts(c) {
     rows.push(["교과", [c.subject_group, c.subject_area, c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")]);
   }
   if (c.term) rows.push(["학기", `${c.school_year || ""}학년도 ${c.term}`]);
+  if (c.delivery) rows.push(["운영방식", c.delivery]);
   if (c.credits) rows.push(["학점", `${c.credits}학점 (${c.hours}시간)`]);
   if (c.class_days?.length) rows.push(["수업 시간", `매주 ${c.class_days.map((d) => DAYS[d]).join("·")} ${c.class_start || ""}~${c.class_end || ""}`]);
   if (c.sessions?.length) rows.push(["회차", `${c.sessions.length}회 (${fmtDate(c.sessions[0].date)} ~ ${fmtDate(c.sessions[c.sessions.length - 1].date)})`]);

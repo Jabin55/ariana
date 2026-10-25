@@ -119,7 +119,7 @@ def subject_info(r) -> dict:
     """과목·학점·평가 등 강좌 안내 (누구에게나 보여도 되는 정보)"""
     return {"subject_group": r.subject_group, "subject_area": r.subject_area, "subject_type": r.subject_type,
             "custom_subject": bool(r.custom_subject), "school_year": r.school_year, "term": r.term,
-            "credits": r.credits, "hours": r.hours, "achievement": r.achievement,
+            "credits": r.credits, "hours": r.hours, "achievement": r.achievement, "delivery": r.delivery or subjects.DELIVERY[0],
             "achievement_text": subjects.ACHIEVEMENTS.get(r.achievement, ""), "capacity": r.capacity,
             "recruit_start": r.recruit_start, "recruit_end": r.recruit_end, "recruit": recruit_state(r),
             "exam_ratio": r.exam_ratio, "perf_ratio": r.perf_ratio,
@@ -199,6 +199,7 @@ class CourseReq(BaseModel):
     subject_type: str = Field(default="", max_length=10)  # 일반선택·진로선택·융합선택
     school_year: int | None = Field(default=None, ge=2020, le=2100)
     term: str = Field(default="", max_length=10)
+    delivery: str = Field(default="", max_length=20)  # 운영방식
     credits: int | None = Field(default=None, ge=1, le=10)
     achievement: str = Field(default="", pattern="^(5|3|P)?$")
     capacity: int | None = Field(default=None, ge=1, le=500)
@@ -223,7 +224,7 @@ class CourseReq(BaseModel):
     sessions: list[SessionIn] | None = Field(default=None, max_length=200)  # 회차
 
 
-SUBJECT_KEYS = ("custom_subject", "subject_group", "subject_area", "subject_type", "school_year", "term", "credits",
+SUBJECT_KEYS = ("custom_subject", "subject_group", "subject_area", "subject_type", "school_year", "term", "delivery", "credits",
                 "achievement", "capacity", "recruit_start", "recruit_end", "exam_ratio", "perf_ratio", "team_teaching",
                 "subject", "schools", "contact_email", "contact_phone", "show_email", "show_phone",
                 "recruit_start_time", "recruit_end_time", "class_days", "class_start", "class_end", "hours", "sessions")
@@ -282,6 +283,10 @@ def subject_values(v: dict, cur=None) -> dict:
         out["custom_subject"] = int(custom)
     if v.get("term") and v["term"] not in subjects.TERMS:
         raise HTTPException(400, "수업 학기를 골라 주세요.")
+    if v.get("delivery"):
+        if v["delivery"] not in subjects.DELIVERY:
+            raise HTTPException(400, "운영방식을 골라 주세요.")
+        out["delivery"] = v["delivery"]
     for k in ("school_year", "term", "achievement", "capacity", "exam_ratio", "perf_ratio"):
         if k in v and v[k] is not None:
             out[k] = v[k]
@@ -355,7 +360,7 @@ async def hub_teacher_list(hub_id: int, request: Request):
 async def subject_list():
     """강좌 개설 화면: 2022 개정 교육과정 과목 (검색해서 고른다)"""
     return {"subjects": subjects.SUBJECTS, "groups": subjects.GROUPS, "areas": subjects.AREAS,
-            "types": subjects.TYPES, "terms": subjects.TERMS, "achievements": subjects.ACHIEVEMENTS,
+            "types": subjects.TYPES, "terms": subjects.TERMS, "delivery": subjects.DELIVERY, "achievements": subjects.ACHIEVEMENTS,
             "offices": subjects.OFFICES, "hours_per_credit": subjects.HOURS_PER_CREDIT}
 
 
@@ -467,6 +472,7 @@ class CourseUpdate(BaseModel):
     subject_type: str | None = Field(default=None, max_length=10)
     school_year: int | None = Field(default=None, ge=2020, le=2100)
     term: str | None = Field(default=None, max_length=10)
+    delivery: str | None = Field(default=None, max_length=20)
     credits: int | None = Field(default=None, ge=1, le=10)
     achievement: str | None = Field(default=None, pattern="^(5|3|P)?$")
     capacity: int | None = Field(default=None, ge=0, le=500)  # 0: 제한 없음

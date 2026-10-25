@@ -689,6 +689,8 @@ function courseInfo(c) {
 
 const ENROLL_STATUS = { approved: "수강 확정", pending: "강사 승인 대기", rejected: "거절됨" };
 
+let courseQuery = {}; // 수강신청 검색 칸에서 고른 값 (목록을 다시 불러와도 그대로)
+
 async function loadCourses() {
   const { courses } = await api("/api/courses/available");
   const mine = courses.filter((c) => ["approved", "pending"].includes(c.status));
@@ -737,11 +739,17 @@ async function loadCourses() {
   $("#my-courses").replaceChildren(...mine.map((c) => h("div", { class: "row" }, line(c),
     h("button", { class: "small", onclick: () => enrollBtn(c, "DELETE") }, c.status === "pending" ? "신청 취소" : "수강 취소"))));
   if (!mine.length) $("#my-courses").append(h("span", { class: "muted" }, "아직 수강 중인 강좌가 없어요."));
-  $("#open-courses").replaceChildren(...others.map((c) => h("div", { class: "row" }, enrollLine(c),
-    c.recruit === "open" ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
-      : c.recruit === "before" ? h("span", { class: "muted" }, `모집 예정 (${fmtDate(c.recruit_start)}부터)`)
-        : h("span", { class: "muted" }, "마감"))));
-  if (!others.length) $("#open-courses").append(h("span", { class: "muted" }, "신청할 수 있는 강좌가 없어요."));
+  // 위의 검색 칸(개설연도·학기·운영방식·대상학년·거점학교·강좌명)으로 거른다
+  const drawOpen = (shown) => {
+    $("#open-courses").replaceChildren(...shown.map((c) => h("div", { class: "row" }, enrollLine(c),
+      c.recruit === "open" ? h("button", { class: "small primary", onclick: () => enrollBtn(c, "POST") }, c.status === "rejected" ? "다시 신청" : "수강신청")
+        : c.recruit === "before" ? h("span", { class: "muted" }, `모집 예정 (${fmtDate(c.recruit_start)}부터)`)
+          : h("span", { class: "muted" }, "마감"))));
+    if (!shown.length) $("#open-courses").append(h("span", { class: "muted" }, others.length ? "조건에 맞는 강좌가 없어요." : "신청할 수 있는 강좌가 없어요."));
+  };
+  const search = window.courseSearch(others, (shown) => { courseQuery = search.values(); drawOpen(shown); }, courseQuery);
+  $("#course-search-box").replaceChildren(others.length ? search.form : "");
+  drawOpen(search.filter());
   loadWishes();
 }
 
