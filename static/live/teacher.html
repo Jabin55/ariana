@@ -27,6 +27,7 @@
         <div id="activity-mini"></div>
 
         <div id="main-view" style="display:contents">
+          <div class="present" id="present" hidden><div class="present-bar" id="present-bar"></div></div>
           <div class="stage" id="stage" hidden></div>
           <div class="grid" id="grid"></div>
           <p class="muted" id="grid-empty" style="margin:0">학생이 들어오면 여기에 보여요. 위의 <strong>참여 링크 복사</strong>로 학생들에게 링크를 보내 주세요.</p>
@@ -125,14 +126,15 @@
           <div class="box">
             <h4>모둠 나누기</h4>
             <div class="row">
-              <input id="bo-n" type="number" min="1" max="12" value="4" style="width:5em"> 개 모둠으로
+              <input id="bo-n" type="number" min="1" max="60" value="4" style="width:5em">
+              <select id="bo-by"><option value="n">개 모둠으로</option><option value="size">명씩 (모둠당 인원)</option></select>
               <button id="bo-plan">무작위 배정</button>
             </div>
             <div class="row">
               <input id="bo-min" type="number" min="1" max="120" value="10" style="width:5em"> 분 동안
               <button class="primary" id="bo-start">모둠 활동 시작</button>
             </div>
-            <p class="muted" style="margin:0;font-size:0.85rem">배정 후 아래에서 학생을 다른 모둠으로 옮길 수 있어요. 활동 중에 옮기면 학생 화면이 바로 이동해요.</p>
+            <p class="muted" style="margin:0;font-size:0.85rem">'명씩'을 고르면 접속한 학생 수에 맞춰 모둠 수가 정해져요 (예: 20명을 4명씩 → 5개 모둠). 배정 후 아래에서 학생마다 모둠을 직접 바꿀 수 있어요. 활동 중에 옮기면 학생 화면이 바로 이동해요.</p>
           </div>
           <div class="group-edit" id="group-edit"></div>
         </section>
@@ -143,7 +145,10 @@
       <button id="mic">🎤 마이크</button>
       <button id="cam">📷 카메라</button>
       <button id="screen">🖥️ 화면 공유</button>
+      <button id="present-btn" title="PDF 자료를 띄우고 그 위에 판서하며 설명">📄 자료 발표</button>
+      <button id="board-btn" title="빈 화이트보드에 그리며 설명">🖊️ 화이트보드</button>
       <button id="sound" class="primary" hidden>🔊 소리 켜기</button>
+      <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>
     </footer>
   </div>
 
@@ -158,6 +163,7 @@
   </div>
 
   <script src="/static/live/common.js"></script>
+  <script src="/static/live/present.js"></script>
   <script src="/static/live/teacher.js"></script>
 </body>
 </html>

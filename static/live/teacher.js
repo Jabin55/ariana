@@ -19,6 +19,9 @@ let broadcast = null; // 모든 모둠에 동시에 말하기: { src, pubs: [{ r
 let focusGroup = null;
 const monitorAudio = h("div", { hidden: true });
 document.body.append(monitorAudio);
+const presenter = new Presenter($("#present"), { code: CODE, canDraw: true, send: (m) => sock?.send(m) });
+let showStudents = store.get("present-show-students") ?? true; // 발표 중에 학생 영상도 볼지 (선생님 화면만)
+let lastDevSig = "";
 
 $("#code").textContent = CODE;
 $("#share-code").textContent = CODE;
@@ -53,6 +56,11 @@ function onMessage(msg) {
       break;
     case "chat":
       addChat(msg.msg, true);
+      break;
+    case "strokes":
+    case "stroke":
+    case "stroke_del":
+      presenter.onMessage(msg);
       break;
     case "ended":
       finish("수업을 종료했어요.");
@@ -156,12 +164,19 @@ function renderMain(room) {
   const lp = room.localParticipant;
   const sc = screenItem(room, lp);
   prefs.screen = !!lp.getTrackPublication(Track.Source.ScreenShare);
-  stage.hidden = !sc;
-  syncTiles(stage, sc ? [sc] : []);
+  const presenting = !!S?.present;
+  stage.hidden = !sc || presenting;
+  syncTiles(stage, sc && !presenting ? [sc] : []);
   const hands = new Set((S?.students || []).filter((s) => s.hand).map((s) => `s-${s.id}`));
   const students = [...room.remoteParticipants.values()].filter((p) => !isTeacher(p));
-  syncTiles($("#grid"), [cameraItem(room, lp, { name: "선생님" }),
+  // 발표 중에 '학생 화면 보기'를 끄면 영상을 받지 않는다(소리는 계속)
+  const hideGrid = presenting && !showStudents;
+  $("#grid").hidden = hideGrid;
+  syncTiles($("#grid"), hideGrid ? [] : [cameraItem(room, lp, { name: "선생님" }),
     ...students.map((p) => cameraItem(room, p, { flag: hands.has(p.identity) ? "✋" : "" }))]);
+  // 학생 마이크·카메라가 켜졌는지는 화상 연결에서 알 수 있다 → 바뀌었을 때만 학생 목록을 다시 그린다
+  const devSig = students.map((p) => `${p.identity}:${+p.isMicrophoneEnabled}${+p.isCameraEnabled}`).join(",");
+  if (devSig !== lastDevSig) { lastDevSig = devSig; if (S) renderPeople(); }
   $("#grid").classList.toggle("big", students.length < 9); // 학생이 적으면 타일을 크게
   $("#grid-empty").hidden = students.length > 0;
   $("#sound").hidden = room.canPlaybackAudio;
@@ -453,8 +468,116 @@ function render() {
   renderQuestions();
   renderGroups();
   renderScopes();
+  renderPresent();
   if (mainRoom) renderMain(mainRoom);
 }
+
+/* ───── 자료 발표(PDF)·화이트보드 ───── */
+
+let presentSig = "";
+function renderPresent() {
+  const v = S.present;
+  $("#present").hidden = !v || S.breakout;
+  $("#present-btn").classList.toggle("on", v?.mode === "slides");
+  $("#board-btn").classList.toggle("on", v?.mode === "board");
+  presenter.setView(v);
+  const sig = JSON.stringify([v, S.files, showStudents, presenter.tool]);
+  if (sig === presentSig) return;
+  presentSig = sig;
+  const bar = $("#present-bar");
+  if (!v) { bar.replaceChildren(); return; }
+  const tool = (kind, color, label, title) => h("button", {
+    class: `small tool ${presenter.tool.kind === kind && (!color || presenter.tool.color === color) ? "on" : ""}`, title,
+    style: color ? `color:${color}` : null,
+    onclick: () => { presenter.tool = { kind, color: color || presenter.tool.color }; renderPresent(); },
+  }, label);
+  const last = v.page >= v.pages;
+  bar.replaceChildren(
+    h("button", { class: "small", disabled: v.page <= 1, onclick: () => goPage(v.page - 1), title: "이전 쪽 (←)" }, "◀"),
+    h("span", { class: "pageno" }, `${v.page} / ${v.pages || "?"}`),
+    v.mode === "board" && last
+      ? h("button", { class: "small", onclick: () => goPage(v.page + 1), title: "새 쪽 추가" }, "＋ 새 쪽")
+      : h("button", { class: "small", disabled: last, onclick: () => goPage(v.page + 1), title: "다음 쪽 (→)" }, "▶"),
+    h("span", { class: "sep" }),
+    ...PEN_COLORS.map((c, i) => tool("pen", c, "●", ["검정 펜", "빨강 펜", "파랑 펜", "초록 펜"][i])),
+    tool("hl", "#f5c400", "▮", "형광펜"),
+    tool("eraser", null, "지우개", "지우개 (선을 문지르면 지워져요)"),
+    h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"),
+    h("button", { class: "small", title: "이 쪽 판서 모두 지우기", onclick: () => { if (confirm("이 쪽에 그린 것을 모두 지울까요?")) presenter.clear(); } }, "🗑"),
+    h("span", { class: "grow" }),
+    h("label", { class: "switch small-switch", title: "끄면 발표하는 동안 학생 영상을 받지 않아 화면이 넓어지고 데이터도 아껴요" },
+      h("input", { type: "checkbox", checked: showStudents, onchange: (e) => {
+        showStudents = e.target.checked; store.set("present-show-students", showStudents); renderPresent(); if (mainRoom) renderMain(mainRoom);
+      } }), "학생 영상 보기"),
+    h("button", { class: "small", onclick: openFiles }, "📄 자료"),
+    h("button", { class: "small danger", onclick: () => sock.send({ t: "present_close" }) }, "발표 끝내기"));
+}
+
+function goPage(page) { if (S.present) sock.send({ t: "present_page", page }); }
+document.addEventListener("keydown", (e) => {
+  if (!S?.present || e.target.closest("input, textarea, select")) return;
+  if (e.key === "ArrowRight" || e.key === "PageDown") goPage(Math.min(S.present.pages, S.present.page + 1));
+  if (e.key === "ArrowLeft" || e.key === "PageUp") goPage(Math.max(1, S.present.page - 1));
+});
+
+async function startSlides(fid) {
+  try {
+    const pages = await presenter.pageCount(fid);
+    sock.send({ t: "present_open", file: fid, pages });
+  } catch (err) {
+    console.error(err);
+    toast("PDF를 열지 못했어요. 다른 파일로 해 보세요.");
+  }
+}
+
+function openFiles() {
+  $("#files-dialog")?.remove();
+  const close = () => dlg.remove();
+  const list = S.files.map((f) => h("div", { class: "person" },
+    h("span", { class: "grow" }, `📄 ${f.name}`, h("span", { class: "muted", style: "font-size:0.8rem" }, f.pages ? ` · ${f.pages}쪽` : "")),
+    h("span", { class: "acts" },
+      h("button", { class: "primary", onclick: () => { close(); startSlides(f.id); } }, "발표하기"),
+      h("button", { class: "danger", onclick: () => { if (confirm(`'${f.name}'을 지울까요?`)) { sock.send({ t: "file_remove", file: f.id }); close(); } } }, "지우기"))));
+  const dlg = h("div", { class: "overlay", id: "files-dialog", onclick: (e) => { if (e.target === dlg) close(); } },
+    h("div", { class: "card" },
+      h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, "📄 발표 자료"), h("button", { class: "small", onclick: close }, "닫기")),
+      list.length ? h("div", { class: "people" }, list) : h("p", { class: "muted", style: "margin:0" }, "아직 올린 자료가 없어요."),
+      h("button", { class: "primary", onclick: () => { close(); $("#file-input").click(); } }, "＋ PDF 올리기"),
+      h("p", { class: "muted", style: "margin:0;font-size:0.85rem" },
+        "PowerPoint(PPT)는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. ",
+        "자료는 이 수업 동안만 보관되고 수업이 끝나면 지워져요.")));
+  document.body.append(dlg);
+}
+
+$("#present-btn").addEventListener("click", () => {
+  if (S?.present?.mode === "slides") return openFiles();
+  if (S?.files.length) openFiles(); else $("#file-input").click();
+});
+$("#board-btn").addEventListener("click", () => {
+  if (S?.present?.mode === "board") sock.send({ t: "present_close" });
+  else sock.send({ t: "present_board", page: 1 });
+});
+$("#file-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (/\.pptx?$/i.test(file.name)) {
+    alert("PowerPoint 파일은 바로 띄울 수 없어요.\n\nPowerPoint에서 '파일 → 내보내기 → PDF/XPS 문서 만들기'(또는 '다른 이름으로 저장 → PDF')로 저장한 뒤 그 PDF를 올려 주세요.\n\n애니메이션·동영상이 꼭 필요하면 '🖥️ 화면 공유'로 PowerPoint 창을 공유하세요.");
+    return;
+  }
+  toast("자료를 올리는 중…", 20000);
+  try {
+    const res = await fetch(`/api/live/classes/${CODE}/files?name=${encodeURIComponent(file.name)}`, {
+      method: "POST", headers: { "Content-Type": "application/pdf" }, body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `올리지 못했어요 (${res.status})`);
+    toast("올렸어요. 발표를 시작해요.");
+    await startSlides(data.id);
+  } catch (err) {
+    toast(err.message, 6000);
+  }
+});
 
 const LEAVE_REASONS = {
   leave: "나가기 버튼", closed: "창 닫음·새로고침", network: "연결 끊김", kicked: "내보냄", ended: "수업 종료", server: "서버 재시작",
@@ -482,6 +605,21 @@ function roomLabel(s) {
   return "";
 }
 
+/** 학생 마이크·카메라 버튼: 켜져 있으면 끄고, 꺼져 있으면 켜 달라고 요청한다(브라우저 보안상 직접 켤 수는 없음) */
+function deviceButtons(s) {
+  const p = mainRoom?.remoteParticipants.get(`s-${s.id}`);
+  const known = !!p && s.room === "main";
+  // 켜져 있으면 진하게(누르면 끄기), 꺼져 있으면 흐리게(누르면 켜 달라고 요청)
+  const btn = (on, icon, offIcon, name, off, ask) => on || !known
+    ? h("button", { class: known ? "on" : "", title: `${name} 끄기`, onclick: () => sock.send({ t: "cmd", cmd: off, target: s.id }) }, known ? icon : offIcon)
+    : h("button", { class: "off", title: `${name} 꺼짐 — 누르면 켜 달라고 요청해요 (학생 화면에 '켜기' 버튼이 떠요)`, onclick: () => {
+      sock.send({ t: "cmd", cmd: ask, target: s.id });
+      toast(`${s.name} 학생에게 ${name}를 켜 달라고 요청했어요.`);
+    } }, icon);
+  return [btn(p?.isMicrophoneEnabled, "🎤", "🔇", "마이크", "mute", "ask_mic"),
+    btn(p?.isCameraEnabled, "📷", "📷", "카메라", "cam_off", "ask_cam")];
+}
+
 function renderPeople() {
   const list = S.students.slice().sort((a, b) =>
     (b.hand - a.hand) || (b.online - a.online) || a.name.localeCompare(b.name, "ko"));
@@ -500,8 +638,7 @@ function renderPeople() {
         onclick: () => sock.send({ t: "allow_mic", target: s.id, on: !s.can_speak }),
       }, s.can_speak ? "🎤 발언 중" : "🎤 발언권") : null,
       s.hand && !S.settings.mic_lock && !S.settings.lowbw ? h("button", { onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "손 내리기") : null,
-      h("button", { title: "마이크 끄기", onclick: () => sock.send({ t: "cmd", cmd: "mute", target: s.id }) }, "🔇"),
-      h("button", { title: "카메라 끄기", onclick: () => sock.send({ t: "cmd", cmd: "cam_off", target: s.id }) }, "📷"),
+      ...deviceButtons(s),
       h("button", { title: "내보내기", class: "danger", onclick: () => {
         if (confirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });
       } }, "✕")))));
@@ -728,14 +865,20 @@ function renderGroups() {
   }
 }
 
+/** 모둠 수로 나눌지, 모둠당 인원으로 나눌지 */
+function groupPlan() {
+  const v = Math.max(1, Number($("#bo-n").value) || 4);
+  return $("#bo-by").value === "size" ? { size: v } : { n: Math.min(12, v) };
+}
+
 $("#bo-plan").addEventListener("click", () => {
   if (S.breakout && !confirm("모둠 활동 중이에요. 다시 무작위로 나누면 학생들이 바로 이동해요. 계속할까요?")) return;
-  sock.send({ t: "breakout_plan", n: Number($("#bo-n").value) || 4 });
+  sock.send({ t: "breakout_plan", ...groupPlan() });
 });
 $("#bo-start").addEventListener("click", () => {
   const minutes = Number($("#bo-min").value) || null;
   if (S.breakout) sock.send({ t: "breakout_time", minutes });
-  else sock.send({ t: "breakout_start", minutes, n: Number($("#bo-n").value) || 4 });
+  else sock.send({ t: "breakout_start", minutes, ...groupPlan() });
 });
 
 /* ───── 탭·기타 ───── */

@@ -12,16 +12,22 @@ import asyncio
 import json
 import logging
 import os
+import math
 import random
+import re
+import shutil
+import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import insert, select, update
 
@@ -55,6 +61,14 @@ TEXT_LIMIT = 500
 # 저대역폭 모드 기본값: 전체 교실에서는 학생 카메라를 끄고(모둠 활동 때만 허용) 영상 화질을 낮춘다.
 # 화상 서버 데이터 비용과 학생 휴대폰 데이터를 크게 줄인다. LOW_BANDWIDTH=0 이면 기본으로 끔.
 LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
+# 발표 자료(PDF)는 수업이 진행되는 동안만 서버 임시 폴더에 둔다(수업이 끝나면 지움)
+SLIDES_DIR = Path(os.environ.get("SLIDES_DIR") or Path(tempfile.gettempdir()) / "live-slides")
+MAX_FILE_BYTES = 40 * 1024 * 1024
+MAX_FILES = 20  # 수업당 올릴 수 있는 파일 수
+MAX_BOARD_PAGES = 50
+MAX_STROKES = 1500  # 한 쪽에 남길 수 있는 획 수
+MAX_POINTS = 4000  # 한 획의 점 수
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def livekit_ready() -> bool:
@@ -123,6 +137,11 @@ class Klass:
     talking: str | None = None  # 선생님이 말하고 있는 모둠
     broadcasting: bool = False  # 선생님이 모든 방에 동시에 말하는 중
     events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)
+    # 발표(PDF)·화이트보드: {"mode": "slides"|"board", "file": 파일 id, "page": 쪽} / 없으면 None
+    present: dict | None = None
+    files: list[dict] = field(default_factory=list)  # 올린 발표 자료 [{id, name, pages, size}]
+    board_pages: int = 1  # 화이트보드 쪽 수
+    strokes: dict[str, list[dict]] = field(default_factory=dict)  # 쪽마다 선생님 판서
     seq: int = 0
     flush_scheduled: bool = False
     flush_at: float = 0.0
@@ -176,6 +195,15 @@ def prune_classes() -> None:
     for code, k in list(classes.items()):
         if not k.conns and now - k.last_active > MEMORY_IDLE_LIMIT:
             classes.pop(code, None)
+            remove_files(k)
+    # 서버가 다시 켜져 주인을 잃은 발표 자료 폴더도 하루가 지나면 지운다
+    live = {str(k.db_id) for k in classes.values()}
+    try:
+        for d in SLIDES_DIR.iterdir():
+            if d.name not in live and now - d.stat().st_mtime > 24 * 3600:
+                shutil.rmtree(d, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def _code_taken(code: str) -> bool:
@@ -370,6 +398,19 @@ def activity_for_student(a: dict | None, sid: str) -> dict | None:
     return view
 
 
+def present_view(k: Klass) -> dict | None:
+    p = k.present
+    if not p:
+        return None
+    if p["mode"] == "board":
+        return {"mode": "board", "page": p["page"], "pages": k.board_pages, "key": f"wb:{p['page']}"}
+    f = next((f for f in k.files if f["id"] == p["file"]), None)
+    if not f:
+        return None
+    return {"mode": "slides", "file": f["id"], "name": f["name"], "page": p["page"], "pages": f["pages"],
+            "key": f"{f['id']}:{p['page']}"}
+
+
 def teacher_state(k: Klass) -> dict:
     return {
         "t": "state", "role": "teacher", "code": k.code, "title": k.title, "class_id": k.db_id,
@@ -382,6 +423,7 @@ def teacher_state(k: Klass) -> dict:
             for s in k.students.values()
         ],
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at,
+        "present": present_view(k), "files": k.files,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
         "announce": k.announce, "listening": k.listening, "talking": k.talking,
@@ -409,6 +451,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "teacher_talking": room != "main" and k.talking == room,
         "teacher_broadcast": k.broadcasting,
         "activity": activity_for_student(k.activity, s.id),
+        "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
         "announce": k.announce,
         "my_questions": [q for q in k.questions if q["sid"] == s.id][-20:],
         "online_count": sum(1 for m in k.students.values() if m.conns > 0),
@@ -687,6 +730,177 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
     return {"url": LIVEKIT_URL, "token": token, "room": req.room}
 
 
+# ───────────────────────── 발표 자료(PDF)·화이트보드 ─────────────────────────
+
+
+def class_dir(k: Klass) -> Path:
+    return SLIDES_DIR / str(k.db_id)
+
+
+def remove_files(k: Klass) -> None:
+    shutil.rmtree(class_dir(k), ignore_errors=True)
+
+
+@router.post("/api/live/classes/{code}/files")
+async def upload_file(code: str, request: Request, name: str = Query(default="자료.pdf", max_length=200)):
+    """선생님이 발표할 PDF를 올린다. (요청 본문 = PDF 파일 그대로)"""
+    t = await require_user(request, "teacher")
+    k = await get_class(code)
+    if t["id"] != k.teacher_id:
+        raise HTTPException(403, "이 수업의 선생님만 올릴 수 있어요.")
+    if len(k.files) >= MAX_FILES:
+        raise HTTPException(409, f"한 수업에 자료는 {MAX_FILES}개까지 올릴 수 있어요.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > MAX_FILE_BYTES:
+            raise HTTPException(413, f"파일이 너무 커요. {MAX_FILE_BYTES // 1024 // 1024}MB 이하로 올려 주세요.")
+    if not data.startswith(b"%PDF-"):
+        raise HTTPException(415, "PDF 파일만 올릴 수 있어요. PowerPoint는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요.")
+    fid = uuid.uuid4().hex[:12]
+    path = class_dir(k) / f"{fid}.pdf"
+
+    def save():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    await asyncio.to_thread(save)
+    k.files.append({"id": fid, "name": clean(name, 80) or "자료.pdf", "pages": 0, "size": len(data)})
+    push(k)
+    return {"id": fid}
+
+
+@router.get("/api/live/classes/{code}/files/{fid}")
+async def download_file(code: str, fid: str, request: Request):
+    """이 수업의 선생님과 들어온 학생만 받을 수 있다."""
+    u = await require_user(request)
+    k = await get_class(code)
+    ok = (u["role"] == "teacher" and u["id"] == k.teacher_id) or (u["role"] == "student" and str(u["id"]) in k.students)
+    if not ok:
+        raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
+    if not any(f["id"] == fid for f in k.files):
+        raise HTTPException(404, "자료를 찾을 수 없어요.")
+    path = class_dir(k) / f"{fid}.pdf"
+    if not path.is_file():
+        raise HTTPException(404, "자료를 찾을 수 없어요. 선생님이 다시 올려야 해요.")
+    return FileResponse(path, media_type="application/pdf", headers={"Cache-Control": "private, max-age=86400"})
+
+
+def present_key(k: Klass) -> str | None:
+    v = present_view(k)
+    return v["key"] if v else None
+
+
+def send_strokes(k: Klass, conn: Conn | None = None) -> None:
+    """지금 쪽의 판서 전체를 보낸다(쪽이 바뀔 때, 새로 들어왔을 때)."""
+    key = present_key(k)
+    if not key:
+        return
+    msg = json.dumps({"t": "strokes", "key": key, "strokes": k.strokes.get(key, [])}, ensure_ascii=False)
+    for c in [conn] if conn else k.conns:
+        send(c, msg)
+
+
+def relay(k: Klass, sender: Conn, obj: dict) -> None:
+    """판서는 상태 전체를 다시 보내지 않고 바뀐 획만 다른 사람에게 바로 보낸다."""
+    data = json.dumps(obj, ensure_ascii=False)
+    for c in k.conns:
+        if c is not sender:
+            send(c, data)
+
+
+def clean_points(pts) -> list[list[float]]:
+    out = []
+    if not isinstance(pts, list):
+        return out
+    for p in pts[:500]:
+        if (isinstance(p, list) and len(p) == 2 and all(isinstance(v, (int, float)) and math.isfinite(v) for v in p)):
+            out.append([round(min(1.5, max(-0.5, float(p[0]))), 4), round(min(1.5, max(-0.5, float(p[1]))), 4)])
+    return out
+
+
+def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
+    """발표·판서 메시지. 처리했으면 True. (상태가 바뀌면 push는 호출한 쪽에서)"""
+    t = m.get("t")
+    before = present_key(k)
+    if t == "present_open":  # PDF 발표 시작 (쪽 수는 선생님 화면이 PDF를 읽어서 알려 준다)
+        f = next((f for f in k.files if f["id"] == m.get("file")), None)
+        if not f:
+            return True
+        pages = m.get("pages")
+        if isinstance(pages, int) and 1 <= pages <= 2000:
+            f["pages"] = pages
+        page = m.get("page")
+        k.present = {"mode": "slides", "file": f["id"],
+                     "page": page if isinstance(page, int) and 1 <= page <= max(1, f["pages"]) else 1}
+    elif t == "present_board":  # 화이트보드
+        k.present = {"mode": "board", "page": min(k.board_pages, max(1, int(m.get("page") or 1)))}
+    elif t == "present_page" and k.present:
+        page = m.get("page")
+        if not isinstance(page, int):
+            return True
+        if k.present["mode"] == "board":
+            if page == k.board_pages + 1 and k.board_pages < MAX_BOARD_PAGES:
+                k.board_pages += 1  # 새 쪽
+            k.present["page"] = min(k.board_pages, max(1, page))
+        else:
+            f = next((f for f in k.files if f["id"] == k.present["file"]), None)
+            k.present["page"] = min(max(1, f["pages"] if f else 1), max(1, page))
+    elif t == "present_close":
+        k.present = None
+    elif t == "file_remove":
+        fid = m.get("file")
+        k.files = [f for f in k.files if f["id"] != fid]
+        if k.present and k.present.get("file") == fid:
+            k.present = None
+        for key in [x for x in k.strokes if x.startswith(f"{fid}:")]:
+            del k.strokes[key]
+        (class_dir(k) / f"{fid}.pdf").unlink(missing_ok=True)
+    elif t == "stroke":  # 획 그리기 (그리는 중에도 조금씩 나눠 보낸다)
+        key, sid = m.get("key"), m.get("id")
+        if key != before or not isinstance(sid, str) or not 0 < len(sid) <= 24:
+            return True
+        pts = clean_points(m.get("pts"))
+        page = k.strokes.setdefault(key, [])
+        st = next((x for x in reversed(page) if x["id"] == sid), None)
+        if st is None:
+            if len(page) >= MAX_STROKES:
+                return True
+            color = m.get("color") if isinstance(m.get("color"), str) and COLOR_RE.match(m["color"]) else "#222222"
+            size = m.get("size")
+            size = float(size) if isinstance(size, (int, float)) and 0.5 <= size <= 60 else 3.0
+            st = {"id": sid, "color": color, "size": size, "hl": bool(m.get("hl")), "pts": []}
+            page.append(st)
+        room = MAX_POINTS - len(st["pts"])
+        pts = pts[:max(0, room)]
+        if not pts:
+            return True
+        st["pts"].extend(pts)
+        relay(k, conn, {"t": "stroke", "key": key, "id": sid, "color": st["color"], "size": st["size"],
+                        "hl": st["hl"], "pts": pts})
+    elif t == "stroke_del":  # 지우개·되돌리기
+        key, ids = m.get("key"), m.get("ids")
+        if key != before or not isinstance(ids, list):
+            return True
+        ids = {i for i in ids[:200] if isinstance(i, str)}
+        k.strokes[key] = [x for x in k.strokes.get(key, []) if x["id"] not in ids]
+        relay(k, conn, {"t": "stroke_del", "key": key, "ids": sorted(ids)})
+    elif t == "board_clear":
+        key = m.get("key")
+        if key == before:
+            k.strokes[key] = []
+            relay(k, conn, {"t": "strokes", "key": key, "strokes": []})
+    else:
+        return False
+    if present_key(k) != before:
+        send_strokes(k)
+    return True
+
+
+# 상태(state)를 바꾸지 않는 메시지: 받을 때마다 모든 학생 상태를 다시 계산하지 않는다
+NO_PUSH = {"stroke", "stroke_del", "board_clear"}
+
+
 # ───────────────────────── 모둠 ─────────────────────────
 
 
@@ -696,6 +910,16 @@ def smallest_group(k: Klass) -> str:
         if s.group in sizes:
             sizes[s.group] += 1
     return min(sizes, key=lambda gid: (sizes[gid], gid))
+
+
+def groups_needed(k: Klass, m: dict) -> int:
+    """모둠 수를 정하거나(n), 모둠당 인원(size)을 정하면 필요한 모둠 수를 계산한다."""
+    size = m.get("size")
+    if isinstance(size, int) and size >= 1:
+        count = sum(1 for s in k.students.values() if s.conns > 0) or len(k.students)
+        return max(1, math.ceil(count / size))
+    n = m.get("n")
+    return n if isinstance(n, int) and n >= 1 else 4
 
 
 def plan_groups(k: Klass, n: int) -> None:
@@ -777,6 +1001,7 @@ async def live_socket(ws: WebSocket, code: str):
     else:
         send(conn, {"t": "chat_init", "msgs": k.chat[-200:]})
     flush(k)  # 접속하자마자 현재 상태를 보낸다
+    send_strokes(k, conn)
     push(k)
 
     try:
@@ -808,7 +1033,8 @@ async def live_socket(ws: WebSocket, code: str):
                 handle_student(k, k.students[conn.sid], msg)
             if classes.get(k.code) is not k:
                 break  # 수업 종료됨
-            push(k)
+            if msg.get("t") not in NO_PUSH:
+                push(k)
         # 강퇴·수업 종료로 끝난 경우: 마지막 안내 메시지를 보낸 뒤 닫는다
         try:
             await asyncio.wait_for(conn.queue.join(), 2)
@@ -878,6 +1104,8 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
 def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     t = m.get("t")
     group_ids = {g["id"] for g in k.groups}
+    if handle_present(k, conn, m):
+        return
     if t == "settings":
         for name in ("chat", "ai", "mic_lock", "lowbw"):
             if name in m:
@@ -890,9 +1118,19 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
             enforce_sources(k)
     elif t == "cmd":  # 학생 기기 제어(음소거·카메라 끄기)
         cmd = m.get("cmd")
+        target = m.get("target")
         if cmd in ("mute", "cam_off"):
-            target = m.get("target")
             send_to_students(k, {"t": "cmd", "cmd": cmd}, None if target == "all" else str(target))
+        elif cmd in ("ask_mic", "ask_cam"):
+            # 브라우저 보안상 선생님이 학생 마이크·카메라를 직접 켤 수는 없다 → 학생에게 켜 달라고 요청한다.
+            # 마이크 잠금·데이터 절약 모드라면 발언권도 함께 준다.
+            s = k.students.get(str(target))
+            if s:
+                if (k.settings["mic_lock"] or k.settings["lowbw"]) and not s.can_speak:
+                    s.can_speak = True
+                    s.hand = False
+                    enforce_sources(k, [s])
+                send_to_students(k, {"t": "cmd", "cmd": cmd}, s.id)
     elif t == "allow_mic":  # 마이크 잠금 중 발언권 주기/거두기
         s = k.students.get(str(m.get("target")))
         if s:
@@ -957,7 +1195,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         save_activity(k, k.activity)
         k.activity = None
     elif t == "breakout_plan":
-        plan_groups(k, int(m.get("n") or 2))
+        plan_groups(k, groups_needed(k, m))
     elif t == "breakout_rename":
         for g in k.groups:
             if g["id"] == m.get("group"):
@@ -970,7 +1208,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
             s.help = False
     elif t == "breakout_start":
         if not k.groups:
-            plan_groups(k, int(m.get("n") or 4))
+            plan_groups(k, groups_needed(k, m))
         for s in k.students.values():  # 배정되지 않은 학생은 인원이 적은 모둠으로
             if not s.group or not any(g["id"] == s.group for g in k.groups):
                 s.group = smallest_group(k)
@@ -1012,6 +1250,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 send(c, {"t": "ended"})
         close_livekit_rooms(k)
         classes.pop(k.code, None)
+        remove_files(k)  # 발표 자료는 수업이 끝나면 지운다
         class_id = k.db_id
 
         def run():

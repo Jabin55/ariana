@@ -348,3 +348,23 @@ details.card > summary { cursor: pointer; }
 .course-form label.pledge span { color: var(--text); }
 .course-form label.pledge .muted { font-size: 0.85rem; color: var(--muted); }
 .course-form textarea { color: var(--text); }
+
+/* ───── 자료 발표(PDF)·화이트보드 ───── */
+.present { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+.present-area {
+  position: relative; display: grid; place-items: center; width: 100%;
+  min-height: 120px; background: var(--stage); border-radius: var(--radius); overflow: hidden;
+}
+.sheet { position: relative; background: #fff; box-shadow: 0 2px 16px #0006; }
+.sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.sheet canvas.ink.drawable { cursor: crosshair; touch-action: none; }
+.present-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #ccd; }
+.present-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.present-bar:empty { display: none; }
+.present-bar .pageno { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
+.present-bar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.present-bar .tool { min-width: 36px; font-size: 1.05rem; }
+.present-bar .tool.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.small-switch { font-size: 0.85rem; }
+.banner.ask { position: sticky; top: 0; z-index: 5; }
+#people button.off { opacity: 0.55; border-style: dashed; }

@@ -12,6 +12,8 @@ let activitySig = "";
 let textDraft = "";
 const MAX_PEER_VIDEOS = 6;
 let videoSlots = []; // 영상을 받는 친구들
+// 선생님 발표(PDF)·화이트보드: 이때는 자료 화면만 크게 보여 준다(선생님 목소리는 계속 들림)
+const presenter = new Presenter($("#present"), { code: CODE, canDraw: false, send: () => {} });
 
 $("#code").textContent = CODE;
 api("/api/me").then(({ user }) => {
@@ -49,6 +51,13 @@ function onMessage(msg) {
     case "cmd":
       if (msg.cmd === "mute" && prefs.mic) { setMic(false); toast("선생님이 마이크를 껐어요."); }
       if (msg.cmd === "cam_off" && prefs.cam) { setCam(false); toast("선생님이 카메라를 껐어요."); }
+      if (msg.cmd === "ask_mic" && !prefs.mic) askDevice("mic");
+      if (msg.cmd === "ask_cam" && !prefs.cam) askDevice("cam");
+      break;
+    case "strokes":
+    case "stroke":
+    case "stroke_del":
+      presenter.onMessage(msg);
       break;
     case "kicked":
       finish("선생님이 수업에서 내보냈어요.");
@@ -61,6 +70,20 @@ function onMessage(msg) {
       else finish(msg.text);
       break;
   }
+}
+
+/** 선생님이 마이크·카메라를 켜 달라고 요청함 (브라우저 보안상 학생이 직접 눌러야 켜진다) */
+function askDevice(kind) {
+  const name = kind === "mic" ? "마이크" : "카메라";
+  const old = $("#ask-device");
+  if (old) old.remove();
+  const box = h("div", { class: "banner ask", id: "ask-device" },
+    h("strong", {}, `${kind === "mic" ? "🎤" : "📷"} 선생님이 ${name}를 켜 달라고 해요`),
+    h("span", { class: "grow" }),
+    h("button", { class: "primary", onclick: () => { box.remove(); kind === "mic" ? setMic(true) : setCam(true); } }, `${name} 켜기`),
+    h("button", { onclick: () => box.remove() }, "닫기"));
+  $("#mainarea").prepend(box);
+  setTimeout(() => box.remove(), 30000);
 }
 
 function finish(text) {
@@ -190,7 +213,15 @@ function renderMedia(room) {
   const stage = $("#stage");
   const grid = $("#grid");
   const inGroup = S && S.room !== "main";
-  stage.hidden = inGroup;
+  const presenting = !!S?.present;
+  stage.hidden = inGroup || presenting;
+  grid.hidden = presenting;
+  if (presenting) { // 자료 화면만 보여 준다. 영상은 받지 않아 데이터도 아낀다(소리는 계속).
+    syncTiles(stage, []); syncTiles(grid, []);
+    $("#sound").hidden = !room || room.canPlaybackAudio;
+    renderControls();
+    return;
+  }
   if (!room) { syncTiles(stage, []); syncTiles(grid, []); $("#stage-empty").hidden = false; renderControls(); return; }
 
   const people = allParticipants(room);
@@ -245,6 +276,8 @@ function render() {
   $("#online").textContent = `👥 ${S.online_count}명`;
   renderBanners();
   renderActivity();
+  $("#present").hidden = !S.present;
+  presenter.setView(S.present);
   renderQuestions();
   renderTabs();
   if (!micAllowed() && prefs.mic) setMic(false);

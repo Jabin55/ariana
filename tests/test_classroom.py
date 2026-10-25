@@ -770,3 +770,85 @@ def test_students_from_other_schools(monkeypatch):
     rep = admin.get(f"/api/live/history/{cls_id}").json()
     assert [(p["school"], p["student_no"]) for p in rep["students"]] == [("가나고", "20315"), ("다라고", "20315")]
     assert "가나고" in admin.get(f"/api/live/history/{cls_id}/attendance.csv").text
+
+
+def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
+    monkeypatch.setattr(cr, "SLIDES_DIR", tmp_path)
+    t = teacher()
+    c = create(t)
+    code = c["code"]
+    s1, s2 = student(1), student(2)
+    s1.post(f"/api/live/classes/{code}/join")
+    pdf = b"%PDF-1.4\n%fake\n"
+    # PDF만, 선생님만 올릴 수 있다
+    assert t.post(f"/api/live/classes/{code}/files?name=a.pptx", content=b"PK\x03\x04").status_code == 415
+    assert s1.post(f"/api/live/classes/{code}/files", content=pdf).status_code == 403
+    fid = t.post(f"/api/live/classes/{code}/files?name=선거제도.pdf", content=pdf).json()["id"]
+    # 들어온 학생만 받을 수 있다
+    assert s1.get(f"/api/live/classes/{code}/files/{fid}").content == pdf
+    assert s2.get(f"/api/live/classes/{code}/files/{fid}").status_code == 403
+    assert s1.get(f"/api/live/classes/{code}/files/nope").status_code == 404
+
+    with t.websocket_connect(f"/ws/live/{code}") as tw, s1.websocket_connect(f"/ws/live/{code}") as sw:
+        state(tw)
+        tw.send_json({"t": "present_open", "file": fid, "pages": 3})
+        st = state(sw, lambda m: m["present"] is not None)
+        assert st["present"] == {"mode": "slides", "file": fid, "name": "선거제도.pdf", "page": 1, "pages": 3, "key": f"{fid}:1"}
+        # 판서: 그리는 중에 나눠 보낸 점이 학생에게 바로 간다 (상태 전체를 다시 보내지 않음)
+        tw.send_json({"t": "stroke", "key": f"{fid}:1", "id": "a1", "color": "#d92d20", "size": 3, "pts": [[0.1, 0.1], [0.2, 0.2]]})
+        tw.send_json({"t": "stroke", "key": f"{fid}:1", "id": "a1", "pts": [[0.3, 0.3]]})
+        m = until(sw, lambda m: m["t"] == "stroke" and m["pts"] == [[0.3, 0.3]])
+        assert m["color"] == "#d92d20"
+        tw.send_json({"t": "stroke", "key": "wrong:1", "id": "x", "pts": [[0.5, 0.5]]})  # 지금 쪽이 아니면 무시
+        # 다음 쪽 → 그 쪽 판서(빈 것)를 받는다. 마지막 쪽 너머로는 안 간다
+        tw.send_json({"t": "present_page", "page": 2})
+        assert until(sw, lambda m: m["t"] == "strokes")["key"] == f"{fid}:2"
+        tw.send_json({"t": "present_page", "page": 9})
+        assert state(sw, lambda m: m["present"]["page"] == 3)["present"]["page"] == 3
+        tw.send_json({"t": "present_page", "page": 1})
+        back = until(sw, lambda m: m["t"] == "strokes" and m["key"] == f"{fid}:1")
+        assert back["strokes"][0]["pts"] == [[0.1, 0.1], [0.2, 0.2], [0.3, 0.3]]
+        tw.send_json({"t": "stroke_del", "key": f"{fid}:1", "ids": ["a1"]})
+        assert until(sw, lambda m: m["t"] == "stroke_del")["ids"] == ["a1"]
+        # 화이트보드: 마지막 쪽에서 다음 쪽으로 가면 새 쪽이 생긴다
+        tw.send_json({"t": "present_board"})
+        assert state(sw, lambda m: (m["present"] or {}).get("mode") == "board")["present"]["key"] == "wb:1"
+        tw.send_json({"t": "present_page", "page": 2})
+        assert state(sw, lambda m: m["present"]["pages"] == 2)["present"]["key"] == "wb:2"
+        # 학생은 발표·판서를 조작할 수 없다
+        sw.send_json({"t": "present_close"})
+        sw.send_json({"t": "stroke", "key": "wb:2", "id": "s", "pts": [[0.1, 0.1]]})
+        time.sleep(0.2)
+        assert cr.classes[code].present is not None and not cr.classes[code].strokes.get("wb:2")
+        tw.send_json({"t": "present_close"})
+        state(sw, lambda m: m["present"] is None)
+    # 수업이 끝나면 자료를 지운다
+    assert (tmp_path / str(c["class_id"]) / f"{fid}.pdf").exists()
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        state(tw)
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    assert not (tmp_path / str(c["class_id"])).exists()
+
+
+def test_groups_by_size_and_ask_mic():
+    t = teacher()
+    code = create(t)["code"]
+    studs = [student(i) for i in range(1, 8)]
+    for s in studs:
+        s.post(f"/api/live/classes/{code}/join")
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        state(tw)
+        tw.send_json({"t": "breakout_plan", "size": 3})  # 7명을 3명씩 → 3개 모둠
+        st = state(tw, lambda m: len(m["groups"]) == 3)
+        sizes = sorted(sum(1 for s in st["students"] if s["group"] == g["id"]) for g in st["groups"])
+        assert sizes == [2, 2, 3]
+        # 마이크 켜기 요청: 잠금 중이면 발언권도 함께 주고, 학생 화면에 요청이 간다
+        tw.send_json({"t": "settings", "mic_lock": True})
+        sid = st["students"][0]["id"]
+        who = next(s for s in studs if str(s.get("/api/me").json()["user"]["id"]) == sid)
+        with who.websocket_connect(f"/ws/live/{code}") as sw:
+            state(sw)
+            tw.send_json({"t": "cmd", "cmd": "ask_mic", "target": sid})
+            assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "ask_mic"
+            assert state(sw, lambda m: m["me"]["can_speak"])["me"]["can_speak"]
