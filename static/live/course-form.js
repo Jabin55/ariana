@@ -315,10 +315,6 @@ async function courseForm(c, done) {
     } else if (hubSel.value !== (byName ? c.hub_school : String(c.hub_id))) {
       if (hid) body.hub_id = hid; else body.hub_school = hubSel.value;
     }
-    // 같은 이름의 수업이 이미 있으면 한 번 더 묻는다 (학생이 다른 쪽에 신청해 수업에 못 들어오는 일을 막기)
-    const same = (typeof teacherCourses !== "undefined" ? teacherCourses : [])
-      .filter((x) => !x.archived && x.id !== c.id && x.title.trim() === body.title);
-    if (same.length && !confirm(`'${body.title}' 수업이 이미 ${same.length}개 있어요. 같은 이름의 수업을 또 만들까요?\n(같은 강좌라면 '취소'를 누르세요.)`)) return;
     try {
       let id = c.id;
       if (isNew) ({ id } = await api("/api/courses", body));
