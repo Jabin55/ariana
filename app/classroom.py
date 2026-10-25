@@ -61,6 +61,9 @@ TEXT_LIMIT = 500
 # 저대역폭 모드 기본값: 전체 교실에서는 학생 카메라를 끄고(모둠 활동 때만 허용) 영상 화질을 낮춘다.
 # 화상 서버 데이터 비용과 학생 휴대폰 데이터를 크게 줄인다. LOW_BANDWIDTH=0 이면 기본으로 끔.
 LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
+# 마이크 통제 기본값: 전체 교실에서 학생 마이크는 선생님이 켜 줘야 쓸 수 있다(학생은 손 들기로 요청).
+# MIC_LOCK=0 이면 기본으로 학생이 자유롭게 켠다. (모둠 활동 중에는 언제나 자유)
+MIC_LOCK_DEFAULT = os.environ.get("MIC_LOCK", "1") != "0"
 # 발표 자료(PDF)는 수업이 진행되는 동안만 서버 임시 폴더에 둔다(수업이 끝나면 지움)
 SLIDES_DIR = Path(os.environ.get("SLIDES_DIR") or Path(tempfile.gettempdir()) / "live-slides")
 MAX_FILE_BYTES = 40 * 1024 * 1024
@@ -90,7 +93,8 @@ class Student:
     conns: int = 0
     hand: bool = False
     help: bool = False  # 모둠 활동 중 '선생님 호출'
-    can_speak: bool = False  # 마이크 잠금 중에도 말할 수 있게 허락받음
+    can_speak: bool = False  # 선생님이 마이크를 켜 줌 (마이크 통제 중에도 말할 수 있음)
+    can_cam: bool = False  # 선생님이 카메라를 켜 줌 (데이터 절약 모드에서도 카메라를 쓸 수 있음)
     group: str | None = None
     last_chat: float = 0.0
     att_id: int | None = None  # 지금 열려 있는 출결 기록
@@ -128,7 +132,7 @@ class Klass:
     questions: list[dict] = field(default_factory=list)
     activity: dict | None = None
     settings: dict = field(default_factory=lambda: {
-        "chat": True, "ai": True, "mic_lock": False, "lowbw": LOW_BANDWIDTH_DEFAULT})
+        "chat": True, "ai": True, "mic_lock": MIC_LOCK_DEFAULT, "lowbw": LOW_BANDWIDTH_DEFAULT})
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
     ends_at: float | None = None
@@ -418,7 +422,7 @@ def teacher_state(k: Klass) -> dict:
         "settings": k.settings, "livekit": livekit_ready(),
         "students": [
             {"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand,
-             "help": s.help, "can_speak": s.can_speak, "group": s.group, "room": k.room_of(s),
+             "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "group": s.group, "room": k.room_of(s),
              "sessions": s.sessions}
             for s in k.students.values()
         ],
@@ -444,7 +448,8 @@ def student_state(k: Klass, s: Student) -> dict:
     return {
         "t": "state", "role": "student", "code": k.code, "title": k.title,
         "settings": k.settings, "livekit": livekit_ready(),
-        "me": {"id": s.id, "name": s.name, "hand": s.hand, "help": s.help, "can_speak": s.can_speak},
+        "me": {"id": s.id, "name": s.name, "hand": s.hand, "help": s.help,
+               "can_speak": s.can_speak, "can_cam": s.can_cam},
         "room": room, "group": group, "breakout": k.breakout, "ends_at": k.ends_at,
         "teacher_online": k.teacher_online(),
         "teacher_listening": room != "main" and (room in k.listening or k.talking == room),
@@ -474,7 +479,10 @@ def send(conn: Conn, obj: dict | str) -> None:
     if same_loop:
         conn.queue.put_nowait(data)
     else:  # 다른 스레드의 이벤트 루프(테스트 클라이언트 등)에서 부른 경우
-        conn.loop.call_soon_threadsafe(conn.queue.put_nowait, data)
+        try:
+            conn.loop.call_soon_threadsafe(conn.queue.put_nowait, data)
+        except RuntimeError:
+            pass  # 이미 닫힌 연결
 
 
 def push(k: Klass) -> None:
@@ -557,7 +565,7 @@ def student_sources(k: Klass, s: Student, room: str) -> list[str]:
     out = []
     if not (k.settings["mic_lock"] and not s.can_speak):
         out.append("microphone")
-    if not (k.settings["lowbw"] and not s.can_speak):  # 저대역폭 모드: 발언권 받은 학생만 카메라
+    if not (k.settings["lowbw"] and not s.can_cam):  # 데이터 절약 모드: 선생님이 켜 준 학생만 카메라
         out.append("camera")
     return out
 
@@ -1110,36 +1118,21 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         for name in ("chat", "ai", "mic_lock", "lowbw"):
             if name in m:
                 k.settings[name] = bool(m[name])
-        if m.get("mic_lock"):
+        if m.get("mic_lock"):  # 통제를 켜면 지금 켜진 마이크를 모두 끈다
             for s in k.students.values():
                 s.can_speak = False
             send_to_students(k, {"t": "cmd", "cmd": "mute"})
+        if m.get("lowbw"):
+            for s in k.students.values():
+                s.can_cam = False
         if "mic_lock" in m or "lowbw" in m:
             enforce_sources(k)
-    elif t == "cmd":  # 학생 기기 제어(음소거·카메라 끄기)
-        cmd = m.get("cmd")
-        target = m.get("target")
-        if cmd in ("mute", "cam_off"):
-            send_to_students(k, {"t": "cmd", "cmd": cmd}, None if target == "all" else str(target))
-        elif cmd in ("ask_mic", "ask_cam"):
-            # 브라우저 보안상 선생님이 학생 마이크·카메라를 직접 켤 수는 없다 → 학생에게 켜 달라고 요청한다.
-            # 마이크 잠금·데이터 절약 모드라면 발언권도 함께 준다.
-            s = k.students.get(str(target))
-            if s:
-                if (k.settings["mic_lock"] or k.settings["lowbw"]) and not s.can_speak:
-                    s.can_speak = True
-                    s.hand = False
-                    enforce_sources(k, [s])
-                send_to_students(k, {"t": "cmd", "cmd": cmd}, s.id)
-    elif t == "allow_mic":  # 마이크 잠금 중 발언권 주기/거두기
-        s = k.students.get(str(m.get("target")))
-        if s:
-            s.can_speak = bool(m.get("on"))
-            if s.can_speak:
-                s.hand = False
-            else:
-                send_to_students(k, {"t": "cmd", "cmd": "mute"}, s.id)
-            enforce_sources(k, [s])
+    elif t == "cmd":  # 선생님이 학생 마이크·카메라를 켜고 끈다
+        device_cmd(k, m.get("cmd"), m.get("target"))
+    elif t == "allow_mic":  # (예전 화면용) 마이크·카메라 권한 주기/거두기
+        on = bool(m.get("on"))
+        device_cmd(k, "mic_on" if on else "mic_off", m.get("target"))
+        device_cmd(k, "cam_on" if on else "cam_off", m.get("target"), quiet=True)
     elif t == "lower_hand":
         target = m.get("target")
         for s in k.students.values():
@@ -1261,6 +1254,39 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                               .values(left_at=ended_at, last_seen=ended_at, left_reason="ended"))
 
         asyncio.get_running_loop().create_task(db.run(run))
+
+
+def device_cmd(k: Klass, cmd: str | None, target, quiet: bool = False) -> None:
+    """선생님 권한으로 학생 마이크·카메라 켜기/끄기.
+    - 켜기: 권한을 주고(화상 서버에 반영) 학생 화면이 바로 켠다(입장할 때 받은 기기 사용 허락으로 켬).
+    - 끄기: 학생 화면이 끄고, 마이크 통제·데이터 절약 모드라면 권한도 거둬 학생이 다시 켤 수 없다.
+    target 이 "all" 이면 모든 학생."""
+    if cmd == "mute":
+        cmd = "mic_off"
+    if cmd not in ("mic_on", "mic_off", "cam_on", "cam_off"):
+        return
+    targets = list(k.students.values()) if target == "all" else [x for x in [k.students.get(str(target))] if x]
+    if not targets:
+        return
+    mic = cmd.startswith("mic")
+    on = cmd.endswith("_on")
+    for s in targets:
+        if mic:
+            if on:
+                s.can_speak, s.hand = True, False
+            elif k.settings["mic_lock"]:
+                s.can_speak = False
+        else:
+            if on:
+                s.can_cam = True
+            elif k.settings["lowbw"]:
+                s.can_cam = False
+    enforce_sources(k, targets)
+    if not quiet or on:
+        # 예전 화면과 맞추기 위해 끄기는 mute·cam_off 이름으로 보낸다
+        name = {"mic_off": "mute", "cam_off": "cam_off"}.get(cmd, cmd)
+        for s in targets:
+            send_to_students(k, {"t": "cmd", "cmd": name}, s.id)
 
 
 def start_activity(k: Klass, m: dict) -> None:

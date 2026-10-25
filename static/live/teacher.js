@@ -605,19 +605,23 @@ function roomLabel(s) {
   return "";
 }
 
-/** 학생 마이크·카메라 버튼: 켜져 있으면 끄고, 꺼져 있으면 켜 달라고 요청한다(브라우저 보안상 직접 켤 수는 없음) */
+/** 학생 마이크·카메라 버튼: 선생님 권한으로 켜고 끈다.
+ *  마이크 통제 중에는 선생님이 꺼 두면 학생이 스스로 켤 수 없다(손 들기로 요청). */
 function deviceButtons(s) {
   const p = mainRoom?.remoteParticipants.get(`s-${s.id}`);
-  const known = !!p && s.room === "main";
-  // 켜져 있으면 진하게(누르면 끄기), 꺼져 있으면 흐리게(누르면 켜 달라고 요청)
-  const btn = (on, icon, offIcon, name, off, ask) => on || !known
-    ? h("button", { class: known ? "on" : "", title: `${name} 끄기`, onclick: () => sock.send({ t: "cmd", cmd: off, target: s.id }) }, known ? icon : offIcon)
-    : h("button", { class: "off", title: `${name} 꺼짐 — 누르면 켜 달라고 요청해요 (학생 화면에 '켜기' 버튼이 떠요)`, onclick: () => {
-      sock.send({ t: "cmd", cmd: ask, target: s.id });
-      toast(`${s.name} 학생에게 ${name}를 켜 달라고 요청했어요.`);
-    } }, icon);
-  return [btn(p?.isMicrophoneEnabled, "🎤", "🔇", "마이크", "mute", "ask_mic"),
-    btn(p?.isCameraEnabled, "📷", "📷", "카메라", "cam_off", "ask_cam")];
+  const inMain = s.room === "main";
+  const micOn = inMain ? !!p?.isMicrophoneEnabled : null; // 모둠에 있는 학생은 이 화면에서 상태를 모름
+  const camOn = inMain ? !!p?.isCameraEnabled : null;
+  const btn = (on, icon, offIcon, name, cmd) => h("button", {
+    class: on ? "on" : on === false ? "off" : "",
+    title: on === null ? `${name} 끄기` : on ? `${name} 켜짐 — 누르면 꺼요` : `${name} 꺼짐 — 누르면 선생님이 켜요`,
+    onclick: () => {
+      const turnOn = on === false;
+      sock.send({ t: "cmd", cmd: `${cmd}_${turnOn ? "on" : "off"}`, target: s.id });
+      if (turnOn) toast(`${s.name} 학생의 ${name}를 켰어요.`);
+    },
+  }, on === false ? offIcon : icon);
+  return [btn(micOn, "🎤", "🔇", "마이크", "mic"), btn(camOn, "📷", "📷", "카메라", "cam")];
 }
 
 function renderPeople() {
@@ -632,12 +636,7 @@ function renderPeople() {
     h("span", {}, `${s.hand ? "✋ " : ""}${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
       mixed && s.school ? `${s.school} · ` : "", roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },
-      S.settings.mic_lock || S.settings.lowbw ? h("button", {
-        class: s.can_speak ? "on" : "",
-        title: "발언권: 마이크 잠금·데이터 절약 모드에서도 이 학생은 마이크와 카메라를 쓸 수 있어요",
-        onclick: () => sock.send({ t: "allow_mic", target: s.id, on: !s.can_speak }),
-      }, s.can_speak ? "🎤 발언 중" : "🎤 발언권") : null,
-      s.hand && !S.settings.mic_lock && !S.settings.lowbw ? h("button", { onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "손 내리기") : null,
+      s.hand ? h("button", { title: "손 내리기", onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "✋↓") : null,
       ...deviceButtons(s),
       h("button", { title: "내보내기", class: "danger", onclick: () => {
         if (confirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });

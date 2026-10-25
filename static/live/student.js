@@ -23,11 +23,18 @@ api("/api/me").then(({ user }) => {
 
 /* ───── 입장 ───── */
 
-$("#prejoin-form").addEventListener("submit", (e) => {
+$("#prejoin-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   prefs.cam = $("#pre-cam").checked;
   prefs.mic = $("#pre-mic").checked;
   $("#prejoin").hidden = true;
+  // 입장할 때 마이크·카메라 사용을 미리 허락받아 둔다 → 수업 중에 선생님이 켜면 바로 켜진다
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    st.getTracks().forEach((tr) => tr.stop());
+  } catch {
+    try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((tr) => tr.stop()); } catch { /* 나중에 켤 때 다시 물어봄 */ }
+  }
   sock = new LiveSocket("", onMessage, (ok) => {
     $("#status").textContent = ok ? "● 연결됨" : "다시 연결하는 중…";
     $("#status").classList.toggle("bad", !ok);
@@ -51,8 +58,9 @@ function onMessage(msg) {
     case "cmd":
       if (msg.cmd === "mute" && prefs.mic) { setMic(false); toast("선생님이 마이크를 껐어요."); }
       if (msg.cmd === "cam_off" && prefs.cam) { setCam(false); toast("선생님이 카메라를 껐어요."); }
-      if (msg.cmd === "ask_mic" && !prefs.mic) askDevice("mic");
-      if (msg.cmd === "ask_cam" && !prefs.cam) askDevice("cam");
+      // 선생님이 켬: 권한 정보(state)보다 먼저 올 수 있어 여기서 바로 반영하고 켠다
+      if (msg.cmd === "mic_on") { if (S) S.me.can_speak = true; setMic(true, true).then(() => prefs.mic && toast("🎤 선생님이 마이크를 켰어요.")); }
+      if (msg.cmd === "cam_on") { if (S) S.me.can_cam = true; prefs.cam = true; syncCamera().then(() => prefs.cam && toast("📷 선생님이 카메라를 켰어요.")); }
       break;
     case "strokes":
     case "stroke":
@@ -70,20 +78,6 @@ function onMessage(msg) {
       else finish(msg.text);
       break;
   }
-}
-
-/** 선생님이 마이크·카메라를 켜 달라고 요청함 (브라우저 보안상 학생이 직접 눌러야 켜진다) */
-function askDevice(kind) {
-  const name = kind === "mic" ? "마이크" : "카메라";
-  const old = $("#ask-device");
-  if (old) old.remove();
-  const box = h("div", { class: "banner ask", id: "ask-device" },
-    h("strong", {}, `${kind === "mic" ? "🎤" : "📷"} 선생님이 ${name}를 켜 달라고 해요`),
-    h("span", { class: "grow" }),
-    h("button", { class: "primary", onclick: () => { box.remove(); kind === "mic" ? setMic(true) : setCam(true); } }, `${name} 켜기`),
-    h("button", { onclick: () => box.remove() }, "닫기"));
-  $("#mainarea").prepend(box);
-  setTimeout(() => box.remove(), 30000);
 }
 
 function finish(text) {
@@ -107,7 +101,7 @@ function micAllowed() {
 /** 저대역폭 모드에서는 전체 교실에서 카메라를 쓸 수 없다(발언권을 받으면 가능). 모둠에서는 언제나 가능. */
 function camAllowed() {
   if (!S) return true;
-  return !(S.settings.lowbw && S.room === "main" && !S.me.can_speak);
+  return !(S.settings.lowbw && S.room === "main" && !S.me.can_cam);
 }
 
 async function reconcileRoom() {
@@ -154,7 +148,7 @@ async function applyPrefs() {
 function retryable(err) { return !MEDIA_ERRORS.has(err?.name); }
 
 async function setMic(on, quiet = false, attempt = 0) {
-  if (on && !micAllowed()) { toast("선생님이 마이크를 잠갔어요. 말하고 싶으면 손을 들어 주세요."); return; }
+  if (on && !micAllowed()) { toast("마이크는 선생님이 켜 줘요. 말하고 싶으면 ✋ 손을 들어 주세요."); return; }
   prefs.mic = on;
   const lp = media.room?.localParticipant;
   if (lp && media.room.state === "connected") {
@@ -204,7 +198,7 @@ async function syncCamera(attempt = 0) {
 
 async function setCam(on) {
   prefs.cam = on;
-  if (on && !camAllowed()) toast("데이터 절약 모드라 카메라는 모둠 활동 때 켜져요.");
+  if (on && !camAllowed()) toast("데이터 절약 모드라 카메라는 모둠 활동 때나 선생님이 켜 줄 때 켜져요.");
   await syncCamera();
 }
 
@@ -296,7 +290,10 @@ function renderControls() {
   mic.textContent = prefs.mic ? "🎤 마이크 켜짐" : "🔇 마이크 꺼짐";
   mic.classList.toggle("on", prefs.mic);
   mic.disabled = !connected;
-  if (S && !micAllowed()) mic.textContent = "🔒 마이크 잠김";
+  if (S && !micAllowed()) {
+    mic.textContent = S.me.hand ? "✋ 요청 중" : "🔒 마이크 요청";
+    mic.title = "마이크는 선생님이 켜 줘요. 누르면 손을 들어 선생님께 요청해요";
+  } else mic.title = "마이크";
   const cam = $("#cam");
   const camOk = camAllowed();
   cam.textContent = !camOk ? (prefs.cam ? "📷 모둠 때 켜짐" : "📷 카메라 꺼짐") : (prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐");
@@ -334,8 +331,8 @@ function renderBanners() {
   }
   if (S.settings.mic_lock && S.room === "main") {
     box.append(h("div", { class: "banner warn" }, S.me.can_speak
-      ? "🎤 선생님이 발언을 허락했어요. 마이크를 켜고 말해 보세요."
-      : "🔒 지금은 선생님만 말할 수 있어요. 말하고 싶으면 ✋ 손을 들어 주세요."));
+      ? "🎤 선생님이 마이크를 켜 줬어요. 말해 보세요."
+      : "🔒 마이크는 선생님이 켜 줘요. 말하고 싶으면 '🔒 마이크 요청'(✋ 손 들기)을 눌러 주세요."));
   }
 }
 
@@ -451,7 +448,14 @@ $("#askform").addEventListener("submit", (e) => {
 });
 submitOnEnter($("#askinput"), $("#askform"));
 
-$("#mic").addEventListener("click", () => setMic(!prefs.mic));
+$("#mic").addEventListener("click", () => {
+  if (S && !micAllowed() && !prefs.mic) { // 선생님이 켜 줘야 함 → 손 들기로 요청
+    if (!S.me.hand) { sock?.send({ t: "hand", up: true }); toast("✋ 선생님께 마이크를 요청했어요. 선생님이 켜 주면 바로 말할 수 있어요."); }
+    else { sock?.send({ t: "hand", up: false }); toast("요청을 취소했어요."); }
+    return;
+  }
+  setMic(!prefs.mic);
+});
 $("#cam").addEventListener("click", () => setCam(!prefs.cam));
 $("#hand").addEventListener("click", () => sock?.send({ t: "hand", up: !S?.me.hand }));
 $("#help").addEventListener("click", () => sock?.send({ t: "help", on: !S?.me.help }));

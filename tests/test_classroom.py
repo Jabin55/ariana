@@ -196,10 +196,9 @@ def test_kick_mic_lock_end_and_revive():
     code = create(t)["code"]
     a = student(1)
     with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
-        state(sa)  # 학생 연결이 끝난 뒤에 명령을 보낸다
+        sid = state(sa)["me"]["id"]  # 학생 연결이 끝난 뒤에 명령을 보낸다
         tw.send_json({"t": "settings", "mic_lock": True})
         until(sa, lambda m: m["t"] == "cmd" and m["cmd"] == "mute")
-        sid = state(sa, lambda m: m["settings"]["mic_lock"])["me"]["id"]
         tw.send_json({"t": "allow_mic", "target": sid, "on": True})
         state(sa, lambda m: m["me"]["can_speak"])
         tw.send_json({"t": "kick", "target": sid})
@@ -317,9 +316,9 @@ def test_low_bandwidth_mode_limits_student_publishing():
     code = create(t)["code"]
     a = student(1)
     assert a.post(f"/api/live/classes/{code}/join").status_code == 200
-    # 기본값: 데이터 절약 모드 → 전체 교실에서 학생은 마이크만
+    # 기본값: 마이크 통제 + 데이터 절약 모드 → 전체 교실에서 학생은 아무것도 못 내보냄 (선생님이 켜 줘야 함)
     g = grants(a, "main")
-    assert g.can_publish and g.can_publish_sources == ["microphone"]
+    assert g.can_publish is False
     assert "camera" in grants(t, "main").can_publish_sources  # 선생님은 제한 없음
     with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
         st = state(sa)
@@ -344,7 +343,7 @@ def test_low_bandwidth_mode_limits_student_publishing():
         tw.send_json({"t": "breakout_end"})
         # 데이터 절약 모드를 끄면 전체 교실에서도 카메라 가능
         tw.send_json({"t": "settings", "lowbw": False, "mic_lock": False})
-        state(sa, lambda m: m["room"] == "main" and not m["settings"]["lowbw"])
+        state(sa, lambda m: m["room"] == "main" and not m["settings"]["lowbw"] and not m["settings"]["mic_lock"])
         assert sorted(grants(a, "main").can_publish_sources) == ["camera", "microphone"]
 
 
@@ -831,7 +830,15 @@ def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
     assert not (tmp_path / str(c["class_id"])).exists()
 
 
-def test_groups_by_size_and_ask_mic():
+def test_groups_by_size_and_teacher_controls_mic():
+    from livekit import api as lk
+    verifier = lk.TokenVerifier(cr.LIVEKIT_API_KEY, cr.LIVEKIT_API_SECRET)
+
+    def grants(client, room):
+        r = client.post(f"/api/live/classes/{code}/token", json={"room": room})
+        assert r.status_code == 200, r.text
+        return verifier.verify(r.json()["token"]).video
+
     t = teacher()
     code = create(t)["code"]
     studs = [student(i) for i in range(1, 8)]
@@ -843,12 +850,31 @@ def test_groups_by_size_and_ask_mic():
         st = state(tw, lambda m: len(m["groups"]) == 3)
         sizes = sorted(sum(1 for s in st["students"] if s["group"] == g["id"]) for g in st["groups"])
         assert sizes == [2, 2, 3]
-        # 마이크 켜기 요청: 잠금 중이면 발언권도 함께 주고, 학생 화면에 요청이 간다
-        tw.send_json({"t": "settings", "mic_lock": True})
+        # 마이크 통제(기본): 학생은 스스로 못 켜고, 선생님이 켜면 권한이 생기며 학생 화면이 바로 켠다
         sid = st["students"][0]["id"]
         who = next(s for s in studs if str(s.get("/api/me").json()["user"]["id"]) == sid)
         with who.websocket_connect(f"/ws/live/{code}") as sw:
-            state(sw)
-            tw.send_json({"t": "cmd", "cmd": "ask_mic", "target": sid})
-            assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "ask_mic"
-            assert state(sw, lambda m: m["me"]["can_speak"])["me"]["can_speak"]
+            assert state(sw)["settings"]["mic_lock"] is True
+            assert grants(who, "main").can_publish is False
+            sw.send_json({"t": "hand", "up": True})  # '마이크 요청' = 손 들기
+            state(tw, lambda m: any(x["hand"] for x in m["students"]))
+            tw.send_json({"t": "cmd", "cmd": "mic_on", "target": sid})
+            assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mic_on"
+            me = state(sw, lambda m: m["me"]["can_speak"])["me"]
+            assert me["hand"] is False and me["can_cam"] is False
+            assert grants(who, "main").can_publish_sources == ["microphone"]
+            # 카메라도 선생님이 켠다 (데이터 절약 모드)
+            tw.send_json({"t": "cmd", "cmd": "cam_on", "target": sid})
+            assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "cam_on"
+            state(sw, lambda m: m["me"]["can_cam"])
+            assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone"]
+            # 선생님이 끄면 권한도 사라져 학생이 다시 켤 수 없다
+            tw.send_json({"t": "cmd", "cmd": "mic_off", "target": sid})
+            assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mute"
+            state(sw, lambda m: not m["me"]["can_speak"])
+            assert grants(who, "main").can_publish_sources == ["camera"]
+            # 모두 음소거 → 모두 권한 회수
+            tw.send_json({"t": "cmd", "cmd": "mic_on", "target": sid})
+            state(sw, lambda m: m["me"]["can_speak"])
+            tw.send_json({"t": "cmd", "cmd": "mute", "target": "all"})
+            state(sw, lambda m: not m["me"]["can_speak"])
