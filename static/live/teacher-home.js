@@ -219,7 +219,7 @@ async function renderStudents() {
   fill(box,
     h("h2", { style: "margin:0 0 10px" }, "수강생 관리"),
     h("div", { class: "search-form" },
-      row(cell("교육과정", f.term), cell("과목명", f.subject)),
+      row(cell("학기", f.term), cell("과목명", f.subject)),
       row(cell("신청상태", f.status), cell("강의교사", f.teacher)),
       row(cell("소속학교", f.school), cell("학생이름", f.name)),
       row(cell("기간검색", h("div", { class: "row" }, f.from, "~", f.to,
@@ -775,7 +775,7 @@ async function loadSchool() {
     quits ? h("div", { class: "banner warn", style: "margin-bottom:10px" }, h("span", { class: "grow" }, `🚪 탈퇴를 신청한 학생이 ${quits}명 있어요.`),
       h("button", { class: "small", onclick: () => { for (const k of Object.keys(schoolQ)) delete schoolQ[k]; schoolQ.quit = "yes"; loadSchool(); } }, "탈퇴 신청만 보기")) : null,
     h("div", { class: "search-form" },
-      row(cell("교육과정", f.term), cell("과목", f.subject)),
+      row(cell("학기", f.term), cell("과목", f.subject)),
       row(cell("신청상태", f.status), cell("담당교사", f.teacher)),
       row(cell("소속학교", f.school), cell("학생이름", f.name)),
       row(cell("탈퇴", f.quit, true)),
@@ -834,7 +834,7 @@ function drawSchoolResult(box) {
     loadSchool();
   };
   const csv = () => {
-    const head = ["번호", "학생이름", "학번", "학년", "반", "소속학교", "교육과정", "과목", "거점학교", "담당교사", "신청일", "신청상태", "탈퇴"];
+    const head = ["번호", "학생이름", "학번", "학년", "반", "소속학교", "학기", "과목", "거점학교", "담당교사", "신청일", "신청상태", "탈퇴"];
     const lines = list.flatMap((x, i) => (x.courses.length ? x.courses : [null]).map((c) => [list.length - i, x.name, x.student_no,
       x.grade || "", x.class_no || "", x.school, c?.term || "", c?.subject || "", c?.hub || "", c?.instructor || "",
       c ? kstDate(c.requested_at) : "", c ? ENROLL_NAME[c.status] || c.status : x.gone ? "-" : "수강신청 없음",
@@ -886,7 +886,7 @@ function drawSchoolResult(box) {
         `🚪 ${kstDate(w.requested_at)} 탈퇴 신청${w.reason ? ` · 사유: ${w.reason}` : ""}`,
         w.studying.length ? ` · ⚠️ 아직 수강 중: ${w.studying.join(", ")}` : "") : null,
       x.courses.length ? h("table", { class: "att inner-table" },
-        h("thead", {}, h("tr", {}, ["교육과정", "과목", "거점학교", "담당교사", "신청일", "상태"].map((t) => h("th", {}, t)))),
+        h("thead", {}, h("tr", {}, ["학기", "과목", "거점학교", "담당교사", "신청일", "상태"].map((t) => h("th", {}, t)))),
         h("tbody", {}, koSort(x.courses, (c) => `${c.term} ${c.subject}`).map((c) => h("tr", {},
           h("td", {}, c.term || "-"), h("td", {}, c.subject, c.archived ? h("span", { class: "muted" }, " (끝남)") : null),
           h("td", {}, c.hub || "-"), h("td", {}, c.instructor || "-"), h("td", {}, kstDate(c.requested_at)),
