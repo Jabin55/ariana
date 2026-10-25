@@ -14,7 +14,7 @@ async function courseForm(c, done) {
   c = c || {};
   const year = new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear();
   const opt = (list, cur, first) => [first ? h("option", { value: "" }, first) : null,
-    ...list.map((x) => (Array.isArray(x) ? h("option", { value: x[0], selected: x[0] === cur }, x[1])
+    ...koSort(list, (x) => (Array.isArray(x) ? x[1] : x)).map((x) => (Array.isArray(x) ? h("option", { value: x[0], selected: x[0] === cur }, x[1])
       : h("option", { value: x, selected: x === cur }, x)))];
   const row = (label, ...cells) => h("div", { class: "wz-row" }, h("div", { class: "wz-label" }, label), h("div", { class: "wz-cell" }, ...cells));
   const toggle = (checked, on = "공개", off = "비공개") => {
@@ -41,10 +41,10 @@ async function courseForm(c, done) {
   const leadHubs = ME.lead_hubs || [];
   const byName = !leadHubs.length || ME.is_admin;
   const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...schools, ...(c.hub_school ? [c.hub_school] : [])])].sort();
-  const office = h("select", { required: true }, meta.offices.map((o) => h("option", { value: o, selected: o === "울산광역시교육청" }, o)));
+  const office = h("select", { required: true }, koSort(meta.offices).map((o) => h("option", { value: o, selected: o === "울산광역시교육청" }, o)));
   const hubSel = h("select", { required: true }, h("option", { value: "" }, "거점학교를 고르세요"),
-    byName ? schoolNames.map((n) => h("option", { value: n, selected: n === c.hub_school }, n))
-      : leadHubs.map((x) => h("option", { value: x.id, selected: x.id === c.hub_id }, x.name)));
+    byName ? koSort(schoolNames).map((n) => h("option", { value: n, selected: n === c.hub_school }, n))
+      : koSort(leadHubs, (x) => x.name).map((x) => h("option", { value: x.id, selected: x.id === c.hub_id }, x.name)));
   if (isNew && !byName && leadHubs.length === 1) hubSel.value = String(leadHubs[0].id);
   const officeNote = h("span", { class: "muted", style: "font-size:0.85rem" });
   office.addEventListener("change", () => {
@@ -96,7 +96,7 @@ async function courseForm(c, done) {
 
   /* ───── 2. 수업 개설 정보 ───── */
   const title = h("input", { name: "title", value: c.title || "", maxlength: 60, required: true, placeholder: "학생에게 보일 수업 이름 (예: 판례로 배우는 법과 사회)" });
-  const sdl = h("datalist", { id: `${dlId}-s` }, meta.subjects.map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
+  const sdl = h("datalist", { id: `${dlId}-s` }, koSort(meta.subjects, (x) => x.name).map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
   const subject = h("input", { value: c.subject || c.title || "", maxlength: 60, required: true, list: sdl.id, autocomplete: "off", placeholder: "과목명 일부를 입력해 검색" });
   const custom = h("input", { type: "checkbox", checked: c.custom_subject });
   const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)"));
@@ -104,13 +104,13 @@ async function courseForm(c, done) {
   const type = h("select", { required: true }, opt(meta.types, c.subject_type, "과목 구분"));
   // '찾기': 교과(군)을 고르면 과목이 버튼으로 나온다
   const browse = h("div", { class: "subject-browse", hidden: true });
-  const browseGroup = h("select", {}, opt(meta.groups, c.subject_group || meta.groups[0]));
+  const browseGroup = h("select", {}, opt(meta.groups, c.subject_group || koSort(meta.groups)[0]));
   const browseList = h("div", { class: "subject-list" });
   const drawBrowse = () => {
     const list = meta.subjects.filter((x) => x.group === browseGroup.value);
     browseList.replaceChildren(...meta.types.map((t) => {
       const items = list.filter((x) => x.type === t);
-      return items.length ? h("div", {}, h("b", {}, t), h("div", { class: "row" }, items.map((x) => h("button", { type: "button", class: "small", onclick: () => {
+      return items.length ? h("div", {}, h("b", {}, t), h("div", { class: "row" }, koSort(items, (x) => x.name).map((x) => h("button", { type: "button", class: "small", onclick: () => {
         subject.value = x.name;
         if (!title.value.trim()) title.value = x.name;
         subject.dispatchEvent(new Event("input"));

@@ -669,6 +669,36 @@ async def course_enrollments(course_id: int, request: Request):
     return {"enrollments": out}
 
 
+@router.get("/api/my/enrollments")
+async def my_enrollments(request: Request):
+    """수업신청자 관리: 내가 가르치는 모든 강좌의 수강신청 (화면에서 학기·과목·수업명·상태·학교·이름·기간으로 거른다)"""
+    t = await require_user(request, "teacher")
+
+    def run():
+        with db.engine.connect() as c:
+            courses = {r.id: r for r in c.execute(select(db.courses).where(taught_filter(t["id"]))).all()}
+            ok = [i for i, r in courses.items() if not hub_locked(r, t)]
+            rows = c.execute(select(db.enrollments, db.users).join(db.users, db.users.c.id == db.enrollments.c.user_id)
+                             .where(db.enrollments.c.course_id.in_(ok or [-1]))).all()
+            return courses, rows
+
+    courses, rows = await db.run(run)
+    out = []
+    for r in rows:
+        m = r._mapping
+        co = courses[m["course_id"]]
+        out.append({"course_id": co.id, "course_title": co.title, "subject": co.subject or co.title,
+                    "term": f"{co.school_year}학년도 {co.term}" if co.school_year and co.term else (co.term or ""),
+                    "instructor": co.instructor, "archived": bool(co.archived),
+                    "hub_school": co.hub_school,
+                    "user_id": m["user_id"], "student_no": student_no(m), "name": m["name"] or m["google_name"],
+                    "grade": m["grade"], "class_no": m["class_no"],
+                    "school": m["school"], "status": m["status"], "note": m["note"],
+                    "requested_at": m["requested_at"], "decided_at": m["decided_at"]})
+    out.sort(key=lambda x: -(x["requested_at"] or 0))
+    return {"enrollments": out}
+
+
 class DecideReq(BaseModel):
     status: str = Field(pattern="^(approved|rejected|removed)$")
     note: str = Field(default="", max_length=300)  # 거절 사유 (학생에게 보임)
@@ -1083,19 +1113,15 @@ async def delete_course_request(rid: int, request: Request):
     return {"ok": True}
 
 
-@router.get("/api/hub/course-requests")
-async def hub_course_requests(request: Request):
-    """관리교사·전체 관리자: 과목별 요청 학생 수 (학생 이름 없이 학교·학년만)"""
-    u = await require_user(request)
-    managed_hubs(u)  # 관리교사·전체 관리자만
-
+def request_groups() -> list[dict]:
+    """과목별 개설 요청: 요청 학생 수 · 학년 · 학교 · 하고 싶은 말 (학생 이름 없이)"""
     def run():
         with db.engine.connect() as c:
             return c.execute(select(db.course_requests, db.users.c.school, db.users.c.grade)
                              .join(db.users, db.users.c.id == db.course_requests.c.user_id)).all()
 
     groups: dict = {}
-    for r in await db.run(run):
+    for r in run():
         g = groups.setdefault(r.subject, {"subject": r.subject, "count": 0, "grades": {}, "schools": {}, "notes": [],
                                           "latest": 0})
         g["count"] += 1
@@ -1111,7 +1137,23 @@ async def hub_course_requests(request: Request):
     for g in out:
         g["in_curriculum"] = g["subject"] in known
         g["notes"] = g["notes"][-5:]
-    return {"requests": out}
+    return out
+
+
+@router.get("/api/hub/course-requests")
+async def hub_course_requests(request: Request):
+    """관리교사·전체 관리자: 과목별 요청 (학교·하고 싶은 말 포함)"""
+    u = await require_user(request)
+    managed_hubs(u)  # 관리교사·전체 관리자만
+    return {"requests": await db.run(request_groups)}
+
+
+@router.get("/api/course-requests/summary")
+async def course_request_summary():
+    """메인 화면: 학생들이 듣고 싶은 과목 (누구나). 과목·요청 수·학년만 보인다 (학교·하고 싶은 말은 빼서 누군지 알 수 없게)"""
+    out = await db.run(request_groups)
+    return {"requests": [{"subject": g["subject"], "count": g["count"], "grades": g["grades"],
+                          "in_curriculum": g["in_curriculum"]} for g in out[:12]]}
 
 
 # ───────────────────────── 강좌 공지사항 (강사 → 수강생) ─────────────────────────

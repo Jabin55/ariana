@@ -122,9 +122,9 @@
         <label>이름 <input id="a-name" maxlength="30" required></label>
         <label>소속 구분
           <select id="a-affil-type" required>
-            <option value="school">학교 교원 (초·중·고 교사)</option>
-            <option value="univ">대학 교원 (교수·강사)</option>
             <option value="cert">교원자격 소지자 (미임용)</option>
+            <option value="univ">대학 교원 (교수·강사)</option>
+            <option value="school" selected>학교 교원 (초·중·고 교사)</option>
             <option value="other">기타 (연구소·기관 등)</option>
           </select></label>
         <label id="a-office-wrap">소속 교육청 <select id="a-office"></select></label>
@@ -158,7 +158,7 @@
         <div id="open-courses" class="people"></div>
         <details class="wish-box" id="wish-box">
           <summary>🙋 듣고 싶은 과목이 없나요? <b>과목 개설 요청하기</b></summary>
-          <p class="muted" style="font-size:0.88rem;margin:6px 0">요청이 많은 과목은 거점학교 선생님들이 보고 강좌를 여는 데 참고해요. (이름은 보이지 않고 학교·학년만 모아서 봐요)</p>
+          <p class="muted" style="font-size:0.88rem;margin:6px 0">요청한 과목은 메인 화면 '학생들이 듣고 싶은 과목'에 모여 보이고, 선생님들이 강좌를 여는 데 참고해요. (이름·학교는 보이지 않고 과목·학년·인원만)</p>
           <form id="wish-form" class="row">
             <input id="wish-subject" list="wish-subjects" maxlength="60" required placeholder="과목 이름 (예: 인공지능 기초)" style="flex:1;min-width:160px">
             <datalist id="wish-subjects"></datalist>
@@ -261,7 +261,7 @@
       </div>
 
       <div data-panel="students" hidden>
-        <p class="muted">강좌별로 수강신청한 학생을 승인해요. 강의교사가 승인하면 바로 수강 확정돼요.</p>
+        <p class="muted">내 강좌에 수강신청한 학생을 찾아보고 승인해요. 강의교사가 승인하면 바로 수강 확정돼요.</p>
         <div id="students-list"></div>
       </div>
 

@@ -892,19 +892,10 @@ async function openFromDrive() {
   }
 }
 
-const LEAVE_REASONS = {
-  leave: "나가기 버튼", closed: "창 닫음·새로고침", network: "연결 끊김", kicked: "내보냄", ended: "수업 종료", server: "서버 재시작",
-};
 let lastEventTs = 0;
 
 function renderEvents() {
-  const evs = (S.events || []).slice().sort((a, b) => b.ts - a.ts); // 연결 끊김은 나중에 알아차리므로 시각순 정렬
-  $("#events").replaceChildren(...evs.slice(0, 30).map((e) => h("div", { class: `ev ${e.kind}` },
-    h("span", { class: "muted" }, fmtTime(e.ts)), " ",
-    e.kind === "record_on" ? "🔴 수업 녹화 시작" : e.kind === "record_off" ? "⏹ 수업 녹화 끝"
-      : e.kind === "leave" ? `🚪 ${e.name} 나감 (${LEAVE_REASONS[e.reason] || e.reason})`
-      : e.kind === "rejoin" ? `↩️ ${e.name} 다시 들어옴` : `✅ ${e.name} 들어옴`)));
-  if (!evs.length) $("#events").append(h("span", { class: "muted" }, "아직 없어요."));
+  // 입·퇴장 목록은 화면에 두지 않는다 (출결은 수업 기록에서). 연결이 끊긴 학생만 바로 알려 준다
   // 수업 중 연결이 끊긴 학생은 바로 알려 준다
   for (const e of S.events || []) {
     if (e.ts > lastEventTs && lastEventTs && e.kind === "leave" && e.reason === "network") toast(`${e.name} 학생의 연결이 끊겼어요.`);
@@ -990,7 +981,7 @@ function renderLayout() {
     if (sel.dataset.sig === sig && document.activeElement === sel) continue;
     const cur = sel.value || (S.layout?.pair || [])[i] || "";
     sel.dataset.sig = sig;
-    sel.replaceChildren(h("option", { value: "" }, "학생 고르기"), ...online.map((x) => h("option", { value: x.id, selected: x.id === cur }, x.name)));
+    sel.replaceChildren(h("option", { value: "" }, "학생 고르기"), ...koSort(online, (x) => x.name).map((x) => h("option", { value: x.id, selected: x.id === cur }, x.name)));
   }
 }
 $("#layout-sel").addEventListener("change", (e) => {
@@ -1118,10 +1109,10 @@ function renderScopes() {
   const sel = $("#chat-scope");
   const opts = [["main", "전체 교실"]];
   if (S.groups.length) {
-    S.groups.forEach((g) => opts.push([g.id, g.name]));
+    koSort(S.groups, (g) => g.name).forEach((g) => opts.push([g.id, g.name]));
     opts.push(["*", "📢 모든 방"]);
   }
-  for (const [sid, name] of dmTargets) opts.push([`dm:${sid}`, `🔒 ${name}에게 1:1`]);
+  for (const [sid, name] of koSort(dmTargets, (x) => x[1])) opts.push([`dm:${sid}`, `🔒 ${name}에게 1:1`]);
   const sig = JSON.stringify(opts);
   if (sel.dataset.sig === sig) return;
   sel.dataset.sig = sig;
@@ -1222,7 +1213,7 @@ function renderGroups() {
 
   const select = (s) => h("select", { onchange: (e) => sock.send({ t: "breakout_assign", target: s.id, group: e.target.value || null }) },
     h("option", { value: "" }, "미배정"),
-    S.groups.map((g) => h("option", { value: g.id, selected: s.group === g.id }, g.name)));
+    koSort(S.groups, (g) => g.name).map((g) => h("option", { value: g.id, selected: s.group === g.id }, g.name)));
   const chip = (s) => h("span", { class: "chip" }, `${s.online ? "" : "💤 "}${s.name}`, select(s));
 
   for (const g of S.groups) {

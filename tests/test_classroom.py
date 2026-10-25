@@ -26,6 +26,7 @@ def setup(monkeypatch):
     monkeypatch.setattr(auth, "DEV_LOGIN", True)
     monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "other@gmail.com"})
     monkeypatch.setattr(auth, "ALLOWED_DOMAINS", {"s.school.kr"})
+    monkeypatch.setattr(auth, "ULSAN_SCHOOLS", [])  # 테스트는 학교 목록 없이 시작 (필요하면 테스트에서 저장)
     monkeypatch.setattr(cr, "LIVEKIT_URL", "ws://localhost:7880")
     monkeypatch.setattr(cr, "LIVEKIT_API_KEY", "devkey")
     monkeypatch.setattr(cr, "LIVEKIT_API_SECRET", "secret-secret-secret-secret-secret")
@@ -660,6 +661,11 @@ def test_hub_structure_and_course_approval(monkeypatch):
     assert rej["status"] == "rejected" and rej["note"] == "정원 초과"
     assert s1.get("/api/courses/live-now").json()["classes"][0]["code"] == code
     assert s1.post(f"/api/live/classes/{code}/join").status_code == 200
+    # 수업신청자 관리: 내 모든 강좌의 신청을 한 번에 (학년·반·소속학교 포함)
+    rows = prof.get("/api/my/enrollments").json()["enrollments"]
+    assert sorted((x["name"], x["status"], x["grade"], x["class_no"], x["hub_school"]) for x in rows) == [
+        ("학생1", "approved", 2, 3, "가나고등학교"), ("학생2", "rejected", 2, 3, "가나고등학교")]
+    assert s1.get("/api/my/enrollments").status_code == 403
     s3 = student(3)
     s3.post(f"/api/courses/{cid}/enroll")
     assert prof.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
@@ -1351,6 +1357,10 @@ def test_course_requests_and_info_pages(monkeypatch):
     assert top["subject"] == "인공지능 기초" and top["count"] == 2 and top["grades"] == {"1": 1, "2": 1}
     assert top["in_curriculum"] and top["notes"] == ["코딩을 배우고 싶어요"] and "name" not in top
     assert not next(r for r in reqs if r["subject"] == "울산의 역사")["in_curriculum"]
+    # 메인 화면: 누구나 본다 (과목·요청 수·학년만 — 학교·하고 싶은 말은 빠짐)
+    pub = TestClient(app).get("/api/course-requests/summary").json()["requests"]
+    assert pub[0] == {"subject": "인공지능 기초", "count": 2, "grades": {"1": 1, "2": 1}, "in_curriculum": True}
+    assert "외솔" not in str(pub) and "home-wishes" in TestClient(app).get("/live/home").text
     mine = a.get("/api/my/course-requests").json()["requests"]
     a.post(f"/api/course-requests/{mine[0]['id']}/delete")
     b.post(f"/api/course-requests/{mine[0]['id']}/delete")  # 남의 요청은 못 지움
@@ -1552,3 +1562,15 @@ def test_course_hub_can_be_changed_to_listed_school(monkeypatch):
     assert boss.post(f"/api/courses/{cid}", json={"hub_school": "울산고등학교"}).status_code == 200
     c = boss.get("/api/courses/mine").json()["courses"][0]
     assert c["hub_school"] == "울산고등학교" and c["hub_id"]
+
+
+def test_ulsan_school_list_is_built_in(monkeypatch):
+    monkeypatch.setattr(auth, "ULSAN_SCHOOLS", ["신정고등학교", "울산고등학교"])
+    schools = TestClient(app).get("/api/me").json()["schools"]
+    assert schools == ["신정고등학교", "울산고등학교"]
+    st = login("st1@s.school.kr")
+    st.post("/api/me/self-role", json={"role": "student"})
+    assert st.post("/api/me/profile", json={"name": "학생", "school": "없는고등학교", "grade": 1, "class_no": 1, "number": 1,
+                                            "agree": True}).status_code == 400
+    assert st.post("/api/me/profile", json={"name": "학생", "school": "신정고등학교", "grade": 1, "class_no": 1, "number": 1,
+                                            "agree": True}).status_code == 200

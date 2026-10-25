@@ -41,15 +41,20 @@ KST = ZoneInfo("Asia/Seoul")
 def today_kst() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
 SCHOOLS = [s.strip() for s in os.environ.get("SCHOOLS", "").split(",") if s.strip()]
+# 울산 고등학교 (학생 소속 학교 · 거점학교 · 참여학교를 이 목록에서 고른다). 빠진 학교는 여기에 더한다.
+ULSAN_SCHOOLS = [
+    "신정고등학교", "울산고등학교", "신선여자고등학교", "남창고등학교", "호계고등학교", "울산강남고등학교",
+    "삼산고등학교", "울산가온고등학교", "울산중앙고등학교", "우신고등학교", "현대고등학교", "현대청운고등학교",
+    "울산외국어고등학교", "울산제일고등학교", "온산고등학교", "성광여자고등학교", "울산여자고등학교",
+]
 
 
 def get_schools() -> list[str]:
-    """학생이 고르는 학교 목록: 전체 관리자가 화면에서 저장한 것, 없으면 SCHOOLS 설정"""
+    """고를 수 있는 학교 목록: 위 울산 고등학교 + SCHOOLS 설정 + 예전에 관리 화면에서 저장해 둔 것 (가나다순)"""
     with db.engine.connect() as c:
         row = c.execute(select(db.site_settings.c.value).where(db.site_settings.c.key == "schools")).first()
-    if row and row.value.strip():
-        return [s.strip() for s in row.value.splitlines() if s.strip()]
-    return SCHOOLS
+    saved = [s.strip() for s in row.value.splitlines() if s.strip()] if row and row.value else []
+    return sorted({*ULSAN_SCHOOLS, *SCHOOLS, *saved})
 # 로컬 개발·자동 테스트 전용 로그인. 배포 서버에서는 절대 켜지 말 것.
 DEV_LOGIN = os.environ.get("DEV_LOGIN") == "1"
 

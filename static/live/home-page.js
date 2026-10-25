@@ -120,6 +120,20 @@
     } catch { box.innerHTML = '<p class="muted">강좌를 불러오지 못했어요.</p>'; }
   }
 
+  // ── 학생들이 듣고 싶은 과목 ──
+  async function wishes() {
+    const box = $("#home-wishes");
+    try {
+      const { requests: list } = await (await fetch("/api/course-requests/summary")).json();
+      const top = Math.max(1, ...list.map((w) => w.count));
+      box.innerHTML = list.length ? list.map((w) => `<div class="wish-item">
+          <div class="wish-top"><strong>${esc(w.subject)}</strong>${w.in_curriculum ? "" : '<span class="tag">고시외</span>'}<span class="wish-n">${w.count}명</span></div>
+          <div class="wish-bar"><i style="width:${Math.round((w.count / top) * 100)}%"></i></div>
+          <span class="muted">${Object.entries(w.grades).map(([g, n]) => `${g}학년 ${n}`).join(" · ") || "&nbsp;"}</span></div>`).join("")
+        : '<p class="muted">아직 요청한 과목이 없어요. 듣고 싶은 과목이 있으면 마이페이지에서 요청해 주세요!</p>';
+    } catch { box.innerHTML = '<p class="muted">불러오지 못했어요.</p>'; }
+  }
+
   // ── 시작하기 / 로그인한 사람 ──
   async function who() {
     try {
@@ -136,5 +150,6 @@
   billboard();
   notices();
   courses();
+  wishes();
   who();
 })();

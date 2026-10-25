@@ -528,3 +528,8 @@ function devicePreview({ video, meter, err, camBox, micBox }) {
   start();
   return stop;
 }
+
+/** 드롭다운 목록은 모두 가나다(오름차순)순으로. key: 정렬 기준 글자를 꺼내는 함수 */
+function koSort(list, key = (x) => x) {
+  return [...list].sort((a, b) => String(key(a) ?? "").localeCompare(String(key(b) ?? ""), "ko", { numeric: true }));
+}

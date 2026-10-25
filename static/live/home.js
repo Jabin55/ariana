@@ -161,7 +161,7 @@ function showProfile() {
     sel.required = true;
     $("#p-school").hidden = true;
     sel.replaceChildren(h("option", { value: "" }, "학교를 고르세요"),
-      ...CONFIG.schools.map((s) => h("option", { value: s, selected: s === ME.school }, s)));
+      ...koSort(CONFIG.schools).map((s) => h("option", { value: s, selected: s === ME.school }, s)));
     if (CONFIG.schools.length === 1 && !ME.school) sel.value = CONFIG.schools[0];
   } else {
     $("#p-school").value = ME.school || "";
@@ -282,7 +282,7 @@ async function showGuest(fromTeacher = false) {
   $("#a-contact").value = last?.contact || "";
   $("#a-email").value = last?.email || ME.email || "";
   const meta = await subjectMeta();
-  $("#a-office").replaceChildren(h("option", { value: "" }, "교육청을 고르세요"), ...meta.offices.map((x) => h("option", { value: x }, x)));
+  $("#a-office").replaceChildren(h("option", { value: "" }, "교육청을 고르세요"), ...koSort(meta.offices).map((x) => h("option", { value: x }, x)));
   if (last?.affil_type) {
     $("#a-affil-type").value = last.affil_type;
     $("#a-office").value = last.office || "";
@@ -291,7 +291,7 @@ async function showGuest(fromTeacher = false) {
     $("#a-office").value = "울산광역시교육청";
   }
   // 거점학교(관리교사 신청)는 울산 학교 목록에서 검색해서 고른다
-  $("#school-options").replaceChildren(...CONFIG.schools.map((x) => h("option", { value: x })));
+  $("#school-options").replaceChildren(...koSort(CONFIG.schools).map((x) => h("option", { value: x })));
   updateAffil();
   // 내 신청 현황
   $("#my-apps").replaceChildren(...ME.memberships.map((m) => {
@@ -313,7 +313,7 @@ async function showGuest(fromTeacher = false) {
   $("#a-hub").hidden = useList;
   if (!useList) {
     const { hubs } = await api("/api/hubs");
-    $("#a-hub").replaceChildren(...(hubs.length ? hubs.map((x) => h("option", { value: x.id }, x.name))
+    $("#a-hub").replaceChildren(...(hubs.length ? koSort(hubs, (x) => x.name).map((x) => h("option", { value: x.id }, x.name))
       : [h("option", { value: "" }, "아직 등록된 거점학교가 없어요")]));
   }
   updateApplyRole();
@@ -505,7 +505,7 @@ async function loadWishes() {
   try {
     const meta = await subjectMeta();
     if (!$("#wish-subjects").children.length) {
-      $("#wish-subjects").replaceChildren(...meta.subjects.map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
+      $("#wish-subjects").replaceChildren(...koSort(meta.subjects, (x) => x.name).map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
     }
     const { requests } = await api("/api/my/course-requests");
     $("#my-wishes").replaceChildren(...requests.map((r) => h("div", { class: "row" },
@@ -755,7 +755,7 @@ async function bannersEditor(reload) {
           inp("button", "버튼 글자", { maxlength: 20, placeholder: "예: 신청하러 가기" }),
           inp("link", "링크", { maxlength: 300, placeholder: "/live/courses 또는 https://..." }),
           h("label", {}, "배경색", h("select", { onchange: (e) => { b.theme = e.target.value; } },
-            Object.entries(THEME_NAMES).map(([k, v]) => h("option", { value: k, selected: (b.theme || "green") === k }, v)))),
+            koSort(Object.entries(THEME_NAMES), (x) => x[1]).map(([k, v]) => h("option", { value: k, selected: (b.theme || "green") === k }, v)))),
           h("label", { class: "wide" }, "그림 (선택 — 가로로 긴 그림, 1600×500 정도 권장. 올리면 배경으로 꽉 차요)", file,
             b.image ? h("span", { class: "row" }, h("img", { src: `/api/banners/image/${b.image}`, alt: "", style: "height:60px;border-radius:8px" }),
               h("button", { class: "small", onclick: () => { b.image = ""; draw(); } }, "그림 빼기")) : null)));
