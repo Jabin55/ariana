@@ -68,6 +68,9 @@ function onMessage(msg) {
     case "chat":
       addChat(msg.msg, true);
       break;
+    case "sticker":
+      showSticker(msg, false);
+      break;
     case "strokes":
     case "stroke":
     case "stroke_del":
@@ -655,15 +658,108 @@ function render() {
   renderGroups();
   renderScopes();
   renderPresent();
+  renderMediaShare();
   if (mainRoom) renderMain(mainRoom);
 }
+
+/* ───── 미디어공유 · 설문/퀴즈 · 스티커 ───── */
+
+const mediaShare = new MediaShare($("#media"), {
+  teacher: true, code: CODE,
+  onCtrl: (playing, pos) => sock.send({ t: "media_ctrl", playing, pos }),
+  onClose: () => sock.send({ t: "media_close" }),
+});
+function renderMediaShare() {
+  mediaShare.set(S.breakout ? null : S.media);
+  $("#media-btn").classList.toggle("on", !!S.media);
+}
+
+/** 유튜브 주소에서 영상 id 꺼내기 (youtu.be/…, watch?v=…, shorts/…, embed/…) */
+function youtubeId(text) {
+  const t = text.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(t)) return t;
+  try {
+    const u = new URL(t);
+    if (u.hostname.endsWith("youtu.be")) return u.pathname.slice(1, 12);
+    if (u.searchParams.get("v")) return u.searchParams.get("v").slice(0, 11);
+    const m = u.pathname.match(/\/(shorts|embed|live)\/([A-Za-z0-9_-]{11})/);
+    return m ? m[2] : null;
+  } catch { return null; }
+}
+
+function openMediaDialog() {
+  document.querySelector(".files-dlg")?.remove();
+  const yt = h("input", { class: "grow", placeholder: "유튜브 주소 붙여 넣기 (예: https://youtu.be/…)" });
+  const dlg = h("div", { class: "files-dlg card" },
+    h("div", { class: "row" }, h("strong", { class: "grow" }, "🎬 미디어공유"), h("button", { class: "small", onclick: () => dlg.remove() }, "닫기")),
+    h("p", { class: "muted", style: "margin:4px 0 10px;font-size:0.88rem" }, "선생님이 재생·멈춤·건너뛰기를 하면 학생 화면도 같은 곳으로 맞춰져요."),
+    h("div", { class: "row" }, yt, h("button", { class: "primary", onclick: () => {
+      const id = youtubeId(yt.value);
+      if (!id) { toast("유튜브 주소를 확인해 주세요."); return; }
+      sock.send({ t: "media_open", kind: "youtube", src: id });
+      dlg.remove();
+    } }, "띄우기")),
+    h("div", { class: "row", style: "margin-top:8px" },
+      h("button", { onclick: () => $("#media-input").click() }, "📁 내 컴퓨터의 동영상·음악 올리기"),
+      h("span", { class: "muted", style: "font-size:0.82rem" }, "mp4·webm·mov·mp3·m4a, 500MB까지 · 수업이 끝나면 지워져요")),
+    S.media_files.length ? h("div", { style: "margin-top:10px" }, h("strong", {}, "올린 미디어"),
+      S.media_files.map((f) => h("div", { class: "row" }, h("span", { class: "grow" }, `${[".mp3", ".m4a", ".wav", ".ogg"].includes(f.ext) ? "🎵" : "🎞️"} ${f.name}`),
+        h("button", { class: "small primary", onclick: () => { sock.send({ t: "media_open", kind: "file", src: f.id }); dlg.remove(); } }, "띄우기")))) : null,
+    S.media ? h("button", { class: "danger", style: "margin-top:10px", onclick: () => { sock.send({ t: "media_close" }); dlg.remove(); } }, "지금 공유 끝내기") : null);
+  document.body.append(dlg);
+  yt.focus();
+}
+$("#media-btn").addEventListener("click", openMediaDialog);
+$("#media-input").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  document.querySelector(".files-dlg")?.remove();
+  const note = toast(`'${f.name}' 올리는 중…`, 600000);
+  try {
+    // 큰 파일: 진행률을 보여 주려고 XMLHttpRequest로 올린다
+    const id = await new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open("POST", `/api/live/classes/${CODE}/media?name=${encodeURIComponent(f.name)}`);
+      x.upload.onprogress = (ev) => { if (ev.lengthComputable && note) note.textContent = `'${f.name}' 올리는 중… ${Math.round((ev.loaded / ev.total) * 100)}%`; };
+      x.onload = () => {
+        let data = {};
+        try { data = JSON.parse(x.responseText); } catch { /* 무시 */ }
+        if (x.status === 200) resolve(data.id); else reject(new Error(data.detail || "올리지 못했어요."));
+      };
+      x.onerror = () => reject(new Error("인터넷 연결을 확인해 주세요."));
+      x.send(f);
+    });
+    if (note) note.hidden = true;
+    sock.send({ t: "media_open", kind: "file", src: id });
+  } catch (err) { toast(err.message, 6000); }
+});
+
+$("#quiz-btn").addEventListener("click", () => showTab("activity"));
+
+const STICKERS = [["👏", "박수"], ["👍", "좋아요"], ["⭐", "칭찬"], ["💯", "최고"], ["🎉", "축하"], ["❤️", "하트"], ["💡", "좋은 생각"], ["🔥", "열정"]];
+$("#sticker-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const pop = $("#sticker-pop");
+  if (!pop.hidden) { pop.hidden = true; return; }
+  const online = koSort(S.students.filter((s) => s.online), (s) => s.name);
+  const to = h("select", {}, h("option", { value: "" }, "👥 모두에게"), online.map((s) => h("option", { value: s.id }, `${s.name}${s.stickers ? ` (⭐${s.stickers})` : ""}`)));
+  pop.replaceChildren(
+    h("div", { class: "row" }, h("strong", { class: "grow" }, "🏅 칭찬 스티커"), to),
+    h("div", { class: "sticker-grid" }, STICKERS.map(([s, label]) => h("button", { type: "button", title: label, onclick: () => {
+      sock.send({ t: "sticker", s, target: to.value || null });
+    } }, h("span", { class: "sticker-ico" }, s), h("small", {}, label)))),
+    h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.8rem" }, "학생을 고르면 그 학생 화면에 크게 뜨고, 받은 스티커 수가 학생 목록에 쌓여요."));
+  pop.hidden = false;
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".sticker-wrap")) $("#sticker-pop").hidden = true; });
 
 /* ───── 자료 발표(PDF)·화이트보드 ───── */
 
 let presentSig = "";
 function renderPresent() {
   const v = S.present;
-  $("#present").hidden = !v || S.breakout;
+  $("#present").hidden = !v || S.breakout || !!S.media;
   $("#present-btn").classList.toggle("on", v?.mode === "slides");
   $("#board-btn").classList.toggle("on", v?.mode === "board");
   presenter.setView(v);
@@ -951,7 +1047,8 @@ function renderPeople() {
       mixed && s.school ? `${s.school} · ` : "", "미접속"))) : h("div", { class: `person ${s.hand || s.mic_req ? "hand" : ""}` },
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
     h("span", {}, s.mic_req ? h("span", { title: "마이크를 켜 달라고 요청했어요 — 🔇를 누르면 켜져요" }, "🎙️ ") : null,
-      s.hand ? h("span", { title: "할 말이 있어요" }, "✋ ") : null, `${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
+      s.hand ? h("span", { title: "할 말이 있어요" }, "✋ ") : null, `${s.name} `,
+      s.stickers ? h("span", { class: "sticker-count", title: "받은 칭찬 스티커" }, `⭐${s.stickers} `) : null, h("span", { class: "muted", style: "font-size:0.8rem" },
       mixed && s.school ? `${s.school} · ` : "", roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },
       s.hand ? h("button", { title: "손 내리기", onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "✋↓") : null,

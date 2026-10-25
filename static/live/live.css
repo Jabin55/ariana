@@ -1004,3 +1004,34 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .consent-text p, .consent-text ul { margin: 4px 0; }
 .consent-table th { white-space: nowrap; text-align: left; vertical-align: top; width: 7.5em; }
 .req { color: #c0392b; font-size: 0.85rem; }
+
+/* 수업 도구: 화면공유 · 문서공유 · 미디어공유 · 화이트보드 · 설문/퀴즈 · 스티커 */
+.tool-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+.media-share { background: #000; border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; flex-shrink: 0; }
+.media-share[hidden] { display: none; }
+.media-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #1b1f27; color: #fff; }
+.media-bar .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-stage { position: relative; aspect-ratio: 16 / 9; max-height: 62vh; width: 100%; }
+.media-stage video, .media-stage iframe, .media-stage > div { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+.media-stage audio { position: absolute; left: 5%; right: 5%; bottom: 16px; width: 90%; }
+.media-audio { display: grid; place-items: center; font-size: 5rem; color: #fff; }
+.sticker-wrap { position: relative; display: inline-block; }
+.sticker-pop { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30; width: 300px;
+  background: var(--card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 10px; box-shadow: 0 8px 28px #0003; }
+.sticker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.sticker-grid button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; }
+.sticker-grid .sticker-ico { font-size: 1.6rem; line-height: 1; }
+.sticker-grid small { font-size: 0.72rem; color: var(--muted); }
+.sticker-count { font-size: 0.8rem; color: #c58a00; font-weight: 700; }
+.sticker-fx { position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 100; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; animation: sticker-pop 2.6s ease forwards; }
+.sticker-fx .sticker-ico { font-size: 7rem; line-height: 1; filter: drop-shadow(0 6px 16px #0005); }
+.sticker-fx .sticker-text { background: #000b; color: #fff; padding: 6px 14px; border-radius: 99px; font-weight: 700; font-size: 1rem; }
+.sticker-fx.mine .sticker-ico { font-size: 9rem; }
+@keyframes sticker-pop {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.4); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  25% { transform: translate(-50%, -50%) scale(1); }
+  80% { opacity: 1; transform: translate(-50%, -55%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -75%) scale(0.9); }
+}

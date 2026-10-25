@@ -70,6 +70,13 @@ ALLOW_RECORDING = os.environ.get("ALLOW_RECORDING", "1") != "0"
 # 발표 자료(PDF)는 수업이 끝나도 남겨 둔다(그 수업을 들은 학생·강좌 수강생이 나중에 다시 봄)
 SLIDES_DIR = Path(os.environ.get("SLIDES_DIR") or Path(tempfile.gettempdir()) / "live-slides")
 MAX_FILE_BYTES = 40 * 1024 * 1024
+# 미디어 공유: 선생님이 올린 동영상·음악 (수업이 끝나면 지운다) 또는 유튜브 영상
+MAX_MEDIA_BYTES = 500 * 1024 * 1024
+MEDIA_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/mp4",
+               ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".ogg": "audio/ogg"}
+YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# 칭찬 스티커 (선생님 → 모두 또는 한 학생)
+STICKERS = {"👏": "박수", "👍": "좋아요", "⭐": "칭찬", "💯": "최고", "🎉": "축하", "❤️": "하트", "💡": "좋은 생각", "🔥": "열정"}
 MAX_FILES = 20  # 수업당 올릴 수 있는 파일 수
 MAX_BOARD_PAGES = 50
 MAX_STROKES = 1500  # 한 쪽에 남길 수 있는 획 수
@@ -154,6 +161,10 @@ class Klass:
     # 발표(PDF)·화이트보드: {"mode": "slides"|"board", "file": 파일 id, "page": 쪽} / 없으면 None
     present: dict | None = None
     files: list[dict] = field(default_factory=list)  # 올린 발표 자료 [{id, name, pages, size}]
+    # 미디어 공유: {"kind": "youtube"|"file", "src", "title", "playing", "pos": 초, "at": pos를 정한 시각} / 없으면 None
+    media: dict | None = None
+    media_files: list[dict] = field(default_factory=list)  # 올린 동영상·음악 [{id, name, ext, size}]
+    stickers: dict[str, int] = field(default_factory=dict)  # 학생별로 받은 칭찬 스티커 수
     board_pages: int = 1  # 화이트보드 쪽 수
     strokes: dict[str, list[dict]] = field(default_factory=dict)  # 쪽마다 선생님 판서
     dirty_boards: set[str] = field(default_factory=set)  # 아직 DB에 저장하지 않은 판서 쪽
@@ -488,6 +499,7 @@ def teacher_state(k: Klass) -> dict:
         "students": roster_rows(k),
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at,
         "present": present_view(k), "files": k.files, "recording": k.recording,
+        "media": k.media, "media_files": k.media_files,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
         "announce": k.announce, "listening": k.listening, "talking": k.talking,
@@ -519,6 +531,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "layout": layout_for(k),
         "activity": activity_for_student(k.activity, s.id),
         "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
+        "media": k.media if room == "main" else None,
         "announce": k.announce,
         "my_questions": [q for q in k.questions if q["sid"] == s.id][-20:],
         "online_count": sum(1 for m in k.students.values() if m.conns > 0),
@@ -536,11 +549,12 @@ def roster_rows(k: Klass) -> list[dict]:
     """선생님 학생 목록: 들어온 학생 + 아직 안 들어온 수강생(회색)"""
     rows = [{"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand, "mic_req": s.mic_req,
              "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "mic_blocked": s.mic_blocked,
-             "group": s.group, "room": k.room_of(s), "sessions": s.sessions, "absent": False}
+             "group": s.group, "room": k.room_of(s), "sessions": s.sessions, "absent": False,
+             "stickers": k.stickers.get(s.id, 0)}
             for s in k.students.values()]
     rows += [{"id": r["id"], "name": r["name"], "school": r["school"], "online": False, "hand": False, "mic_req": False,
               "help": False, "can_speak": False, "can_cam": False, "mic_blocked": False, "group": None, "room": None,
-              "sessions": 0, "absent": True}
+              "sessions": 0, "absent": True, "stickers": 0}
              for r in k.roster if r["id"] not in k.students]
     return rows
 
@@ -989,6 +1003,54 @@ async def upload_file(code: str, request: Request, name: str = Query(default="�
     k.files.append({"id": fid, "name": fname, "pages": 0, "size": len(data)})
     push(k)
     return {"id": fid}
+
+
+@router.post("/api/live/classes/{code}/media")
+async def upload_media(code: str, request: Request, name: str = Query(default="영상.mp4", max_length=200)):
+    """미디어 공유: 선생님이 동영상·음악 파일을 올린다 (요청 본문 = 파일 그대로). 수업이 끝나면 지운다."""
+    t = await require_user(request, "teacher")
+    k = await get_class(code)
+    if not await is_class_teacher(k, t):
+        raise HTTPException(403, "이 수업의 선생님만 올릴 수 있어요.")
+    ext = Path(name).suffix.lower()
+    if ext not in MEDIA_TYPES:
+        raise HTTPException(415, "동영상(mp4·webm·mov)이나 음악(mp3·m4a·wav·ogg) 파일만 올릴 수 있어요.")
+    if len(k.media_files) >= MAX_FILES:
+        raise HTTPException(409, f"한 수업에 미디어는 {MAX_FILES}개까지 올릴 수 있어요.")
+    fid = uuid.uuid4().hex[:12]
+    path = media_dir(k) / f"{fid}{ext}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    size = 0
+    try:
+        with path.open("wb") as out:  # 큰 파일이라 메모리에 담지 않고 바로 디스크에 쓴다
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_MEDIA_BYTES:
+                    raise HTTPException(413, f"파일이 너무 커요. {MAX_MEDIA_BYTES // 1024 // 1024}MB 이하로 올려 주세요.")
+                out.write(chunk)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    if not size:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "빈 파일이에요.")
+    k.media_files.append({"id": fid, "name": clean(name, 80) or "미디어", "ext": ext, "size": size})
+    push(k)
+    return {"id": fid}
+
+
+@router.get("/api/live/classes/{code}/media/{fid}")
+async def get_media(code: str, fid: str, request: Request):
+    """이 수업의 선생님과 들어온 학생만 본다 (구간 요청을 지원해 원하는 곳부터 재생)."""
+    u = await require_user(request)
+    k = await get_class(code)
+    if not (await is_class_teacher(k, u) or (u["role"] == "student" and str(u["id"]) in k.students)):
+        raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
+    f = next((x for x in k.media_files if x["id"] == fid), None)
+    path = media_dir(k) / f"{fid}{f['ext']}" if f else None
+    if not path or not path.is_file():
+        raise HTTPException(404, "미디어를 찾을 수 없어요.")
+    return FileResponse(path, media_type=MEDIA_TYPES[f["ext"]], headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.get("/api/live/classes/{code}/files/{fid}")
@@ -1528,8 +1590,37 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         for s in k.students.values():
             if s.group == m.get("group"):
                 s.help = False
+    elif t == "media_open":
+        kind, src = m.get("kind"), str(m.get("src") or "")
+        ok = (kind == "youtube" and YOUTUBE_ID.match(src)) or (kind == "file" and any(f["id"] == src for f in k.media_files))
+        if ok:
+            name = next((f["name"] for f in k.media_files if f["id"] == src), "") if kind == "file" else ""
+            k.media = {"kind": kind, "src": src, "title": clean(m.get("title"), 80) or name or "유튜브 영상",
+                       "ext": next((f["ext"] for f in k.media_files if f["id"] == src), "") if kind == "file" else "",
+                       "playing": False, "pos": 0.0, "at": time.time()}
+    elif t == "media_ctrl" and k.media:
+        try:
+            k.media["pos"] = max(0.0, float(m.get("pos") or 0))
+        except (TypeError, ValueError):
+            pass
+        k.media["playing"] = bool(m.get("playing"))
+        k.media["at"] = time.time()
+    elif t == "media_close":
+        k.media = None
+    elif t == "sticker" and m.get("s") in STICKERS:
+        target = m.get("target")
+        st = k.students.get(str(target)) if target else None
+        if target and not st:
+            return
+        if st:
+            k.stickers[st.id] = k.stickers.get(st.id, 0) + 1
+        fx = {"t": "sticker", "s": m["s"], "label": STICKERS[m["s"]], "target": st.id if st else None,
+              "name": st.name if st else None, "ts": time.time()}
+        for c in k.conns:
+            send(c, fx)
     elif t == "end_class":
         save_activity(k, k.activity)
+        remove_media_files(k)
         # 접속 중인 학생의 출결을 '수업 종료'로 바로 닫는다
         open_ids = [s.att_id for s in k.students.values() if s.att_id]
         for s in k.students.values():
@@ -1552,6 +1643,18 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                               .values(left_at=ended_at, last_seen=ended_at, left_reason="ended"))
 
         asyncio.get_running_loop().create_task(db.run(run))
+
+
+def media_dir(k: Klass) -> Path:
+    return class_dir(k) / "media"
+
+
+def remove_media_files(k: Klass) -> None:
+    """미디어 공유로 올린 동영상·음악은 수업이 끝나면 지운다 (자료·판서와 달리 남기지 않음)."""
+    for f in k.media_files:
+        (media_dir(k) / f"{f['id']}{f['ext']}").unlink(missing_ok=True)
+    k.media_files.clear()
+    k.media = None
 
 
 def log_recording(k: Klass, on: bool) -> None:

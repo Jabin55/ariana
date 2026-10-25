@@ -67,6 +67,9 @@ function onMessage(msg) {
     case "stroke_del":
       presenter.onMessage(msg);
       break;
+    case "sticker":
+      showSticker(msg, msg.target && msg.target === S?.me?.id);
+      break;
     case "kicked":
       finish("선생님이 수업에서 내보냈어요.");
       break;
@@ -283,13 +286,16 @@ function renderMedia(room) {
 
 /* ───── 화면 그리기 ───── */
 
+const mediaShare = new MediaShare($("#media"), { code: CODE });
+
 function render() {
   document.title = `${S.title} · 실시간 수업`;
   $("#title").textContent = S.title;
   $("#online").textContent = `👥 ${S.online_count}명`;
   renderBanners();
   renderActivity();
-  $("#present").hidden = !S.present;
+  mediaShare.set(S.media);
+  $("#present").hidden = !S.present || !!S.media; // 미디어를 다 같이 보는 동안은 문서를 가린다
   presenter.setView(S.present);
   renderQuestions();
   renderTabs();

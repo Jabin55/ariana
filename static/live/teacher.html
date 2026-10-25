@@ -34,6 +34,7 @@
         <div id="activity-mini"></div>
 
         <div id="main-view" style="display:contents">
+          <div class="media-share" id="media" hidden></div>
           <div class="present" id="present" hidden><div class="present-bar" id="present-bar"></div></div>
           <div class="stage" id="stage" hidden></div>
           <div class="grid" id="grid"></div>
@@ -60,7 +61,7 @@
       <aside class="sidebar">
         <nav class="tabs" id="tabs">
           <button data-tab="people" class="active">학생 <span class="badge" id="hand-badge" hidden></span></button>
-          <button data-tab="activity">퀴즈·투표</button>
+          <button data-tab="activity">설문/퀴즈</button>
           <button data-tab="chat">채팅 <span class="badge" id="chat-badge" hidden></span></button>
           <button data-tab="groups">모둠</button>
         </nav>
@@ -81,7 +82,7 @@
           <div class="people" id="people"></div>
         </section>
 
-        <!-- 퀴즈·투표 -->
+        <!-- 설문/퀴즈 -->
         <section class="panel" data-panel="activity" hidden>
           <div id="activity-current"></div>
           <form class="box" id="act-form">
@@ -131,9 +132,15 @@
       <button id="mic">🎤 마이크</button>
       <span class="meter small" id="mic-meter" title="내 마이크 소리 크기" hidden><i></i></span>
       <button id="cam">📷 카메라</button>
-      <button id="screen">🖥️ 화면 공유</button>
-      <button id="present-btn" title="PDF 자료를 띄우고 그 위에 판서하며 설명">📄 자료 발표</button>
+      <span class="tool-sep"></span>
+      <button id="screen" title="내 컴퓨터 화면이나 창을 학생들에게 보여 주기">🖥️ 화면공유</button>
+      <button id="present-btn" title="PDF 문서를 띄우고 그 위에 판서하며 설명">📄 문서공유</button>
+      <button id="media-btn" title="동영상·음악 파일이나 유튜브 영상을 다 같이 보기">🎬 미디어공유</button>
       <button id="board-btn" title="빈 화이트보드에 그리며 설명">🖊️ 화이트보드</button>
+      <button id="quiz-btn" title="설문(투표)이나 퀴즈 내기">📊 설문/퀴즈</button>
+      <span class="sticker-wrap"><button id="sticker-btn" title="학생에게 칭찬 스티커 보내기">🏅 스티커</button>
+        <div class="sticker-pop" id="sticker-pop" hidden></div></span>
+      <span class="tool-sep"></span>
       <label class="layout-pick" title="선생님·학생 모두의 화면에 얼굴이 어떻게 보일지">🖼️ 화면 구성
         <select id="layout-sel">
           <option value="teacher">선생님 크게</option>
@@ -143,6 +150,7 @@
       <button id="rec-btn" title="이 수업 화면과 소리를 선생님 컴퓨터에 녹화 (학생 화면에 '녹화 중' 표시)" hidden>⏺ 녹화</button>
       <button id="sound" class="primary" hidden>🔊 소리 켜기</button>
       <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>
+      <input type="file" id="media-input" accept="video/mp4,video/webm,video/quicktime,.m4v,audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a" hidden>
     </footer>
   </div>
 

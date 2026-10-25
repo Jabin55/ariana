@@ -1603,3 +1603,48 @@ def test_signup_starts_with_two_required_consents():
     st.post("/api/me/self-role", json={"role": "student"})
     assert st.post("/api/me/profile", json={"name": "학생", "school": SCHOOL, "grade": 1, "class_no": 1, "number": 1}).status_code == 200
     assert TestClient(app).post("/api/me/consent", json={"terms": True, "privacy": True}).status_code == 401
+
+
+def test_media_share_and_stickers(monkeypatch, tmp_path):
+    monkeypatch.setattr(cr, "SLIDES_DIR", tmp_path)
+    t = teacher()
+    code = create(t)["code"]
+    a = student(1)
+    a.post(f"/api/live/classes/{code}/join")
+    # 동영상 올리기: 동영상·음악만, 학생은 못 올림
+    assert t.post(f"/api/live/classes/{code}/media?name=a.exe", content=b"x").status_code == 415
+    assert a.post(f"/api/live/classes/{code}/media?name=a.mp4", content=b"x").status_code == 403
+    r = t.post(f"/api/live/classes/{code}/media?name=수업영상.mp4", content=b"\x00\x00\x00\x18ftypmp42" + b"0" * 2000)
+    assert r.status_code == 200, r.text
+    fid = r.json()["id"]
+    # 들어온 학생은 구간 요청으로 받아 볼 수 있다
+    part = a.get(f"/api/live/classes/{code}/media/{fid}", headers={"Range": "bytes=0-9"})
+    assert part.status_code == 206 and len(part.content) == 10
+    assert login("st9@s.school.kr", name="학생9", school=SCHOOL, grade=1, class_no=1, number=9).get(
+        f"/api/live/classes/{code}/media/{fid}").status_code == 403
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sw:
+        state(tw)
+        tw.send_json({"t": "media_open", "kind": "youtube", "src": "not-an-id"})  # 잘못된 유튜브 id는 무시
+        tw.send_json({"t": "media_open", "kind": "file", "src": fid})
+        st = state(sw, lambda m: m.get("media"))
+        assert st["media"]["title"] == "수업영상.mp4" and st["media"]["playing"] is False
+        tw.send_json({"t": "media_ctrl", "playing": True, "pos": 12.5})
+        st = state(sw, lambda m: m["media"] and m["media"]["playing"])
+        assert st["media"]["pos"] == 12.5
+        tw.send_json({"t": "media_open", "kind": "youtube", "src": "dQw4w9WgXcQ"})
+        assert state(sw, lambda m: m["media"] and m["media"]["kind"] == "youtube")["media"]["src"] == "dQw4w9WgXcQ"
+        # 스티커: 한 학생에게 → 모두의 화면에 뜨고, 받은 수가 쌓인다
+        sid = state(tw, lambda m: m["students"] and m["students"][0]["online"])["students"][0]["id"]
+        tw.send_json({"t": "sticker", "s": "⭐", "target": sid})
+        fx = until(sw, lambda m: m["t"] == "sticker")
+        assert fx["target"] == sid and fx["label"] == "칭찬" and fx["name"] == "20301 학생1"
+        tw.send_json({"t": "sticker", "s": "💩"})  # 정해진 스티커만
+        tw.send_json({"t": "sticker", "s": "👏"})  # 모두에게
+        assert until(sw, lambda m: m["t"] == "sticker")["target"] is None
+        assert state(tw, lambda m: m["students"][0]["stickers"] == 1)
+        sw.send_json({"t": "sticker", "s": "⭐"})  # 학생은 못 보냄
+        tw.send_json({"t": "media_close"})
+        assert state(sw, lambda m: m["media"] is None)
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    assert not list((tmp_path).rglob("*.mp4"))  # 수업이 끝나면 올린 미디어는 지운다

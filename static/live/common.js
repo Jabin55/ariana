@@ -54,6 +54,7 @@ function toast(text, ms = 3000) {
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, ms);
+  return el;
 }
 
 /** 서버 시계와의 차이(초). 타이머를 학생 기기 시계와 상관없이 맞추기 위함 */
@@ -532,4 +533,110 @@ function devicePreview({ video, meter, err, camBox, micBox }) {
 /** 드롭다운 목록은 모두 가나다(오름차순)순으로. key: 정렬 기준 글자를 꺼내는 함수 */
 function koSort(list, key = (x) => x) {
   return [...list].sort((a, b) => String(key(a) ?? "").localeCompare(String(key(b) ?? ""), "ko", { numeric: true }));
+}
+
+/* ───── 미디어 공유: 선생님이 튼 동영상·음악·유튜브를 학생 화면에서 같은 곳으로 맞춰 재생 ───── */
+let ytReady = null;
+function loadYouTube() {
+  if (!ytReady) {
+    ytReady = new Promise((resolve) => {
+      window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+      const s = document.createElement("script");
+      s.src = "https://www.youtube.com/iframe_api";
+      document.head.append(s);
+    });
+  }
+  return ytReady;
+}
+
+class MediaShare {
+  /** box: 넣을 자리, teacher: 선생님이면 조작 가능(바뀌면 onCtrl로 알림), code: 수업 코드 */
+  constructor(box, { teacher = false, code, onCtrl, onClose } = {}) {
+    Object.assign(this, { box, teacher, code, onCtrl, onClose, key: "", media: null, el: null, yt: null });
+    if (!teacher) setInterval(() => this.sync(), 1000);
+  }
+
+  set(media) {
+    this.media = media;
+    const key = media ? `${media.kind}:${media.src}` : "";
+    if (key !== this.key) this.build(key);
+    if (this.title && media) this.title.textContent = `🎬 ${media.title}`;
+    this.sync();
+  }
+
+  build(key) {
+    this.key = key;
+    if (this.yt) { try { this.yt.destroy(); } catch { /* 이미 없어짐 */ } }
+    this.yt = this.el = null;
+    this.box.replaceChildren();
+    this.box.hidden = !this.media;
+    if (!this.media) return;
+    const m = this.media;
+    this.title = h("strong", { class: "grow" }, `🎬 ${m.title}`);
+    this.tap = h("button", { class: "primary", hidden: true, onclick: () => { this.tap.hidden = true; this.sync(true); } }, "▶ 눌러서 함께 보기");
+    const bar = h("div", { class: "media-bar" }, this.title, this.tap,
+      this.teacher ? h("button", { class: "small", onclick: () => this.onClose?.() }, "공유 끝내기") : null);
+    const stage = h("div", { class: "media-stage" });
+    this.box.append(bar, stage);
+    if (m.kind === "youtube") {
+      const slot = h("div");
+      stage.append(slot);
+      loadYouTube().then((YT) => {
+        if (this.key !== key) return;
+        this.yt = new YT.Player(slot, {
+          videoId: m.src, width: "100%", height: "100%",
+          playerVars: { controls: this.teacher ? 1 : 0, rel: 0, modestbranding: 1, playsinline: 1, disablekb: this.teacher ? 0 : 1 },
+          events: {
+            onReady: () => this.sync(),
+            onStateChange: (e) => {
+              if (!this.teacher) return;
+              if (e.data === YT.PlayerState.PLAYING) this.onCtrl?.(true, this.yt.getCurrentTime());
+              if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) this.onCtrl?.(false, this.yt.getCurrentTime());
+            },
+          },
+        });
+      });
+      return;
+    }
+    const audio = [".mp3", ".m4a", ".wav", ".ogg"].includes(m.ext);
+    this.el = h(audio ? "audio" : "video", { src: `/api/live/classes/${this.code}/media/${m.src}`, playsinline: true, preload: "auto" });
+    this.el.controls = this.teacher;
+    if (audio) stage.append(h("div", { class: "media-audio" }, "🎵"));
+    stage.append(this.el);
+    if (this.teacher) {
+      const tell = () => this.onCtrl?.(!this.el.paused, this.el.currentTime);
+      this.el.addEventListener("play", tell);
+      this.el.addEventListener("pause", tell);
+      this.el.addEventListener("seeked", tell);
+    }
+  }
+
+  /** 학생: 선생님이 정한 곳(시작 위치 + 지난 시간)에 맞춘다 */
+  sync(fromTap = false) {
+    const m = this.media;
+    if (this.teacher || !m) return;
+    const target = m.pos + (m.playing ? Math.max(0, clock.now() - m.at) : 0);
+    if (this.yt?.getPlayerState) {
+      const p = this.yt;
+      if (Math.abs((p.getCurrentTime() || 0) - target) > 2) p.seekTo(target, true);
+      const playing = p.getPlayerState() === 1 || p.getPlayerState() === 3;
+      if (m.playing && !playing) p.playVideo();
+      if (!m.playing && playing) p.pauseVideo();
+      return;
+    }
+    const el = this.el;
+    if (!el) return;
+    if (el.readyState >= 1 && Math.abs(el.currentTime - target) > 2) el.currentTime = target;
+    if (m.playing && el.paused) el.play().then(() => { this.tap.hidden = true; }).catch(() => { if (!fromTap) this.tap.hidden = false; });
+    if (!m.playing && !el.paused) el.pause();
+  }
+}
+
+/** 칭찬 스티커: 화면 가운데 크게 떠올랐다 사라진다 */
+function showSticker(fx, mine) {
+  const el = h("div", { class: `sticker-fx ${mine ? "mine" : ""}` },
+    h("span", { class: "sticker-ico" }, fx.s),
+    h("span", { class: "sticker-text" }, mine ? `선생님이 나에게 '${fx.label}' 스티커를 줬어요!` : fx.name ? `${fx.name} 학생에게 '${fx.label}'` : `모두에게 '${fx.label}'`));
+  document.body.append(el);
+  setTimeout(() => el.remove(), 2600);
 }
