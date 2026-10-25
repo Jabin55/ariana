@@ -1299,3 +1299,10 @@ def test_home_notices_and_banners(monkeypatch, tmp_path):
     saved = r.json()["banners"]
     assert [b["title"] for b in saved] == ["여름학기 신청", ""] and saved[0]["theme"] == "green" and saved[1]["image"] == img
     assert t.post("/api/admin/banners", json={"banners": []}).status_code == 403
+
+
+def test_pages_are_revalidated():
+    c = TestClient(app)
+    assert c.get("/static/live/live.css").headers["cache-control"] == "no-cache"
+    assert c.get("/live").headers["cache-control"] == "no-cache"
+    assert "max-age" in c.get("/static/live/fonts/jua-subset.woff2").headers["cache-control"]

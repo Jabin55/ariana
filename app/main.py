@@ -63,6 +63,18 @@ app.add_middleware(
     max_age=14 * 24 * 3600, same_site="lax",
     https_only=bool(os.environ.get("RENDER") or os.environ.get("COOKIE_SECURE")),
 )
+
+
+@app.middleware("http")
+async def fresh_pages(request, call_next):
+    """화면 파일(HTML·CSS·JS)은 브라우저가 매번 새 버전이 있는지 확인하게 한다 (업데이트가 바로 보이도록).
+    바뀌지 않았으면 304로 짧게 끝난다. 글꼴은 잘 안 바뀌므로 일주일 보관."""
+    response = await call_next(request)
+    path = request.url.path
+    if "cache-control" not in response.headers and (path.startswith("/static/") or path == "/live" or path.startswith("/live/")):
+        response.headers["Cache-Control"] = "public, max-age=604800" if "/fonts/" in path else "no-cache"
+    return response
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(auth_router)
 app.include_router(live_router)
