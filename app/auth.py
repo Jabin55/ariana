@@ -15,10 +15,12 @@ import json
 import os
 import re
 import time
+import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select, update
 
@@ -72,6 +74,7 @@ def public_user(u) -> dict:
         "name_locked": bool(d.get("name_locked")) and not d.get("is_admin"),
         "gender": d.get("gender") or "", "contact_email": d.get("contact_email") or "", "phone": d.get("phone") or "",
         "subjects": d.get("subjects") or "", "position": d.get("position") or "",
+        "photo": f"/api/photos/{d['photo']}" if d.get("photo") else "",
         "needs_terms": needs_terms(d), "ai_ok": bool(d.get("ai_ok_at")),
         # 학교 계정으로 처음 들어와 '학생/선생님'을 아직 안 골랐다
         "role_choice": d["role"] == "student" and not d.get("self_role"),
@@ -362,6 +365,68 @@ async def save_profile(p: Profile, request: Request):
     return public_user(await db.run(_load_with_role, u["id"]))
 
 
+PHOTO_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+
+
+def photo_dir():
+    from app.assignments import FILES_DIR  # 과제 파일과 같은 곳에 둔다
+    return FILES_DIR / "photos"
+
+
+def _set_photo(uid: int, fid: str) -> None:
+    """프로필 사진을 바꾸거나(fid) 지운다(""). 예전 사진 파일은 지운다."""
+    with db.engine.begin() as c:
+        old = c.execute(select(db.users.c.photo).where(db.users.c.id == uid)).scalar() or ""
+        c.execute(update(db.users).where(db.users.c.id == uid).values(photo=fid))
+    if old and old != fid:
+        (photo_dir() / old).unlink(missing_ok=True)
+
+
+@router.post("/api/me/photo")
+async def upload_photo(request: Request, name: str = Query(default="photo.jpg", max_length=150)):
+    """프로필 사진 올리기 (PNG·JPG·WEBP, 2MB까지). 요청 본문 = 그림 파일 그대로"""
+    u = await require_user(request, profile=False)
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in PHOTO_TYPES:
+        raise HTTPException(415, "사진은 PNG, JPG, WEBP 파일로 올려 주세요.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > 2 * 1024 * 1024:
+            raise HTTPException(413, "사진이 너무 커요. 2MB 이하로 올려 주세요.")
+    if not data:
+        raise HTTPException(400, "사진 파일이 비어 있어요.")
+    fid = f"{uuid.uuid4().hex}.{'jpg' if ext == 'jpeg' else ext}"
+
+    def save():
+        photo_dir().mkdir(parents=True, exist_ok=True)
+        (photo_dir() / fid).write_bytes(data)
+        _set_photo(u["id"], fid)
+
+    await db.run(save)
+    return public_user(await db.run(_load_with_role, u["id"]))
+
+
+@router.delete("/api/me/photo")
+async def delete_photo(request: Request):
+    u = await require_user(request, profile=False)
+    await db.run(_set_photo, u["id"], "")
+    return public_user(await db.run(_load_with_role, u["id"]))
+
+
+@router.get("/api/photos/{fid}")
+async def photo(fid: str, request: Request):
+    """프로필 사진: 로그인한 사람만 본다 (파일 이름은 추측할 수 없는 무작위 값)"""
+    await require_user(request, profile=False)
+    stem, _, ext = fid.partition(".")
+    if not stem.isalnum() or ext not in PHOTO_TYPES:
+        raise HTTPException(404)
+    path = photo_dir() / fid
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, media_type=PHOTO_TYPES[ext], headers={"Cache-Control": "private, max-age=86400"})
+
+
 class Consent(BaseModel):
     terms: bool = False  # 이용약관 동의 (필수)
     privacy: bool = False  # 개인정보 수집·이용 동의 (필수)
@@ -430,6 +495,7 @@ def _withdraw(uid: int) -> None:
     from app.assignments import file_path  # 순환 import 를 피한다
 
     with db.engine.begin() as c:
+        photo = c.execute(select(db.users.c.photo).where(db.users.c.id == uid)).scalar() or ""
         class_ids = {r.class_id for r in c.execute(select(db.attendance.c.class_id).where(db.attendance.c.user_id == uid))}
         # 퀴즈·투표 답은 활동마다 {학생번호: 답} 으로 들어 있다
         if class_ids:
@@ -452,6 +518,8 @@ def _withdraw(uid: int) -> None:
         c.execute(delete(db.users).where(db.users.c.id == uid))
     for f in files:
         file_path(aid_of[f.submission_id], f.id).unlink(missing_ok=True)
+    if photo:
+        (photo_dir() / photo).unlink(missing_ok=True)
 
 
 def owns_classes(uid: int) -> bool:

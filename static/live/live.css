@@ -1137,6 +1137,8 @@ input[readonly] { background: var(--surface-2, #f1f3f5); color: var(--muted); cu
 .me-table th { width: 110px; text-align: left; vertical-align: middle; background: var(--surface-2, #f6f7f9); padding: 10px 14px; font-size: 0.9rem; font-weight: 700; border-bottom: 1px solid var(--border); }
 .me-table td { padding: 8px 14px; border-bottom: 1px solid var(--border); }
 .me-table td input:not([type=checkbox]), .me-table td select { width: 100%; max-width: 420px; }
+img.me-avatar { object-fit: cover; }
+.me-photo { gap: 10px; align-items: center; }
 .me-avatar { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #0f4a5c; color: #fff; font-size: 1.5rem; font-weight: 700; }
 .me-school { display: flex; align-items: center; gap: 8px; max-width: 560px; }
 .me-school select { flex: 0 0 auto; width: auto !important; }

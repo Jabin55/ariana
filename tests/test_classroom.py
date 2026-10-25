@@ -1737,3 +1737,20 @@ def test_name_is_locked_and_teacher_profile(monkeypatch):
     assert (app_["contact"], app_["contact_email"], app_["gender"]) == ("010-9999-0000", "han@use.go.kr", "여")
     # 전체 관리자는 자기 이름을 바꿀 수 있다
     assert boss.post("/api/me/profile", json={"name": "새관리자", "school": ""}).json()["name"] == "새관리자"
+
+
+def test_profile_photo_upload_view_and_delete():
+    t = teacher()
+    assert t.post("/api/me/photo?name=a.exe", content=b"x").status_code == 415
+    assert t.post("/api/me/photo?name=a.jpg", content=b"x" * (2 * 1024 * 1024 + 1)).status_code == 413
+    r = t.post("/api/me/photo?name=me.jpg", content=b"\xff\xd8fakejpeg")
+    assert r.status_code == 200, r.text
+    url = r.json()["photo"]
+    assert url.startswith("/api/photos/") and url.endswith(".jpg")
+    assert t.get(url).content == b"\xff\xd8fakejpeg"
+    assert TestClient(app).get(url).status_code == 401  # 로그인한 사람만
+    # 새 사진을 올리면 예전 사진은 지워진다
+    url2 = t.post("/api/me/photo?name=me.png", content=b"png").json()["photo"]
+    assert t.get(url).status_code == 404 and t.get(url2).status_code == 200
+    assert t.delete("/api/me/photo").json()["photo"] == ""
+    assert t.get(url2).status_code == 404

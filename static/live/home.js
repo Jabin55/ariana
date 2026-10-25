@@ -212,6 +212,45 @@ $("#dev-login").addEventListener("submit", async (e) => {
 
 /* ───── 내 정보 ───── */
 
+/** 그림을 정사각형 400px JPG 로 줄인다 (큰 휴대폰 사진도 가볍게) */
+async function squarePhoto(file) {
+  const img = await createImageBitmap(file);
+  const side = Math.min(img.width, img.height);
+  const size = Math.min(400, side);
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = size;
+  cv.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+  return new Promise((ok) => cv.toBlob(ok, "image/jpeg", 0.88));
+}
+
+/** 프로필 사진: 동그라미(사진 또는 이름 첫 글자) + [사진 바꾸기] [사진 지우기] */
+function photoPicker() {
+  const input = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true });
+  const after = (u) => { ME = u; window.WaesolHeader?.render(ME); drawTeacherProfile(); };
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      let body = file;
+      try { body = await squarePhoto(file); } catch { /* 줄이지 못하면 원본 그대로 */ }
+      const r = await fetch(`/api/me/photo?name=${encodeURIComponent(body === file ? file.name : "photo.jpg")}`, { method: "POST", body });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "사진을 올리지 못했어요.");
+      toast("프로필 사진을 바꿨어요.");
+      after(d);
+    } catch (e) { toast(e.message); }
+  });
+  const avatar = ME.photo ? h("img", { class: "me-avatar", src: ME.photo, alt: "프로필 사진" })
+    : h("span", { class: "me-avatar" }, (ME.name || ME.email || "?").slice(0, 1));
+  return h("div", { class: "row me-photo" }, avatar, input,
+    h("button", { type: "button", class: "small", onclick: () => input.click() }, ME.photo ? "사진 바꾸기" : "사진 올리기"),
+    ME.photo ? h("button", { type: "button", class: "small", onclick: async () => {
+      if (!confirm("프로필 사진을 지울까요?")) return;
+      const r = await fetch("/api/me/photo", { method: "DELETE" });
+      if (r.ok) after(await r.json());
+    } }, "사진 지우기") : null);
+}
+
 /** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 소속 · 직위 · 권한정보 · (강의교사) 담당과목 · 이메일 · 휴대전화 */
 async function drawTeacherProfile() {
   const meta = await subjectMeta();
@@ -240,7 +279,7 @@ async function drawTeacherProfile() {
   const row = (label, ...v) => h("tr", {}, h("th", {}, label), h("td", {}, ...v));
   $("#t-profile").replaceChildren(
     h("table", { class: "me-table" }, h("tbody", {},
-      row("프로필", h("span", { class: "me-avatar" }, (ME.name || ME.email || "?").slice(0, 1))),
+      row("프로필", photoPicker()),
       row("이름", f.name, ME.name_locked ? h("div", { class: "muted", style: "font-size:0.8rem;margin-top:2px" }, "🔒 가입 때 적은 실명으로 정해져 바꿀 수 없어요 (전체 관리자에게 요청)") : null),
       row("성별", f.gender),
       row("생년월일", f.birth),

@@ -51,6 +51,7 @@ users = Table(
     Column("contact_email", String(200), nullable=False, default=""),  # 연락받을 이메일 (선생님)
     Column("phone", String(100), nullable=False, default=""),  # 연락처 (선생님)
     Column("position", String(30), nullable=False, default=""),  # 직위 (선생님: 교사·부장교사·교감 등)
+    Column("photo", String(40), nullable=False, default=""),  # 프로필 사진 파일 (FILES_DIR/photos/이름)
     Column("subjects", String(300), nullable=False, default=""),  # 담당과목 (강의교사)  # 가입 때 적은 실명은 바꿀 수 없다 (전체 관리자만)  # 생년월일 (선생님 가입 정보, YYYY-MM-DD)
     Column("withdraw_at", Float),  # 신청한 시각 (비면 신청 안 함)
     Column("withdraw_reason", String(300), nullable=False, default=""),
@@ -430,6 +431,7 @@ def init() -> None:
              ("users", "phone", "VARCHAR(100) NOT NULL DEFAULT ''"),
              ("users", "subjects", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("users", "position", "VARCHAR(30) NOT NULL DEFAULT ''"),
+             ("users", "photo", "VARCHAR(40) NOT NULL DEFAULT ''"),
              ("courses", "approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("courses", "approved_by", "INTEGER")]
     fresh = set()
