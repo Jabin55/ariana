@@ -97,7 +97,6 @@ async def about():
   <div class="feature"><span class="f-ico">✅</span><h3>퀴즈·투표</h3><p>OX·객관식·주관식으로 바로 확인하고, 결과는 그래프로.</p></div>
   <div class="feature"><span class="f-ico">👥</span><h3>모둠 활동</h3><p>모둠별 회의실에서 토론하고, 선생님은 모든 모둠을 한눈에 살펴요.</p></div>
   <div class="feature"><span class="f-ico">📝</span><h3>과제와 피드백</h3><p>파일로 과제를 내고, 점수와 선생님 피드백을 받아요.</p></div>
-  <div class="feature"><span class="f-ico">📚</span><h3>지난 수업 다시 보기</h3><p>수업을 놓쳐도 선생님이 띄운 자료와 판서를 다시 볼 수 있어요.</p></div>
 </section>
 <section class="info-block">
   <h2>누가 쓰나요</h2>
