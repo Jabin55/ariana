@@ -26,12 +26,9 @@ function qaItem(q, who) {
 async function boot() {
   CONFIG = await api("/api/me");
   ME = CONFIG.user;
-  $("#logout").hidden = !ME;
-  $("#edit-profile").hidden = !ME || ME.needs_profile;
-  const roleName = ME?.is_admin ? "전체 관리자" : ME?.coordinator_hubs?.length ? "관리교사" : ME?.role_choice ? "가입 중"
-    : { teacher: "강사", student: "학생", guest: "등록 신청" }[ME?.role];
-  $("#who").textContent = ME ? `${ME.display || ME.email} (${roleName})` : "";
+  window.WaesolHeader?.render(ME); // 이름·내 정보·로그아웃은 맨 위 머리글에만
   if (!ME) return showLogin();
+  if (params.get("profile") && !ME.role_choice) return showProfile();
   if (ME.role_choice) {
     // 학교 계정으로 처음 들어옴: 첫 화면에서 고른 것(학생/선생님)이 있으면 그대로, 없으면 물어본다
     const pick = sessionGet("signup_as");
@@ -141,11 +138,6 @@ $("#dev-login").addEventListener("submit", async (e) => {
   } catch (err) { $("#login-error").textContent = err.message; }
 });
 
-$("#logout").addEventListener("click", async () => {
-  await api("/api/auth/logout", {});
-  try { google.accounts.id.disableAutoSelect(); } catch { /* 구글 스크립트 없음 */ }
-  location.href = "/live";
-});
 
 /* ───── 내 정보 ───── */
 
@@ -210,7 +202,7 @@ $("#profile").addEventListener("submit", async (e) => {
     boot();
   } catch (err) { $("#profile-error").textContent = err.message; }
 });
-$("#edit-profile").addEventListener("click", showProfile);
+window.showProfile = showProfile; // 머리글의 '내 정보' 버튼
 
 const WITHDRAW_TEXT = {
   student: "탈퇴를 신청하면 수강한 강좌의 <b>거점학교 관리교사 선생님이 승인</b>한 뒤 탈퇴돼요. 승인되면 내 정보와 출결, 질문, 퀴즈 답·점수, 과제 제출물, 수강신청 기록이 <b>모두 지워지고 되살릴 수 없어요.</b> 승인 전에는 신청을 취소할 수 있어요.",

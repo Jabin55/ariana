@@ -632,3 +632,14 @@ body.site { background: linear-gradient(180deg, var(--cream) 0, var(--bg) 420px)
 .home-cols > * { min-width: 0; }
 .notice-list li > a { min-width: 0; }
 @media (max-width: 760px) { .home-cols { grid-template-columns: minmax(0, 1fr); } }
+/* 머리글 오른쪽: 이름(역할) · 내 정보 · 로그아웃 */
+.site-user-box { display: flex; align-items: center; gap: 6px; flex: none; }
+.site-me { display: grid; line-height: 1.15; text-align: right; text-decoration: none; color: var(--text); margin-right: 2px; }
+.site-me strong { font-size: 0.92rem; max-width: 11em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-me span { font-size: 0.72rem; color: var(--brand); font-weight: 700; }
+.site-user-box button.small { padding: 5px 10px; font-size: 0.82rem; white-space: nowrap; }
+@media (max-width: 760px) {
+  .site-user-box { margin-left: auto; }
+  .site-me strong { max-width: 6.5em; }
+}
+@media (max-width: 380px) { .site-me span { display: none; } }
