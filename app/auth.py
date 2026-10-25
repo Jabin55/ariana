@@ -167,8 +167,8 @@ async def require_user(request: Request, role: str | None = None, profile: bool 
     return u
 
 
-PLEDGE = ("나는 이 플랫폼에서 알게 된 학생의 개인정보(이름·학번·출결·답안·질문 등)를 수업 목적으로만 쓰고, "
-          "외부에 제공하거나 유출하지 않으며, 강의가 끝나면 따로 내려받은 자료를 지체 없이 파기하겠습니다.")
+PLEDGE = ("나는 이 플랫폼에서 알게 된 학생의 개인정보(이름·학번·출결·답안·질문·과제와 수업 녹화본 등)를 수업 목적으로만 쓰고, "
+          "외부에 제공하거나 게시·유출하지 않으며, 강의가 끝나면 따로 내려받은 자료와 녹화본을 지체 없이 파기하겠습니다.")
 
 
 def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
@@ -242,6 +242,7 @@ async def me(request: Request):
         if GOOGLE_CLIENT_ID and GOOGLE_API_KEY and GOOGLE_APP_ID else None,
         "schools": SCHOOLS, "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
         "policy_version": POLICY_VERSION, "policy_ready": policy_ready(),
+        "recording_allowed": os.environ.get("ALLOW_RECORDING", "1") != "0",
     }
 
 

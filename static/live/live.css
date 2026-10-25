@@ -406,3 +406,10 @@ details.card > summary { cursor: pointer; }
 .assign-student summary { cursor: pointer; list-style: revert; }
 .assign-submit { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; align-items: flex-start; }
 .assign-submit textarea { width: 100%; }
+
+/* ───── 강의 녹화 ───── */
+.banner.rec { background: #fde8e7; color: #8a1c13; }
+@media (prefers-color-scheme: dark) { .banner.rec { background: #4a1714; color: #ffd9d5; } }
+#rec-btn.recording { background: var(--danger); color: #fff; border-color: var(--danger); animation: rec-pulse 1.6s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { opacity: 0.75; } }
+.banner.rec strong { color: inherit; }

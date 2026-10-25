@@ -317,6 +317,8 @@ function renderControls() {
 function renderBanners() {
   const box = $("#banners");
   box.replaceChildren();
+  if (S.recording) box.append(h("div", { class: "banner rec" }, h("strong", {}, "🔴 녹화 중"),
+    h("span", {}, "선생님이 수업을 녹화하고 있어요. 녹화본은 선생님 컴퓨터에 저장되고 수업 목적으로만 쓰여요.")));
   if (!S.livekit) box.append(h("div", { class: "banner warn" }, "화상 서버가 아직 설정되지 않아 영상 없이 진행돼요."));
   if (!S.teacher_online) box.append(h("div", { class: "banner warn" }, "선생님이 아직 들어오지 않았어요."));
   if (S.announce) box.append(h("div", { class: "banner" }, h("strong", {}, "📢 공지"), h("span", {}, S.announce.text)));

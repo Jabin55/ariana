@@ -3,6 +3,7 @@ let CFG = null; // /api/me 설정 (구글 드라이브 연결 등)
 api("/api/me").then((cfg) => {
   CFG = cfg;
   if (!cfg.user || cfg.user.role !== "teacher") location.replace("/live");
+  $("#rec-btn").hidden = !cfg.recording_allowed;
 }).catch(() => {});
 
 let S = null;
@@ -40,6 +41,7 @@ $("#prejoin-form").addEventListener("submit", (e) => {
     $("#status").textContent = ok ? "● 연결됨" : "다시 연결하는 중…";
     $("#status").classList.toggle("bad", !ok);
     if (ok && S) sendListen(); // 재접속하면 듣기 상태를 다시 알린다
+    if (ok && rec.recorder) sock.send({ t: "recording", on: true }); // 녹화 중이면 학생 화면 표시도 다시
   });
 });
 
@@ -194,7 +196,131 @@ function renderControls() {
   $("#screen").textContent = prefs.screen ? "🖥️ 공유 중지" : "🖥️ 화면 공유";
   $("#screen").classList.toggle("on", prefs.screen);
   for (const id of ["#mic", "#cam", "#screen"]) $(id).disabled = !ok;
+  if (rec.micGain) rec.micGain.gain.value = prefs.mic ? 1 : 0; // 마이크를 끄면 녹화에도 목소리가 안 들어간다
+  $("#rec-btn").hidden = CFG ? !CFG.recording_allowed : true;
 }
+
+/* ───── 강의 녹화 ─────
+ * 선생님 컴퓨터의 브라우저가 이 수업 화면(탭)과 소리를 직접 녹화해 선생님 컴퓨터에 저장한다. 서버에는 올라가지 않는다.
+ * - 크롬·엣지: 녹화를 시작할 때 저장할 파일을 고르고, 녹화하는 동안 조금씩 바로 그 파일에 쓴다(4시간 수업도 메모리 걱정 없음).
+ * - 그 밖의 브라우저: 끝날 때 한 번에 내려받는다(1시간 이내 권장).
+ * 녹화 중에는 학생 화면에 '녹화 중'이 표시된다. */
+const rec = { recorder: null, display: null, mic: null, ctx: null, micGain: null, writable: null, chunks: [], chain: Promise.resolve(), started: 0, timer: null, name: "" };
+
+function recMime() {
+  // MP4(H.264)를 먼저: 학교 컴퓨터의 기본 동영상 앱·한글 문서·유튜브에서 바로 열린다. 안 되면 WebM.
+  const types = ["video/mp4;codecs=avc1,mp4a.40.2", "video/mp4;codecs=avc1,opus", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+  return types.find((t) => window.MediaRecorder?.isTypeSupported?.(t)) || "";
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder) {
+    alert("이 브라우저에서는 녹화할 수 없어요. 컴퓨터의 크롬이나 엣지에서 해 주세요.");
+    return;
+  }
+  if (!confirm("수업을 녹화할까요?\n\n· 이 수업 화면과 소리(선생님 목소리, 학생 목소리)가 이 컴퓨터에 동영상 파일로 저장돼요. 서버에는 올라가지 않아요.\n"
+    + "· 녹화하는 동안 학생 화면에 '🔴 녹화 중'이 표시돼요.\n· 녹화본에는 학생의 얼굴·목소리·이름이 담기니 수업 목적으로만 쓰고, 다른 곳에 올리거나 공유하지 말고, 보관 기간이 지나면 지워 주세요.\n\n"
+    + "다음 화면에서 녹화할 화면으로 '이 탭'을 고르고 '탭 오디오 공유'를 켜 주세요.")) return;
+  const date = new Date().toISOString().slice(0, 10);
+  const mime = recMime();
+  const ext = mime.startsWith("video/mp4") ? "mp4" : "webm";
+  rec.name = `${(S?.title || "수업").replace(/[\\/:*?"<>|]/g, "_")}_${date}.${ext}`;
+  rec.writable = null;
+  rec.chunks = [];
+  // 1) 저장할 파일 고르기 (크롬·엣지): 녹화하는 동안 바로 그 파일에 쓴다
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: rec.name, types: [{ description: "동영상", accept: { [mime.split(";")[0] || "video/webm"]: [`.${ext}`] } }] });
+      rec.writable = await handle.createWritable();
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+    }
+  }
+  try {
+    // 2) 이 탭 화면과 탭 소리(학생 목소리 등)
+    rec.display = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 15, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: true, preferCurrentTab: true, selfBrowserSurface: "include", systemAudio: "exclude",
+    });
+    // 3) 선생님 마이크를 섞는다 (마이크를 끄면 녹화에도 안 들어감)
+    rec.ctx = new AudioContext();
+    const dest = rec.ctx.createMediaStreamDestination();
+    if (rec.display.getAudioTracks().length) rec.ctx.createMediaStreamSource(new MediaStream(rec.display.getAudioTracks())).connect(dest);
+    try {
+      rec.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      rec.micGain = rec.ctx.createGain();
+      rec.micGain.gain.value = prefs.mic ? 1 : 0;
+      rec.ctx.createMediaStreamSource(rec.mic).connect(rec.micGain).connect(dest);
+    } catch { toast("마이크를 쓸 수 없어 선생님 목소리 없이 녹화해요.", 5000); }
+    const out = new MediaStream([...rec.display.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    rec.recorder = new MediaRecorder(out, { mimeType: mime || undefined, videoBitsPerSecond: 1_500_000, audioBitsPerSecond: 96_000 });
+    rec.recorder.ondataavailable = (e) => {
+      if (!e.data?.size) return;
+      if (rec.writable) { const w = rec.writable; rec.chain = rec.chain.then(() => w.write(e.data)).catch((err) => console.error(err)); }
+      else rec.chunks.push(e.data);
+    };
+    rec.recorder.onstop = finishRecording;
+    rec.display.getVideoTracks()[0].addEventListener("ended", () => stopRecording()); // 브라우저의 '공유 중지'를 눌렀을 때
+    rec.recorder.start(5000); // 5초마다 저장
+    rec.started = Date.now();
+    rec.timer = setInterval(renderRecButton, 1000);
+    if (!rec.display.getAudioTracks().length) toast("탭 오디오 공유를 켜지 않아 학생 목소리는 녹화되지 않아요.", 7000);
+    sock?.send({ t: "recording", on: true });
+    renderRecButton();
+  } catch (err) {
+    cleanupRecording();
+    if (err?.name !== "NotAllowedError") toast(`녹화를 시작하지 못했어요: ${err.message}`, 6000);
+  }
+}
+
+function stopRecording() {
+  if (rec.recorder && rec.recorder.state !== "inactive") rec.recorder.stop();
+}
+
+async function finishRecording() {
+  clearInterval(rec.timer);
+  sock?.send({ t: "recording", on: false });
+  try {
+    if (rec.writable) {
+      await rec.chain;
+      await rec.writable.close();
+      toast(`녹화본을 저장했어요: ${rec.name}`, 6000);
+    } else if (rec.chunks.length) {
+      const url = URL.createObjectURL(new Blob(rec.chunks, { type: rec.recorder.mimeType || "video/webm" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = rec.name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast(`녹화본을 내려받았어요: ${rec.name}`, 6000);
+    }
+  } catch (err) {
+    toast(`녹화본을 저장하지 못했어요: ${err.message}`, 8000);
+  }
+  cleanupRecording();
+}
+
+function cleanupRecording() {
+  clearInterval(rec.timer);
+  rec.display?.getTracks().forEach((tr) => tr.stop());
+  rec.mic?.getTracks().forEach((tr) => tr.stop());
+  rec.ctx?.close().catch(() => {});
+  Object.assign(rec, { recorder: null, display: null, mic: null, ctx: null, micGain: null, writable: null, chunks: [], chain: Promise.resolve(), timer: null });
+  renderRecButton();
+}
+
+function renderRecButton() {
+  const b = $("#rec-btn");
+  const on = !!rec.recorder;
+  b.classList.toggle("recording", on);
+  if (!on) { b.textContent = "⏺ 녹화"; return; }
+  const sec = Math.floor((Date.now() - rec.started) / 1000);
+  const hh = Math.floor(sec / 3600), mm = String(Math.floor((sec % 3600) / 60)).padStart(2, "0"), ss = String(sec % 60).padStart(2, "0");
+  b.textContent = `⏹ 녹화 중 ${hh ? `${hh}:` : ""}${mm}:${ss}`;
+}
+
+$("#rec-btn").addEventListener("click", () => (rec.recorder ? stopRecording() : startRecording()));
+window.addEventListener("beforeunload", (e) => { if (rec.recorder) { e.preventDefault(); e.returnValue = ""; } });
 
 $("#mic").addEventListener("click", () => setMic(!prefs.mic));
 $("#cam").addEventListener("click", () => setCam(!prefs.cam));
@@ -707,7 +833,8 @@ function renderEvents() {
   const evs = (S.events || []).slice().sort((a, b) => b.ts - a.ts); // 연결 끊김은 나중에 알아차리므로 시각순 정렬
   $("#events").replaceChildren(...evs.slice(0, 30).map((e) => h("div", { class: `ev ${e.kind}` },
     h("span", { class: "muted" }, fmtTime(e.ts)), " ",
-    e.kind === "leave" ? `🚪 ${e.name} 나감 (${LEAVE_REASONS[e.reason] || e.reason})`
+    e.kind === "record_on" ? "🔴 수업 녹화 시작" : e.kind === "record_off" ? "⏹ 수업 녹화 끝"
+      : e.kind === "leave" ? `🚪 ${e.name} 나감 (${LEAVE_REASONS[e.reason] || e.reason})`
       : e.kind === "rejoin" ? `↩️ ${e.name} 다시 들어옴` : `✅ ${e.name} 들어옴`)));
   if (!evs.length) $("#events").append(h("span", { class: "muted" }, "아직 없어요."));
   // 수업 중 연결이 끊긴 학생은 바로 알려 준다
@@ -1026,6 +1153,7 @@ $("#copy-link").addEventListener("click", async () => {
 
 $("#end-class").addEventListener("click", () => {
   if (!confirm("수업을 종료할까요? 모든 학생이 나가요.\n출결과 퀴즈 결과는 '출결 기록'에서 계속 볼 수 있어요.")) return;
+  stopRecording(); // 녹화 중이면 저장하고 끝낸다
   sock.send({ t: "end_class" });
 });
 

@@ -63,6 +63,8 @@ LOW_BANDWIDTH_DEFAULT = os.environ.get("LOW_BANDWIDTH", "1") != "0"
 # 마이크 통제 기본값: 전체 교실에서 학생 마이크는 선생님이 켜 줘야 쓸 수 있다(학생은 손 들기로 요청).
 # MIC_LOCK=0 이면 기본으로 학생이 자유롭게 켠다. (모둠 활동 중에는 언제나 자유)
 MIC_LOCK_DEFAULT = os.environ.get("MIC_LOCK", "1") != "0"
+# 강의 녹화(선생님 컴퓨터에 저장). 학교가 허용하지 않으면 ALLOW_RECORDING=0
+ALLOW_RECORDING = os.environ.get("ALLOW_RECORDING", "1") != "0"
 # 발표 자료(PDF)는 수업이 끝나도 남겨 둔다(그 수업을 들은 학생·강좌 수강생이 나중에 다시 봄)
 SLIDES_DIR = Path(os.environ.get("SLIDES_DIR") or Path(tempfile.gettempdir()) / "live-slides")
 MAX_FILE_BYTES = 40 * 1024 * 1024
@@ -140,6 +142,7 @@ class Klass:
     listening: list[str] = field(default_factory=list)  # 선생님이 듣고 있는 모둠
     talking: str | None = None  # 선생님이 말하고 있는 모둠
     broadcasting: bool = False  # 선생님이 모든 방에 동시에 말하는 중
+    recording: bool = False  # 선생님이 수업을 녹화하는 중 (학생 화면에 표시)
     events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)
     # 발표(PDF)·화이트보드: {"mode": "slides"|"board", "file": 파일 id, "page": 쪽} / 없으면 None
     present: dict | None = None
@@ -456,7 +459,7 @@ def teacher_state(k: Klass) -> dict:
             for s in k.students.values()
         ],
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at,
-        "present": present_view(k), "files": k.files,
+        "present": present_view(k), "files": k.files, "recording": k.recording,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
         "announce": k.announce, "listening": k.listening, "talking": k.talking,
@@ -484,6 +487,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "teacher_listening": room != "main" and (room in k.listening or k.talking == room),
         "teacher_talking": room != "main" and k.talking == room,
         "teacher_broadcast": k.broadcasting,
+        "recording": k.recording,
         "activity": activity_for_student(k.activity, s.id),
         "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
         "announce": k.announce,
@@ -1117,6 +1121,9 @@ async def live_socket(ws: WebSocket, code: str):
                 k.conns.remove(conn)
             if not k.teacher_online():
                 k.listening, k.talking, k.broadcasting = [], None, False
+                if k.recording:  # 선생님 화면이 닫히면 녹화도 끝난다
+                    k.recording = False
+                    log_recording(k, False)
         elif not conn.evicted:  # 이미 정리된 연결은 다시 세지 않는다
             # 강퇴된 학생은 students에서 빠졌으므로 conn에 남은 정보로 출결을 닫는다
             drop_conn(k, conn, k.students.get(conn.sid or "") or conn.kicked_student)
@@ -1184,6 +1191,11 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 s.can_cam = False
         if "mic_lock" in m or "lowbw" in m:
             enforce_sources(k)
+    elif t == "recording":  # 선생님 컴퓨터에서 녹화를 시작·종료했다 → 학생 화면에 표시
+        on = bool(m.get("on")) and ALLOW_RECORDING
+        if on != k.recording:
+            k.recording = on
+            log_recording(k, on)
     elif t == "cmd":  # 선생님이 학생 마이크·카메라를 켜고 끈다
         device_cmd(k, m.get("cmd"), m.get("target"))
     elif t == "allow_mic":  # (예전 화면용) 마이크·카메라 권한 주기/거두기
@@ -1311,6 +1323,16 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                               .values(left_at=ended_at, last_seen=ended_at, left_reason="ended"))
 
         asyncio.get_running_loop().create_task(db.run(run))
+
+
+def log_recording(k: Klass, on: bool) -> None:
+    """녹화 시작·종료를 입·퇴장 기록과 채팅에 남긴다 (누가 언제 녹화했는지 확인할 수 있게)"""
+    now = time.time()
+    k.events.append({"ts": now, "sid": None, "name": "선생님", "kind": "record_on" if on else "record_off", "reason": None})
+    del k.events[:-100]
+    post_chat(k, {"id": k.next_id(), "role": "system", "sid": None, "name": "안내",
+                  "text": "🔴 선생님이 수업 녹화를 시작했어요." if on else "⏹ 수업 녹화가 끝났어요.",
+                  "scope": "main", "ts": now})
 
 
 def device_cmd(k: Klass, cmd: str | None, target, quiet: bool = False) -> None:

@@ -1032,3 +1032,30 @@ def test_assignments(monkeypatch, tmp_path):
     assert t.post(f"/api/assignments/{aid}/delete").status_code == 200
     assert not (tmp_path / "assignments" / str(aid)).exists()
     assert a.get(f"/api/submission-files/{fid}").status_code == 404
+
+
+def test_recording_notice(monkeypatch):
+    t = teacher()
+    code = create(t)["code"]
+    a = student(1)
+    a.post(f"/api/live/classes/{code}/join")
+    assert t.get("/api/me").json()["recording_allowed"] is True
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        assert state(sa)["recording"] is False
+        tw.send_json({"t": "recording", "on": True})
+        assert "녹화를 시작" in until(sa, lambda m: m["t"] == "chat")["msg"]["text"]  # 채팅에 안내가 먼저
+        assert state(sa, lambda m: m["recording"])["recording"] is True  # 학생 화면에 '녹화 중'
+        ev = state(tw, lambda m: any(e["kind"] == "record_on" for e in m["events"]))
+        assert ev["recording"] is True
+    # 선생님 화면이 닫히면 녹화 표시도 꺼진다
+    assert cr.classes[code].recording is False
+    # 학교가 녹화를 허용하지 않으면
+    monkeypatch.setattr(cr, "ALLOW_RECORDING", False)
+    monkeypatch.setenv("ALLOW_RECORDING", "0")
+    assert t.get("/api/me").json()["recording_allowed"] is False
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        state(tw)
+        tw.send_json({"t": "recording", "on": True})
+        time.sleep(0.2)
+    assert cr.classes[code].recording is False
+    assert "강의 녹화" not in TestClient(app).get("/live/privacy").text
