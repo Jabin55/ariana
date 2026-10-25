@@ -1151,3 +1151,27 @@ img.me-avatar { object-fit: cover; }
 .sess-open tr.sess-start td { background: var(--accent-soft); padding: 4px 10px 12px; }
 .sess-open tr.sess-start .open-box { margin: 0; }
 .sess-open .tag { margin-left: 6px; }
+
+/* ───── 머리글 두 줄: 위(로고 · 이름/내 정보/로그아웃) + 아래(메뉴 바) ───── */
+.site-header { position: static; background: var(--surface); backdrop-filter: none; border-top: 4px solid var(--brand); border-bottom: none; }
+.site-header-in { max-width: 1160px; padding: 22px 24px; gap: 12px; flex-wrap: nowrap; }
+.site-header .grow { flex: 1; }
+.brand { font-size: 2.1rem; }
+.brand-mark { width: 42px; height: 42px; border-radius: 12px; margin-right: 10px; }
+.site-menu { position: sticky; top: 0; z-index: 30; background: #123a2c; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18); }
+.site-menu-in { max-width: 1160px; margin: 0 auto; padding: 0 12px; }
+.site-menu .site-nav { display: flex; gap: 0; overflow-x: auto; }
+.site-menu .site-nav a { flex: 1; position: relative; text-align: center; padding: 17px 10px; border-radius: 0; color: #fff;
+  font-size: 1.12rem; font-weight: 700; background: none; }
+.site-menu .site-nav a + a::before { content: ""; position: absolute; left: 0; top: 50%; height: 14px; margin-top: -7px; width: 1px; background: rgba(255, 255, 255, 0.28); }
+.site-menu .site-nav a:hover { background: rgba(255, 255, 255, 0.1); }
+.site-menu .site-nav a.on { background: none; color: #ffe08a; }
+.site-menu .site-nav a.on::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 0; height: 4px; border-radius: 4px 4px 0 0; background: #ffe08a; }
+@media (max-width: 760px) {
+  .site-header-in { padding: 12px 14px; flex-wrap: nowrap; }
+  .brand { font-size: 1.5rem; }
+  .brand-mark { width: 32px; height: 32px; margin-right: 8px; }
+  .site-user-box { margin-left: 0; }
+  .site-menu-in { padding: 0; }
+  .site-menu .site-nav a { flex: none; padding: 12px 13px; font-size: 0.98rem; }
+}

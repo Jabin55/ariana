@@ -145,7 +145,7 @@
       if (wish && u.role !== "student") { wish.removeAttribute("href"); wish.textContent = "학생만 요청할 수 있어요"; wish.classList.add("muted"); }
       $("#home-login .home-box-h h2").textContent = "👋 반가워요";
       $("#home-login-body").innerHTML = `<p class="hello"><strong>${esc(u.name || u.email.split("@")[0])}</strong> ${role}님</p>
-        <a class="start-choice" href="/live"><span class="sc-ico">🏠</span><strong>마이페이지로</strong></a>
+        <a class="start-choice" href="/live"><span class="sc-ico">🏠</span><strong>${u.role === "teacher" || u.is_admin ? "교무실로" : "마이페이지로"}</strong></a>
         <a class="start-choice" href="/live/materials"><span class="sc-ico">📚</span><strong>지난 수업 자료</strong></a>`;
     } catch { /* 로그인 전 화면 그대로 */ }
   }

@@ -23,8 +23,10 @@
     ...MENU.map(([href, label]) => el("a", { href, class: active(href) ? "on" : "" }, label)));
   // 오른쪽 위: 로그인 전에는 '로그인', 로그인하면 이름(역할) · 내 정보 · 로그아웃 — 사이트 전체에서 여기에만 보인다
   const user = el("div", { class: "site-user-box" });
-  const header = el("header", { class: "site-header" }, el("div", { class: "site-header-in" }, logo, nav, user));
-  document.body.prepend(header);
+  // 위: 외솔온닷 로고 + (오른쪽) 이름·내 정보·로그아웃 / 아래: 메뉴 바 (내려도 위에 붙어 있다)
+  const header = el("header", { class: "site-header" }, el("div", { class: "site-header-in" }, logo, el("span", { class: "grow" }), user));
+  const menu = el("div", { class: "site-menu" }, el("div", { class: "site-menu-in" }, nav));
+  document.body.prepend(header, menu);
 
   const roleName = (u) => {
     if (u.is_admin) return "전체 관리자";
