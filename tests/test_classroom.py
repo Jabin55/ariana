@@ -1668,3 +1668,37 @@ def test_teacher_signup_birth(monkeypatch):
     assert g.get("/api/me").json()["user"]["birth"] == "1985-03-07"
     app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
     assert app_["birth"] == "1985-03-07"
+
+
+def test_learning_overview():
+    """학습 관리: 수업 참석률·공지·설문·퀴즈·활동 횟수와 참여율"""
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a, b, c = student(1), student(2), student(3)
+    for s in (a, b, c):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    t.post(f"/api/courses/{cid}/notices", json={"title": "첫 수업 안내", "body": "교과서"})
+    code = create(t, title="1차시 헌법", course_id=cid)["code"]
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa, \
+         b.websocket_connect(f"/ws/live/{code}") as sb:
+        state(tw, lambda m: sum(x["online"] for x in m["students"]) == 2)
+        tw.send_json({"t": "announce", "text": "5분 뒤 퀴즈"})
+        for kind, extra in (("choice", {"options": ["가", "나"], "correct": 0}), ("poll", {"options": ["좋아요", "싫어요"]})):
+            tw.send_json({"t": "activity_start", "kind": kind, "prompt": f"{kind} 문제", **extra})
+            act = state(sa, lambda m: m["activity"] and m["activity"]["prompt"] == f"{kind} 문제")["activity"]
+            sa.send_json({"t": "answer", "id": act["id"], "value": 0})
+            state(tw, lambda m: m["activity"] and m["activity"]["total"] == 1)
+            tw.send_json({"t": "activity_clear"})
+            state(sa, lambda m: m["activity"] is None)
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    time.sleep(0.3)
+    r = t.get(f"/api/courses/{cid}/learning").json()
+    s = r["summary"]
+    assert s["classes"] == 1 and s["enrolled"] == 3 and s["attendance"] == 67  # 3명 중 2명
+    assert s["notices"] == 2 and s["class_notices"] == 1 and s["course_notices"] == 1
+    assert s["quiz"] == {"count": 1, "classes": 1, "rate": 50} and s["survey"]["count"] == 1 and s["activity"]["count"] == 0
+    cl = r["classes"][0]
+    assert cl["title"] == "1차시 헌법" and cl["attended"] == 2 and cl["rate"] == 67 and cl["notices"][0]["text"] == "5분 뒤 퀴즈"
+    assert a.get(f"/api/courses/{cid}/learning").status_code == 403

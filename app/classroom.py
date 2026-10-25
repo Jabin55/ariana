@@ -1493,6 +1493,14 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     elif t == "announce":
         text = clean(m.get("text"))
         k.announce = {"id": k.next_id(), "text": text, "ts": time.time()} if text else None
+        if text:  # 학습 관리에서 볼 수 있게 남긴다
+            class_id = k.db_id
+
+            def save_notice():
+                with db.engine.begin() as c:
+                    c.execute(insert(db.announcements).values(class_id=class_id, text=text, created_at=time.time()))
+
+            asyncio.get_running_loop().create_task(db.run(save_notice))
     elif t == "chat":
         text = clean(m.get("text"))
         scope = m.get("scope") or "main"

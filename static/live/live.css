@@ -1049,3 +1049,21 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .quit-cell { display: inline-flex; align-items: center; gap: 4px; }
 .enroll-table td.contact-cell { white-space: nowrap; font-size: 0.85rem; text-align: left; line-height: 1.4; }
 .enroll-table tr.detail-row .box { max-width: 1040px; }
+
+/* 학습 관리 */
+.learn-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.learn-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border-radius: 14px; text-align: left;
+  border: 1px solid var(--border); background: var(--card, #fff); cursor: pointer; white-space: normal; }
+.learn-card:hover { border-color: var(--accent); }
+.learn-card.on { border: 2px solid var(--accent); background: var(--accent-soft); }
+.learn-card .lc-label { font-size: 0.9rem; font-weight: 700; }
+.learn-card .lc-big { font-size: 1.6rem; color: var(--accent); line-height: 1.2; }
+.learn-card .lc-small { font-size: 0.78rem; color: var(--muted); }
+.log-table tr.on td { background: var(--accent-soft); }
+.log-table tr.detail-row > td { background: var(--surface-2, #f7f8fa); text-align: left; padding: 10px 12px; }
+.tally { display: grid; gap: 4px; margin: 6px 0; }
+.tally-row { display: grid; grid-template-columns: minmax(80px, 200px) 1fr 48px; gap: 8px; align-items: center; font-size: 0.88rem; }
+.tally-bar { height: 10px; background: var(--surface-2, #eef0f3); border-radius: 99px; overflow: hidden; }
+.tally-bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.tally-n { text-align: right; }
+@media (max-width: 760px) { .learn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -1,9 +1,9 @@
-/* 선생님 마이페이지: [특강/회의] [강좌 개설] [수강생 관리] [강좌 운영] [거점학교 운영] [참여학교 운영] (+ 전체 관리) */
+/* 선생님 마이페이지: [특강/회의] [과목 개설] [수강생 관리] [과목 운영] [거점학교 운영] [참여학교 담당] (+ 전체 관리) */
 
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
-let runCourseId = null; // 강좌 운영에서 연 강좌
-let runSub = "notice"; // 그 강좌 안의 칸: notice(공지사항) open(수업 열기) record(수업 기록) activity(활동 관리)
+let runCourseId = null; // 과목 운영에서 연 과목
+let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(평가 활동) learn(학습 관리)
 let hubSub = "approve"; // 거점학교 운영 안의 칸: approve(강의교사 승인) students(학생 관리)
 let detailTarget = null; // 수업 기록(출결·채점)을 그릴 자리
 function detailEl() { return detailTarget || $("#run-detail"); }
@@ -16,7 +16,7 @@ function today() {
 /** replaceChildren에 null·false가 섞여도 글자로 찍히지 않게 */
 function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "")); }
 
-/* 권한: 강의교사는 [특강/회의]~[강좌 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 담당자는 [참여학교 운영].
+/* 권한: 강의교사는 [특강/회의]~[과목 운영], 거점학교 관리교사는 [거점학교 운영], 참여학교 담당자는 [참여학교 담당].
    역할이 여럿이면 그 탭들이 모두 열리고, 전체 관리자는 모두 열린다. 권한이 없는 탭은 '권한이 없습니다.' */
 function canHub() { return ME.is_admin || ME.coordinator_hubs.length > 0; }
 function canSchool() { return ME.is_admin || (ME.participant_schools || []).length > 0; }
@@ -154,7 +154,7 @@ async function drawCreateForm() {
   box.dataset.ready = "1";
   // 팀티칭 보조교사로만 승인된 선생님은 강좌를 직접 열지 않는다
   if (!ME.is_admin && ME.teach_hubs.length && !ME.lead_hubs.length) {
-    fill(box, h("p", { class: "muted" }, "팀티칭 보조교사로 승인받았어요. 주강사가 강좌를 열 때 보조교사로 넣으면 '강좌 운영'에 그 강좌가 나타나요."));
+    fill(box, h("p", { class: "muted" }, "팀티칭 보조교사로 승인받았어요. 주강사가 강좌를 열 때 보조교사로 넣으면 '과목 운영'에 그 강좌가 나타나요."));
     return;
   }
   try {
@@ -296,7 +296,7 @@ function drawEnrollResult(box) {
         : h("tr", {}, h("td", { colspan: 11, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 수강신청이 없어요."))))));
 }
 
-/* ───────────────────────── 강좌 운영 ───────────────────────── */
+/* ───────────────────────── 과목 운영 ───────────────────────── */
 
 const APPROVAL = { pending: ["pending", "개설 승인 대기"], rejected: ["rejected", "개설 반려"] };
 function approvalBadge(c) {
@@ -334,18 +334,18 @@ function renderRun() {
   const archived = teacherCourses.filter((x) => x.archived);
   const grid = (items) => h("div", { class: "run-tiles" }, items.map(tile));
   fill($("#run-list"), 
-    h("p", { class: "muted", style: "margin:0 0 10px" }, "강좌를 누르면 공지사항·수업 열기·수업 기록·활동 관리를 볼 수 있어요."),
-    active.length ? grid(active) : h("p", { class: "muted" }, "아직 개설한 강좌가 없어요. '강좌 개설'에서 먼저 강좌를 만들어 주세요."),
+    h("p", { class: "muted", style: "margin:0 0 10px" }, "과목을 누르면 공지사항·수업 열기·평가 활동·학습 관리를 볼 수 있어요."),
+    active.length ? grid(active) : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. '과목 개설'에서 먼저 강좌를 만들어 주세요."),
     archived.length ? h("details", { style: "margin-top:16px" }, h("summary", { class: "muted" }, `보관한 강좌 ${archived.length}개`), grid(archived)) : null);
 }
 
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 공지사항"], ["open", "▶ 수업 열기"], ["record", "📋 수업 기록"], ["activity", "📝 활동 관리"]];
+  const subs = [["notice", "📢 공지사항"], ["open", "▶ 수업 열기"], ["assess", "📝 평가 활동"], ["learn", "📊 학습 관리"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
-      h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 강좌 목록"),
+      h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
       h("h2", { class: "grow", style: "margin:0" }, c.title, c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
       !c.locked && !c.archived && c.approval === "approved" ? h("label", { class: "switch", style: "font-size:0.9rem" }, h("input", { type: "checkbox", checked: c.open,
         onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
@@ -356,8 +356,8 @@ function renderRunCourse(c) {
     courseInfo(c),
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
-    c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '강좌 개설' 탭의 '다른 거점학교·역할 신청'으로 다시 신청하세요.`) : null,
-    editing.has(c.id) && !c.locked ? courseEditForm(c) : h("details", { class: "course-more" }, h("summary", {}, "강좌 정보 자세히"), courseFacts(c),
+    c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '과목 개설' 탭의 '다른 거점학교·역할 신청'으로 다시 신청하세요.`) : null,
+    editing.has(c.id) && !c.locked ? courseEditForm(c) : h("details", { class: "course-more" }, h("summary", {}, "과목 정보 자세히"), courseFacts(c),
       c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null),
     c.locked ? null : h("nav", { class: "tabs sub-tabs" }, subs.map(([k, label]) => h("button", { class: runSub === k ? "active" : "",
       onclick: () => { runSub = k; renderRunCourse(c); } }, label))),
@@ -365,8 +365,8 @@ function renderRunCourse(c) {
   if (c.locked) return;
   if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "open") renderOpenClass(c, subBox);
-  else if (runSub === "activity") renderCourseAssignments(c, subBox);
-  else renderRecords(c, subBox);
+  else if (runSub === "assess") renderCourseAssignments(c, subBox);
+  else renderLearning(c, subBox);
 }
 
 function courseEditForm(c) {
@@ -441,30 +441,156 @@ async function renderOpenClass(c, box) {
     courseFacts({ sessions: c.sessions }));
 }
 
-/* 수업 기록: 연 수업을 연번을 달아 세로로 죽 나열. 누르면 그 수업 출결·채점·질문 */
-async function renderRecords(c, box) {
-  const detail = h("div");
-  const { classes } = await api(`/api/courses/${c.id}/classes`);
-  if (!classes.length) { fill(box, h("p", { class: "muted" }, "아직 연 수업이 없어요.")); return; }
-  const n = classes.length;
-  const rows = classes.map((x, i) => {
-    const tr = h("tr", { class: "pick-row", "data-id": x.id, onclick: () => {
-      for (const r of tr.parentNode.children) r.classList.toggle("on", r === tr);
-      detailTarget = detail;
-      loadDetail(x.id);
-      detail.scrollIntoView({ behavior: "smooth", block: "start" });
-    } },
-    h("td", { class: "num" }, n - i), h("td", {}, fmtDate(x.date)),
-    h("td", {}, `${x.start.slice(0, 5)} ~ ${x.ended_at ? fmtTime(x.ended_at) : x.live ? "진행 중" : ""}`),
-    h("td", {}, x.title), h("td", { class: "num" }, `${x.attended}명`),
-    h("td", {}, h("span", { class: "link" }, "출결 보기")));
-    return tr;
-  });
-  fill(box, h("p", { class: "muted", style: "margin:0 0 8px" }, `모두 ${n}번 수업했어요. 줄을 누르면 그 수업의 출결·퀴즈 채점·질문이 아래에 나와요.`),
-    h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
-      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 이름", "참여", ""].map((t) => h("th", {}, t)))),
-      h("tbody", {}, rows))),
+/* ───── 학습 관리: 위에 [수업참석률][공지][설문][퀴즈][활동] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
+
+const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
+const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "활동" };
+const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice"], activity: ["text"] };
+
+async function renderLearning(c, box) {
+  const st = learnState[c.id] ||= { card: "attend", open: new Set() };
+  let d;
+  try { d = await api(`/api/courses/${c.id}/learning`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
+  const S = d.summary;
+  const pct = (v) => (v == null ? "-" : `${v}%`);
+  const cards = [
+    ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
+    ["notice", "📢 공지", `${S.notices}회`, `수업 중 ${S.class_notices} · 공지사항 ${S.course_notices}`],
+    ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
+    ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
+    ["activity", "✍️ 활동", `${S.activity.count}회`, `참여율 ${pct(S.activity.rate)} · ${S.activity.classes}개 수업`],
+  ];
+  const detail = h("div", { class: "learn-detail" });
+  fill(box,
+    h("div", { class: "learn-cards" }, cards.map(([k, label, big, small]) => h("button", { type: "button", class: `learn-card ${st.card === k ? "on" : ""}`,
+      onclick: () => { st.card = k; st.open.clear(); renderLearning(c, box); } },
+      h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
+  if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
+  if (st.card === "attend") learnAttendance(d, st, detail);
+  else if (st.card === "notice") learnNotices(d, detail);
+  else learnActivities(d, st, st.card, detail);
+}
+
+/** 펼침 줄: 버튼을 누르면 표 아래에 내용을 그린다 */
+function toggleRow(st, id, draw) {
+  if (st.open.has(id)) st.open.delete(id); else st.open.add(id);
+  draw();
+}
+
+function learnAttendance(d, st, box) {
+  const n = d.classes.length;
+  const COLS = 7;
+  const draw = () => fill(box,
+    h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `🙋 수업별 출석 (수강생 ${d.summary.enrolled}명)`),
+    h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "참여 학생", "출석률", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, d.classes.flatMap((x, i) => {
+        const open = st.open.has(x.id);
+        const sub = h("td", { colspan: COLS });
+        const row = h("tr", { class: open ? "on" : "" },
+          h("td", { class: "num" }, n - i), h("td", {}, fmtDate(x.date)),
+          h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "")}`), h("td", {}, x.title),
+          h("td", { class: "num" }, `${x.attended}명${d.summary.enrolled ? ` / ${d.summary.enrolled}명` : ""}`),
+          h("td", { class: "num" }, h("strong", {}, x.rate == null ? "-" : `${x.rate}%`)),
+          h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, x.id, draw) }, open ? "접기" : "출결 확인")));
+        if (open) attendanceOf(x.id, sub);
+        return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
+      })))));
+  draw();
+}
+
+/** 한 수업의 학생별 출결: 소속학교 · 학번 · 이름 · 수업참여시간 · 접속시각 · 종료시각 · 청취 시간 */
+async function attendanceOf(classId, box) {
+  fill(box, h("span", { class: "muted" }, "불러오는 중…"));
+  const r = await api(`/api/live/history/${classId}`);
+  const min = (m) => (m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`);
+  const rows = [
+    ...r.students.map((p) => h("tr", {},
+      h("td", {}, p.school || "-"), h("td", {}, p.student_no || "-"), h("td", {}, p.name),
+      h("td", { class: "num" }, min(p.minutes + p.away_minutes)),
+      h("td", {}, p.first_join_text), h("td", {}, p.online ? h("strong", { class: "ok-text" }, "접속 중") : p.last_leave_text),
+      h("td", { class: "num" }, min(p.minutes)))),
+    ...r.absent.map((a) => h("tr", { class: "absent" },
+      h("td", {}, a.school || "-"), h("td", {}, a.student_no || "-"), h("td", {}, a.name), h("td", { colspan: 4 }, "미접속"))),
+  ];
+  fill(box,
+    h("div", { class: "row", style: "margin-bottom:6px" }, h("strong", { class: "grow" }, `${r.class.title} 출결`),
+      h("a", { class: "button small", href: `/api/live/history/${classId}/attendance.csv` }, "📥 출결 CSV")),
+    h("table", { class: "att inner-table" },
+      h("thead", {}, h("tr", {}, ["소속학교", "학번", "이름", "수업참여시간", "접속시각", "종료시각", "청취 시간"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 7, class: "muted" }, "들어온 학생이 없어요.")))),
+    h("p", { class: "muted", style: "font-size:0.8rem;margin:4px 0 0" }, "수업참여시간: 처음 들어온 때부터 마지막으로 나간 때까지 · 청취 시간: 그중 실제로 접속해 있던 시간"));
+}
+
+function learnNotices(d, box) {
+  const inClass = d.classes.flatMap((x) => x.notices.map((n) => ({ ...n, cls: x })));
+  fill(box,
+    h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `📢 수업 중 공지 ${inClass.length}회`),
+    inClass.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "공지 내용"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, inClass.map((x, i) => h("tr", {},
+        h("td", { class: "num" }, inClass.length - i), h("td", {}, fmtDate(x.cls.date)), h("td", {}, x.time),
+        h("td", {}, x.cls.title), h("td", { style: "white-space:normal;text-align:left" }, x.text))))))
+      : h("p", { class: "muted" }, "수업 중에 띄운 공지가 없어요. (수업 화면의 '📢 공지'로 띄운 것이 여기에 남아요)"),
+    h("h3", { class: "section-title", style: "margin:20px 0 8px" }, `📌 과목 공지사항 ${d.course_notices.length}건`),
+    d.course_notices.length ? h("div", { class: "course-notices" }, d.course_notices.map((n) => h("details", { class: "box" },
+      h("summary", {}, h("strong", {}, n.title), h("span", { class: "muted", style: "font-size:0.85rem" }, ` · ${fmtDate(n.date)}`)),
+      h("p", { style: "white-space:pre-wrap;margin:8px 0" }, n.body || ""))))
+      : h("p", { class: "muted" }, "'공지사항' 칸에서 올린 공지가 없어요."));
+}
+
+function learnActivities(d, st, key, box) {
+  const label = ACT_LABEL[key];
+  const list = d.classes.filter((x) => x.acts[key].count);
+  const COLS = 7;
+  const rate = (x) => (x.possible ? `${Math.round((x.answered / x.possible) * 100)}%` : "-");
+  const draw = () => fill(box,
+    h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `${label}을(를) 한 수업 ${list.length}개`),
+    list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", `${label} 수`, key === "activity" ? "참여율" : "응답률", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, list.flatMap((x, i) => {
+        const open = st.open.has(x.id);
+        const sub = h("td", { colspan: COLS });
+        const row = h("tr", { class: open ? "on" : "" },
+          h("td", { class: "num" }, list.length - i), h("td", {}, fmtDate(x.date)), h("td", {}, x.start),
+          h("td", {}, x.title), h("td", { class: "num" }, `${x.acts[key].count}개`),
+          h("td", { class: "num" }, h("strong", {}, rate(x.acts[key]))),
+          h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, x.id, draw) }, open ? "접기" : "내역 보기")));
+        if (open) activitiesOf(x.id, key, sub);
+        return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
+      })))) : h("p", { class: "muted" }, `아직 ${label}을(를) 한 수업이 없어요. 수업 화면의 '📊 설문/퀴즈'에서 낼 수 있어요.`));
+  draw();
+}
+
+/** 한 수업에서 낸 설문·퀴즈·활동: 문제와 학생별 답 (채점은 '채점·피드백'에서) */
+async function activitiesOf(classId, key, box) {
+  fill(box, h("span", { class: "muted" }, "불러오는 중…"));
+  const book = await api(`/api/live/history/${classId}/grades`);
+  const acts = book.activities.filter((a) => ACT_KINDS[key].includes(a.kind));
+  const fmt = (n) => (n == null ? "-" : `${Math.round(n * 100) / 100}`);
+  const full = h("div");
+  fill(box,
+    ...acts.map((a) => {
+      const answered = a.rows.filter((r) => r.answered);
+      const tally = a.options?.length ? a.options.map((o, i) => [o, answered.filter((r) => r.answer === o).length]) : [];
+      return h("div", { class: "box", style: "margin-bottom:10px" },
+        h("div", { class: "row" }, h("strong", { class: "grow" }, `${a.no}. [${a.kind_name}] ${a.prompt}`),
+          h("span", { class: "muted" }, `응답 ${answered.length}/${a.rows.length}명`)),
+        a.correct_answer ? h("div", { class: "muted", style: "font-size:0.85rem" }, `정답: ${a.correct_answer} · 배점 ${a.points}점`) : null,
+        tally.length ? h("div", { class: "tally" }, tally.map(([o, n]) => h("div", { class: "tally-row" },
+          h("span", { class: "tally-label" }, o), h("span", { class: "tally-bar" }, h("i", { style: `width:${answered.length ? Math.round((n / answered.length) * 100) : 0}%` })),
+          h("span", { class: "tally-n" }, `${n}명`)))) : null,
+        h("table", { class: "att inner-table", style: "margin-top:6px" },
+          h("thead", {}, h("tr", {}, ["소속학교", "학번", "이름", "답", ...(a.gradable ? ["정오", "점수"] : [])].map((t) => h("th", {}, t)))),
+          h("tbody", {}, a.rows.map((r) => h("tr", { class: r.answered ? "" : "absent" },
+            h("td", {}, r.school || "-"), h("td", {}, r.student_no || "-"), h("td", {}, r.name),
+            h("td", { style: "white-space:normal;text-align:left" }, r.answered ? r.answer : "(미응답)"),
+            ...(a.gradable ? [h("td", {}, r.correct === true ? "⭕" : r.correct === false ? "❌" : "-"), h("td", { class: "num" }, fmt(r.score))] : []))))));
+    }),
+    acts.length ? null : h("p", { class: "muted" }, "내역이 없어요."),
+    h("div", { class: "row" }, h("button", { class: "small", onclick: () => { detailTarget = full; loadDetail(classId); } }, "✏️ 채점·피드백 (점수 고치기·학생에게 공개)")),
+    full);
 }
 
 /* ───────────────────────── 거점학교 운영: [강의교사 승인] [학생 관리] ───────────────────────── */
@@ -553,14 +679,14 @@ function hubStudents(ov, classes) {
   ];
 }
 
-/* ───────────────────────── 참여학교 운영: 우리 학교 수강생 관리 · 탈퇴 승인 ───────────────────────── */
+/* ───────────────────────── 참여학교 담당: 우리 학교 수강생 관리 · 탈퇴 승인 ───────────────────────── */
 
-let schoolData = null; // 참여학교 운영: 우리 학교 학생
+let schoolData = null; // 참여학교 담당: 우리 학교 학생
 const schoolPick = new Set(); // 체크한 학생 id
 const schoolOpen = new Set(); // 수강 강좌를 펼친 학생
 const schoolQ = {};
 
-/** 참여학교 운영 = 수강생 관리: 수업신청자 관리와 같은 검색 칸 + 학생 목록(이름을 누르면 들은 강좌) + 탈퇴 승인 */
+/** 참여학교 담당 = 수강생 관리: 수업신청자 관리와 같은 검색 칸 + 학생 목록(이름을 누르면 들은 강좌) + 탈퇴 승인 */
 async function loadSchool() {
   const box = $("#school-list");
   if (!schoolData) fill(box, h("p", { class: "muted" }, "불러오는 중…"));

@@ -90,6 +90,14 @@ course_sessions = Table(
     Column("topic", String(120), nullable=False, default=""),
 )
 
+announcements = Table(
+    "announcements", metadata,  # 수업 중 선생님이 띄운 공지 (학습 관리에서 '언제 어떤 공지를 했는지' 보기)
+    Column("id", Integer, primary_key=True),
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("text", Text, nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+
 withdrawn = Table(
     "withdrawn", metadata,  # 탈퇴 처리 기록: 탈퇴한 학생은 계정·수업 기록을 지우고 이것만 남긴다 (참여학교 담당자 목록용)
     Column("id", Integer, primary_key=True),

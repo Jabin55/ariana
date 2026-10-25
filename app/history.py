@@ -119,6 +119,67 @@ async def course_classes(course_id: int, request: Request):
                          "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d")} for r in rows]}
 
 
+QUIZ_KINDS = {"ox", "choice"}  # 퀴즈: 정답이 있는 문제
+ACT_GROUP = {"poll": "survey", "ox": "quiz", "choice": "quiz", "text": "activity"}  # 설문(투표) · 퀴즈 · 활동(주관식)
+
+
+@router.get("/api/courses/{course_id}/learning")
+async def course_learning(course_id: int, request: Request):
+    """학습 관리: 이 과목의 모든 수업에서 출석·공지·설문·퀴즈·활동이 몇 번, 얼마나 참여했는지"""
+    from app.courses import course_notices_of, owned_course
+    t = await require_user(request, "teacher")
+    course = await db.run(owned_course, course_id, t)
+    if hub_locked(course, t):
+        raise HTTPException(403, "그 거점학교 강사 활동 기간이 끝나 이 과목의 기록을 볼 수 없어요.")
+
+    def run():
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.classes).where(db.classes.c.course_id == course_id)
+                             .order_by(db.classes.c.created_at.desc())).all()
+            ids = [r.id for r in rows] or [-1]
+            present: dict = {}
+            for cid, uid in c.execute(select(db.attendance.c.class_id, db.attendance.c.user_id)
+                                      .where(db.attendance.c.class_id.in_(ids))):
+                present.setdefault(cid, set()).add(uid)
+            acts = c.execute(select(db.activities.c.class_id, db.activities.c.kind, db.activities.c.responses)
+                             .where(db.activities.c.class_id.in_(ids))).all()
+            notes = c.execute(select(db.announcements).where(db.announcements.c.class_id.in_(ids))
+                              .order_by(db.announcements.c.created_at)).all()
+            enrolled = c.execute(select(db.enrollments.c.user_id).where(
+                db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved")).all()
+            return rows, present, acts, notes, len(enrolled), course_notices_of(c, [course_id]).get(course_id, [])
+
+    rows, present, acts, notes, enrolled, course_notes = await db.run(run)
+    by_class: dict = {}
+    for a in acts:
+        g = by_class.setdefault(a.class_id, {k: {"count": 0, "answered": 0, "possible": 0} for k in ("survey", "quiz", "activity")})
+        x = g[ACT_GROUP.get(a.kind, "activity")]
+        x["count"] += 1
+        x["answered"] += len(json.loads(a.responses or "{}"))
+        x["possible"] += len(present.get(a.class_id, ()))
+    out = []
+    for r in rows:
+        n = len(present.get(r.id, ()))
+        out.append({**class_row(r), "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
+                    "start": kst(r.created_at)[:5], "end": kst(r.ended_at)[:5] if r.ended_at else "",
+                    "minutes": round((r.ended_at - r.created_at) / 60) if r.ended_at else None,
+                    "attended": n, "rate": round(n / enrolled * 100) if enrolled else None,
+                    "acts": by_class.get(r.id, {k: {"count": 0, "answered": 0, "possible": 0} for k in ("survey", "quiz", "activity")}),
+                    "notices": [{"text": x.text, "time": kst(x.created_at)[:5]} for x in notes if x.class_id == r.id]})
+
+    def pct(a, b):
+        return round(a / b * 100) if b else None
+
+    summary = {"classes": len(out), "enrolled": enrolled,
+               "attendance": pct(sum(x["attended"] for x in out), enrolled * len(out)),
+               "notices": len(notes) + len(course_notes), "class_notices": len(notes), "course_notices": len(course_notes)}
+    for k in ("survey", "quiz", "activity"):
+        cnt = sum(x["acts"][k]["count"] for x in out)
+        summary[k] = {"count": cnt, "classes": sum(1 for x in out if x["acts"][k]["count"]),
+                      "rate": pct(sum(x["acts"][k]["answered"] for x in out), sum(x["acts"][k]["possible"] for x in out))}
+    return {"summary": summary, "classes": out, "course_notices": course_notes}
+
+
 @router.get("/api/live/meetings-history")
 async def meetings_history(request: Request):
     """특강·회의: 강좌와 상관없이 연 지난 모임 (최근 30개)"""

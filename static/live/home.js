@@ -73,7 +73,7 @@ function showDone(kind, role, place) {
     h("ul", { class: "done-list" },
       h("li", {}, h("strong", {}, WHO[role] || "관리자"), "가 확인하고 승인하면 바로 이용할 수 있어요."),
       h("li", {}, "승인 상황은 로그인하면 이 화면(신청 현황)에서 볼 수 있어요."),
-      role === "instructor" ? h("li", {}, "승인되면 마이페이지 '강좌 개설'에서 강좌를 열 수 있어요.") : null));
+      role === "instructor" ? h("li", {}, "승인되면 마이페이지 '과목 개설'에서 과목을 열 수 있어요.") : null));
   $("#done-actions").replaceChildren(go("신청 현황 보기", () => boot(), true), h("a", { class: "button", href: "/live/home" }, "처음 화면으로"));
 }
 
