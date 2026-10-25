@@ -1306,3 +1306,31 @@ def test_pages_are_revalidated():
     assert c.get("/static/live/live.css").headers["cache-control"] == "no-cache"
     assert c.get("/live").headers["cache-control"] == "no-cache"
     assert "max-age" in c.get("/static/live/fonts/jua-subset.woff2").headers["cache-control"]
+
+
+def test_course_requests_and_info_pages(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss, t = login("boss@gmail.com", name="관리자"), teacher()
+    a, b = student(1, grade=1), student(2, grade=2)
+    assert a.post("/api/course-requests", json={"subject": "인공지능  기초", "note": "코딩을 배우고 싶어요"}).status_code == 200
+    assert a.post("/api/course-requests", json={"subject": "인공지능 기초"}).status_code == 409  # 같은 과목 두 번
+    b.post("/api/course-requests", json={"subject": "인공지능 기초"})
+    b.post("/api/course-requests", json={"subject": "울산의 역사"})
+    for n in range(4):
+        a.post("/api/course-requests", json={"subject": f"과목{n}"})
+    assert a.post("/api/course-requests", json={"subject": "과목9"}).status_code == 409  # 5개까지
+    assert t.post("/api/course-requests", json={"subject": "x"}).status_code == 403  # 학생만
+    assert t.get("/api/hub/course-requests").status_code == 403  # 관리교사·전체 관리자만
+    reqs = boss.get("/api/hub/course-requests").json()["requests"]
+    top = reqs[0]
+    assert top["subject"] == "인공지능 기초" and top["count"] == 2 and top["grades"] == {"1": 1, "2": 1}
+    assert top["in_curriculum"] and top["notes"] == ["코딩을 배우고 싶어요"] and "name" not in top
+    assert not next(r for r in reqs if r["subject"] == "울산의 역사")["in_curriculum"]
+    mine = a.get("/api/my/course-requests").json()["requests"]
+    a.post(f"/api/course-requests/{mine[0]['id']}/delete")
+    b.post(f"/api/course-requests/{mine[0]['id']}/delete")  # 남의 요청은 못 지움
+    assert len(a.get("/api/my/course-requests").json()["requests"]) == 4
+    c = TestClient(app)
+    for page in ("/live/about", "/live/credit", "/live/guide"):
+        assert c.get(page).status_code == 200
+    assert "192" in c.get("/live/credit").text and "시스템 특징" in c.get("/live/about").text

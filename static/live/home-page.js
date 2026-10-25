@@ -87,7 +87,7 @@
     c3: '<path d="M10 14q9-4 18 2v26q-9-6-18-2zM46 14q-9-4-18 2v26q9-6 18-2z" fill="#fff"/>',
     c4: '<rect x="12" y="10" width="28" height="34" rx="4" fill="#fff"/><path d="M18 20h16M18 27h16M18 34h9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M36 40l10-12 4 3-10 12-5 2z" fill="#ffd34d" stroke="#fff" stroke-width="1.5"/>',
     c5: '<circle cx="28" cy="28" r="17" fill="#fff"/><path d="M22 23a6 6 0 1 1 8 5.6c-1.6.7-2 1.6-2 3.4" stroke="currentColor" stroke-width="3.5" fill="none" stroke-linecap="round"/><circle cx="28" cy="38" r="2.4" fill="currentColor"/>',
-    c6: '<circle cx="28" cy="20" r="8" fill="#fff"/><path d="M13 44c2-11 28-11 30 0z" fill="#fff"/><path d="M38 12l2 4 4 .6-3 3 .8 4.4-3.8-2-3.8 2 .8-4.4-3-3 4-.6z" fill="#ffd34d"/>',
+    c6: '<path d="M6 22l22-10 22 10-22 10z" fill="#fff"/><path d="M15 27v9c0 4 6 7 13 7s13-3 13-7v-9l-13 6z" fill="#fff"/><path d="M50 22v12" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="50" cy="36" r="2.6" fill="#ffd34d"/>',
   };
   document.querySelectorAll(".circle").forEach((el) => {
     const k = [...el.classList].find((c) => ICONS[c]);
@@ -110,8 +110,8 @@
     try {
       const { courses: list } = await (await fetch("/api/courses/catalog")).json();
       const open = list.filter((c) => c.recruit === "open").concat(list.filter((c) => c.recruit === "before")).slice(0, 6);
-      box.innerHTML = open.length ? open.map((c, i) => `<a class="mini-course hue-${i % 5}" href="/live/courses">
-          <span class="mc-badge">${c.recruit === "open" ? "모집 중" : "모집 예정"}</span>
+      box.innerHTML = open.length ? open.map((c) => `<a class="mini-course with-thumb" href="/live/courses">
+          ${window.courseThumb ? window.courseThumb(c) : ""}
           <strong>${esc(c.title)}</strong>
           <span class="muted">${esc(c.hub_school)} · ${esc(c.instructor)}</span>
           <span class="mc-meta">${[c.subject_area, c.credits ? `${c.credits}학점` : "", c.grades.length ? `${c.grades.join("·")}학년` : "전 학년"].filter(Boolean).map(esc).join(" · ")}</span>

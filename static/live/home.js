@@ -456,7 +456,33 @@ async function loadCourses() {
       : c.recruit === "before" ? h("span", { class: "muted" }, `모집 예정 (${fmtDate(c.recruit_start)}부터)`)
         : h("span", { class: "muted" }, "마감"))));
   if (!others.length) $("#open-courses").append(h("span", { class: "muted" }, "신청할 수 있는 강좌가 없어요."));
+  loadWishes();
 }
+
+/* 듣고 싶은 과목 개설 요청 */
+async function loadWishes() {
+  try {
+    const meta = await subjectMeta();
+    if (!$("#wish-subjects").children.length) {
+      $("#wish-subjects").replaceChildren(...meta.subjects.map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
+    }
+    const { requests } = await api("/api/my/course-requests");
+    $("#my-wishes").replaceChildren(...requests.map((r) => h("div", { class: "row" },
+      h("span", { class: "grow" }, "🙋 ", h("strong", {}, r.subject), r.note ? h("span", { class: "muted" }, ` · ${r.note}`) : null,
+        h("span", { class: "muted", style: "font-size:0.8rem" }, ` (${fmtDate(r.date)})`)),
+      h("button", { class: "small", onclick: async () => { await api(`/api/course-requests/${r.id}/delete`, {}); loadWishes(); } }, "지우기"))));
+  } catch { /* 학생이 아니면 없음 */ }
+}
+$("#wish-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/course-requests", { subject: $("#wish-subject").value, note: $("#wish-note").value });
+    $("#wish-subject").value = "";
+    $("#wish-note").value = "";
+    toast("요청했어요. 선생님들이 강좌를 열 때 참고해요.");
+    loadWishes();
+  } catch (err) { toast(err.message); }
+});
 
 async function loadMyResults() {
   try {
@@ -895,8 +921,9 @@ async function loadAdmin() {
 
 /* 거점학교 관리교사: 강사 승인 + 수강신청 최종 승인 */
 async function loadHub() {
-  const [{ applications, today }, ov, { requests: quits }] = await Promise.all([
-    api("/api/staff/applications?role=instructor"), api("/api/hub/overview"), api("/api/hub/withdrawals")]);
+  const [{ applications, today }, ov, { requests: quits }, { requests: wishes }] = await Promise.all([
+    api("/api/staff/applications?role=instructor"), api("/api/hub/overview"), api("/api/hub/withdrawals"),
+    api("/api/hub/course-requests")]);
   applications.forEach((x) => { x.role = "instructor"; });
   const waiting = ov.enrollments.filter((e) => e.status === "instructor_ok");
   const pendingStaff = applications.filter((x) => x.status === "pending").length;
@@ -940,6 +967,15 @@ async function loadHub() {
     ...(courseBoxes.length ? courseBoxes : [h("p", { class: "muted" }, "아직 개설된 강좌가 없어요.")]),
     h("h2", { style: "margin:20px 0 0" }, "👩‍🏫 강사 등록"),
     ...staffSections(applications, today, loadHub, "강사"),
+    h("h2", { style: "margin:20px 0 8px" }, "🙋 학생들이 듣고 싶은 과목"),
+    wishes.length ? h("table", { class: "wish-table" },
+      h("tr", {}, h("th", {}, "과목"), h("th", {}, "요청"), h("th", {}, "학년"), h("th", {}, "학교"), h("th", {}, "하고 싶은 말")),
+      wishes.map((w) => h("tr", {},
+        h("td", {}, h("strong", {}, w.subject), w.in_curriculum ? null : h("div", { class: "muted", style: "font-size:0.75rem" }, "고시외 과목")),
+        h("td", {}, `${w.count}명`),
+        h("td", {}, Object.entries(w.grades).map(([g, n]) => `${g}학년 ${n}`).join(", ") || "-"),
+        h("td", { style: "font-size:0.85rem" }, Object.entries(w.schools).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([s, n]) => `${s} ${n}`).join(", ") + (Object.keys(w.schools).length > 3 ? " 외" : "")),
+        h("td", { class: "muted", style: "font-size:0.85rem" }, w.notes.join(" / "))))) : h("p", { class: "muted" }, "아직 요청이 없어요."),
     h("h2", { style: "margin:20px 0 8px" }, `🚪 학생 탈퇴 신청${quits.length ? ` (${quits.length}명)` : ""}`),
     quits.length ? h("div", { class: "people" }, quits.map((q) => withdrawRow(q))) : h("p", { class: "muted" }, "없어요."));
 }

@@ -2,6 +2,7 @@
 (function () {
   const MENU = [
     ["/live/about", "외솔온닷 소개"],
+    ["/live/credit", "고교학점제"],
     ["/live/guide", "수강안내"],
     ["/live/courses", "수업신청"],
     ["/live/help", "이용안내"],

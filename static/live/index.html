@@ -153,6 +153,17 @@
         <h3 class="section-title" style="margin-top:14px">수강신청</h3>
         <p class="muted" style="margin:4px 0 8px;font-size:0.9rem">신청하면 선생님이 승인한 뒤부터 그 강좌 수업에 코드 없이 들어갈 수 있어요.</p>
         <div id="open-courses" class="people"></div>
+        <details class="wish-box" id="wish-box">
+          <summary>🙋 듣고 싶은 과목이 없나요? <b>과목 개설 요청하기</b></summary>
+          <p class="muted" style="font-size:0.88rem;margin:6px 0">요청이 많은 과목은 거점학교 선생님들이 보고 강좌를 여는 데 참고해요. (이름은 보이지 않고 학교·학년만 모아서 봐요)</p>
+          <form id="wish-form" class="row">
+            <input id="wish-subject" list="wish-subjects" maxlength="60" required placeholder="과목 이름 (예: 인공지능 기초)" style="flex:1;min-width:160px">
+            <datalist id="wish-subjects"></datalist>
+            <input id="wish-note" maxlength="300" placeholder="듣고 싶은 이유 (선택)" style="flex:2;min-width:160px">
+            <button class="primary" type="submit">요청</button>
+          </form>
+          <div id="my-wishes" class="people" style="margin-top:8px"></div>
+        </details>
       </section>
 
       <details class="card narrow" style="margin-top:16px">

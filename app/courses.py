@@ -834,3 +834,90 @@ async def hub_withdraw_decide(uid: int, req: WithdrawDecide, request: Request):
 
         await db.run(run)
     return {"ok": True}
+
+
+# ───────────────────────── 듣고 싶은 과목 개설 요청 ─────────────────────────
+
+
+class WishReq(BaseModel):
+    subject: str = Field(min_length=1, max_length=60)
+    note: str = Field(default="", max_length=300)  # 듣고 싶은 이유 등 (선택)
+
+
+@router.get("/api/my/course-requests")
+async def my_course_requests(request: Request):
+    u = await require_user(request, "student")
+
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.course_requests).where(db.course_requests.c.user_id == u["id"])
+                             .order_by(db.course_requests.c.created_at.desc())).all()
+
+    return {"requests": [{"id": r.id, "subject": r.subject, "note": r.note,
+                          "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d")}
+                         for r in await db.run(run)]}
+
+
+@router.post("/api/course-requests")
+async def add_course_request(req: WishReq, request: Request):
+    """학생: 듣고 싶은 과목을 요청한다 (한 사람이 같은 과목은 한 번, 모두 5개까지)"""
+    u = await require_user(request, "student")
+    subject = " ".join(req.subject.split())
+
+    def run():
+        cr = db.course_requests.c
+        with db.engine.begin() as c:
+            mine = c.execute(select(db.course_requests).where(cr.user_id == u["id"])).all()
+            if any(r.subject == subject for r in mine):
+                raise HTTPException(409, "이미 요청한 과목이에요.")
+            if len(mine) >= 5:
+                raise HTTPException(409, "과목 요청은 5개까지 할 수 있어요. 필요 없는 요청을 지우고 다시 해 주세요.")
+            c.execute(insert(db.course_requests).values(user_id=u["id"], subject=subject, note=req.note.strip(),
+                                                        created_at=time.time()))
+
+    await db.run(run)
+    return {"ok": True}
+
+
+@router.post("/api/course-requests/{rid}/delete")
+async def delete_course_request(rid: int, request: Request):
+    u = await require_user(request, "student")
+
+    def run():
+        cr = db.course_requests.c
+        with db.engine.begin() as c:
+            c.execute(delete(db.course_requests).where(cr.id == rid, cr.user_id == u["id"]))
+
+    await db.run(run)
+    return {"ok": True}
+
+
+@router.get("/api/hub/course-requests")
+async def hub_course_requests(request: Request):
+    """관리교사·전체 관리자: 과목별 요청 학생 수 (학생 이름 없이 학교·학년만)"""
+    u = await require_user(request)
+    managed_hubs(u)  # 관리교사·전체 관리자만
+
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.course_requests, db.users.c.school, db.users.c.grade)
+                             .join(db.users, db.users.c.id == db.course_requests.c.user_id)).all()
+
+    groups: dict = {}
+    for r in await db.run(run):
+        g = groups.setdefault(r.subject, {"subject": r.subject, "count": 0, "grades": {}, "schools": {}, "notes": [],
+                                          "latest": 0})
+        g["count"] += 1
+        if r.grade:
+            g["grades"][r.grade] = g["grades"].get(r.grade, 0) + 1
+        if r.school:
+            g["schools"][r.school] = g["schools"].get(r.school, 0) + 1
+        if r.note:
+            g["notes"].append(r.note)
+        g["latest"] = max(g["latest"], r.created_at)
+    known = {x["name"] for x in subjects.SUBJECTS}
+    out = sorted(groups.values(), key=lambda g: (-g["count"], -g["latest"]))
+    for g in out:
+        g["in_curriculum"] = g["subject"] in known
+        g["notes"] = g["notes"][-5:]
+    return {"requests": out}

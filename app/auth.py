@@ -372,7 +372,7 @@ def _withdraw(uid: int) -> None:
         aid_of = {s.id: s.assignment_id for s in subs}
         c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(list(aid_of) or [-1])))
         c.execute(delete(db.submissions).where(db.submissions.c.user_id == uid))
-        for t in (db.grades, db.questions, db.attendance, db.enrollments, db.memberships):
+        for t in (db.grades, db.questions, db.attendance, db.enrollments, db.memberships, db.course_requests):
             c.execute(delete(t).where(t.c.user_id == uid))
         c.execute(delete(db.users).where(db.users.c.id == uid))
     for f in files:

@@ -56,6 +56,15 @@ site_settings = Table(
     Column("value", Text, nullable=False),
 )
 
+course_requests = Table(
+    "course_requests", metadata,  # 학생이 듣고 싶은 과목 개설 요청 (관리교사·전체 관리자가 모아 본다)
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("subject", String(60), nullable=False),
+    Column("note", String(300), nullable=False, default=""),
+    Column("created_at", Float, nullable=False),
+)
+
 notices = Table(
     "notices", metadata,  # 공지사항 (전체 관리자가 쓴다, 누구나 본다)
     Column("id", Integer, primary_key=True),
