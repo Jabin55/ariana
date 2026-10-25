@@ -93,8 +93,11 @@ async function courseForm(c, done) {
   updateHours();
 
   const err = h("p", { class: "error" });
+  // 칸에서 엔터를 쳐도 개설·저장되지 않게: 버튼을 눌렀을 때만 (과목 목록에서 엔터로 고르는 것은 그대로)
+  let enterAt = 0;
   const form = h("form", { class: "course-form course-form-full", onsubmit: async (e) => {
     e.preventDefault();
+    if (performance.now() - enterAt < 500) return;
     err.textContent = "";
     const body = {
       title: title.value.trim(), custom_subject: custom.checked,
@@ -152,6 +155,9 @@ async function courseForm(c, done) {
     h("div", { class: "row wide" }, h("button", { class: "primary", type: "submit" }, isNew ? "강좌 개설" : "저장"),
       isNew ? null : h("button", { type: "button", onclick: () => done(null) }, "취소")),
     err);
+  form.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.tagName === "INPUT") enterAt = performance.now();
+  });
   return form;
 }
 
