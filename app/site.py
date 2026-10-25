@@ -397,7 +397,7 @@ async def help_page():
   <details><summary>탈퇴하고 싶어요</summary>
     <p>마이페이지 → <b>내 정보</b> 맨 아래 <b>'회원 탈퇴'</b>에서 신청해요. 학생은 <b>우리 학교 참여학교 담당 선생님이 승인</b>하면 탈퇴되고, 그때 출결·과제 등 내 기록이 모두 지워져요. 승인 전에는 신청을 취소할 수 있어요.</p></details>
   <details><summary>내 개인정보는 어떻게 쓰이나요</summary>
-    <p><a href="/live/privacy">개인정보 처리방침</a>을 확인해 주세요. 수업 영상은 서버에 녹화·저장하지 않아요.</p></details>
+    <p><a href="/live/privacy">개인정보 처리방침</a>을 확인해 주세요.</p></details>
 </section>
 <section class="info-block"><h2>문의</h2><p>{contact}</p></section>
 """, "자주 묻는 질문과 도움말")
