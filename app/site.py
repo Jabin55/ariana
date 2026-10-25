@@ -338,7 +338,7 @@ async def catalog():
 async def courses_page():
     return site_page("수강신청", """
 <section class="info-block">
-  <p style="margin:0 0 12px">지금 수강신청을 받는 강좌예요. 신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
+  <p style="margin:0 0 12px">신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
   <div id="course-search"></div>
 </section>
 <section class="catalog" id="catalog"><p class="muted">불러오는 중…</p></section>
