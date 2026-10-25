@@ -86,7 +86,8 @@ async def apply(req: ApplyReq, request: Request):
             same = (m.hub_id == req.hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
             row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
             values = {"contact": req.contact.strip(), "message": req.message.strip(), "pledge_at": now}
-            if row and row.status == "approved":  # 이미 승인됨: 연락처 등만 고친다
+            if row and membership_status(dict(row._mapping)) in ("approved", "scheduled"):
+                # 지금 활동 중(또는 시작 전)이면 연락처 등만 고친다. 기간이 끝났으면 아래에서 다시 '승인 대기'로.
                 c.execute(update(db.memberships).where(m.id == row.id).values(**values))
             elif row:  # 대기 중 수정, 또는 거절·해제 뒤 다시 신청
                 c.execute(update(db.memberships).where(m.id == row.id)

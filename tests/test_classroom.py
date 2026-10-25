@@ -653,3 +653,52 @@ def test_hub_structure_and_two_stage_enrollment(monkeypatch):
                                                      "valid_from": "2020-01-01", "valid_until": "2020-12-31"})
     pme = prof.get("/api/me").json()["user"]
     assert pme["role"] == "guest" and pme["memberships"][0]["status"] == "expired"
+
+
+def test_same_person_both_roles_at_same_hub(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    admin = login("admin@gmail.com", name="전체관리자")
+    form = {"contact": "010", "pledge": True, "affiliation": ""}
+
+    def guest(email):
+        g = TestClient(app)
+        g.post("/api/auth/dev", json={"email": email})
+        return g
+
+    def approve(who, role, app_id, **kw):
+        return who.post(f"/api/staff/{app_id}", json={"action": "approve", **kw})
+
+    def apps(who, role):
+        return who.get("/api/staff/applications", params={"role": role}).json()["applications"]
+
+    # 가나고 관리교사 A
+    a = guest("a@gmail.com")
+    a.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고등학교", "name": "관리A", **form})
+    approve(admin, "coordinator", apps(admin, "coordinator")[0]["id"])
+    hub = a.get("/api/me").json()["user"]["coordinator_hubs"][0]["id"]
+
+    # 1) 강사였던 B: 가나고 강사 (작년, 기간 끝남) → 올해 같은 학교 관리교사도 신청
+    b = guest("b@gmail.com")
+    b.post("/api/staff/apply", json={"role": "instructor", "hub_id": hub, "name": "강사B", **form})
+    bi = [x for x in apps(a, "instructor") if x["name"] == "강사B"][0]
+    approve(a, "instructor", bi["id"], kind="supplementary", valid_from="2025-01-01", valid_until="2025-12-31")
+    assert b.get("/api/me").json()["user"]["role"] == "guest"  # 기간 끝남
+    # 기간이 끝난 강사가 다시 신청하면 '승인 대기'로 돌아가 관리교사에게 보인다 (연장 요청)
+    b.post("/api/staff/apply", json={"role": "instructor", "hub_id": hub, "name": "강사B", **form})
+    assert [x["status"] for x in apps(a, "instructor") if x["name"] == "강사B"] == ["pending"]
+    # 같은 학교 관리교사 신청 → 전체 관리자 승인 → 두 역할을 함께 가진다
+    assert b.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고등학교", "name": "강사B", **form}).status_code == 200
+    bc = [x for x in apps(admin, "coordinator") if x["name"] == "강사B"][0]
+    approve(admin, "coordinator", bc["id"])
+    me = b.get("/api/me").json()["user"]
+    assert me["coordinator_hubs"] == [{"id": hub, "name": "가나고등학교"}]  # 같은 거점학교로 합쳐짐
+    assert sorted(m["role"] for m in me["memberships"]) == ["coordinator", "instructor"]
+
+    # 2) 관리교사 A가 자기 학교 강사로도 등록: 본인 신청은 본인이 승인할 수 없다
+    a.post("/api/staff/apply", json={"role": "instructor", "hub_id": hub, "name": "관리A", **form})
+    ai = [x for x in apps(a, "instructor") if x["name"] == "관리A"][0]
+    assert approve(a, "instructor", ai["id"]).status_code == 403
+    # 같은 학교의 다른 관리교사(B)나 전체 관리자가 승인
+    assert approve(b, "instructor", ai["id"]).status_code == 200
+    roles = sorted(m["role"] for m in a.get("/api/me").json()["user"]["memberships"] if m["status"] == "approved")
+    assert roles == ["coordinator", "instructor"]

@@ -545,6 +545,7 @@ function staffCard(x, today, reload) {
   const until = h("input", { type: "date", value: x.valid_until || "" });
   const note = h("input", { class: "grow", maxlength: 300, placeholder: "메모 (거절·해제 사유 등, 신청자에게 보여요)", value: x.admin_note || "" });
   const active = ["approved", "expired", "scheduled"].includes(x.status);
+  const mine = x.user_id === ME.id && !ME.is_admin; // 본인 신청은 다른 관리교사나 전체 관리자가 처리
   return h("div", { class: "box", style: "margin-bottom:10px" },
     h("div", { class: "row" }, h("strong", {}, x.name), statusBadge(x.status),
       h("span", { class: "muted" }, `${x.hub}${x.kind_name && x.status !== "pending" ? ` · ${x.kind_name}` : ""}`),
@@ -552,6 +553,7 @@ function staffCard(x, today, reload) {
     h("div", { class: "muted", style: "font-size:0.9rem" }, `${x.email} · 소속 ${x.affiliation || "없음"} · 연락처 ${x.contact} · 개인정보 서약 ${x.pledged ? "동의함" : "없음"}`),
     x.message ? h("div", { style: "font-size:0.9rem;white-space:pre-wrap" }, x.message) : null,
     x.status !== "pending" && period(x) ? h("div", { class: "muted", style: "font-size:0.85rem" }, `활동 기간 ${period(x)}`) : null,
+    mine ? h("div", { class: "muted", style: "font-size:0.85rem" }, "본인 신청이에요. 같은 거점학교의 다른 관리교사나 전체 관리자가 승인해요.") :
     h("div", { class: "approve-form" },
       h("div", { class: "row" },
         isCoord ? h("span", {}, "거점학교명") : "구분", isCoord ? hubName : kind,
