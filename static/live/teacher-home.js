@@ -334,7 +334,7 @@ function renderRun() {
   const archived = teacherCourses.filter((x) => x.archived);
   const grid = (items) => h("div", { class: "run-tiles" }, items.map(tile));
   fill($("#run-list"), 
-    h("p", { class: "muted", style: "margin:0 0 10px" }, "과목을 누르면 공지사항·수업 열기·평가 활동·학습 관리를 볼 수 있어요."),
+    h("p", { class: "muted", style: "margin:0 0 10px" }, "과목을 누르면 공지사항·온라인 수업 열기·평가 활동·학습 관리를 볼 수 있어요."),
     active.length ? grid(active) : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. '과목 개설'에서 먼저 강좌를 만들어 주세요."),
     archived.length ? h("details", { style: "margin-top:16px" }, h("summary", { class: "muted" }, `보관한 강좌 ${archived.length}개`), grid(archived)) : null);
 }
@@ -342,7 +342,7 @@ function renderRun() {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 공지사항"], ["open", "▶ 수업 열기"], ["assess", "📝 평가 활동"], ["learn", "📊 학습 관리"]];
+  const subs = [["notice", "📢 공지사항"], ["open", "▶ 온라인 수업 열기"], ["assess", "📝 평가 활동"], ["learn", "📊 학습 관리"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -417,7 +417,7 @@ async function renderOpenClass(c, box) {
   const open = classes.filter((x) => x.course_id === c.id);
   const t = today();
   const next = (c.sessions || []).find((s) => s.date >= t);
-  const name = h("input", { maxlength: 60, value: next ? `${next.no}회차${next.topic && next.topic !== `${next.no}회차` ? ` · ${next.topic}` : ""}` : "", placeholder: "수업 이름 (예: 3차시 헌법과 기본권)" });
+  const name = h("input", { maxlength: 60, value: next ? `${next.no}회차${next.topic && next.topic !== `${next.no}회차` ? ` · ${next.topic}` : ""}` : "", placeholder: "수업 주제 (예: 3차시 헌법과 기본권)" });
   const notYet = c.pending || 0;
   if (c.approval !== "approved") {
     fill(box, approvalNote(c));
@@ -427,14 +427,14 @@ async function renderOpenClass(c, box) {
     open.length ? h("div", { class: "banner ok" }, h("strong", {}, "진행 중인 수업"), ...open.map((x) =>
       h("a", { class: "button small primary", href: `/live/teacher/${x.code}` }, `▶ ${x.title} 들어가기`))) : null,
     c.archived ? h("p", { class: "muted" }, "보관한 강좌에는 수업을 열 수 없어요. '보관 해제'를 먼저 눌러 주세요.") : h("div", { class: "open-box" },
-      h("label", { class: "grow" }, "수업 이름", name),
+      h("label", { class: "grow" }, "수업 주제", name),
       h("button", { class: "primary big", onclick: async () => {
         if (notYet && !confirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
         try {
           const res = await api("/api/live/classes", { title: name.value.trim() || c.title, course_id: c.id });
           location.href = `/live/teacher/${res.code}`;
         } catch (err) { toast(err.message); }
-      } }, "▶ 지금 수업 열기")),
+      } }, "▶ 지금 온라인 수업 열기")),
     h("p", { class: "muted", style: "font-size:0.9rem" }, `수강 확정 학생 ${c.approved}명은 마이페이지 '지금 들어갈 수 있는 수업'에서 바로 들어와요 (입장 코드 없음).`
       + (notYet ? ` ⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.` : "")),
     next ? h("p", {}, `다음 회차: ${next.no}회차 ${fmtDate(next.date)} ${next.start || ""}~${next.end || ""}${next.topic ? ` · ${next.topic}` : ""}`) : null,
@@ -663,7 +663,7 @@ function hubStudents(ov, classes) {
         h("span", {}, ` · 수강 ${ok.length}명 · 수업 ${log.length}회`), c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
       h("h3", { class: "section-title", style: "margin:10px 0 6px" }, `🕒 수업 기록 ${log.length}회`),
       log.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
-        h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "길이", "수업 이름", "참여"].map((t) => h("th", {}, t)))),
+        h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "길이", "수업 주제", "참여"].map((t) => h("th", {}, t)))),
         h("tbody", {}, log.map((x, i) => h("tr", {},
           h("td", { class: "num" }, log.length - i), h("td", {}, fmtDate(x.date)),
           h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "")}`),
