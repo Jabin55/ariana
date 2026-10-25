@@ -195,7 +195,6 @@ async function renderStudents() {
     term: h("select", {}, h("option", { value: "" }, "전체"), terms.map((t) => h("option", { value: t }, t))),
     subject: h("input", { placeholder: "예: 법과 사회" }),
     status: h("select", {}, h("option", { value: "" }, "전체"), koSort(Object.entries(ENROLL_NAME), (x) => x[1]).map(([k, v]) => h("option", { value: k }, v))),
-    teacher: h("input", { placeholder: "강의교사 이름" }),
     school: h("select", {}, h("option", { value: "" }, "전체"), schools.map((x) => h("option", { value: x }, x))),
     name: h("input", { placeholder: "학생 이름" }),
     from: h("input", { type: "date" }),
@@ -220,8 +219,8 @@ async function renderStudents() {
     h("h2", { style: "margin:0 0 10px" }, "수강생 관리"),
     h("div", { class: "search-form" },
       row(cell("학기", f.term), cell("과목명", f.subject)),
-      row(cell("신청상태", f.status), cell("강의교사", f.teacher)),
-      row(cell("소속학교", f.school), cell("학생이름", f.name)),
+      row(cell("신청상태", f.status), cell("소속학교", f.school)),
+      row(cell("학생이름", f.name)),
       row(cell("기간검색", h("div", { class: "row" }, f.from, "~", f.to,
         ...[["오늘", 0], ["7일", 7], ["1개월", 30], ["6개월", 182]].map(([label, d]) => h("label", { class: "switch" },
           h("input", { type: "radio", name: "enroll-quick", onchange: () => quick(d) }), label))), true))),
@@ -236,7 +235,7 @@ function filteredEnrollments() {
   const q = enrollQ;
   const has = (v, w) => !w || (v || "").includes(w);
   return enrollRows.filter((x) => (!q.term || x.term === q.term) && (has(x.subject, q.subject) || has(x.course_title, q.subject))
-    && (!q.status || x.status === q.status) && has(x.instructor, q.teacher) && (!q.school || x.school === q.school)
+    && (!q.status || x.status === q.status) && (!q.school || x.school === q.school)
     && has(x.name, q.name) && (!q.from || kstDate(x.requested_at) >= q.from) && (!q.to || kstDate(x.requested_at) <= q.to));
 }
 
@@ -260,8 +259,8 @@ function drawEnrollResult(box) {
     renderStudents();
   };
   const csv = () => {
-    const head = ["번호", "과목명", "거점학교", "강의교사", "소속학교", "학년", "반", "학생이름", "신청일", "신청상태"];
-    const lines = list.map((x, i) => [list.length - i, x.subject, x.hub_school, x.instructor, x.school,
+    const head = ["번호", "과목명", "거점학교", "소속학교", "학년", "반", "학생이름", "신청일", "신청상태"];
+    const lines = list.map((x, i) => [list.length - i, x.subject, x.hub_school, x.school,
       x.grade ? `${x.grade}학년` : "", x.class_no ? `${x.class_no}반` : "", x.name, kstDate(x.requested_at), ENROLL_NAME[x.status] || x.status]);
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const text = "﻿" + [head, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
@@ -282,18 +281,18 @@ function drawEnrollResult(box) {
       h("span", { class: "grow" }),
       h("button", { class: "small", onclick: csv, disabled: !list.length }, "📥 엑셀 다운로드")),
     h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["번호", "과목명", "거점학교", "강의교사", "소속학교", "학년", "반", "학생이름", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["번호", "과목명", "거점학교", "소속학교", "학년", "반", "학생이름", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, h("input", { type: "checkbox", checked: enrollPick.has(key(x)), onchange: (e) => {
           if (e.target.checked) enrollPick.add(key(x)); else enrollPick.delete(key(x));
         } })),
         h("td", { class: "num" }, list.length - i), h("td", {}, x.subject),
-        h("td", {}, x.hub_school), h("td", {}, x.instructor), h("td", {}, x.school || "-"),
+        h("td", {}, x.hub_school), h("td", {}, x.school || "-"),
         h("td", { class: "num" }, x.grade ? `${x.grade}학년` : "-"), h("td", { class: "num" }, x.class_no ? `${x.class_no}반` : "-"),
         h("td", {}, x.name), h("td", {}, kstDate(x.requested_at)),
         h("td", {}, h("span", { class: `status ${x.status === "rejected" ? "rejected" : x.status}`, title: x.note ? `사유: ${x.note}` : "" },
           ENROLL_NAME[x.status] || x.status))))
-        : h("tr", {}, h("td", { colspan: 11, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 수강신청이 없어요."))))));
+        : h("tr", {}, h("td", { colspan: 10, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 수강신청이 없어요."))))));
 }
 
 /* ───────────────────────── 과목 운영 ───────────────────────── */
