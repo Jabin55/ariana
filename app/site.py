@@ -39,7 +39,7 @@ def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_cla
 {body}
 </main>{scripts}
 <footer class="site-footer">
-  <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문·동의서</a>
+  <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문</a>
 </footer>
 <script src="/static/live/site.js"></script>
 </body></html>""")

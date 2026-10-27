@@ -1141,9 +1141,9 @@ def test_policy_pages(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert "Anthropic" in c.get("/live/privacy").text and "AI 조교" in c.get("/live/terms").text
     assert c.get("/api/me").json()["policy_ready"] is True
-    assert "가나고등학교&lt;script&gt;장 귀하" in c.get("/live/notice").text  # 동의서 받는 곳: 기본은 운영 기관장
-    monkeypatch.setenv("CONSENT_TO", "울산광역시교육청")
-    assert "울산광역시교육청 귀하" in c.get("/live/notice").text
+    n = c.get("/live/notice").text  # 보호자 안내문: 만 14세 이상 본인 동의라 서명 양식이 없다
+    assert "가나고등학교&lt;script&gt;" in n and "제22조의2" in n
+    assert "서명" not in n and "국외 이전 동의서" not in n
     # 강사 신청서의 동의는 이용약관 확인으로도 기록된다
     g = TestClient(app)
     google_login(g, "guest@gmail.com")

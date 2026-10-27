@@ -69,7 +69,7 @@ def page(title: str, body: str, printable: bool = False) -> HTMLResponse:
 {body}
 </main>
 <footer class="site-footer">
-  <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문·동의서</a>
+  <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문</a>
 </footer>
 <script src="/static/live/site.js"></script></body></html>""")
 
@@ -265,9 +265,12 @@ EU(유럽연합)는 2025년 9월 개인정보보호위원회가 국내와 실질
 async def notice():
     s = settings()
     op, ai = e(s["operator"]), s["ai"]
-    return page("실시간 온라인 수업 이용 안내 및 개인정보 수집·이용 동의서", f"""
+    return page("실시간 온라인 수업 이용 안내", f"""
 <p>학부모님 안녕하십니까. {op}에서는 실시간 온라인 수업(공동교육과정·보충수업 등)을 운영합니다.
-학생이 집에서 학교 구글 계정으로 접속해 화상으로 수업을 듣고, 출결과 퀴즈 결과가 기록됩니다. 아래 내용을 읽어 보시고 동의 여부를 표시해 주시기 바랍니다.</p>
+학생이 집에서 학교 구글 계정으로 접속해 화상으로 수업을 듣고, 출결과 퀴즈 결과가 기록됩니다.</p>
+<p>이 서비스는 <strong>만 14세 이상 학생</strong>만 가입할 수 있으며, 학생이 가입할 때 <strong>본인이 직접</strong> 이용약관과 개인정보 수집·이용에 동의합니다.
+법정대리인(보호자)의 동의는 만 14세 미만 아동에게만 필요하므로(「개인정보 보호법」 제22조의2), 별도의 보호자 동의서는 받지 않습니다.
+아래 내용을 참고하시어 가정에서 지도해 주시기 바랍니다.</p>
 
 <h2>1. 수집·이용하는 개인정보</h2>
 <ul>
@@ -282,11 +285,11 @@ async def notice():
 <h2>2. 개인정보 국외 이전</h2>
 <ul>
 <li>Hetzner Online GmbH (독일) 서버, {e(s['region'])} — 서비스 운영(데이터 보관·전송). EU는 개인정보보호위원회가 국내와 동등한 보호 수준으로 인정한 지역(2025년 9월 동등성 인정, 개인정보 보호법 제28조의8 제1항 제5호)이라 별도 동의 없이 이전할 수 있습니다.</li>
-{'<li>Anthropic, PBC (미국) — AI 조교 답변 생성. 서버가 식별 가능한 이름·학번·연락처를 가린 후 질문을 전송합니다. 자유롭게 쓴 개인정보는 모두 걸러내지 못할 수 있으니 입력하지 마세요. AI 조교를 쓰지 않아도 수업에는 지장이 없습니다.</li>' if ai else ''}
+{'<li>Anthropic, PBC (미국) — AI 조교 답변 생성. 학생이 AI 조교를 처음 쓸 때 본인에게 따로 안내하고 확인을 받습니다. 서버가 식별 가능한 이름·학번·연락처를 가린 후 질문을 전송합니다. 자유롭게 쓴 개인정보는 모두 걸러내지 못할 수 있으니 입력하지 마세요. AI 조교를 쓰지 않아도 수업에는 지장이 없습니다.</li>' if ai else ''}
 </ul>
 
 <h2>3. 동의를 거부할 권리</h2>
-<p>동의를 거부할 수 있습니다. 다만 거부하면 실시간 온라인 수업에 참여할 수 없으며, 학교와 다른 학습 방법을 협의하게 됩니다.</p>
+<p>학생은 가입할 때 동의를 거부할 수 있습니다. 다만 거부하면 실시간 온라인 수업에 참여할 수 없으며, 학교와 다른 학습 방법을 협의하게 됩니다.</p>
 
 <h2>4. 가정에서 지도해 주실 점</h2>
 <ul>
@@ -296,16 +299,4 @@ async def notice():
 </ul>
 <p>자세한 내용: 개인정보 처리방침 (서비스 첫 화면 아래 링크) · 문의: {e(s['officer'])} {e(s['contact'])}</p>
 
-<div class="consent-form">
-<p class="cut">✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -</p>
-<h2 style="text-align:center">개인정보 수집·이용 및 국외 이전 동의서</h2>
-<p>위 내용을 읽고 실시간 온라인 수업 참여를 위한 개인정보 수집·이용 및 국외 이전에</p>
-<p style="text-align:center;font-size:1.1rem">□ 동의합니다 &nbsp;&nbsp;&nbsp; □ 동의하지 않습니다</p>
-<table class="att sign"><tbody>
-<tr><td>학생</td><td>____학년 ____반 ____번 &nbsp; 이름 ______________</td></tr>
-<tr><td>보호자</td><td>이름 ______________ (서명) &nbsp; 학생과의 관계 ________</td></tr>
-<tr><td>날짜</td><td>20____년 ____월 ____일</td></tr>
-</tbody></table>
-<p style="text-align:right">{e(s['consent_to'])} 귀하</p>
-</div>
 """, printable=True)
