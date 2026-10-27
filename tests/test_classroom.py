@@ -2401,3 +2401,47 @@ def test_admin_fixes_names(monkeypatch):
     tid = boss.get("/api/admin/users?q=박선생").json()["users"][0]["id"]
     boss.post(f"/api/admin/users/{tid}/name", json={"name": "박선생님"})
     assert next(c for c in t.get("/api/courses/mine").json()["courses"] if c["id"] == cid)["instructor"] == "박선생님"
+
+
+def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
+    """과목이 끝나고 1년이 지나면 수업 자료(PDF)와 과제 제출 파일을 지운다 (점수·피드백은 남는다)"""
+    import app.assignments as asg
+    from datetime import date
+    from app import classroom as cr_mod
+    from app.file_retention import purge_expired_files
+    from sqlalchemy import select
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path / "files")
+    monkeypatch.setattr(cr_mod, "SLIDES_DIR", tmp_path / "slides")
+    now = time.time()
+    with db.engine.begin() as c:
+        old = c.execute(db.courses.insert().values(teacher_id=1, title="옛 과목", instructor="t", start_date="2024-03-01",
+                        end_date="2024-07-20", open=1, archived=0, created_at=now)).inserted_primary_key[0]
+        new = c.execute(db.courses.insert().values(teacher_id=1, title="새 과목", instructor="t", start_date="2026-03-01",
+                        end_date="2099-07-20", open=1, archived=0, created_at=now)).inserted_primary_key[0]
+        ids = {}
+        for name, course in (("old", old), ("new", new)):
+            cls = c.execute(db.classes.insert().values(code=f"C{name}", title="1주차", teacher_id=1, created_at=now,
+                            course_id=course)).inserted_primary_key[0]
+            c.execute(db.materials.insert().values(id=f"m{name}", class_id=cls, teacher_id=1, name="a.pdf", created_at=now))
+            c.execute(db.boards.insert().values(class_id=cls, key=f"m{name}:1", strokes="[]", updated_at=now))
+            aid = c.execute(db.assignments.insert().values(course_id=course, teacher_id=1, title="과제",
+                            created_at=now)).inserted_primary_key[0]
+            sid = c.execute(db.submissions.insert().values(assignment_id=aid, user_id=9, score=90,
+                            feedback="잘했어요")).inserted_primary_key[0]
+            c.execute(db.submission_files.insert().values(id=f"f{name}", submission_id=sid, name="r.hwp", size=1,
+                      created_at=now))
+            ids[name] = (cls, aid)
+    for name, (cls, aid) in ids.items():
+        (tmp_path / "slides" / str(cls)).mkdir(parents=True)
+        (tmp_path / "slides" / str(cls) / f"m{name}.pdf").write_bytes(b"pdf")
+        asg.file_path(aid, f"f{name}").parent.mkdir(parents=True, exist_ok=True)
+        asg.file_path(aid, f"f{name}").write_bytes(b"hwp")
+    # 끝난 지 1년이 안 됐으면 그대로
+    assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0}
+    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 1, "submission_files": 1}
+    assert not (tmp_path / "slides" / str(ids["old"][0]) / "mold.pdf").exists()
+    assert not asg.file_path(ids["old"][1], "fold").exists()
+    assert (tmp_path / "slides" / str(ids["new"][0]) / "mnew.pdf").exists() and asg.file_path(ids["new"][1], "fnew").exists()
+    with db.engine.connect() as c:
+        assert [r.key for r in c.execute(select(db.boards))] == ["mnew:1"]
+        assert c.execute(select(db.submissions.c.score)).scalars().all() == [90, 90]  # 점수는 남는다

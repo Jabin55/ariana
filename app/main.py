@@ -34,6 +34,7 @@ from app.grading import router as grading_router
 from app.history import router as history_router
 from app.prompts import SYSTEM_PROMPT
 from app.evidence import retention_loop, router as evidence_router
+from app.file_retention import file_retention_loop
 from app.privacy_filter import known_member_names, redact_messages
 
 # AI 조교는 비용을 아끼기 위해 가장 가벼운(저렴한) 모델을 쓴다. 바꾸려면 CHATBOT_MODEL 설정
@@ -54,9 +55,11 @@ async def lifespan(_app: FastAPI):
     await db.run(db.init)
     task = asyncio.create_task(heartbeat_loop())
     retention_task = asyncio.create_task(retention_loop())
+    files_task = asyncio.create_task(file_retention_loop())  # 과목 끝나고 1년 지난 수업 자료·과제 파일 삭제
     yield
     task.cancel()
     retention_task.cancel()
+    files_task.cancel()
 
 
 SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
