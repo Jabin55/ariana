@@ -2178,6 +2178,12 @@ def test_ulsan_school_list_is_built_in(monkeypatch):
                                             "birth": "2008-04-03", "gender": "남", "agree": True}).status_code == 200
 
 
+def test_policy_version_fits_database_column():
+    from app.policy import POLICY_VERSION
+
+    assert db.users.c.terms_version.type.length >= len(POLICY_VERSION)
+
+
 def test_signup_starts_with_two_required_consents():
     """회원가입 첫 단계: 학생·선생님 모두 이용약관과 개인정보 수집·이용에 동의해야 다음으로"""
     texts = TestClient(app).get("/api/consent").json()

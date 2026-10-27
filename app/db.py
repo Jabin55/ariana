@@ -40,7 +40,7 @@ users = Table(
     Column("number", Integer),
     Column("created_at", Float, nullable=False),
     Column("last_login", Float),
-    Column("terms_version", String(10), nullable=False, default=""),  # 확인(동의)한 이용약관·처리방침 시행일
+    Column("terms_version", String(64), nullable=False, default=""),  # 확인(동의)한 이용약관·처리방침 시행일
     Column("terms_at", Float),
     Column("ai_ok_at", Float),  # AI 조교 국외 전송 안내를 확인한 시각
     # 학교 계정으로 처음 로그인했을 때 고른 것: student(학생) staff(선생님 → 강사·관리교사 신청). 비면 아직 안 고름
@@ -462,7 +462,7 @@ def init() -> None:
              ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "transfer_from", "VARCHAR(60) NOT NULL DEFAULT ''"),
              ("memberships", "replace_membership_id", "INTEGER"),
-             ("users", "terms_version", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("users", "terms_version", "VARCHAR(64) NOT NULL DEFAULT ''"),
              ("users", "terms_at", "FLOAT"),
              ("users", "ai_ok_at", "FLOAT"),
              ("users", "self_role", "VARCHAR(10) NOT NULL DEFAULT ''"),
@@ -544,8 +544,12 @@ def init() -> None:
     if ("users", "name_locked") in fresh:  # 이미 가입을 마친 사람의 이름은 그대로 굳힌다
         with engine.begin() as c:
             c.execute(update(users).where(users.c.name != "").values(name_locked=1))
-    if engine.dialect.name == "postgresql":  # 수업 소개를 길게 쓸 수 있도록 (예전: 300자)
+    if engine.dialect.name == "postgresql":  # 기존 PostgreSQL 표의 짧은 문자열 칸을 넓힌다.
+        terms_column = next(col for col in inspect(engine).get_columns("users") if col["name"] == "terms_version")
+        terms_length = getattr(terms_column["type"], "length", None)
         with engine.begin() as c:
+            if terms_length is not None and terms_length < 64:
+                c.execute(text("ALTER TABLE users ALTER COLUMN terms_version TYPE VARCHAR(64)"))
             c.execute(text("ALTER TABLE courses ALTER COLUMN description TYPE TEXT"))
     # 수강신청은 강사 승인만으로 확정된다 (예전 '관리교사 최종 승인 대기'는 확정으로)
     with engine.begin() as c:
