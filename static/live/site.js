@@ -128,3 +128,10 @@
   window.WaesolHeader = { render };
   fetch("/api/me").then((r) => r.json()).then(({ user: u }) => render(u)).catch(() => render(null));
 })();
+
+/* 로그인 유지 신호 (자동 로그인을 안 고른 로그인은 브라우저를 닫으면 끝난다) */
+(function () {
+  const s = document.createElement("script");
+  s.src = "/static/live/keepalive.js";
+  document.head.append(s);
+})();

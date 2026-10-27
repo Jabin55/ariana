@@ -239,8 +239,14 @@ async def current_user(request_or_ws) -> dict | None:
     if not uid or not isinstance(session_key, str):
         return None
     session = request_or_ws.session
-    if session.get("remember") is False and time.time() - (session.get("login_at") or 0) > SHORT_SESSION_SECONDS:
-        return None  # 자동 로그인을 안 고른 로그인은 12시간까지만
+    if session.get("remember") is False:
+        now = time.time()
+        if now - (session.get("login_at") or 0) > SHORT_SESSION_SECONDS or now - (session.get("seen") or 0) > IDLE_SECONDS:
+            if hasattr(session, "clear") and request_or_ws.scope["type"] == "http":
+                session.clear()  # 브라우저를 닫았다가 다시 열었다 → 로그아웃
+            return None
+        if request_or_ws.scope["type"] == "http" and now - (session.get("seen") or 0) > 20:
+            session["seen"] = int(now)  # 화면이 열려 있다는 신호
     u = await db.run(_load_with_role, uid)
     return u if u and secrets.compare_digest(u["session_key"], session_key) else None
 
@@ -276,7 +282,10 @@ def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
         )).inserted_primary_key[0]
 
 
-SHORT_SESSION_SECONDS = 12 * 3600  # '자동 로그인'을 안 고르면 브라우저를 닫거나 12시간이 지나면 로그아웃
+SHORT_SESSION_SECONDS = 12 * 3600  # '자동 로그인'을 안 고르면 최대 12시간
+# '자동 로그인'을 안 고른 로그인은 열린 화면이 30초마다 신호를 보낸다(keepalive.js).
+# 신호가 이만큼 끊기면(브라우저를 닫음) 로그아웃: 브라우저가 이전 창을 되살려도 다시 로그인해야 한다.
+IDLE_SECONDS = 150
 
 
 async def login_with_identity(request: Request, sub: str, email: str, gname: str, hd: str | None,
@@ -292,7 +301,7 @@ async def login_with_identity(request: Request, sub: str, email: str, gname: str
     request.session["auth_key"] = u["session_key"]
     # 자동 로그인: 고르면 14일 유지, 안 고르면 브라우저를 닫을 때까지(최대 12시간)
     request.session["remember"] = bool(remember)
-    request.session["login_at"] = int(time.time())
+    request.session["login_at"] = request.session["seen"] = int(time.time())
     return public_user(u)
 
 
@@ -326,6 +335,12 @@ async def google_login(req: GoogleLogin, request: Request):
         check_student_age(req.birth)
     return await login_with_identity(request, info["sub"], info["email"], info.get("name", ""), info.get("hd"),
                                      remember=req.remember)
+
+
+@router.post("/api/auth/ping")
+async def ping(request: Request):
+    """열린 화면이 30초마다 보내는 신호 (자동 로그인을 안 고른 로그인 유지용)"""
+    return {"user": bool(await current_user(request))}
 
 
 @router.post("/api/auth/logout")

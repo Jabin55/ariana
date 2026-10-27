@@ -2477,8 +2477,15 @@ def test_remember_me_controls_login_cookie(monkeypatch):
     assert "live_session=" in cookie and "max-age" not in cookie and "expires" not in cookie
     assert c.get("/api/me").json()["user"]["email"] == "short@gmail.com"
     real = time.time
-    monkeypatch.setattr(auth_mod.time, "time", lambda: real() + 13 * 3600)
-    assert c.get("/api/me").json()["user"] is None  # 12시간이 지나면 다시 로그인
+    # 화면이 열려 있으면(30초마다 신호) 로그인이 이어진다
+    for minutes in (1, 2, 3, 4):
+        monkeypatch.setattr(auth_mod.time, "time", lambda m=minutes: real() + m * 60)
+        assert c.post("/api/auth/ping").json()["user"] is True
+    # 브라우저를 닫아 신호가 끊기면, 다시 열었을 때 바로 로그아웃 (브라우저가 창을 되살려도)
+    monkeypatch.setattr(auth_mod.time, "time", lambda: real() + 4 * 60 + 200)
+    assert c.get("/api/me").json()["user"] is None
+    monkeypatch.setattr(auth_mod.time, "time", lambda: real() + 4 * 60 + 201)
+    assert c.get("/api/me").json()["user"] is None  # 한번 끝난 로그인은 되살아나지 않는다
     monkeypatch.setattr(auth_mod.time, "time", real)
     k = TestClient(app)
     r = k.post("/api/auth/google", json={"credential": "test-token:keep@gmail.com", "birth": "2000-01-01", "remember": True})
