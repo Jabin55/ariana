@@ -1395,3 +1395,7 @@ table.att.school-change-table { min-width: 860px; }
 table.att.school-change-table th, table.att.school-change-table td { text-align: center; vertical-align: middle; white-space: nowrap; }
 table.att.school-change-table td:last-child { min-width: 150px; }
 .school-change-actions { justify-content: center; }
+/* 로그인 ↔ 회원가입 */
+.login-remember { margin-top: 14px; font-weight: 600; }
+.login-switch { margin: 16px 0 0; font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; }
+.login-switch .link-btn { color: var(--brand); font-weight: 700; padding: 0 2px; }

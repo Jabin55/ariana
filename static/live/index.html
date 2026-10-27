@@ -22,10 +22,20 @@
           <p class="hero-sub">학생은 학교 구글 계정으로, 선생님은 학교·개인 구글 계정으로 시작해요.</p>
           <p><a href="/live/home">← 처음 화면으로</a></p>
         </div>
-        <div class="start-box card" id="start-box">
+        <!-- 로그인: 처음부터 구글 로그인 버튼 -->
+        <div class="start-box card" id="login-box">
+          <h2 style="margin:0 0 4px">로그인</h2>
+          <p class="muted" style="margin:0 0 14px;font-size:0.9rem">가입한 구글 계정으로 로그인하세요.</p>
+          <div id="google-login-btn"></div>
+          <label class="switch login-remember"><input type="checkbox" id="login-remember"> 자동 로그인</label>
+          <p class="muted" style="font-size:0.8rem;margin:2px 0 0">체크하면 14일 동안 로그인이 유지돼요. 여럿이 함께 쓰는 컴퓨터에서는 체크하지 마세요.</p>
+          <p class="error" id="login-only-error"></p>
+          <p class="login-switch">아직 회원이 아니신가요? <button type="button" class="link-btn" id="to-signup">회원가입</button></p>
+        </div>
+        <div class="start-box card" id="start-box" hidden>
 <ol class="join-steps"><li class="now">회원 유형 선택</li><li>가입정보 입력</li><li>약관 동의</li><li>가입완료</li></ol>
           <h2 style="margin:0 0 4px">회원 유형 선택</h2>
-          <p class="muted" style="margin:0 0 12px;font-size:0.9rem">처음이면 가입, 이미 가입했으면 같은 버튼으로 로그인돼요. 구글 계정으로 로그인한 뒤 가입정보 입력으로 넘어가요.</p>
+          <p class="muted" style="margin:0 0 12px;font-size:0.9rem">구글 계정을 확인한 뒤 가입정보 입력으로 넘어가요.</p>
           <div class="start-choices">
             <button type="button" class="start-choice" data-role="student"><span class="sc-ico">🎒</span><strong>학생 가입</strong><small>학교 구글 계정으로 수강신청·수업 듣기</small></button>
             <button type="button" class="start-choice" data-role="staff"><span class="sc-ico">👩‍🏫</span><strong>교사 가입</strong><small>관리교사 · 강의교사</small></button>
@@ -33,12 +43,13 @@
           <div id="login-step" hidden>
             <p class="login-chosen" id="login-chosen"></p>
             <p class="muted" id="login-hint" style="font-size:0.9rem">학교에서 받은 구글 계정으로 로그인하세요.</p>
-            <label class="muted">처음 가입할 때 생년월일 <input id="login-birth" type="date" min="1900-01-01"></label>
-            <p class="muted" style="font-size:0.8rem">이미 가입했다면 비워 두고 로그인할 수 있어요. 만 14세 미만은 가입할 수 없습니다.</p>
+            <label class="muted">생년월일 <input id="login-birth" type="date" min="1900-01-01"></label>
+            <p class="muted" style="font-size:0.8rem">만 14세 미만은 가입할 수 없습니다.</p>
             <div id="google-btn"></div>
             <button type="button" class="link-btn" id="login-back">← 다시 고르기</button>
           </div>
       <p class="error" id="login-error"></p>
+          <p class="login-switch">이미 회원이신가요? <button type="button" class="link-btn" id="to-login">로그인</button></p>
         </div>
       </section>
     </section>

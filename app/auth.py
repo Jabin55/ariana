@@ -238,6 +238,9 @@ async def current_user(request_or_ws) -> dict | None:
     session_key = request_or_ws.session.get("auth_key")
     if not uid or not isinstance(session_key, str):
         return None
+    session = request_or_ws.session
+    if session.get("remember") is False and time.time() - (session.get("login_at") or 0) > SHORT_SESSION_SECONDS:
+        return None  # 자동 로그인을 안 고른 로그인은 12시간까지만
     u = await db.run(_load_with_role, uid)
     return u if u and secrets.compare_digest(u["session_key"], session_key) else None
 
@@ -273,7 +276,11 @@ def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
         )).inserted_primary_key[0]
 
 
-async def login_with_identity(request: Request, sub: str, email: str, gname: str, hd: str | None) -> dict:
+SHORT_SESSION_SECONDS = 12 * 3600  # '자동 로그인'을 안 고르면 브라우저를 닫거나 12시간이 지나면 로그아웃
+
+
+async def login_with_identity(request: Request, sub: str, email: str, gname: str, hd: str | None,
+                              remember: bool = True) -> dict:
     # 누구나 로그인은 된다. 학교 계정이 아니고 강사로 승인되지 않았으면 '손님'으로 강사 등록 신청만 할 수 있다.
     email = email.lower()
     uid = await db.run(_upsert_user, sub, email, gname, effective_role(email, []))
@@ -283,12 +290,16 @@ async def login_with_identity(request: Request, sub: str, email: str, gname: str
     if not u:
         raise HTTPException(403, "이용할 수 없는 계정이에요.")
     request.session["auth_key"] = u["session_key"]
+    # 자동 로그인: 고르면 14일 유지, 안 고르면 브라우저를 닫을 때까지(최대 12시간)
+    request.session["remember"] = bool(remember)
+    request.session["login_at"] = int(time.time())
     return public_user(u)
 
 
 class GoogleLogin(BaseModel):
     credential: str = Field(max_length=5000)
     birth: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    remember: bool = False  # 자동 로그인 (로그인 상태 유지)
 
 
 @router.post("/api/auth/google")
@@ -313,7 +324,8 @@ async def google_login(req: GoogleLogin, request: Request):
         check_student_age(req.birth)
     elif req.birth:
         check_student_age(req.birth)
-    return await login_with_identity(request, info["sub"], info["email"], info.get("name", ""), info.get("hd"))
+    return await login_with_identity(request, info["sub"], info["email"], info.get("name", ""), info.get("hd"),
+                                     remember=req.remember)
 
 
 @router.post("/api/auth/logout")

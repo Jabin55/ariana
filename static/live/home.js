@@ -171,6 +171,37 @@ function loadGsi() {
   return gsiReady;
 }
 
+/** 로그인 화면(구글 버튼 바로) ↔ 회원가입 화면(회원 유형 선택부터) */
+function showLoginMode(signup) {
+  $("#login-box").hidden = signup;
+  $("#start-box").hidden = !signup;
+  if (!signup) renderLoginButton();
+}
+
+async function renderLoginButton() {
+  if (!CONFIG.google_client_id) return;
+  try {
+    await loadGsi();
+    google.accounts.id.initialize({ client_id: CONFIG.google_client_id, callback: onGoogleLogin, ux_mode: "popup" });
+    $("#google-login-btn").replaceChildren();
+    google.accounts.id.renderButton($("#google-login-btn"), { theme: "outline", size: "large", text: "signin_with", locale: "ko", width: 280 });
+  } catch (err) { $("#login-only-error").textContent = err.message; }
+}
+
+async function onGoogleLogin(resp) {
+  $("#login-only-error").textContent = "";
+  try {
+    await api("/api/auth/google", { credential: resp.credential, remember: $("#login-remember").checked });
+    boot();
+  } catch (err) {
+    // 가입하지 않은 계정 (서버는 처음 가입이면 생년월일을 요구한다)
+    $("#login-only-error").textContent = /생년월일/.test(err.message)
+      ? "가입하지 않은 계정이에요. 아래 '회원가입'을 눌러 먼저 가입해 주세요." : err.message;
+  }
+}
+$("#to-signup").addEventListener("click", () => showLoginMode(true));
+$("#to-login").addEventListener("click", () => { sessionDel("signup_as"); showLoginMode(false); });
+
 function showLogin() {
   show("login-view");
   $("#login-step").hidden = true;
@@ -186,6 +217,8 @@ function showLogin() {
   if (CONFIG.google_client_id) loadGsi().catch((err) => { $("#login-error").textContent = err.message; });
   // 메인 화면의 '학생으로 시작'·'선생님으로 시작'에서 왔으면 바로 그 로그인 단계로
   const start = params.get("start") || (params.get("wish") ? "student" : null); // '듣고 싶은 과목 요청'은 학생 로그인으로
+  // 처음 화면의 '학생으로 시작'·'선생님으로 시작'·'회원가입'에서 왔으면 회원가입, 아니면 로그인
+  showLoginMode(Boolean(start) || params.has("signup"));
   if (start === "student" || start === "staff") chooseStart(start);
 }
 

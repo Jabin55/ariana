@@ -80,6 +80,32 @@ app.add_middleware(
 )
 
 
+class BrowserSessionCookie:
+    """'자동 로그인'을 안 고른 로그인은 로그인 쿠키를 브라우저를 닫으면 사라지게(만료일 없이) 보낸다."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start" and scope.get("session", {}).get("remember") is False:
+                headers = []
+                for k, v in message.get("headers", []):
+                    if k.lower() == b"set-cookie" and v.startswith(b"live_session="):
+                        v = b"; ".join(p for p in v.split(b"; ") if not p.lower().startswith((b"max-age=", b"expires=")))
+                    headers.append((k, v))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(BrowserSessionCookie)  # SessionMiddleware 바깥에서 쿠키를 고친다
+
+
 @app.middleware("http")
 async def fresh_pages(request, call_next):
     """화면 파일(HTML·CSS·JS)은 브라우저가 매번 새 버전이 있는지 확인하게 한다 (업데이트가 바로 보이도록).

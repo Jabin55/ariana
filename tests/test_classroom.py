@@ -2466,3 +2466,22 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
     with db.engine.connect() as c:
         assert [r.key for r in c.execute(select(db.boards))] == ["mnew:1"]
         assert c.execute(select(db.submissions.c.score)).scalars().all() == [90, 90]  # 점수는 남는다
+
+
+def test_remember_me_controls_login_cookie(monkeypatch):
+    """자동 로그인을 고르면 14일 쿠키, 안 고르면 브라우저를 닫으면 사라지는 쿠키 + 12시간 제한"""
+    from app import auth as auth_mod
+    c = TestClient(app)
+    r = c.post("/api/auth/google", json={"credential": "test-token:short@gmail.com", "birth": "2000-01-01"})
+    cookie = r.headers["set-cookie"].lower()
+    assert "live_session=" in cookie and "max-age" not in cookie and "expires" not in cookie
+    assert c.get("/api/me").json()["user"]["email"] == "short@gmail.com"
+    real = time.time
+    monkeypatch.setattr(auth_mod.time, "time", lambda: real() + 13 * 3600)
+    assert c.get("/api/me").json()["user"] is None  # 12시간이 지나면 다시 로그인
+    monkeypatch.setattr(auth_mod.time, "time", real)
+    k = TestClient(app)
+    r = k.post("/api/auth/google", json={"credential": "test-token:keep@gmail.com", "birth": "2000-01-01", "remember": True})
+    assert "max-age=1209600" in r.headers["set-cookie"].lower()
+    monkeypatch.setattr(auth_mod.time, "time", lambda: real() + 13 * 3600)
+    assert k.get("/api/me").json()["user"]["email"] == "keep@gmail.com"
