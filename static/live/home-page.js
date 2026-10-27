@@ -26,11 +26,25 @@
       <path d="M130 150l-30 26 34-6zM190 150l30 26-34-6z" fill="#e8663a" stroke="#0f4a33" stroke-width="5" stroke-linejoin="round"/>
       <path d="M144 156q16 40 32 0" fill="#ffd34d"/><path d="M152 158q8 24 16 0" fill="#e8663a"/>
       <circle cx="60" cy="60" r="5" fill="#ffd34d"/><circle cx="260" cy="40" r="6" fill="#ffd34d"/><circle cx="250" cy="150" r="4" fill="#fff"/><circle cx="80" cy="160" r="6" fill="#7fc8a9"/></svg>`,
+    guide: `<svg viewBox="0 0 360 260" aria-hidden="true">
+      <ellipse cx="190" cy="236" rx="150" ry="14" fill="rgba(0,0,0,0.12)"/>
+      <rect x="96" y="118" width="190" height="112" rx="12" fill="#e9eef5"/><rect x="104" y="126" width="174" height="96" rx="8" fill="#fff"/>
+      <rect x="112" y="134" width="96" height="80" rx="6" fill="#cfeadb"/><circle cx="160" cy="166" r="16" fill="#ffd9b8"/><path d="M136 206c4-18 44-18 48 0" fill="#3d63dd"/>
+      <rect x="214" y="134" width="56" height="24" rx="5" fill="#ffe8a3"/><rect x="214" y="162" width="56" height="24" rx="5" fill="#d6e4ff"/><rect x="214" y="190" width="56" height="24" rx="5" fill="#ffd6e0"/>
+      <path d="M80 230h222l-14 10H94z" fill="#c9d3e0"/>
+      <circle cx="80" cy="120" r="30" fill="#ffd9b8"/><path d="M50 116c0-24 60-30 60 0" fill="#3b2a20"/><path d="M48 122q-2-34 32-36 34 2 32 36" fill="none" stroke="#1b6b4a" stroke-width="7" stroke-linecap="round"/>
+      <rect x="42" y="116" width="12" height="20" rx="5" fill="#e8663a"/><rect x="106" y="116" width="12" height="20" rx="5" fill="#e8663a"/>
+      <circle cx="70" cy="122" r="3" fill="#2b2b2b"/><circle cx="90" cy="122" r="3" fill="#2b2b2b"/><path d="M72 134q8 6 16 0" stroke="#2b2b2b" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M40 232c0-50 80-50 80 0z" fill="#e8663a"/><path d="M112 200l30 6" stroke="#ffd9b8" stroke-width="10" stroke-linecap="round"/>
+      <circle cx="300" cy="60" r="20" fill="#ffd34d"/><path d="M300 30v-10M300 100v-10M270 60h-10M340 60h-10" stroke="#ffd34d" stroke-width="4" stroke-linecap="round"/>
+      <path d="M200 70q20-30 40 0" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".8"/><path d="M190 52q30-44 60 0" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".5"/>
+    </svg>`,
   };
   const DEFAULTS = [
-    { kicker: "울산 거점학교 공동교육과정", title: "울산 어디서나, 함께 듣는 실시간 수업", text: "우리 학교에 없는 과목도 집에서 거점학교 선생님과!", button: "수업 신청하기", link: "/live/courses", theme: "green", art: "live" },
-    { kicker: "온라인 공동교육과정", title: "학교의 벽을 넘어, 듣고 싶은 과목을 골라 들어요", text: "실시간으로 묻고 답하고 토론하는 쌍방향 수업 — 내 적성과 진로에 맞는 배움을 넓혀요.", button: "외솔온닷 알아보기", link: "/live/about", theme: "orange", art: "books" },
+    { kicker: "실시간 온라인 수업 플랫폼", title: "학교의 벽을 넘어, 함께 배우는 온라인 교실", text: "실시간으로 묻고 답하고 토론하는 쌍방향 수업 — 공동교육과정에도 잘 맞아요.", button: "외솔온닷 알아보기", link: "/live/about", theme: "orange", art: "books" },
     { kicker: "선생님 모집", title: "외솔온닷에서 강의해 주세요", text: "거점학교 강사·팀티칭 보조교사로 등록을 신청할 수 있어요.", button: "선생님으로 시작", link: "/live?start=staff", theme: "blue", art: "rocket" },
+    { kicker: "수강방법안내", title: "우리 학교 밖,", accent: "또 하나의 교실", text: "컴퓨터나 휴대폰, 이어폰만 있으면 어디서든 선생님·친구들과 실시간으로 만나요.", button: "수강안내 보기", link: "/live/guide", theme: "guide", art: "guide" },
+    { kicker: "실시간 온라인 공동교육과정", title: "어디서나, 함께 듣는 실시간 수업", text: "우리 학교에 없는 과목도 집에서 거점학교 선생님과!", button: "수업 신청하기", link: "/live/courses", theme: "pink", art: "live" },
   ];
 
   // ── 전광판 ──
@@ -44,7 +58,7 @@
       const img = b.image ? ` style="background-image:url('/api/banners/image/${encodeURIComponent(b.image)}')"` : "";
       const text = b.title ? `<div class="bb-text">
           ${b.kicker ? `<p class="bb-kicker">${esc(b.kicker)}</p>` : ""}
-          <h2>${esc(b.title)}</h2>${b.text ? `<p>${esc(b.text)}</p>` : ""}
+          <h2>${esc(b.title)}${b.accent ? `<br><b>${esc(b.accent)}</b>` : ""}</h2>${b.text ? `<p>${esc(b.text)}</p>` : ""}
           ${b.button && b.link ? `<a class="bb-btn" href="${esc(b.link)}">${esc(b.button)} →</a>` : ""}</div>` : "";
       const art = !b.image && ART[b.art || ["live", "books", "rocket"][i % 3]];
       const whole = b.link && !b.button ? `<a class="bb-cover" href="${esc(b.link)}" aria-label="${esc(b.title || "배너")}"></a>` : "";
@@ -115,7 +129,8 @@
           <span class="mc-meta">${(c.grades.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(" ")}</span>
           <strong>${esc(c.title)}</strong>
           <span class="mc-meta">${[c.credits ? `${c.credits}학점` : "", c.capacity ? `${c.capacity}명` : "인원 제한 없음", c.hub_school].filter(Boolean).map(esc).join(" · ")}</span>
-          <span class="mc-meta">${[c.achievement_text ? `성취도 ${c.achievement_text}` : "", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}%·수행 ${c.perf_ratio}%` : ""].filter(Boolean).map(esc).join(" · ")}</span></a>`).join("")
+          ${c.achievement_text ? `<span class="mc-meta">${esc(`성취도 ${c.achievement_text}`)}</span>` : ""}
+          ${c.exam_ratio != null && c.perf_ratio != null ? `<span class="mc-meta">${esc(`평가 방식: 지필 ${c.exam_ratio}%, 수행 ${c.perf_ratio}%`)}</span>` : ""}</a>`).join("")
         : '<p class="muted">지금 모집 중인 강좌가 없어요. 곧 새 강좌가 열려요!</p>';
     } catch { box.innerHTML = '<p class="muted">강좌를 불러오지 못했어요.</p>'; }
   }
@@ -126,11 +141,14 @@
     try {
       const { requests: list } = await (await fetch("/api/course-requests/summary")).json();
       const top = Math.max(1, ...list.map((w) => w.count));
-      box.innerHTML = list.length ? list.map((w) => `<div class="wish-item">
+      box.innerHTML = list.length ? list.map((w) => {
+        const [a, b] = window.courseAreaColors(w.subject_area);
+        return `<div class="wish-item" style="--a:${a};--b:${b}">
           <div class="wish-top"><strong>${esc(w.subject)}</strong>${w.in_curriculum ? "" : '<span class="tag">고시외</span>'}<span class="wish-n">${w.count}명</span></div>
           <div class="wish-bar"><i style="width:${Math.round((w.count / top) * 100)}%"></i></div>
-          <span class="muted">${Object.entries(w.grades).map(([g, n]) => `${g}학년 ${n}`).join(" · ") || "&nbsp;"}</span></div>`).join("")
-        : '<p class="muted">아직 요청한 과목이 없어요. 듣고 싶은 과목이 있으면 마이페이지에서 요청해 주세요!</p>';
+          <span class="muted">${[...Object.entries(w.grades).map(([g, n]) => `${g}학년 신청 ${n}`), ...(w.likes ? [`공감 ${w.likes}`] : [])].join(" · ") || "&nbsp;"}</span></div>`;
+      }).join("")
+        : '<p class="muted">아직 요청한 과목이 없어요. 듣고 싶은 과목은 [희망과목 개설 신청]에서 요청해 주세요!</p>';
     } catch { box.innerHTML = '<p class="muted">불러오지 못했어요.</p>'; }
   }
 
@@ -140,12 +158,9 @@
       const { user: u } = await (await fetch("/api/me")).json();
       if (!u) return;
       const role = u.is_admin ? "전체 관리자" : u.role === "teacher" ? "선생님" : u.role === "student" ? "학생" : "회원";
-      // 과목 개설 요청은 학생만: 선생님에게는 링크 대신 안내
-      const wish = $("#wish-link");
-      if (wish && u.role !== "student") { wish.removeAttribute("href"); wish.textContent = "학생만 요청할 수 있어요"; wish.classList.add("muted"); }
       $("#home-login .home-box-h h2").textContent = "👋 반가워요";
       $("#home-login-body").innerHTML = `<p class="hello"><strong>${esc(u.name || u.email.split("@")[0])}</strong> ${role}님</p>
-        <a class="start-choice" href="/live"><span class="sc-ico">🏠</span><strong>${u.role === "teacher" || u.is_admin ? "교무실로" : "마이페이지로"}</strong></a>
+        <a class="start-choice" href="${u.role === "teacher" || u.is_admin ? "/live?office=1" : "/live?classroom=1"}"><span class="sc-ico">🏠</span><strong>${u.role === "teacher" || u.is_admin ? "교무실로" : "강의실로"}</strong></a>
         <a class="start-choice" href="/live/materials"><span class="sc-ico">📚</span><strong>지난 수업 자료</strong></a>`;
     } catch { /* 로그인 전 화면 그대로 */ }
   }

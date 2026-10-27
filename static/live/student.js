@@ -17,7 +17,7 @@ const presenter = new Presenter($("#present"), { code: CODE, canDraw: false, sen
 
 $("#code").textContent = CODE;
 api("/api/me").then(({ user }) => {
-  if (!user || user.role !== "student" || user.needs_profile) location.replace(`/live?c=${CODE}`);
+  if (!user || (user.role !== "student" && !user.is_admin) || user.needs_profile) location.replace(`/live?c=${CODE}`);
   else $("#prejoin-name").textContent = `${user.display} 이름으로 들어가요.`;
 }).catch(() => {});
 
@@ -119,7 +119,8 @@ async function reconcileRoom() {
   renderMedia(null);
   if (target !== "main") toast(`${S.group?.name || "모둠"}으로 이동해요`);
   try {
-    const { url, token } = await api(`/api/live/classes/${CODE}/token`, { room: target });
+    const studentMode = new URLSearchParams(location.search).has("as_student") ? "?as_student=1" : "";
+    const { url, token } = await api(`/api/live/classes/${CODE}/token${studentMode}`, { room: target });
     if (seq !== joinSeq) return;
     const room = createRoom(renderMedia);
     room.on(RoomEvent.Disconnected, () => {

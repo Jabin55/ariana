@@ -145,6 +145,15 @@ async def set_grade(class_id: int, activity_id: int, req: GradeReq, request: Req
     t = await require_user(request, "teacher")
     await db.run(_owned_class, class_id, t)
     a = await db.run(_activity_in_class, activity_id, class_id)
+    def target_allowed():
+        with db.engine.connect() as c:
+            active = c.execute(select(db.users.c.id).where(db.users.c.id == req.user_id,
+                               db.users.c.account_state == "active")).first()
+            attended = c.execute(select(db.attendance.c.id).where(db.attendance.c.class_id == class_id,
+                                 db.attendance.c.user_id == req.user_id)).first()
+        return bool(active and (attended or str(req.user_id) in json.loads(a.responses or "{}")))
+    if not await db.run(target_allowed):
+        raise HTTPException(404, "이 수업의 평가 대상 학생을 찾을 수 없어요.")
     if req.score is not None and req.score > a.points:
         raise HTTPException(400, f"배점({a.points:g}점)보다 큰 점수는 줄 수 없어요.")
 
@@ -225,7 +234,7 @@ def _my_results(user_id: int) -> list[dict]:
                           "correct_answer": a["correct_answer"], "score": r["score"], "points": a["points"],
                           "feedback": r["feedback"]})
         if items:
-            out.append({"title": cls.title, "date": datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d"),
+            out.append({"course_id": cls.course_id, "title": cls.title, "date": datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d"),
                         "score": round(total, 2), "max": round(maxi, 2), "items": items})
     return out
 

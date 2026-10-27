@@ -53,13 +53,13 @@ def _allowed_class_ids(c, u: dict, class_ids: list[int] | None = None) -> set[in
 
 
 def _class_info(r, titles: dict) -> dict:
-    return {"id": r.id, "title": r.title, "course_title": titles.get(r.course_id, ""),
+    return {"id": r.id, "course_id": r.course_id, "title": r.title, "course_title": titles.get(r.course_id, ""),
             "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
             "live": r.ended_at is None and _live(r.id) is not None}
 
 
 @router.get("/api/materials")
-async def list_materials(request: Request):
+async def list_materials(request: Request, course_id: int | None = None):
     """자료나 판서가 남아 있는 지난 수업 목록 (최근 것부터)"""
     u = await require_user(request)
 
@@ -70,8 +70,11 @@ async def list_materials(request: Request):
             ids = _allowed_class_ids(c, u, sorted(with_files | with_boards))
             if not ids:
                 return []
-            rows = c.execute(select(db.classes).where(db.classes.c.id.in_(ids))
-                             .order_by(db.classes.c.created_at.desc()).limit(100)).all()
+            q = select(db.classes).where(db.classes.c.id.in_(ids))
+            if course_id is not None:
+                q = q.where(db.classes.c.course_id == course_id)
+            q = q.order_by(db.classes.c.created_at.desc())
+            rows = c.execute(q if course_id is not None else q.limit(100)).all()
             titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)).all())
             counts: dict[int, int] = {}
             for cid in c.execute(select(db.materials.c.class_id).where(db.materials.c.class_id.in_(ids))).scalars():

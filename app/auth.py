@@ -14,9 +14,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -42,6 +43,29 @@ KST = ZoneInfo("Asia/Seoul")
 
 def today_kst() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
+
+
+def student_age(birth: str) -> int:
+    try:
+        born = date.fromisoformat(birth)
+    except ValueError:
+        raise HTTPException(400, "생년월일을 정확하게 입력해 주세요.") from None
+    today = datetime.now(KST).date()
+    if born > today or born.year < 1900:
+        raise HTTPException(400, "생년월일을 정확하게 입력해 주세요.")
+    return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+
+
+def check_student_age(birth: str) -> None:
+    if student_age(birth) < 14:
+        raise HTTPException(403, "만 14세 미만은 가입할 수 없어요.")
+
+
+def check_school_gender(school: str, gender: str) -> None:
+    female_only = "여자고등학교" in school or school.endswith("여고")
+    male_only = "남자고등학교" in school or school.endswith("남고")
+    if (female_only and gender == "남") or (male_only and gender == "여"):
+        raise HTTPException(400, "선택한 학교와 성별을 다시 확인해 주세요. 실제 재학생인데 입력이 맞다면 담당교사에게 문의해 주세요.")
 SCHOOLS = [s.strip() for s in os.environ.get("SCHOOLS", "").split(",") if s.strip()]
 # 울산 고등학교 (학생 소속 학교 · 거점학교 · 참여학교를 이 목록에서 고른다). 빠진 학교는 여기에 더한다.
 ULSAN_SCHOOLS = [
@@ -57,8 +81,6 @@ def get_schools() -> list[str]:
         row = c.execute(select(db.site_settings.c.value).where(db.site_settings.c.key == "schools")).first()
     saved = [s.strip() for s in row.value.splitlines() if s.strip()] if row and row.value else []
     return sorted({*ULSAN_SCHOOLS, *SCHOOLS, *saved})
-# 로컬 개발·자동 테스트 전용 로그인. 배포 서버에서는 절대 켜지 말 것.
-DEV_LOGIN = os.environ.get("DEV_LOGIN") == "1"
 
 
 def public_user(u) -> dict:
@@ -80,6 +102,8 @@ def public_user(u) -> dict:
         "role_choice": d["role"] == "student" and not d.get("self_role"),
         "can_be_student": school_account(d["email"]) and d["role"] != "teacher",
         "withdraw_requested": bool(d.get("withdraw_at")), "withdraw_note": d.get("withdraw_note") or "",
+        "evidence_reader": bool(d.get("is_admin")) or (
+            d["role"] == "teacher" and bool(d.get("participant_schools"))),
     }
 
 
@@ -106,7 +130,10 @@ def school_account(email: str) -> bool:
 
 def effective_role(email: str, memberships: list[dict], self_role: str = "") -> str:
     email = email.lower()
-    if email in ADMIN_EMAILS or email in TEACHER_EMAILS or any(membership_active(m) for m in memberships):
+    if email in ADMIN_EMAILS or email in TEACHER_EMAILS or any(
+        membership_active(m) or (m["role"] in ("participant", "coordinator") and m["status"] == "pending" and m.get("transfer_from"))
+        for m in memberships
+    ):
         return "teacher"
     if school_account(email):
         # 학교 계정이라도 '선생님'을 고르면 강사·관리교사 등록 신청 화면(손님)으로. 승인되면 위에서 teacher
@@ -116,11 +143,13 @@ def effective_role(email: str, memberships: list[dict], self_role: str = "") -> 
 
 def membership_view(m: dict, hub_names: dict) -> dict:
     return {"id": m["id"], "role": m["role"], "hub_id": m["hub_id"],
-            "hub": hub_names.get(m["hub_id"]) or m["hub_name"], "status": membership_status(m),
+            "hub": m["hub_name"] if m.get("transfer_from") else (hub_names.get(m["hub_id"]) or m["hub_name"]), "status": membership_status(m),
+            "transfer_from": m.get("transfer_from") or "",
             "valid_from": m["valid_from"], "valid_until": m["valid_until"],
             "wish_from": m["wish_from"], "wish_until": m["wish_until"],
             "contact": m["contact"], "message": m["message"], "admin_note": m["admin_note"],
-            "kind": m.get("kind") or "", "affil_type": m.get("affil_type") or "", "office": m.get("office") or "",
+            "kind": m.get("kind") or "", "affil_type": m.get("affil_type") or "", "affiliation": m.get("affiliation") or "", "office": m.get("office") or "",
+            "department": m.get("department") or "",
             "license": m.get("license") or "", "email": m.get("email") or ""}
 
 
@@ -152,7 +181,8 @@ def needs_profile(u: dict) -> bool:
     if not u.get("name"):
         return True
     if u.get("role") == "student":
-        return not (u.get("school") and u.get("grade") and u.get("class_no") and u.get("number"))
+        return not (u.get("school") and u.get("grade") and u.get("class_no") and u.get("number")
+                    and u.get("birth") and u.get("gender"))
     return False
 
 
@@ -165,7 +195,7 @@ def _load_with_role(uid: int) -> dict | None:
     """사용자 + 관리교사·강사 등록 정보를 읽고, 지금 역할을 판단한다(바뀌었으면 저장해 둔다)."""
     with db.engine.begin() as c:
         row = c.execute(select(db.users).where(db.users.c.id == uid)).first()
-        if not row:
+        if not row or row.account_state != "active":
             return None
         u = dict(row._mapping)
         ms = [dict(r._mapping) for r in c.execute(
@@ -178,15 +208,17 @@ def _load_with_role(uid: int) -> dict | None:
     u["is_admin"] = u["email"].lower() in ADMIN_EMAILS
     u["memberships"] = [membership_view(m, hub_names) for m in ms]
     active = [m for m in ms if membership_active(m)]
-    # 역할은 서로 따로다: 거점학교 관리교사(거점학교 운영) · 강사(강좌 개설·운영) · 참여학교 담당교사(우리 학교 학생 관리).
-    # 관리교사가 강의도 하려면 강사로도 등록해야 한다.
+    # 관리교사는 같은 학교의 거점학교 운영과 참여학교 담당 권한을 함께 가진다.
+    # 예전 participant 가입 기록도 관리교사로 취급한다. 강의는 별도 강의교사 승인이 필요하다.
     u["coordinator_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
-                                    if m["role"] == "coordinator"})
+                                    if m["role"] in ("coordinator", "participant") and m["hub_id"]})
     u["teach_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active if m["role"] == "instructor"})
     # 강좌를 직접 열 수 있는 거점학교 (팀티칭 보조교사로만 승인된 곳은 빠진다)
     u["lead_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
                              if m["role"] == "instructor" and m.get("kind") != "assistant"})
-    u["participant_schools"] = sorted({m["hub_name"] for m in active if m["role"] == "participant"})
+    u["participant_schools"] = sorted({m["hub_name"] or hub_names.get(m["hub_id"], "") for m in active
+                                       if m["role"] in ("coordinator", "participant") and
+                                       (m["hub_name"] or hub_names.get(m["hub_id"], ""))})
     u["lead_hubs"] = [{"id": i, "name": n} for i, n in u["lead_hubs"]]
     u["coordinator_hubs"] = [{"id": i, "name": n} for i, n in u["coordinator_hubs"]]
     u["teach_hubs"] = [{"id": i, "name": n} for i, n in u["teach_hubs"]]
@@ -195,16 +227,18 @@ def _load_with_role(uid: int) -> dict | None:
 
 async def current_user(request_or_ws) -> dict | None:
     uid = request_or_ws.session.get("uid")
-    if not uid:
+    session_key = request_or_ws.session.get("auth_key")
+    if not uid or not isinstance(session_key, str):
         return None
-    return await db.run(_load_with_role, uid)
+    u = await db.run(_load_with_role, uid)
+    return u if u and secrets.compare_digest(u["session_key"], session_key) else None
 
 
 async def require_user(request: Request, role: str | None = None, profile: bool = True) -> dict:
     u = await current_user(request)
     if not u:
         raise HTTPException(401, "로그인이 필요해요.")
-    if role and u["role"] != role:
+    if role and u["role"] != role and not (role == "student" and u["is_admin"]):
         raise HTTPException(403, "강사만 할 수 있어요." if role == "teacher" else "학생 계정으로 로그인해 주세요.")
     if profile and needs_profile(u):
         raise HTTPException(409, "먼저 내 정보를 입력해 주세요.")
@@ -218,8 +252,10 @@ PLEDGE = ("나는 이 플랫폼에서 알게 된 학생의 개인정보(이름·
 def _upsert_user(sub: str, email: str, gname: str, role: str) -> int:
     now = db.now()
     with db.engine.begin() as c:
-        row = c.execute(select(db.users.c.id).where(db.users.c.google_sub == sub)).first()
+        row = c.execute(select(db.users).where(db.users.c.google_sub == sub)).first()
         if row:
+            if row.account_state != "active":
+                raise HTTPException(403, "탈퇴 처리된 계정이에요. 재가입은 운영기관에 문의해 주세요.")
             c.execute(update(db.users).where(db.users.c.id == row.id)
                       .values(email=email, google_name=gname, role=role, last_login=now))
             return row.id
@@ -235,11 +271,16 @@ async def login_with_identity(request: Request, sub: str, email: str, gname: str
     uid = await db.run(_upsert_user, sub, email, gname, effective_role(email, []))
     request.session.clear()
     request.session["uid"] = uid
-    return public_user(await db.run(_load_with_role, uid))
+    u = await db.run(_load_with_role, uid)
+    if not u:
+        raise HTTPException(403, "이용할 수 없는 계정이에요.")
+    request.session["auth_key"] = u["session_key"]
+    return public_user(u)
 
 
 class GoogleLogin(BaseModel):
     credential: str = Field(max_length=5000)
+    birth: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
 
 
 @router.post("/api/auth/google")
@@ -255,19 +296,16 @@ async def google_login(req: GoogleLogin, request: Request):
         raise HTTPException(401, "구글 로그인을 확인하지 못했어요. 다시 시도해 주세요.")
     if not info.get("email_verified"):
         raise HTTPException(403, "확인되지 않은 이메일이에요.")
+    def already_registered():
+        with db.engine.connect() as c:
+            return bool(c.execute(select(db.users.c.id).where(db.users.c.google_sub == info["sub"])).first())
+    if not await db.run(already_registered):
+        if not req.birth:
+            raise HTTPException(400, "처음 가입할 때 생년월일을 입력해 주세요.")
+        check_student_age(req.birth)
+    elif req.birth:
+        check_student_age(req.birth)
     return await login_with_identity(request, info["sub"], info["email"], info.get("name", ""), info.get("hd"))
-
-
-class DevLogin(BaseModel):
-    email: str
-    name: str = ""
-
-
-@router.post("/api/auth/dev")
-async def dev_login(req: DevLogin, request: Request):
-    if not DEV_LOGIN:
-        raise HTTPException(404)
-    return await login_with_identity(request, f"dev:{req.email}", req.email, req.name, req.email.split("@")[-1])
 
 
 @router.post("/api/auth/logout")
@@ -281,7 +319,7 @@ async def me(request: Request):
     u = await current_user(request)
     return {
         "user": public_user(u) if u else None,
-        "google_client_id": GOOGLE_CLIENT_ID, "dev_login": DEV_LOGIN,
+        "google_client_id": GOOGLE_CLIENT_ID,
         "drive_picker": {"api_key": GOOGLE_API_KEY, "app_id": GOOGLE_APP_ID}
         if GOOGLE_CLIENT_ID and GOOGLE_API_KEY and GOOGLE_APP_ID else None,
         "schools": await db.run(get_schools), "domains": sorted(ALLOWED_DOMAINS), "pledge": PLEDGE,
@@ -297,7 +335,7 @@ class Profile(BaseModel):
     class_no: int | None = Field(default=None, ge=1, le=30)
     number: int | None = Field(default=None, ge=1, le=60)
     agree: bool = False  # 이용약관·개인정보 처리방침 확인(동의)
-    # 선생님 내 정보: 생년월일 · 성별 · 이메일 · 연락처 (None 이면 그대로 둔다)
+    # 학생: 연령·학번·학교 확인. 선생님: 신청 정보 확인.
     birth: str | None = Field(default=None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
     gender: str | None = Field(default=None, pattern="^(남|여)?$")
     email: str | None = Field(default=None, max_length=200)
@@ -316,8 +354,11 @@ async def save_profile(p: Profile, request: Request):
     schools = await db.run(get_schools)
     if u["role"] == "student" and schools and school not in schools:
         raise HTTPException(400, "목록에 있는 학교를 골라 주세요. 학교가 목록에 없으면 선생님께 알려 주세요.")
+    if u["name"] and school != (u["school"] or ""):
+        approver = "새 학교의 참여학교 담당교사" if u["role"] == "student" else "전체 관리자"
+        raise HTTPException(400, f"소속 변경은 내 정보에서 신청한 뒤 {approver}의 승인을 받아야 해요.")
     values = {"name": name, "school": school}
-    if u.get("name_locked") and not u["is_admin"] and name != (u["name"] or ""):
+    if u["name"] and name != (u["name"] or "") and not u["is_admin"]:
         raise HTTPException(400, NAME_LOCKED)
     if name and not u["is_admin"]:
         values["name_locked"] = 1
@@ -326,16 +367,23 @@ async def save_profile(p: Profile, request: Request):
             raise HTTPException(400, "먼저 이용약관과 개인정보 수집·이용에 동의해 주세요.")
         values.update(terms_version=POLICY_VERSION, terms_at=time.time())
     if u["role"] == "student":
-        values["self_role"] = "student"  # 학생 정보를 적었으면 학생을 고른 것
+        birth = p.birth if p.birth is not None else (u.get("birth") or "")
+        gender = p.gender if p.gender is not None else (u.get("gender") or "")
+        if not birth or not gender:
+            raise HTTPException(400, "생년월일과 성별을 입력해 주세요.")
+        check_student_age(birth)
+        check_school_gender(school, gender)
+        values.update(self_role="student", birth=birth, gender=gender)
         if not (school and p.grade and p.class_no and p.number):
             raise HTTPException(400, "학교, 학년, 반, 번호를 모두 입력해 주세요.")
         values.update(grade=p.grade, class_no=p.class_no, number=p.number)
     else:  # 선생님: 생년월일 · 성별 · 이메일 · 연락처
         if p.birth:
-            if not ("1920-01-01" <= p.birth <= today_kst()):
-                raise HTTPException(400, "생년월일을 확인해 주세요.")
+            check_student_age(p.birth)
             values["birth"] = p.birth
         if p.gender is not None:
+            if u.get("gender") and p.gender != u["gender"]:
+                raise HTTPException(400, "등록된 성별은 내 정보에서 직접 바꿀 수 없어요.")
             values["gender"] = p.gender
         if p.email is not None:
             if p.email.strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", p.email.strip()):
@@ -355,14 +403,117 @@ async def save_profile(p: Profile, request: Request):
     def save():
         with db.engine.begin() as c:
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**values))
+            if u["is_admin"] and u["name"] and name != u["name"]:
+                c.execute(update(db.courses).where(db.courses.c.teacher_id == u["id"],
+                    db.courses.c.instructor == u["name"]).values(instructor=name))
             # 승인하는 사람이 보는 등록 신청서의 연락처도 함께 고친다
             ms = {k: v for k, v in (("email", values.get("contact_email")), ("contact", values.get("phone")),
                                     ("office", p.office if u["role"] != "student" else None)) if v}
             if ms:
                 c.execute(update(db.memberships).where(db.memberships.c.user_id == u["id"]).values(**ms))
+    await db.run(save)
+    result = public_user(await db.run(_load_with_role, u["id"]))
+    result["school_transfer_requested"] = False
+    return result
+
+
+class SchoolTransfer(BaseModel):
+    role: str = Field(pattern="^(participant|coordinator)$")
+    school: str = Field(min_length=1, max_length=60)
+
+
+@router.post("/api/me/school-transfer")
+async def request_school_transfer(p: SchoolTransfer, request: Request):
+    """담당 학교 변경은 즉시 권한을 끄고 전체 관리자 승인 대기로 전환한다."""
+    u = await require_user(request)
+    school = p.school.strip()
+    schools = await db.run(get_schools)
+    if not school or (schools and school not in schools):
+        raise HTTPException(400, "변경할 학교를 학교 목록에서 골라 주세요.")
+
+    def save():
+        m = db.memberships.c
+        with db.engine.begin() as c:
+            rows = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == p.role)).all()
+            active = [r for r in rows if membership_active(dict(r._mapping)) or
+                      (r.status == "pending" and r.transfer_from)]
+            if len(rows) != 1 or len(active) != 1:
+                raise HTTPException(409, "담당 학교 권한을 확인할 수 없어요. 전체 관리자에게 문의해 주세요.")
+            row = active[0]
+            if row.hub_name == school or row.transfer_from == school:
+                raise HTTPException(400, "현재 담당 학교와 같은 학교예요.")
+            others = [r for r in c.execute(select(db.memberships).where(
+                m.user_id == u["id"], m.role.in_(["participant", "coordinator"]), m.id != row.id))
+                if membership_active(dict(r._mapping)) or (r.status == "pending" and r.transfer_from)]
+            if others:
+                raise HTTPException(409, "담당 역할이 둘 이상이면 전체 관리자에게 학교 변경을 요청해 주세요.")
+            c.execute(update(db.memberships).where(m.id == row.id).values(
+                status="pending", transfer_from=row.transfer_from or row.hub_name,
+                hub_name=school, requested_at=time.time(), decided_at=None, decided_by=None, admin_note=""))
 
     await db.run(save)
+    from app.classroom import refresh_user_connections
+    await refresh_user_connections(u["id"])
     return public_user(await db.run(_load_with_role, u["id"]))
+
+
+class ProfileChangeReq(BaseModel):
+    field: str = Field(pattern="^(name|school)$")
+    value: str = Field(min_length=1, max_length=60)
+
+
+@router.get("/api/me/change-requests")
+async def my_profile_change_requests(request: Request):
+    u = await require_user(request, profile=False)
+
+    def run():
+        q = db.profile_change_requests.c
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.profile_change_requests).where(q.user_id == u["id"])
+                             .order_by(q.requested_at.desc()).limit(20)).all()
+            return [{"id": r.id, "field": r.field, "old_value": r.old_value,
+                     "new_value": r.new_value, "status": r.status, "note": r.note} for r in rows]
+
+    return {"requests": await db.run(run)}
+
+
+@router.post("/api/me/change-requests")
+async def request_profile_change(req: ProfileChangeReq, request: Request):
+    u = await require_user(request)
+    value = re.sub(r"\s+", " ", req.value).strip()
+    if not u["name"] or not value:
+        raise HTTPException(400, "먼저 가입 정보를 완료해 주세요.")
+    if req.field == "name":
+        if len(value) > 30:
+            raise HTTPException(400, "이름은 30자 이하로 적어 주세요.")
+    else:
+        managers = [m for m in u["memberships"] if m["role"] in ("participant", "coordinator") and
+                    (m["status"] in ("approved", "scheduled") or (m["status"] == "pending" and m.get("transfer_from")))]
+        if managers:
+            raise HTTPException(409, "담당 학교 변경은 소속 옆의 변경 신청 버튼에서 요청해 주세요.")
+        if u["role"] == "student":
+            schools = await db.run(get_schools)
+            if schools and value not in schools:
+                raise HTTPException(400, "목록에 있는 학교를 골라 주세요.")
+            check_school_gender(value, u.get("gender") or "")
+    old = (u[req.field] or "").strip()
+    if value == old:
+        raise HTTPException(400, "현재 정보와 같아요.")
+
+    def save():
+        q = db.profile_change_requests.c
+        with db.engine.begin() as c:
+            pending = c.execute(select(db.profile_change_requests).where(
+                q.user_id == u["id"], q.field == req.field, q.status == "pending")
+                .order_by(q.requested_at.desc()).limit(1)).first()
+            values = {"old_value": old, "new_value": value, "requested_at": time.time(), "note": ""}
+            if pending:
+                c.execute(update(db.profile_change_requests).where(q.id == pending.id).values(**values))
+                return pending.id
+            return c.execute(insert(db.profile_change_requests).values(
+                user_id=u["id"], field=req.field, status="pending", **values)).inserted_primary_key[0]
+
+    return {"id": await db.run(save), "status": "pending"}
 
 
 PHOTO_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
@@ -430,6 +581,7 @@ async def photo(fid: str, request: Request):
 class Consent(BaseModel):
     terms: bool = False  # 이용약관 동의 (필수)
     privacy: bool = False  # 개인정보 수집·이용 동의 (필수)
+    birth: str = ""  # 학생은 동의 확정 전에 연령 확인
 
 
 @router.post("/api/me/consent")
@@ -438,10 +590,15 @@ async def consent(req: Consent, request: Request):
     u = await require_user(request, profile=False)
     if not (req.terms and req.privacy):
         raise HTTPException(400, "이용약관과 개인정보 수집·이용에 모두 동의해야 가입할 수 있어요.")
+    if u["role"] == "student":
+        check_student_age(req.birth or u.get("birth") or "")
 
     def save():
         with db.engine.begin() as c:
-            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(terms_version=POLICY_VERSION, terms_at=time.time()))
+            values = {"terms_version": POLICY_VERSION, "terms_at": time.time()}
+            if u["role"] == "student":
+                values["birth"] = req.birth or u.get("birth")
+            c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**values))
 
     await db.run(save)
     return public_user(await db.run(_load_with_role, u["id"]))
@@ -482,7 +639,7 @@ async def choose_self_role(req: SelfRole, request: Request):
     return public_user(await db.run(_load_with_role, u["id"]))
 
 
-NAME_LOCKED = "이름은 가입할 때 적은 실명으로 정해져 바꿀 수 없어요. 꼭 바꿔야 하면 전체 관리자에게 요청해 주세요."
+NAME_LOCKED = "이름 변경은 내 정보에서 신청한 뒤 전체 관리자 승인을 받아야 해요."
 
 
 class Withdraw(BaseModel):
@@ -490,36 +647,53 @@ class Withdraw(BaseModel):
     reason: str = Field(default="", max_length=300)
 
 
-def _withdraw(uid: int) -> None:
-    """탈퇴: 이 사람의 계정과 기록을 모두 지운다 (되살릴 수 없음)."""
+def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
+    """활성 표에서 제거한다. 학생은 암호화 증빙을 만든 트랜잭션 안에서만 호출한다."""
     from app.assignments import file_path  # 순환 import 를 피한다
 
-    with db.engine.begin() as c:
-        photo = c.execute(select(db.users.c.photo).where(db.users.c.id == uid)).scalar() or ""
-        class_ids = {r.class_id for r in c.execute(select(db.attendance.c.class_id).where(db.attendance.c.user_id == uid))}
-        # 퀴즈·투표 답은 활동마다 {학생번호: 답} 으로 들어 있다
-        if class_ids:
-            for a in c.execute(select(db.activities.c.id, db.activities.c.responses)
-                               .where(db.activities.c.class_id.in_(class_ids))):
-                resp = json.loads(a.responses or "{}")
-                if str(uid) in resp:
-                    resp.pop(str(uid))
-                    c.execute(update(db.activities).where(db.activities.c.id == a.id)
-                              .values(responses=json.dumps(resp, ensure_ascii=False)))
-        subs = c.execute(select(db.submissions.c.id, db.submissions.c.assignment_id)
-                         .where(db.submissions.c.user_id == uid)).all()
-        files = c.execute(select(db.submission_files.c.id, db.submission_files.c.submission_id)
-                          .where(db.submission_files.c.submission_id.in_([s.id for s in subs] or [-1]))).all()
-        aid_of = {s.id: s.assignment_id for s in subs}
-        c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(list(aid_of) or [-1])))
-        c.execute(delete(db.submissions).where(db.submissions.c.user_id == uid))
-        for t in (db.grades, db.questions, db.attendance, db.enrollments, db.memberships, db.course_requests):
-            c.execute(delete(t).where(t.c.user_id == uid))
+    photo = c.execute(select(db.users.c.photo).where(db.users.c.id == uid)).scalar() or ""
+    for a in c.execute(select(db.activities.c.id, db.activities.c.responses)).all():
+        resp = json.loads(a.responses or "{}")
+        if str(uid) in resp:
+            resp.pop(str(uid))
+            c.execute(update(db.activities).where(db.activities.c.id == a.id)
+                      .values(responses=json.dumps(resp, ensure_ascii=False)))
+    subs = c.execute(select(db.submissions.c.id, db.submissions.c.assignment_id)
+                     .where(db.submissions.c.user_id == uid)).all()
+    files = c.execute(select(db.submission_files.c.id, db.submission_files.c.submission_id)
+                      .where(db.submission_files.c.submission_id.in_([s.id for s in subs] or [-1]))).all()
+    aid_of = {s.id: s.assignment_id for s in subs}
+    c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(list(aid_of) or [-1])))
+    c.execute(delete(db.submissions).where(db.submissions.c.user_id == uid))
+    request_ids = c.execute(select(db.course_requests.c.id).where(db.course_requests.c.user_id == uid)).scalars().all()
+    c.execute(delete(db.course_request_likes).where(
+        (db.course_request_likes.c.user_id == uid) |
+        db.course_request_likes.c.request_id.in_(request_ids or [-1])))
+    for table in (db.grades, db.questions, db.attendance, db.enrollments, db.memberships, db.course_requests):
+        c.execute(delete(table).where(table.c.user_id == uid))
+    c.execute(delete(db.community_posts).where(db.community_posts.c.author_id == uid))
+    c.execute(delete(db.profile_change_requests).where(db.profile_change_requests.c.user_id == uid))
+    if keep_account:
+        # 접속 차단에 필요한 Google 주체 ID와 무작위 세션 키만 남긴다.
+        c.execute(update(db.users).where(db.users.c.id == uid).values(
+            account_state="withdrawn", session_key=uuid.uuid4().hex, role="withdrawn", email="", google_name="",
+            name="", school="", grade=None, class_no=None, number=None, birth="", gender="", contact_email="",
+            phone="", subjects="", position="", photo="", withdraw_at=None, withdraw_reason="", withdraw_note="",
+            terms_version="", terms_at=None, ai_ok_at=None, self_role="", last_login=None))
+    else:
         c.execute(delete(db.users).where(db.users.c.id == uid))
-    for f in files:
-        file_path(aid_of[f.submission_id], f.id).unlink(missing_ok=True)
+    paths = [file_path(aid_of[f.submission_id], f.id) for f in files]
     if photo:
-        (photo_dir() / photo).unlink(missing_ok=True)
+        paths.append(photo_dir() / photo)
+    return paths
+
+
+def _withdraw(uid: int) -> None:
+    """수업을 보유하지 않은 비학생 계정의 탈퇴."""
+    with db.engine.begin() as c:
+        cleanup = _purge_user_rows(c, uid)
+    for path in cleanup:
+        path.unlink(missing_ok=True)
 
 
 def owns_classes(uid: int) -> bool:

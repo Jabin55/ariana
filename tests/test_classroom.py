@@ -10,6 +10,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 
 import pytest
 from fastapi.testclient import TestClient
+from google.oauth2 import id_token
 
 import app.auth as auth
 import app.classroom as cr
@@ -23,7 +24,16 @@ COURSE = {"title": "강좌", "instructor": "강사", "hub_school": "가나고등
 
 @pytest.fixture(autouse=True)
 def setup(monkeypatch):
-    monkeypatch.setattr(auth, "DEV_LOGIN", True)
+    monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com")
+
+    def verify_test_token(credential, request, audience):
+        if audience != auth.GOOGLE_CLIENT_ID or not credential.startswith("test-token:"):
+            raise ValueError("Invalid test token")
+        email = credential.removeprefix("test-token:")
+        return {"sub": f"test:{email}", "email": email, "email_verified": True, "name": ""}
+
+    # 구글 외부 요청만 모의 처리하고, 실제 구글 로그인 경로로 세션·역할을 검증한다.
+    monkeypatch.setattr(id_token, "verify_oauth2_token", verify_test_token)
     monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "other@gmail.com"})
     monkeypatch.setattr(auth, "ALLOWED_DOMAINS", {"s.school.kr"})
     monkeypatch.setattr(auth, "ULSAN_SCHOOLS", [])  # 테스트는 학교 목록 없이 시작 (필요하면 테스트에서 저장)
@@ -35,11 +45,18 @@ def setup(monkeypatch):
     cr.classes.clear()
 
 
+def google_login(client, email):
+    return client.post("/api/auth/google", json={"credential": f"test-token:{email}", "birth": "2008-04-03"})
+
+
 def login(email, **profile):
     c = TestClient(app)
-    r = c.post("/api/auth/dev", json={"email": email})
+    r = google_login(c, email)
     assert r.status_code == 200, r.text
     if profile:
+        if email.endswith("@s.school.kr"):
+            profile.setdefault("birth", "2008-04-03")
+            profile.setdefault("gender", "남")
         r = c.post("/api/me/profile", json={"agree": True, **profile})
         assert r.status_code == 200, r.text
     return c
@@ -51,6 +68,10 @@ def teacher(email="teacher@gmail.com"):
 
 def student(n, grade=2, class_no=3):
     return login(f"st{n}@s.school.kr", name=f"학생{n}", school=SCHOOL, grade=grade, class_no=class_no, number=n)
+
+
+def staff_apply(client, payload):
+    return client.post("/api/staff/apply", json={"birth": "1980-01-01", **payload})
 
 
 def create(t, **kw):
@@ -71,10 +92,121 @@ def state(ws, pred=lambda m: True):
     return until(ws, lambda m: m["t"] == "state" and pred(m))
 
 
+@pytest.mark.parametrize("dev_login", [None, "0", "1"])
+def test_development_login_is_unavailable(monkeypatch, dev_login):
+    if dev_login is None:
+        monkeypatch.delenv("DEV_LOGIN", raising=False)
+    else:
+        monkeypatch.setenv("DEV_LOGIN", dev_login)
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    c = TestClient(app)
+    assert c.post("/api/auth/dev", json={"email": "admin@gmail.com"}).status_code == 404
+    assert c.get("/__dev/login").status_code == 404
+    assert c.get("/__dev/status").status_code == 404
+    assert c.post("/__dev/login", json={"email": "admin@gmail.com", "key": "anything"}).status_code == 404
+    config = c.get("/api/me").json()
+    assert config["user"] is None and "dev_login" not in config
+    assert c.get("/api/courses/available").status_code == 401
+    page = c.get("/live").text
+    assert "dev-login" not in page and "개발용 로그인" not in page
+
+
+DEVELOPMENT_KEY = "local-test-key-" * 3
+
+
+def development_client(**kwargs):
+    from app.dev import create_dev_app
+
+    return TestClient(create_dev_app(DEVELOPMENT_KEY), base_url="http://127.0.0.1:8000",
+                      client=kwargs.pop("client", ("127.0.0.1", 50000)), **kwargs)
+
+
+def test_local_development_login_requires_key(monkeypatch):
+    monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"developer@local.test"})
+    c = development_client()
+    page = c.get("/__dev/login")
+    assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
+    assert c.get("/__dev/status").json() == {"local_development": True}
+    assert DEVELOPMENT_KEY not in page.text
+    assert "개발용 로그인" not in c.get("/live").text
+    assert c.post("/api/auth/dev", json={"email": "developer@local.test"}).status_code == 404
+
+    for key in ("wrong-key", "잘못된 인증키"):
+        assert c.post("/__dev/login", json={"email": "developer@local.test", "key": key}).status_code == 403
+        assert c.get("/api/me").json()["user"] is None
+
+    r = c.post("/__dev/login", json={"email": "developer@local.test", "key": DEVELOPMENT_KEY})
+    assert r.status_code == 200 and r.json()["is_admin"]
+    assert c.get("/api/me").json()["user"]["id"] == r.json()["id"]
+    assert c.get("/live").status_code == 200
+
+
+@pytest.mark.parametrize("email, role", [
+    ("teacher@gmail.com", "teacher"), ("kid@s.school.kr", "student"), ("guest@gmail.com", "guest"),
+])
+def test_local_development_login_preserves_roles(email, role):
+    c = development_client()
+    r = c.post("/__dev/login", json={"email": email, "key": DEVELOPMENT_KEY})
+    assert r.status_code == 200 and r.json()["role"] == role
+    assert not r.json()["is_admin"]
+
+
+@pytest.mark.parametrize("peer, host", [
+    ("192.0.2.1", "127.0.0.1:8000"), ("192.0.2.1", "localhost:8000"), ("127.0.0.1", "example.com"),
+])
+def test_development_server_rejects_remote_access(peer, host):
+    c = development_client(client=(peer, 50000))
+    headers = {"host": host, "x-forwarded-for": "127.0.0.1"}
+    assert c.get("/__dev/login", headers=headers).status_code == 404
+    assert c.get("/__dev/status", headers=headers).status_code == 404
+    assert c.post("/__dev/login", headers=headers,
+                  json={"email": "teacher@gmail.com", "key": DEVELOPMENT_KEY}).status_code == 404
+
+
+def test_development_login_rejects_cross_origin():
+    c = development_client()
+    r = c.post("/__dev/login", headers={"origin": "https://example.com"},
+               json={"email": "teacher@gmail.com", "key": DEVELOPMENT_KEY})
+    assert r.status_code == 403
+    assert c.get("/api/me").json()["user"] is None
+
+
+def test_development_login_refuses_shared_database(monkeypatch):
+    from types import SimpleNamespace
+    from app.dev import create_dev_app
+
+    monkeypatch.setattr(db, "engine", SimpleNamespace(dialect=SimpleNamespace(name="postgresql")))
+    with pytest.raises(RuntimeError, match="SQLite"):
+        create_dev_app(DEVELOPMENT_KEY)
+
+
+def test_google_login_rejects_invalid_token():
+    c = TestClient(app)
+    assert c.post("/api/auth/google", json={"credential": "invalid-token"}).status_code == 401
+    assert c.get("/api/me").json()["user"] is None
+
+
+def test_google_login_rejects_unverified_email(monkeypatch):
+    monkeypatch.setattr(id_token, "verify_oauth2_token", lambda *args: {
+        "sub": "unverified", "email": "admin@gmail.com", "email_verified": False,
+    })
+    c = TestClient(app)
+    assert google_login(c, "admin@gmail.com").status_code == 403
+    assert c.get("/api/me").json()["user"] is None
+
+
+def test_google_login_requires_client_id(monkeypatch):
+    monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "")
+    c = TestClient(app)
+    assert google_login(c, "teacher@gmail.com").status_code == 503
+    assert c.get("/api/me").json()["user"] is None
+
+
 def test_login_rules():
     c = TestClient(app)
     # 학교 계정이 아니면 '손님': 강사 등록 신청만 할 수 있고 수업·강좌는 못 쓴다
-    assert c.post("/api/auth/dev", json={"email": "kid@gmail.com"}).json()["role"] == "guest"
+    assert google_login(c, "kid@gmail.com").json()["role"] == "guest"
     assert c.get("/api/courses/available").status_code == 403
     s = login("kid@s.school.kr")
     me = s.get("/api/me").json()["user"]
@@ -83,7 +215,8 @@ def test_login_rules():
     code = create(t)["code"]
     assert s.post(f"/api/live/classes/{code}/join").status_code == 409  # 내 정보 먼저
     assert s.post("/api/live/classes", json={}).status_code in (403, 409)  # 학생은 수업을 못 연다
-    prof = {"name": "김민준", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 15}
+    prof = {"name": "김민준", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 15,
+            "birth": "2008-04-03", "gender": "남"}
     assert s.post("/api/me/profile", json=prof).status_code == 400  # 이용약관·처리방침 확인 필요
     r = s.post("/api/me/profile", json={**prof, "agree": True})
     assert r.json()["student_no"] == "20315" and r.json()["display"] == "20315 김민준"
@@ -202,8 +335,12 @@ def test_attendance_history_and_absent():
         rep = t.get(f"/api/live/history/{cid}").json()
         p1 = next(p for p in rep["students"] if p["student_no"] == "20301")
         assert p1["count"] == 2 and p1["online"] and p1["last_leave_text"] == "접속 중"
-    time.sleep(0.3)
-    rep = t.get(f"/api/live/history/{cid}").json()
+    deadline = time.monotonic() + 3
+    while True:
+        rep = t.get(f"/api/live/history/{cid}").json()
+        if not any(p["online"] for p in rep["students"]) or time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
     assert [p["student_no"] for p in rep["students"]] == ["20301", "20302"]
     assert not any(p["online"] for p in rep["students"])
     assert [x["student_no"] for x in rep["absent"]] == ["20303"]
@@ -547,6 +684,9 @@ def test_course_enrollment_join_without_code():
     assert b.post(f"/api/courses/{cid}/enroll").status_code == 409
     t.post(f"/api/courses/{cid}", json={"archived": True})
     assert b.get("/api/courses/available").json()["courses"] == []
+    assert [(x["id"], x["status"], x["archived"]) for x in a.get("/api/courses/my-learning").json()["courses"]] == [(cid, "approved", True)]
+    assert outsider.get("/api/courses/my-learning").json()["courses"][0]["status"] == "pending"
+    assert student(4).get("/api/courses/my-learning").json()["courses"] == []
     assert t.post("/api/live/classes", json={"title": "x", "course_id": cid}).status_code == 409
     assert t.post("/api/live/classes", json={"title": "x", "course_id": 999}).status_code == 404
 
@@ -556,7 +696,7 @@ def test_instructor_can_be_outside_school_list(monkeypatch):
     # 대학교수: 학교 목록에 없는 소속도 저장되고, 거점학교는 소속과 다르게 적을 수 있다
     # 강사 목록에 없고 승인도 안 된 대학 계정은 '손님' (강사 기능 없음)
     guest = TestClient(app)
-    assert guest.post("/api/auth/dev", json={"email": "prof@univ.ac.kr"}).json()["role"] == "guest"
+    assert google_login(guest, "prof@univ.ac.kr").json()["role"] == "guest"
     assert guest.post("/api/courses", json=COURSE).status_code == 403
     monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "prof@univ.ac.kr"})
     prof = login("prof@univ.ac.kr", name="김교수", school="한국대학교 정치외교학과")
@@ -595,14 +735,14 @@ def test_hub_structure_and_course_approval(monkeypatch):
 
     def guest(email):
         g = TestClient(app)
-        assert g.post("/api/auth/dev", json={"email": email}).json()["role"] == "guest"
+        assert google_login(g, email).json()["role"] == "guest"
         return g
 
     # 1) 관리교사 신청 → 전체 관리자 승인 → 거점학교가 생긴다
     coord = guest("coord@gmail.com")
-    assert coord.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고등학교", "name": "한관리",
+    assert staff_apply(coord, {"role": "coordinator", "hub_name": "가나고등학교", "name": "한관리",
                                                 "affiliation": "가나고등학교", **pledge, "pledge": False}).status_code == 400
-    assert coord.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고등학교", "name": "한관리",
+    assert staff_apply(coord, {"role": "coordinator", "hub_name": "가나고등학교", "name": "한관리",
                                                 "affiliation": "가나고등학교", **pledge}).status_code == 200
     assert coord.get("/api/staff/applications", params={"role": "coordinator"}).status_code == 403  # 관리자만
     capps = admin.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"]
@@ -616,9 +756,9 @@ def test_hub_structure_and_course_approval(monkeypatch):
     # 2) 강사(대학교수) 신청: 거점학교를 골라 신청 → 그 학교 관리교사가 승인 (전체 관리자가 아니어도)
     prof = guest("prof@univ.ac.kr")
     iform = {"role": "instructor", "hub_id": hub_id, "name": "김교수", "affiliation": "한국대학교", **pledge}
-    assert prof.post("/api/staff/apply", json=iform).status_code == 400  # 희망 기간 없음
-    assert prof.post("/api/staff/apply", json={**iform, "wish_from": "2020-01-01", "wish_until": "2020-02-01"}).status_code == 400
-    assert prof.post("/api/staff/apply", json={**iform, "wish_from": "2027-01-01", "wish_until": "2099-02-28",
+    assert staff_apply(prof, iform).status_code == 400  # 희망 기간 없음
+    assert staff_apply(prof, {**iform, "wish_from": "2020-01-01", "wish_until": "2020-02-01"}).status_code == 400
+    assert staff_apply(prof, {**iform, "wish_from": "2027-01-01", "wish_until": "2099-02-28",
                                                "message": "무시됨"}).status_code == 200
     other_coord_view = teacher().get("/api/staff/applications", params={"role": "instructor"})
     assert other_coord_view.status_code == 403  # 관리교사가 아니면 못 봄
@@ -682,7 +822,18 @@ def test_hub_structure_and_course_approval(monkeypatch):
     # 관리교사: 수업 기록(언제 수업했는지)
     log = coord.get("/api/hub/class-log").json()["classes"]
     assert [(x["course_title"], x["title"], x["attended"]) for x in log] == [("정치 보충", "1주차", 0)]
+    assert [x["id"] for x in coord.get("/api/hub/class-log", params={"course_id": cid}).json()["classes"]] == [log[0]["id"]]
     assert prof.get("/api/hub/class-log").status_code == 403
+    with db.engine.begin() as conn:
+        conn.execute(db.attendance.insert().values(class_id=log[0]["id"],
+                     user_id=s1.get("/api/me").json()["user"]["id"],
+                     joined_at=db.now(), left_at=db.now(), last_seen=db.now()))
+    sheet = coord.get(f"/api/hub/courses/{cid}/attendance").json()
+    assert [(x["title"], x["date"]) for x in sheet["classes"]] == [("1주차", log[0]["date"])]
+    assert [(x["student_no"], x["attendance"]) for x in sheet["students"]] == [
+        ("20301", [True]), ("20303", [False])]
+    assert prof.get(f"/api/hub/courses/{cid}/attendance").status_code == 403
+    assert coord.get("/api/hub/courses/999999/attendance").status_code == 404
 
     # 6) 관리교사 권한을 해제하면 관리 기능이 꺼지고, 강사 기간이 끝나면 강사 기능이 꺼진다
     admin.post(f"/api/staff/{capps[0]['id']}", json={"action": "revoke", "note": "임기 종료"})
@@ -700,7 +851,7 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
 
     def guest(email):
         g = TestClient(app)
-        g.post("/api/auth/dev", json={"email": email})
+        google_login(g, email)
         return g
 
     def approve(who, role, app_id, **kw):
@@ -711,21 +862,21 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
 
     # 가나고 관리교사 A
     a = guest("a@gmail.com")
-    a.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고등학교", "name": "관리A", **form})
+    staff_apply(a, {"role": "coordinator", "hub_name": "가나고등학교", "name": "관리A", **form})
     approve(admin, "coordinator", apps(admin, "coordinator")[0]["id"])
     hub = a.get("/api/me").json()["user"]["coordinator_hubs"][0]["id"]
 
     # 1) 강사였던 B: 가나고 강사 (작년, 기간 끝남) → 올해 같은 학교 관리교사도 신청
     b = guest("b@gmail.com")
-    b.post("/api/staff/apply", json={"role": "instructor", "hub_id": hub, "name": "강사B", **form})
+    staff_apply(b, {"role": "instructor", "hub_id": hub, "name": "강사B", **form})
     bi = [x for x in apps(a, "instructor") if x["name"] == "강사B"][0]
     approve(a, "instructor", bi["id"], valid_from="2025-01-01", valid_until="2025-12-31")
     assert b.get("/api/me").json()["user"]["role"] == "guest"  # 기간 끝남
     # 기간이 끝난 강사가 다시 신청하면 '승인 대기'로 돌아가 관리교사에게 보인다 (연장 요청)
-    b.post("/api/staff/apply", json={"role": "instructor", "hub_id": hub, "name": "강사B", **form})
+    staff_apply(b, {"role": "instructor", "hub_id": hub, "name": "강사B", **form})
     assert [x["status"] for x in apps(a, "instructor") if x["name"] == "강사B"] == ["pending"]
     # 같은 학교 관리교사 신청 → 전체 관리자 승인 → 두 역할을 함께 가진다
-    assert b.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고등학교", "name": "강사B", **form}).status_code == 200
+    assert staff_apply(b, {"role": "coordinator", "hub_name": "가나고등학교", "name": "강사B", **form}).status_code == 200
     bc = [x for x in apps(admin, "coordinator") if x["name"] == "강사B"][0]
     approve(admin, "coordinator", bc["id"])
     me = b.get("/api/me").json()["user"]
@@ -733,13 +884,18 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
     assert sorted(m["role"] for m in me["memberships"]) == ["coordinator", "instructor"]
 
     # 2) 관리교사 A가 자기 학교 강사로도 등록: 본인 신청은 본인이 승인할 수 없다
-    a.post("/api/staff/apply", json={"role": "instructor", "hub_id": hub, "name": "관리A", **form})
+    staff_apply(a, {"role": "instructor", "hub_id": hub, "name": "관리A", **form,
+                    "affil_type": "univ", "affiliation": "울산대학교", "department": "교육학과",
+                    "email": "a@univ.ac.kr"})
     ai = [x for x in apps(a, "instructor") if x["name"] == "관리A"][0]
+    assert ai["affiliation"] == "울산대학교"
+    assert a.get("/api/me").json()["user"]["school"] == "가나고등학교"
     assert approve(a, "instructor", ai["id"]).status_code == 403
     # 같은 학교의 다른 관리교사(B)나 전체 관리자가 승인
     assert approve(b, "instructor", ai["id"], valid_until="2099-02-28").status_code == 200
     roles = sorted(m["role"] for m in a.get("/api/me").json()["user"]["memberships"] if m["status"] == "approved")
     assert roles == ["coordinator", "instructor"]
+    assert a.get("/api/me").json()["user"]["school"] == "가나고등학교"
 
 
 def test_instructor_moves_to_another_hub(monkeypatch):
@@ -750,23 +906,30 @@ def test_instructor_moves_to_another_hub(monkeypatch):
 
     def guest(email):
         g = TestClient(app)
-        g.post("/api/auth/dev", json={"email": email})
+        google_login(g, email)
         return g
 
-    for school in ("가나고", "다라고"):
-        admin.post("/api/staff/apply", json={"role": "coordinator", "hub_name": school, "name": "관리", **form})
+    coordinators = {}
+    for index, school in enumerate(("가나고", "다라고")):
+        coordinator = guest(f"coordinator-{index}@gmail.com")
+        assert staff_apply(coordinator, {"role": "coordinator", "hub_name": school,
+                          "name": "관리", **form}).status_code == 200
+        coordinators[school] = coordinator
     for x in admin.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"]:
         admin.post(f"/api/staff/{x['id']}", json={"action": "approve"})
     hubs = {h["name"]: h["id"] for h in admin.get("/api/hubs").json()["hubs"]}
     t = guest("t@gmail.com")
     for school in ("가나고", "다라고"):
-        t.post("/api/staff/apply", json={"role": "instructor", "hub_id": hubs[school], "name": "강사", **form})
+        staff_apply(t, {"role": "instructor", "hub_id": hubs[school], "name": "강사", **form})
     ids = {x["hub"]: x["id"] for x in admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]}
     for i in ids.values():
         admin.post(f"/api/staff/{i}", json={"action": "approve", "valid_until": "2099-02-28"})
     cid = t.post("/api/courses", json={**COURSE, "hub_id": hubs["가나고"]}).json()["id"]
     admin.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"})
     assert create(t, title="1주차", course_id=cid)["code"]
+    assert coordinators["가나고"].get(f"/api/hub/courses/{cid}/attendance").status_code == 200
+    assert coordinators["다라고"].get(f"/api/hub/courses/{cid}/attendance").status_code == 404
+    assert coordinators["다라고"].get("/api/hub/class-log", params={"course_id": cid}).json()["classes"] == []
 
     # 가나고 강사 해제 → 다라고에서는 여전히 강사지만 가나고 강좌는 잠긴다
     admin.post(f"/api/staff/{ids['가나고']}", json={"action": "revoke"})
@@ -785,7 +948,7 @@ def test_students_from_other_schools(monkeypatch):
     """거점학교 강좌는 다른 학교 학생도 신청해 듣는다. 학번이 같아도 학교로 구분된다."""
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
     admin = login("admin@gmail.com", name="전체관리자")
-    admin.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
+    staff_apply(admin, {"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
     admin.post(f"/api/staff/{admin.get('/api/staff/applications', params={'role': 'coordinator'}).json()['applications'][0]['id']}",
                json={"action": "approve"})
     hub = admin.get("/api/hubs").json()["hubs"][0]["id"]
@@ -948,10 +1111,19 @@ def test_groups_by_size_and_teacher_controls_mic():
 
 
 def test_policy_pages(monkeypatch):
+    monkeypatch.delenv("RETENTION", raising=False)
     c = TestClient(app)
     for path in ("/live/terms", "/live/privacy", "/live/notice"):
         r = c.get(path)
         assert r.status_code == 200 and "(설정 필요)" in r.text  # 운영 기관 등을 아직 안 정함
+    for path in ("/live/privacy", "/live/notice"):
+        r = c.get(path)
+        assert "수강한 학년도가 끝난 날부터 5년" in r.text
+    assert "수강한 학년도가 끝난 날부터 5년" in c.get("/api/consent").json()["privacy"]
+    monkeypatch.setenv("RETENTION", "수강한 학년도가 끝난 날부터 1년")
+    assert "1년" not in c.get("/live/privacy").text
+    assert "수강한 학년도가 끝난 날부터 5년" in c.get("/live/privacy").text
+    monkeypatch.delenv("RETENTION")
     monkeypatch.setenv("OPERATOR_NAME", "가나고등학교<script>")
     monkeypatch.setenv("PRIVACY_OFFICER", "교감 홍길동")
     monkeypatch.setenv("PRIVACY_CONTACT", "02-123-4567")
@@ -959,6 +1131,13 @@ def test_policy_pages(monkeypatch):
     p = c.get("/live/privacy").text
     assert "가나고등학교&lt;script&gt;" in p and "<script>" not in p  # 설정 값은 그대로 출력하지 않는다
     assert "Hetzner" in p and "Anthropic" not in p  # AI 조교를 안 쓰면 미국 이전 항목 없음
+    assert "고객센터: +49 (0)9831 505-0" in p
+    assert "회원 탈퇴 신청 또는 서비스 이용 중단을 통해 향후 국외 이전을 거부" in p
+    assert "가장 최근 성공 로그인 시각 1건만 저장" in p
+    assert "다른 법령이 해당 개인정보를 수집 대상으로 명시한 경우" in p
+    assert "수업 자료라는 이유만으로 요청을 일괄 제한하지 않으며" in p
+    assert "백업 생성일부터 14일이 지난 사본은 다음 자동 백업 작업에서 삭제" in p
+    assert "시행일 최소 7일 전에" in p and "탈퇴 승인일부터 최대 5년(1,825일)" in p
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert "Anthropic" in c.get("/live/privacy").text and "AI 조교" in c.get("/live/terms").text
     assert c.get("/api/me").json()["policy_ready"] is True
@@ -967,9 +1146,9 @@ def test_policy_pages(monkeypatch):
     assert "울산광역시교육청 귀하" in c.get("/live/notice").text
     # 강사 신청서의 동의는 이용약관 확인으로도 기록된다
     g = TestClient(app)
-    g.post("/api/auth/dev", json={"email": "guest@gmail.com"})
+    google_login(g, "guest@gmail.com")
     assert g.get("/api/me").json()["user"]["needs_terms"] is True
-    g.post("/api/staff/apply", json={"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
+    staff_apply(g, {"role": "coordinator", "hub_name": "가나고", "name": "관리", "contact": "010", "pledge": True})
     assert g.get("/api/me").json()["user"]["needs_terms"] is False
 
 
@@ -985,6 +1164,8 @@ def test_course_materials_for_absent_students(monkeypatch, tmp_path):
     t.post(f"/api/live/classes/{c['code']}/files?name=a.pdf", content=b"%PDF-1.4 x")
     lst = absent.get("/api/materials").json()["classes"]
     assert [(x["id"], x["course_title"]) for x in lst] == [(c["class_id"], COURSE["title"])]
+    assert [x["id"] for x in absent.get(f"/api/materials?course_id={cid}").json()["classes"]] == [c["class_id"]]
+    assert absent.get(f"/api/materials?course_id={cid + 1}").json()["classes"] == []
     # 수강 승인이 취소되면 볼 수 없다
     me = absent.get("/api/me").json()["user"]["id"]
     t.post(f"/api/courses/{cid}/enrollments/{me}", json={"status": "removed"})
@@ -1091,7 +1272,7 @@ def test_signup_choice_schools_and_grades(monkeypatch):
     admin = login("admin@gmail.com", name="관리자")
     # 학교 계정(선생님도 같은 도메인)으로 처음 들어오면 학생/선생님을 고른다
     tch = TestClient(app)
-    tch.post("/api/auth/dev", json={"email": "kim@s.school.kr"})
+    google_login(tch, "kim@s.school.kr")
     me = tch.get("/api/me").json()["user"]
     assert me["role"] == "student" and me["role_choice"] and me["needs_profile"]
     me = tch.post("/api/me/self-role", json={"role": "staff"}).json()
@@ -1099,7 +1280,7 @@ def test_signup_choice_schools_and_grades(monkeypatch):
     assert tch.get("/api/courses/available").status_code == 403  # 학생 기능은 못 씀
     # 학교 계정이 아니면 고를 수 없다
     g = TestClient(app)
-    g.post("/api/auth/dev", json={"email": "someone@gmail.com"})
+    google_login(g, "someone@gmail.com")
     assert g.post("/api/me/self-role", json={"role": "student"}).status_code == 400
     # 학교 목록: 전체 관리자만 저장, 학생은 목록에 있는 정식 이름만
     assert tch.post("/api/admin/schools", json={"text": "가나고"}).status_code == 403
@@ -1107,8 +1288,9 @@ def test_signup_choice_schools_and_grades(monkeypatch):
     assert r["schools"] == ["신정고등학교", "울산고등학교"]
     assert admin.get("/api/me").json()["schools"] == ["신정고등학교", "울산고등학교"]
     s = TestClient(app)
-    s.post("/api/auth/dev", json={"email": "st9@s.school.kr"})
-    prof = {"name": "학생", "grade": 2, "class_no": 1, "number": 9, "agree": True}
+    google_login(s, "st9@s.school.kr")
+    prof = {"name": "학생", "grade": 2, "class_no": 1, "number": 9, "agree": True,
+            "birth": "2008-04-03", "gender": "남"}
     assert s.post("/api/me/profile", json={**prof, "school": "신정고"}).status_code == 400
     me = s.post("/api/me/profile", json={**prof, "school": "신정고등학교"}).json()
     assert me["role"] == "student" and not me["needs_profile"]
@@ -1132,23 +1314,28 @@ def test_withdraw(monkeypatch, tmp_path):
     """학생 탈퇴는 그 학생 소속 학교의 참여학교 교사(없으면 전체 관리자)가 승인한다"""
     import app.assignments as asg
     monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    monkeypatch.delenv("EVIDENCE_RETENTION_DAYS", raising=False)
+    monkeypatch.delenv("EVIDENCE_RETENTION_BASIS", raising=False)
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
     # 참여학교 교사: 가나중(학생들 학교) p1, 다른 학교 p2
     ps = {}
+    participant_ids = {}
     for email, school in (("p1@gmail.com", SCHOOL), ("p2@gmail.com", "마바중학교")):
         c = TestClient(app)
-        c.post("/api/auth/dev", json={"email": email})
-        r = c.post("/api/staff/apply", json={"role": "participant", "name": "담당", "hub_name": school,
+        google_login(c, email)
+        r = staff_apply(c, {"role": "participant", "name": "담당", "hub_name": school,
                                              "affiliation": school, "contact": "010", "pledge": True})
         assert r.status_code == 200, r.text
         apps = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"]
         assert apps[0]["hub"] == school and apps[0]["status"] == "pending"
         assert c.get("/api/staff/applications", params={"role": "participant"}).status_code == 403
         assert boss.post(f"/api/staff/{apps[0]['id']}", json={"action": "approve"}).status_code == 200
+        participant_ids[school] = apps[0]["id"]
         me = c.get("/api/me").json()["user"]
         assert me["role"] == "teacher" and me["participant_schools"] == [school]
-        assert not (me["teach_hubs"] or me["lead_hubs"] or me["coordinator_hubs"])
+        assert not (me["teach_hubs"] or me["lead_hubs"])
+        assert [hub["name"] for hub in me["coordinator_hubs"]] == [school]
         ps[school] = c
     p1, p2 = ps[SCHOOL], ps["마바중학교"]
     t = boss  # 전체 관리자가 연 강좌는 바로 개설 승인
@@ -1184,18 +1371,58 @@ def test_withdraw(monkeypatch, tmp_path):
     a.post("/api/me/withdraw/cancel")
     assert p1.get("/api/school/overview").json()["withdrawals"] == []
     a.post("/api/me/withdraw", json={"confirm": "탈퇴"})
-    # 승인하면 그 학생의 기록·파일만 모두 지워진다
-    assert p1.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 200
+    original = next(path for path in (tmp_path / "assignments" / str(aid)).iterdir() if path.read_bytes() == b"%PDF a")
+    original.unlink()
+    assert p1.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"}).status_code == 409
+    assert a.get("/api/me").json()["user"] is not None
+    original.write_bytes(b"%PDF a")
+    # 승인하면 일반 자료에서 제거하고 암호화된 수업 증빙으로 분리한다.
+    approved = p1.post(f"/api/school/withdrawals/{q[0]['user_id']}", json={"action": "approve"})
+    assert approved.status_code == 200, approved.text
+    evidence_id = approved.json()["evidence_id"]
     assert a.get("/api/me").json()["user"] is None
-    # 탈퇴한 학생은 탈퇴 기록(이름·학교·학번·날짜)만 남아 참여학교 담당교사 목록에 계속 보인다
-    gone = p1.get("/api/school/overview").json()["withdrawn"]
-    assert [(x["name"], x["student_no"], x["approved_by"]) for x in gone] == [("학생1", "20301", "담당")]
+    assert p1.get("/api/school/overview").json()["withdrawn"] == []
     assert p2.get("/api/school/overview").json()["withdrawn"] == []
     subs = t.get(f"/api/assignments/{aid}/submissions").json()["submissions"]
     assert [s["student_no"] for s in subs] == ["20302"] and subs[0]["submitted"]
     assert len(list((tmp_path / "assignments" / str(aid)).iterdir())) == 1
-    again = login("st1@s.school.kr")  # 같은 계정으로 다시 로그인하면 새로 가입
-    assert again.get("/api/me").json()["user"]["needs_profile"]
+    assert google_login(TestClient(app), "st1@s.school.kr").status_code == 403
+    params = {"purpose": "record_check"}
+    assert p1.get("/live/evidence").status_code == 200
+    assert p2.get("/live/evidence").status_code == 200
+    assert a.get("/live/evidence").status_code == 401
+    assert p1.get("/api/evidence").status_code == 422
+    listing = p1.get("/api/evidence", params=params)
+    assert listing.status_code == 200 and listing.json()["policy"]["days"] == 1825
+    assert [x["id"] for x in listing.json()["archives"]] == [evidence_id]
+    assert p2.get("/api/evidence", params=params).json()["archives"] == []
+    assert p2.get(f"/api/evidence/{evidence_id}", params=params).status_code == 404
+    record = p1.get(f"/api/evidence/{evidence_id}", params=params).json()["record"]
+    assert record["subject"]["student_no"] == "20301"
+    assert len(record["submissions"]) == len(record["files"]) == 1
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(p1.get(f"/api/evidence/{evidence_id}/download.zip", params=params).content)) as archive:
+        assert archive.read(f"files/{record['files'][0]['evidence_file_id']}") == b"%PDF a"
+    from sqlalchemy import select
+    with db.engine.connect() as conn:
+        encrypted = conn.execute(select(db.evidence_archives.c.payload).where(db.evidence_archives.c.id == evidence_id)).scalar_one()
+        assert "학생1" not in encrypted and "20301" not in encrypted
+        tombstone = conn.execute(select(db.users.c.account_state, db.users.c.last_login).where(db.users.c.id == q[0]["user_id"])).one()
+        assert tombstone.account_state == "withdrawn" and tombstone.last_login is None
+        assert [x.action for x in conn.execute(select(db.evidence_audit)) if x.archive_id == evidence_id] == ["archive_created", "view", "download_requested"]
+    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "1")
+    monkeypatch.setenv("EVIDENCE_RETENTION_BASIS", "검증용 보존 근거")
+    from app.evidence import maintain_retention
+    maintain_retention()
+    with db.engine.connect() as conn:
+        assert conn.execute(select(db.evidence_archives.c.expires_at).where(db.evidence_archives.c.id == evidence_id)).scalar_one() is not None
+    with db.engine.begin() as conn:
+        conn.execute(db.evidence_archives.update().where(db.evidence_archives.c.id == evidence_id).values(expires_at=1))
+    maintain_retention()
+    with db.engine.connect() as conn:
+        assert conn.execute(select(db.evidence_archives.c.id).where(db.evidence_archives.c.id == evidence_id)).first() is None
+        assert conn.execute(select(db.evidence_files.c.id).where(db.evidence_files.c.archive_id == evidence_id)).first() is None
     # 참여학교 교사가 없는 학교 학생은 전체 관리자가 승인
     c = login("st9@s.school.kr", name="학생9", school="사아중학교", grade=1, class_no=1, number=9)
     c.post("/api/me/withdraw", json={"confirm": "탈퇴"})
@@ -1206,6 +1433,251 @@ def test_withdraw(monkeypatch, tmp_path):
     g = login("guest@gmail.com", name="손님")
     assert g.post("/api/me/withdraw", json={"confirm": "탈퇴"}).json()["requested"] is False
     assert g.get("/api/me").json()["user"] is None
+    assert boss.post(f"/api/staff/{participant_ids[SCHOOL]}", json={"action": "revoke"}).status_code == 200
+    assert p1.get("/live/evidence").status_code == 403
+
+
+def test_participant_school_change_needs_admin_approval(monkeypatch, tmp_path):
+    import app.assignments as asg
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    assert boss.post("/api/admin/schools", json={"text": "A학교\nB학교"}).status_code == 200
+    staff = login("school-staff@gmail.com")
+    applied = staff_apply(staff, {
+        "role": "participant", "name": "담당교사", "hub_name": "A학교",
+        "affiliation": "A학교", "contact": "010", "pledge": True,
+    })
+    assert applied.status_code == 200, applied.text
+    membership = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"][0]
+    mid = membership["id"]
+    assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
+    initial = staff.get("/api/me").json()["user"]
+    assert initial["participant_schools"] == ["A학교"]
+    assert [hub["name"] for hub in initial["coordinator_hubs"]] == ["A학교"]
+    a = login("a-student@s.school.kr", name="A학생", school="A학교", grade=1, class_no=1, number=1)
+    b = login("b-student@s.school.kr", name="B학생", school="B학교", grade=1, class_no=1, number=1)
+    assert staff.get("/api/school/overview").json()["schools"] == ["A학교"]
+    assert staff.get("/api/hub/overview").status_code == 200
+    assert staff.get("/live/evidence").status_code == 200
+    import json
+    import time
+    from app.evidence import cipher
+    from sqlalchemy import insert
+    crypt = cipher()
+    with db.engine.begin() as conn:
+        for school, archive_id in (("A학교", "a" * 32), ("B학교", "b" * 32)):
+            payload = json.dumps({"subject": {"school": school, "name": "가상 학생"}, "files": []}, ensure_ascii=False)
+            conn.execute(insert(db.evidence_archives).values(
+                id=archive_id, school=school, created_at=time.time(),
+                payload=crypt.encrypt(payload.encode()).decode()))
+    params = {"purpose": "record_check"}
+    assert [x["id"] for x in staff.get("/api/evidence", params=params).json()["archives"]] == ["a" * 32]
+
+    assert staff.post("/api/me/profile", json={"name": "담당교사", "school": "B학교"}).status_code == 400
+    changed = staff.post("/api/me/school-transfer", json={"role": "participant", "school": "B학교"})
+    assert changed.status_code == 200, changed.text
+    me = changed.json()
+    assert me["school"] == "A학교"
+    assert me["role"] == "teacher" and me["participant_schools"] == []
+    assert me["memberships"][0]["transfer_from"] == "A학교"
+    assert staff.get("/api/school/overview").status_code == 403
+    assert staff.get("/live/evidence").status_code == 403
+    assert staff.get("/api/evidence", params=params).status_code == 403
+    assert staff.post(f"/api/staff/{mid}", json={"action": "approve", "hub_name": "B학교"}).status_code == 403
+    request = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"][0]
+    assert (request["id"], request["status"], request["transfer_from"], request["hub"]) == (
+        mid, "pending", "A학교", "B학교")
+
+    approved = boss.post(f"/api/staff/{mid}", json={"action": "approve", "hub_name": "B학교"})
+    assert approved.status_code == 200, approved.text
+    after_transfer = staff.get("/api/me").json()["user"]
+    assert after_transfer["participant_schools"] == ["B학교"] and after_transfer["school"] == "B학교"
+    overview = staff.get("/api/school/overview").json()
+    assert overview["schools"] == ["B학교"]
+    assert [x["name"] for x in overview["students"]] == ["B학생"]
+    assert staff.get("/live/evidence").status_code == 200
+    assert [x["id"] for x in staff.get("/api/evidence", params=params).json()["archives"]] == ["b" * 32]
+    assert staff.get(f"/api/evidence/{'a' * 32}", params=params).status_code == 404
+    assert a.get("/api/school/overview").status_code == 403
+    assert b.get("/api/school/overview").status_code == 403
+    assert staff.post("/api/me/school-transfer", json={"role": "participant", "school": "A학교"}).status_code == 200
+    assert boss.post(f"/api/staff/{mid}", json={"action": "reject", "note": "전근 확인 불가"}).status_code == 200
+    assert staff.get("/api/school/overview").status_code == 403
+    assert staff.get("/api/evidence", params=params).status_code == 403
+
+
+def test_student_school_change_needs_new_school_participant_approval(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    assert boss.post("/api/admin/schools", json={"text": "A학교\nB학교\nC학교"}).status_code == 200
+    teachers, membership_ids = {}, {}
+    for school in ("A학교", "B학교", "C학교"):
+        teacher_client = login(f"manager-{school}@gmail.com")
+        assert staff_apply(teacher_client, {"role": "participant", "name": "담당교사",
+            "hub_name": school, "affiliation": school, "contact": "010", "pledge": True}).status_code == 200
+        applications = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"]
+        mid = next(x["id"] for x in applications if x["hub"] == school)
+        assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
+        teachers[school] = teacher_client
+        membership_ids[school] = mid
+    student_client = login("move-student@s.school.kr", name="학생", school="A학교",
+                           grade=1, class_no=2, number=3)
+    assert student_client.post("/api/me/profile", json={"name": "학생", "school": "B학교",
+        "grade": 1, "class_no": 2, "number": 3}).status_code == 400
+    requested = student_client.post("/api/me/change-requests", json={"field": "school", "value": "B학교"})
+    assert requested.status_code == 200, requested.text
+    change_id = requested.json()["id"]
+    assert student_client.get("/api/me").json()["user"]["school"] == "A학교"
+    assert [x["name"] for x in teachers["A학교"].get("/api/school/overview").json()["students"]] == ["학생"]
+    assert teachers["B학교"].get("/api/school/overview").json()["students"] == []
+    assert teachers["A학교"].get("/api/school/change-requests").json()["requests"] == []
+    assert teachers["C학교"].get("/api/school/change-requests").json()["requests"] == []
+    pending_changes = teachers["B학교"].get("/api/school/change-requests").json()["requests"]
+    assert [(x["id"], x["grade"], x["class_no"]) for x in pending_changes] == [(change_id, 1, 2)]
+    assert boss.get("/api/admin/change-requests?field=school").json()["requests"] == []
+    assert boss.post(f"/api/admin/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
+    assert student_client.post(f"/api/school/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
+    assert teachers["A학교"].post(f"/api/school/change-requests/{change_id}", json={"action": "approve"}).status_code == 404
+    approved = teachers["B학교"].post(f"/api/school/change-requests/{change_id}", json={"action": "approve"})
+    assert approved.status_code == 200, approved.text
+    assert student_client.get("/api/me").json()["user"]["school"] == "B학교"
+    assert teachers["A학교"].get("/api/school/overview").json()["students"] == []
+    assert [x["name"] for x in teachers["B학교"].get("/api/school/overview").json()["students"]] == ["학생"]
+    next_request = student_client.post("/api/me/change-requests", json={"field": "school", "value": "C학교"})
+    assert next_request.status_code == 200
+    next_id = next_request.json()["id"]
+    assert boss.post(f"/api/staff/{membership_ids['C학교']}", json={"action": "revoke"}).status_code == 200
+    assert teachers["C학교"].post(f"/api/school/change-requests/{next_id}", json={"action": "approve"}).status_code == 403
+    assert student_client.get("/api/me").json()["user"]["school"] == "B학교"
+
+
+def test_admin_can_view_classroom_overview_without_student_enrollment(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    t = teacher()
+    course = t.post("/api/courses", json=COURSE)
+    assert course.status_code == 200, course.text
+    cid = course.json()["id"]
+    assert t.post("/api/live/classes", json={"title": "첫 수업", "course_id": cid}).status_code == 200
+    assert t.get("/api/admin/classroom").status_code == 403
+    assert TestClient(app).get("/api/admin/classroom").status_code == 401
+    overview = boss.get("/api/admin/classroom")
+    assert overview.status_code == 200, overview.text
+    assert [(x["id"], x["title"], [live["title"] for live in x["live"]])
+            for x in overview.json()["courses"]] == [(cid, COURSE["title"], ["첫 수업"])]
+    page = boss.get("/live?classroom=1").text
+    assert 'id="student-view"' in page and 'id="admin-classroom-view"' not in page
+
+
+def test_admin_student_actions_require_enrollment(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    boss_id = boss.get("/api/me").json()["user"]["id"]
+    code = create(t, title="첫 수업", course_id=cid)["code"]
+    aid = t.post(f"/api/courses/{cid}/assignments", json={"title": "수업 과제"}).json()["id"]
+
+    assert boss.get("/api/courses/available").status_code == 200
+    assert cr.load_roster(cid) == []
+    assert boss.get("/api/my/assignments").json()["assignments"] == []
+    assert boss.post(f"/api/assignments/{aid}/text", json={"text": "제출"}).status_code == 404
+    assert boss.post(f"/api/live/classes/{code}/join?as_student=1").status_code == 403
+    with db.engine.connect() as c:
+        assert not c.execute(db.attendance.select().where(db.attendance.c.user_id == boss_id)).first()
+
+    assert boss.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    assert cr.load_roster(cid) == []
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
+    assert [int(r["id"]) for r in cr.load_roster(cid)] == [boss_id]
+    assert [x["title"] for x in boss.get("/api/my/assignments").json()["assignments"]] == ["수업 과제"]
+    assert boss.post(f"/api/assignments/{aid}/text", json={"text": "관리자 제출"}).status_code == 200
+    assert boss.get("/api/my/assignments").json()["assignments"][0]["mine"]["text"] == "관리자 제출"
+    assert boss.post(f"/api/live/classes/{code}/join?as_student=1").status_code == 200
+    with boss.websocket_connect(f"/ws/live/{code}?as_student=1") as ws:
+        state(ws)
+    with db.engine.connect() as c:
+        assert c.execute(db.attendance.select().where(db.attendance.c.user_id == boss_id)).first()
+
+
+@pytest.mark.parametrize("role", ["participant", "coordinator"])
+def test_school_manager_has_one_school_per_role(monkeypatch, role):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "A학교\nB학교"})
+    staff = login(f"one-{role}@gmail.com")
+    def apply_to(school):
+        return staff_apply(staff, {"role": role, "name": "담당교사",
+                          "hub_name": school, "affiliation": school, "contact": "010", "pledge": True})
+
+    assert apply_to("A학교").status_code == 200
+    mid = boss.get("/api/staff/applications", params={"role": role}).json()["applications"][0]["id"]
+    assert apply_to("B학교").status_code == 200  # 승인 대기 중에는 같은 신청의 학교를 고칠 수 있다.
+    applications = boss.get("/api/staff/applications", params={"role": role}).json()["applications"]
+    assert len(applications) == 1 and applications[0]["id"] == mid and applications[0]["hub"] == "B학교"
+    assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
+    assert apply_to("A학교").status_code == 409  # 승인된 상태에서 두 번째 학교 권한을 만들 수 없다.
+    assert len(boss.get("/api/staff/applications", params={"role": role}).json()["applications"]) == 1
+    assert boss.post(f"/api/staff/{mid}", json={"action": "revoke"}).status_code == 200
+    assert apply_to("A학교").status_code == 200
+    applications = boss.get("/api/staff/applications", params={"role": role}).json()["applications"]
+    assert len(applications) == 1 and applications[0]["id"] == mid and applications[0]["status"] == "pending"
+
+
+@pytest.mark.parametrize("role", ["participant", "coordinator"])
+def test_profile_school_change_button_requests_approval(monkeypatch, role):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "A학교\nB학교"})
+    staff = login(f"transfer-{role}@gmail.com")
+    payload = {"role": role, "name": "담당교사", "hub_name": "A학교",
+               "affiliation": "A학교", "contact": "010", "pledge": True}
+    assert staff_apply(staff, payload).status_code == 200
+    mid = boss.get("/api/staff/applications", params={"role": role}).json()["applications"][0]["id"]
+    assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
+    changed = staff.post("/api/me/school-transfer", json={"role": role, "school": "B학교"})
+    assert changed.status_code == 200, changed.text
+    me = changed.json()
+    assert me["memberships"][0]["status"] == "pending"
+    assert me["memberships"][0]["transfer_from"] == "A학교"
+    assert not me["participant_schools"] and not me["coordinator_hubs"]
+    assert staff.post("/api/me/school-transfer", json={"role": role, "school": "A학교"}).status_code == 400
+    pending = boss.get("/api/staff/applications", params={"role": role}).json()["applications"][0]
+    assert pending["hub"] == "B학교"
+    assert boss.post(f"/api/staff/{mid}", json={"action": "approve"}).status_code == 200
+    me = staff.get("/api/me").json()["user"]
+    assert me["school"] == "B학교"
+    assert me["participant_schools"] == ["B학교"]
+    assert [hub["name"] for hub in me["coordinator_hubs"]] == ["B학교"]
+    assert staff.get("/api/school/overview").status_code == 200
+    assert staff.get("/api/hub/overview").status_code == 200
+
+
+def test_approved_role_change_replaces_old_access(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "A학교\nB학교"})
+    staff = login("role-change@gmail.com")
+    base = {"name": "담당교사", "affiliation": "A학교", "contact": "010", "pledge": True}
+    assert staff_apply(staff, {**base, "role": "participant", "hub_name": "A학교"}).status_code == 200
+    old_id = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"][0]["id"]
+    assert boss.post(f"/api/staff/{old_id}", json={"action": "approve"}).status_code == 200
+    assert staff_apply(staff, {**base, "role": "coordinator", "hub_name": "B학교",
+                               "affiliation": "B학교"}).status_code == 200
+    duplicate = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
+    assert boss.post(f"/api/staff/{duplicate['id']}", json={"action": "approve"}).status_code == 409
+    assert staff_apply(staff, {**base, "role": "coordinator", "hub_name": "B학교", "affiliation": "B학교",
+                               "replace_membership_id": old_id}).status_code == 200
+    pending = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
+    assert pending["replace_membership_id"] == old_id
+    pending_me = staff.get("/api/me").json()["user"]
+    assert pending_me["participant_schools"] == ["A학교"] and pending_me["school"] == "A학교"
+    assert boss.post(f"/api/staff/{pending['id']}", json={"action": "approve"}).status_code == 200
+    me = staff.get("/api/me").json()["user"]
+    assert me["participant_schools"] == ["B학교"] and me["coordinator_hubs"][0]["name"] == "B학교"
+    assert me["school"] == "B학교"
+    assert staff.get("/api/school/overview").status_code == 200
 
 
 def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
@@ -1218,33 +1690,47 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
 
     def guest(email):
         g = TestClient(app)
-        g.post("/api/auth/dev", json={"email": email})
+        google_login(g, email)
         return g
 
     base = {"name": "한선생", "contact": "010-1111-2222", "pledge": True, "affil_type": "school",
             "office": "울산광역시교육청", "affiliation": "가나고등학교", "email": "han@use.go.kr"}
     # 관리교사: 거점학교는 울산 학교 목록에서만, 소속 구분별 필수 칸
     coord = guest("coord@gmail.com")
-    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고"}).status_code == 400
-    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고등학교", "office": ""}).status_code == 400
-    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고등학교", "email": "x"}).status_code == 400
-    assert coord.post("/api/staff/apply", json={**base, "role": "coordinator", "hub_name": "가나고등학교"}).status_code == 200
+    assert staff_apply(coord, {**base, "role": "coordinator", "hub_name": "가나고"}).status_code == 400
+    assert staff_apply(coord, {**base, "role": "coordinator", "hub_name": "가나고등학교", "office": ""}).status_code == 400
+    assert staff_apply(coord, {**base, "role": "coordinator", "hub_name": "가나고등학교", "email": "x"}).status_code == 400
+    assert staff_apply(coord, {**base, "role": "coordinator", "hub_name": "가나고등학교",
+                               "affiliation": "다라고등학교"}).status_code == 400
+    assert staff_apply(coord, {**base, "role": "coordinator", "hub_name": "가나고등학교"}).status_code == 200
     app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
     assert app_["office"] == "울산광역시교육청" and app_["affil_type"] == "school" and app_["contact_email"] == "han@use.go.kr"
     boss.post(f"/api/staff/{app_['id']}", json={"action": "approve"})
-    hub_id = coord.get("/api/me").json()["user"]["coordinator_hubs"][0]["id"]
+    manager = coord.get("/api/me").json()["user"]
+    assert manager["school"] == "가나고등학교"
+    assert manager["participant_schools"] == ["가나고등학교"]
+    assert manager["teach_hubs"] == [] and manager["lead_hubs"] == []
+    hub_id = manager["coordinator_hubs"][0]["id"]
     # 강사: 대학 교원(주강사) / 미임용 교원자격 소지자(팀티칭 보조교사)
     prof = guest("prof@univ.ac.kr")
     pform = {**base, "role": "instructor", "hub_id": hub_id, "name": "김교수", "affil_type": "univ", "office": "",
              "affiliation": "", "email": "kim@univ.ac.kr", "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
-    assert prof.post("/api/staff/apply", json=pform).status_code == 400  # 대학 이름 필요
-    assert prof.post("/api/staff/apply", json={**pform, "affiliation": "울산대학교"}).status_code == 200
+    assert staff_apply(prof, pform).status_code == 400  # 대학 이름 필요
+    assert staff_apply(prof, {**pform, "affiliation": "울산대학교"}).status_code == 400  # 학과도 필요
+    assert staff_apply(prof, {**pform, "affiliation": "울산대학교", "department": "사회과교육과"}).status_code == 200
+    prof_me = prof.get("/api/me").json()["user"]
+    assert prof_me["school"] == "울산대학교" and prof_me["memberships"][0]["department"] == "사회과교육과"
     asst = guest("asst@gmail.com")
     aform = {**pform, "name": "이보조", "affil_type": "cert", "email": "lee@gmail.com", "assistant": True}
-    assert asst.post("/api/staff/apply", json=aform).status_code == 400  # 교원자격 필요
-    assert asst.post("/api/staff/apply", json={**aform, "license": "중등학교 2급 정교사(사회)"}).status_code == 200
+    assert staff_apply(asst, aform).status_code == 400  # 교원자격 필요
+    assert staff_apply(asst, {**aform, "license": "중등학교 2급 정교사(사회)"}).status_code == 200
     for x in coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]:
         assert coord.post(f"/api/staff/{x['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
+    instructor = prof.get("/api/me").json()["user"]
+    assert instructor["participant_schools"] == [] and instructor["coordinator_hubs"] == []
+    assert instructor["teach_hubs"][0]["id"] == hub_id
+    assert prof.get("/api/school/overview").status_code == 403
+    assert prof.get("/api/hub/overview").status_code == 403
     ame = asst.get("/api/me").json()["user"]
     assert ame["role"] == "teacher" and ame["lead_hubs"] == [] and ame["memberships"][0]["kind"] == "assistant"
     asst_id = ame["id"]
@@ -1342,7 +1828,8 @@ def test_home_notices_and_banners(monkeypatch, tmp_path):
                                                           {"image": img}, {"text": "제목도 그림도 없음"}]})
     saved = r.json()["banners"]
     assert [b["title"] for b in saved] == ["여름학기 신청", ""] and saved[0]["theme"] == "green" and saved[1]["image"] == img
-    assert t.post("/api/admin/banners", json={"banners": []}).status_code == 200  # 선생님도 전광판을 꾸민다
+    assert t.post("/api/admin/banners", json={"banners": []}).status_code == 403  # 전체 운영 관리자만 편집한다
+    assert boss.post("/api/admin/banners", json={"banners": []}).status_code == 200
     assert student(8).post("/api/admin/banners", json={"banners": []}).status_code == 403
 
 
@@ -1353,18 +1840,48 @@ def test_pages_are_revalidated():
     assert "max-age" in c.get("/static/live/fonts/jua-subset.woff2").headers["cache-control"]
 
 
+def test_community_allows_anonymous_posts_and_admin_moderation(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    visitor = TestClient(app)
+    assert visitor.get("/live/sitemap").status_code == 200
+    assert visitor.get("/live/course-requests").status_code == 200
+    assert "글쓰기" in visitor.get("/live/community").text
+    posted = visitor.post("/api/community", json={
+        "title": "<img src=x>", "body": "<script>alert(1)</script>", "nickname": "<b>손님</b>",
+    })
+    assert posted.status_code == 200, posted.text
+    pid = posted.json()["id"]
+    detail = visitor.get(f"/live/community/{pid}").text
+    assert "&lt;img src=x&gt;" in detail and "<img src=x>" not in detail
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in detail
+    assert "<b>손님</b>" not in visitor.get("/live/community").text
+    assert visitor.post(f"/api/admin/community/{pid}/delete", json={}).status_code == 401
+    boss = login("boss@gmail.com", name="관리자")
+    assert boss.post(f"/api/admin/community/{pid}/delete", json={}).status_code == 200
+    assert visitor.get(f"/live/community/{pid}").status_code == 404
+    learner = student(1)
+    own = learner.post("/api/community", json={"title": "의견", "body": "내용", "nickname": "별"})
+    assert own.status_code == 200
+    detail = visitor.get(f"/live/community/{own.json()['id']}").text
+    assert "회원 · 별" in detail and "학생1" not in detail
+
+
 def test_course_requests_and_info_pages(monkeypatch):
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss, t = login("boss@gmail.com", name="관리자"), teacher()
     a, b = student(1, grade=1), student(2, grade=2)
-    assert a.post("/api/course-requests", json={"subject": "인공지능  기초", "note": "코딩을 배우고 싶어요"}).status_code == 200
-    assert a.post("/api/course-requests", json={"subject": "인공지능 기초"}).status_code == 409  # 같은 과목 두 번
-    b.post("/api/course-requests", json={"subject": "인공지능 기초"})
-    b.post("/api/course-requests", json={"subject": "울산의 역사"})
+    def wish(client, subject, note=""):
+        return client.post("/api/course-requests", json={
+            "school_year": 2026, "term": "2학기", "subject": subject, "note": note})
+
+    assert wish(a, "인공지능  기초", "코딩을 배우고 싶어요").status_code == 200
+    assert wish(a, "인공지능 기초").status_code == 409  # 같은 학기·과목은 한 번
+    assert wish(b, "인공지능 기초").status_code == 200
+    assert wish(b, "울산의 역사", "연락처 010-1234-5678, 학번 12345").status_code == 200
     for n in range(4):
-        a.post("/api/course-requests", json={"subject": f"과목{n}"})
-    assert a.post("/api/course-requests", json={"subject": "과목9"}).status_code == 409  # 5개까지
-    assert t.post("/api/course-requests", json={"subject": "x"}).status_code == 403  # 학생만
+        assert wish(a, f"과목{n}").status_code == 200
+    assert wish(a, "과목9").status_code == 409  # 학기당 5개까지
+    assert wish(t, "x").status_code == 403  # 학생·전체 관리자만
     assert t.get("/api/hub/course-requests").status_code == 403  # 관리교사·전체 관리자만
     reqs = boss.get("/api/hub/course-requests").json()["requests"]
     top = reqs[0]
@@ -1373,12 +1890,42 @@ def test_course_requests_and_info_pages(monkeypatch):
     assert not next(r for r in reqs if r["subject"] == "울산의 역사")["in_curriculum"]
     # 메인 화면: 누구나 본다 (과목·요청 수·학년만 — 학교·하고 싶은 말은 빠짐)
     pub = TestClient(app).get("/api/course-requests/summary").json()["requests"]
-    assert pub[0] == {"subject": "인공지능 기초", "count": 2, "grades": {"1": 1, "2": 1}, "in_curriculum": True}
+    assert pub[0] == {"subject": "인공지능 기초", "subject_area": "정보", "count": 2, "likes": 0,
+                      "grades": {"1": 1, "2": 1}, "in_curriculum": True}
     assert "외솔" not in str(pub) and "home-wishes" in TestClient(app).get("/live/home").text
+    board = TestClient(app).get("/api/course-requests/board").json()["requests"]
+    assert "010-1234-5678" not in str(board) and "12345" not in str(board)
+    requested = next(r for r in board if r["subject"] == "인공지능 기초" and r["note"])
+    assert requested["school_year"] == 2026 and requested["term"] == "2학기"
+    assert requested["note"] == "코딩을 배우고 싶어요" and requested["likes"] == 0
+    assert "user_id" not in requested and "email" not in requested
+    assert TestClient(app).post(f"/api/course-requests/{requested['id']}/like").status_code == 401
+    assert b.post(f"/api/course-requests/{requested['id']}/like").json() == {"likes": 1, "liked": True}
+    summary = TestClient(app).get("/api/course-requests/summary").json()["requests"]
+    assert summary[0]["count"] == 3 and summary[0]["likes"] == 1
+    assert summary[0]["grades"] == {"1": 1, "2": 1}
+    assert next(r for r in boss.get("/api/hub/course-requests").json()["requests"]
+                if r["subject"] == "인공지능 기초")["count"] == 2
+    assert b.get("/api/course-requests/board").json()["requests"][-1]["liked"] is True
+    second = next(r for r in board if r["subject"] == "인공지능 기초" and not r["note"])
+    assert a.post(f"/api/course-requests/{second['id']}/like").json() == {"likes": 1, "liked": True}
+    assert TestClient(app).get("/api/course-requests/summary").json()["requests"][0]["count"] == 4
+    assert a.post(f"/api/course-requests/{second['id']}/like").json() == {"likes": 0, "liked": False}
+    assert b.post(f"/api/course-requests/{requested['id']}/like").json() == {"likes": 0, "liked": False}
+    assert TestClient(app).get("/api/course-requests/summary").json()["requests"][0]["count"] == 2
+    assert wish(b, "사회와 문화").status_code == 200
+    assert wish(b, "물리학").status_code == 200
+    areas = {r["subject"]: r["subject_area"] for r in TestClient(app).get(
+        "/api/course-requests/summary").json()["requests"]}
+    assert areas["사회와 문화"] == "사회" and areas["물리학"] == "과학"
     mine = a.get("/api/my/course-requests").json()["requests"]
-    a.post(f"/api/course-requests/{mine[0]['id']}/delete")
-    b.post(f"/api/course-requests/{mine[0]['id']}/delete")  # 남의 요청은 못 지움
-    assert len(a.get("/api/my/course-requests").json()["requests"]) == 4
+    assert a.post(f"/api/course-requests/{mine[0]['id']}/delete").status_code == 403
+    assert len(a.get("/api/my/course-requests").json()["requests"]) == 5
+    assert wish(boss, "관리자 희망 과목").status_code == 200
+    admin_request = boss.get("/api/my/course-requests").json()["requests"][0]
+    assert admin_request["subject"] == "관리자 희망 과목"
+    assert boss.post(f"/api/course-requests/{admin_request['id']}/delete").status_code == 403
+    assert "신청서 작성" in TestClient(app).get("/live/course-requests").text
     c = TestClient(app)
     for page in ("/live/about", "/live/credit", "/live/guide"):
         assert c.get(page).status_code == 200
@@ -1414,8 +1961,8 @@ def test_roles_are_separate_and_one_step_enrollment(monkeypatch):
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
     coord = TestClient(app)
-    coord.post("/api/auth/dev", json={"email": "coord@gmail.com"})
-    coord.post("/api/staff/apply", json={"role": "coordinator", "name": "한관리", "hub_name": "가나고등학교", "contact": "010", "pledge": True})
+    google_login(coord, "coord@gmail.com")
+    staff_apply(coord, {"role": "coordinator", "name": "한관리", "hub_name": "가나고등학교", "contact": "010", "pledge": True})
     mid = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]["id"]
     boss.post(f"/api/staff/{mid}", json={"action": "approve"})
     me = coord.get("/api/me").json()["user"]
@@ -1424,14 +1971,16 @@ def test_roles_are_separate_and_one_step_enrollment(monkeypatch):
     assert coord.post("/api/courses", json={**COURSE, "hub_id": hub_id}).status_code == 403
     # 참여학교 담당교사 신청은 전체 관리자만 승인한다 (거점학교 관리교사는 못 함)
     p = TestClient(app)
-    p.post("/api/auth/dev", json={"email": "p@gmail.com"})
-    assert p.post("/api/staff/apply", json={"role": "participant", "name": "참여", "hub_name": SCHOOL, "contact": "010", "pledge": True}).status_code == 200
+    google_login(p, "p@gmail.com")
+    assert staff_apply(p, {"role": "participant", "name": "참여", "hub_name": SCHOOL, "contact": "010", "pledge": True}).status_code == 200
     assert coord.get("/api/staff/applications", params={"role": "participant"}).status_code == 403
     pid = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"][0]["id"]
     assert coord.post(f"/api/staff/{pid}", json={"action": "approve"}).status_code == 403
     assert boss.post(f"/api/staff/{pid}", json={"action": "approve"}).status_code == 200
-    assert p.get("/api/me").json()["user"]["participant_schools"] == [SCHOOL]
-    assert p.get("/api/hub/overview").status_code == 403
+    legacy_manager = p.get("/api/me").json()["user"]
+    assert legacy_manager["participant_schools"] == [SCHOOL]
+    assert [hub["name"] for hub in legacy_manager["coordinator_hubs"]] == [SCHOOL]
+    assert p.get("/api/hub/overview").status_code == 200
     # 전체 관리자가 연 강좌는 바로 개설 승인, 강사 승인 한 번이면 수강 확정
     cid = boss.post("/api/courses", json={**COURSE, "title": "정치", "hub_id": hub_id}).json()["id"]
     a, b = student(1), student(2)
@@ -1450,11 +1999,11 @@ def test_instructor_applies_to_any_ulsan_school(monkeypatch):
     boss = login("boss@gmail.com", name="관리자")
     boss.post("/api/admin/schools", json={"text": "신정고등학교\n울산고등학교"})
     prof = TestClient(app)
-    prof.post("/api/auth/dev", json={"email": "prof@univ.ac.kr"})
+    google_login(prof, "prof@univ.ac.kr")
     form = {"role": "instructor", "name": "김교수", "contact": "010", "pledge": True,
             "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
-    assert prof.post("/api/staff/apply", json={**form, "hub_name": "아무고"}).status_code == 400
-    assert prof.post("/api/staff/apply", json={**form, "hub_name": "울산고등학교"}).status_code == 200
+    assert staff_apply(prof, {**form, "hub_name": "아무고"}).status_code == 400
+    assert staff_apply(prof, {**form, "hub_name": "울산고등학교"}).status_code == 200
     app_ = boss.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"][0]
     assert app_["hub"] == "울산고등학교"
     boss.post(f"/api/staff/{app_['id']}", json={"action": "approve", "valid_until": "2099-02-28"})
@@ -1526,9 +2075,46 @@ def test_ai_assistant_uses_cheapest_model(monkeypatch):
         return FakeStream()
 
     monkeypatch.setattr(main.client.beta.messages, "stream", fake_stream)
-    r = TestClient(app).post("/api/chat", json={"messages": [{"role": "user", "content": "선거구가 뭐예요?"}]})
+    student(1)
+    r = TestClient(app).post("/api/chat", json={"messages": [{"role": "user", "content":
+        "학생1의 학번은 20301이고 이름은 김민준이에요. 연락처 010-1234-5678, 이메일 a@school.kr. 선거구가 뭐예요?"}]})
     assert r.status_code == 200 and "안녕" in r.text
+    sent = seen["messages"][0]["content"]
+    assert all(v not in sent for v in ("학생1", "20301", "김민준", "010-1234-5678", "a@school.kr"))
     assert seen["model"] == "claude-haiku-5-5" and "fallbacks" not in seen and "betas" not in seen
+
+
+def test_student_signup_rejects_under_fourteen_and_school_mismatch():
+    fresh = TestClient(app)
+    denied = fresh.post("/api/auth/google", json={"credential": "test-token:under14@s.school.kr",
+                                                  "birth": "2015-01-01"})
+    assert denied.status_code == 403
+    with db.engine.connect() as conn:
+        assert conn.execute(db.users.select().where(db.users.c.email == "under14@s.school.kr")).first() is None
+    c = login("young@s.school.kr")
+    assert c.post("/api/me/consent", json={"terms": True, "privacy": True,
+                                      "birth": "2015-01-01"}).status_code == 403
+    profile = {"name": "학생", "school": "신선여자고등학교", "grade": 1, "class_no": 1,
+               "number": 1, "birth": "2015-01-01", "gender": "여", "agree": True}
+    assert c.post("/api/me/profile", json=profile).status_code == 403
+    profile["birth"] = "2008-04-03"
+    profile["gender"] = "남"
+    assert c.post("/api/me/profile", json=profile).status_code == 400
+    profile["gender"] = "여"
+    assert c.post("/api/me/profile", json=profile).status_code == 200
+    guest = login("young-staff@gmail.com")
+    assert staff_apply(guest, {"role": "participant", "name": "신청자", "hub_name": "신정고등학교",
+                               "contact": "010", "pledge": True, "birth": "2015-01-01"}).status_code == 403
+
+
+def test_evidence_retention_never_exceeds_five_years(monkeypatch):
+    from app.evidence import retention_policy
+    monkeypatch.delenv("EVIDENCE_RETENTION_DAYS", raising=False)
+    assert retention_policy()[0] == 1825
+    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "3000")
+    assert retention_policy()[0] == 1825
+    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "365")
+    assert retention_policy()[0] == 365
 
 
 def test_private_chat_layout_and_roster():
@@ -1589,7 +2175,7 @@ def test_ulsan_school_list_is_built_in(monkeypatch):
     assert st.post("/api/me/profile", json={"name": "학생", "school": "없는고등학교", "grade": 1, "class_no": 1, "number": 1,
                                             "agree": True}).status_code == 400
     assert st.post("/api/me/profile", json={"name": "학생", "school": "신정고등학교", "grade": 1, "class_no": 1, "number": 1,
-                                            "agree": True}).status_code == 200
+                                            "birth": "2008-04-03", "gender": "남", "agree": True}).status_code == 200
 
 
 def test_signup_starts_with_two_required_consents():
@@ -1602,12 +2188,14 @@ def test_signup_starts_with_two_required_consents():
         assert c.get("/api/me").json()["user"]["needs_terms"]
         assert c.post("/api/me/consent", json={"terms": True}).status_code == 400  # 하나만은 안 됨
         assert c.post("/api/me/consent", json={"terms": True, "privacy": False}).status_code == 400
-        me = c.post("/api/me/consent", json={"terms": True, "privacy": True}).json()
+        me = c.post("/api/me/consent", json={"terms": True, "privacy": True,
+                                              "birth": "2008-04-03" if email.endswith("@s.school.kr") else ""}).json()
         assert me["needs_terms"] is False
     # 동의한 뒤에는 정보 입력에 동의 칸이 필요 없다
     st = login("st1@s.school.kr")
     st.post("/api/me/self-role", json={"role": "student"})
-    assert st.post("/api/me/profile", json={"name": "학생", "school": SCHOOL, "grade": 1, "class_no": 1, "number": 1}).status_code == 200
+    assert st.post("/api/me/profile", json={"name": "학생", "school": SCHOOL, "grade": 1, "class_no": 1, "number": 1,
+                                            "birth": "2008-04-03", "gender": "남"}).status_code == 200
     assert TestClient(app).post("/api/me/consent", json={"terms": True, "privacy": True}).status_code == 401
 
 
@@ -1660,11 +2248,11 @@ def test_teacher_signup_birth(monkeypatch):
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
     g = TestClient(app)
-    g.post("/api/auth/dev", json={"email": "t@gmail.com"})
+    google_login(g, "t@gmail.com")
     form = {"role": "coordinator", "hub_name": "가나고등학교", "name": "한선생", "contact": "010", "pledge": True}
-    assert g.post("/api/staff/apply", json={**form, "birth": "1985-13-01"}).status_code == 400
-    assert g.post("/api/staff/apply", json={**form, "birth": "2999-01-01"}).status_code == 400
-    assert g.post("/api/staff/apply", json={**form, "birth": "1985-03-07"}).status_code == 200
+    assert staff_apply(g, {**form, "birth": "1985-13-01"}).status_code == 400
+    assert staff_apply(g, {**form, "birth": "2999-01-01"}).status_code == 400
+    assert staff_apply(g, {**form, "birth": "1985-03-07"}).status_code == 200
     assert g.get("/api/me").json()["user"]["birth"] == "1985-03-07"
     app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
     assert app_["birth"] == "1985-03-07"
@@ -1717,26 +2305,37 @@ def test_name_is_locked_and_teacher_profile(monkeypatch):
     me = s.get("/api/me").json()["user"]
     assert me["name_locked"] is True
     r = s.post("/api/me/profile", json={"name": "다른이름", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 1})
-    assert r.status_code == 400 and "바꿀 수 없어요" in r.json()["detail"]
+    assert r.status_code == 400 and "승인" in r.json()["detail"]
     assert s.post("/api/me/profile", json={"name": "학생1", "school": SCHOOL, "grade": 3, "class_no": 3, "number": 1}).status_code == 200
     # 선생님: 등록 신청 때 이름이 정해지고, 내 정보에서 나머지를 고친다 (신청서 연락처도 함께)
     g = TestClient(app)
-    g.post("/api/auth/dev", json={"email": "t@gmail.com"})
+    google_login(g, "t@gmail.com")
     form = {"role": "coordinator", "hub_name": "가나고등학교", "name": "한선생", "contact": "010-1", "pledge": True, "gender": "여", "birth": "1980-01-02"}
-    assert g.post("/api/staff/apply", json=form).status_code == 200
-    assert g.post("/api/staff/apply", json={**form, "name": "한바꿈"}).status_code == 400
+    assert staff_apply(g, form).status_code == 200
+    assert staff_apply(g, {**form, "name": "한바꿈"}).status_code == 400
+    assert staff_apply(g, {**form, "gender": "남"}).status_code == 400
     boss = login("boss@gmail.com", name="관리자")
     mid = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]["id"]
     boss.post(f"/api/staff/{mid}", json={"action": "approve"})
-    r = g.post("/api/me/profile", json={"name": "한선생", "school": "가나고등학교", "birth": "1980-01-03", "gender": "여",
+    r = g.post("/api/me/profile", json={"name": "한선생", "school": g.get("/api/me").json()["user"]["school"], "birth": "1980-01-03", "gender": "여",
                                         "email": "han@use.go.kr", "phone": "010-9999-0000"})
     assert r.status_code == 200, r.text
     me = r.json()
     assert (me["birth"], me["gender"], me["contact_email"], me["phone"]) == ("1980-01-03", "여", "han@use.go.kr", "010-9999-0000")
+    assert g.post("/api/me/profile", json={"name": "한선생", "school": me["school"], "gender": "남"}).status_code == 400
+    assert g.get("/api/me").json()["user"]["gender"] == "여"
     app_ = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
     assert (app_["contact"], app_["contact_email"], app_["gender"]) == ("010-9999-0000", "han@use.go.kr", "여")
-    # 전체 관리자는 자기 이름을 바꿀 수 있다
-    assert boss.post("/api/me/profile", json={"name": "새관리자", "school": ""}).json()["name"] == "새관리자"
+    # 전체 관리자는 자기 이름을 즉시 수정하고, 다른 회원은 변경 신청 후 승인을 받는다.
+    changed_boss = boss.post("/api/me/profile", json={"name": "새관리자", "school": ""})
+    assert changed_boss.status_code == 200 and changed_boss.json()["name"] == "새관리자"
+    requested = s.post("/api/me/change-requests", json={"field": "name", "value": "새학생이름"})
+    assert requested.status_code == 200
+    change_id = requested.json()["id"]
+    assert s.get("/api/me").json()["user"]["name"] == "학생1"
+    assert [r["id"] for r in boss.get("/api/admin/change-requests?field=name").json()["requests"]] == [change_id]
+    assert boss.post(f"/api/admin/change-requests/{change_id}", json={"action": "approve"}).status_code == 200
+    assert s.get("/api/me").json()["user"]["name"] == "새학생이름"
 
 
 def test_profile_photo_upload_view_and_delete():

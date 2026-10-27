@@ -9,10 +9,11 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+import uuid
 
 from sqlalchemy import (
     Column, Float, Integer, MetaData, String, Table, Text, UniqueConstraint, create_engine, inspect, text,
-    update,
+    insert, select, update,
 )
 
 _url = os.environ.get("DATABASE_URL", "sqlite:///./live.db")
@@ -56,6 +57,37 @@ users = Table(
     Column("withdraw_at", Float),  # 신청한 시각 (비면 신청 안 함)
     Column("withdraw_reason", String(300), nullable=False, default=""),
     Column("withdraw_note", String(300), nullable=False, default=""),  # 반려 사유 (학생에게 보임)
+    Column("account_state", String(20), nullable=False, default="active"),
+    Column("session_key", String(32), nullable=False, default=lambda: uuid.uuid4().hex),
+)
+
+# 탈퇴 증빙은 운영 중인 회원·수업 표와 분리한다. payload에는 암호문만 저장한다.
+evidence_archives = Table(
+    "evidence_archives", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("subject_id", Integer, index=True),
+    Column("school", String(60), nullable=False),
+    Column("created_at", Float, nullable=False),
+    Column("expires_at", Float),  # 미정은 무기한 보존 승인이 아닌 '정책 미설정' 상태
+    Column("basis", String(500), nullable=False, default=""),
+    Column("payload", Text, nullable=False),
+)
+
+evidence_files = Table(
+    "evidence_files", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("archive_id", String(32), nullable=False, index=True),
+    Column("payload", Text, nullable=False),
+)
+
+evidence_audit = Table(
+    "evidence_audit", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("archive_id", String(32), nullable=False, default=""),
+    Column("actor_id", Integer),
+    Column("action", String(30), nullable=False),
+    Column("purpose", String(30), nullable=False, default=""),
+    Column("created_at", Float, nullable=False),
 )
 
 site_settings = Table(
@@ -123,9 +155,17 @@ course_requests = Table(
     "course_requests", metadata,  # 학생이 듣고 싶은 과목 개설 요청 (관리교사·전체 관리자가 모아 본다)
     Column("id", Integer, primary_key=True),
     Column("user_id", Integer, nullable=False, index=True),
+    Column("school_year", Integer),
+    Column("term", String(10), nullable=False, default=""),
     Column("subject", String(60), nullable=False),
     Column("note", String(300), nullable=False, default=""),
     Column("created_at", Float, nullable=False),
+)
+
+course_request_likes = Table(
+    "course_request_likes", metadata,
+    Column("request_id", Integer, primary_key=True),
+    Column("user_id", Integer, primary_key=True),
 )
 
 notice_files = Table(
@@ -150,6 +190,30 @@ notices = Table(
     Column("updated_at", Float),
 )
 
+community_posts = Table(
+    "community_posts", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("title", String(120), nullable=False),
+    Column("body", Text, nullable=False),
+    Column("author", String(50), nullable=False),
+    Column("created_at", Float, nullable=False),
+    Column("author_id", Integer),  # 비회원은 비움; 공개 화면에는 표시하지 않는다
+)
+
+profile_change_requests = Table(
+    "profile_change_requests", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("field", String(10), nullable=False),  # name / school
+    Column("old_value", String(60), nullable=False, default=""),
+    Column("new_value", String(60), nullable=False),
+    Column("status", String(10), nullable=False, default="pending"),
+    Column("requested_at", Float, nullable=False),
+    Column("decided_at", Float),
+    Column("decided_by", Integer),
+    Column("note", String(300), nullable=False, default=""),
+)
+
 hubs = Table(
     "hubs", metadata,  # 거점학교 (전체 관리자가 관리교사를 승인할 때 만들어진다)
     Column("id", Integer, primary_key=True),
@@ -164,6 +228,8 @@ memberships = Table(
     Column("role", String(12), nullable=False),  # coordinator(거점학교 관리교사) instructor(강사) participant(참여학교 담당교사)
     Column("hub_id", Integer, index=True),  # 강사: 신청한 거점학교 / 관리교사: 승인 때 정해짐
     Column("hub_name", String(60), nullable=False, default=""),  # 관리교사: 신청한 거점학교명 / 참여학교 담당교사: 소속 학교
+    Column("transfer_from", String(60), nullable=False, default=""),  # 참여학교 담당교사의 학교 변경 승인 대기 중 이전 학교
+    Column("replace_membership_id", Integer),  # 가입 유형·강의 학교 변경 승인 시 해제할 기존 권한
     Column("status", String(10), nullable=False),  # pending(대기) approved(승인) rejected(거절) revoked(해제)
     Column("kind", String(15), nullable=False, default=""),  # (더 이상 쓰지 않음: 예전 정규·보충수업 구분)
     Column("contact", String(100), nullable=False, default=""),
@@ -174,7 +240,9 @@ memberships = Table(
     Column("wish_until", String(10), nullable=False, default=""),
     # 신청서: 소속 구분(school 학교 교원 / univ 대학 교원 / cert 교원자격 소지자 / other 기타)·교육청·교원자격·이메일
     Column("affil_type", String(10), nullable=False, default=""),
+    Column("affiliation", String(60), nullable=False, default=""),
     Column("office", String(30), nullable=False, default=""),
+    Column("department", String(60), nullable=False, default=""),  # 대학 교원: 소속 대학과 분리한 학과
     Column("license", String(100), nullable=False, default=""),
     Column("email", String(200), nullable=False, default=""),
     Column("pledge_at", Float),  # 개인정보 보호 서약에 동의한 시각
@@ -392,6 +460,8 @@ def init() -> None:
              ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("memberships", "wish_from", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("memberships", "transfer_from", "VARCHAR(60) NOT NULL DEFAULT ''"),
+             ("memberships", "replace_membership_id", "INTEGER"),
              ("users", "terms_version", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("users", "terms_at", "FLOAT"),
              ("users", "ai_ok_at", "FLOAT"),
@@ -400,6 +470,8 @@ def init() -> None:
              ("users", "withdraw_at", "FLOAT"),
              ("users", "withdraw_reason", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("users", "withdraw_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("users", "account_state", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
+             ("users", "session_key", "VARCHAR(32) NOT NULL DEFAULT ''"),
              ("courses", "subject_group", "VARCHAR(40) NOT NULL DEFAULT ''"),
              ("courses", "subject_area", "VARCHAR(20) NOT NULL DEFAULT ''"),
              ("courses", "subject_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
@@ -431,7 +503,9 @@ def init() -> None:
              ("courses", "class_end", "VARCHAR(5) NOT NULL DEFAULT ''"),
              ("notices", "author_id", "INTEGER"),
              ("memberships", "affil_type", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("memberships", "affiliation", "VARCHAR(60) NOT NULL DEFAULT ''"),
              ("memberships", "office", "VARCHAR(30) NOT NULL DEFAULT ''"),
+             ("memberships", "department", "VARCHAR(60) NOT NULL DEFAULT ''"),
              ("memberships", "license", "VARCHAR(100) NOT NULL DEFAULT ''"),
              ("memberships", "email", "VARCHAR(200) NOT NULL DEFAULT ''"),
              ("courses", "approval", "VARCHAR(10) NOT NULL DEFAULT 'approved'"),
@@ -445,6 +519,8 @@ def init() -> None:
              ("users", "photo", "VARCHAR(40) NOT NULL DEFAULT ''"),
              ("courses", "approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("courses", "approved_by", "INTEGER"),
+             ("course_requests", "school_year", "INTEGER"),
+             ("course_requests", "term", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("courses", "delivery", "VARCHAR(20) NOT NULL DEFAULT '실시간 온라인'")]
     fresh = set()
     for table, col, kind in added:
@@ -452,6 +528,19 @@ def init() -> None:
             with engine.begin() as c:
                 c.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {kind}"))
             fresh.add((table, col))
+    with engine.begin() as c:
+        for uid in c.execute(select(users.c.id).where(users.c.session_key == "")).scalars().all():
+            c.execute(update(users).where(users.c.id == uid).values(session_key=uuid.uuid4().hex))
+        # 예전 참여학교 담당교사도 같은 학교의 관리교사 권한을 사용한다.
+        old_managers = c.execute(select(memberships.c.id, memberships.c.hub_name).where(
+            memberships.c.role == "participant", memberships.c.status == "approved",
+            memberships.c.hub_id.is_(None), memberships.c.hub_name != "")).all()
+        for membership in old_managers:
+            hub_id = c.execute(select(hubs.c.id).where(hubs.c.name == membership.hub_name)).scalar()
+            if hub_id is None:
+                hub_id = c.execute(insert(hubs).values(name=membership.hub_name,
+                                                       created_at=time.time())).inserted_primary_key[0]
+            c.execute(update(memberships).where(memberships.c.id == membership.id).values(hub_id=hub_id))
     if ("users", "name_locked") in fresh:  # 이미 가입을 마친 사람의 이름은 그대로 굳힌다
         with engine.begin() as c:
             c.execute(update(users).where(users.c.name != "").values(name_locked=1))

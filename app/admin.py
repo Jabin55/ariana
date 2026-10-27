@@ -26,13 +26,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, or_, select, update
 
 from app import db
-from app.auth import NAME_LOCKED, PLEDGE, current_user, get_schools, membership_status, today_kst
+from app.auth import NAME_LOCKED, PLEDGE, check_school_gender, current_user, get_schools, membership_active, membership_status, today_kst
 from app.courses import hub_for_school
 from app.subjects import OFFICES
 from app.policy import POLICY_VERSION
 
 router = APIRouter()
-ROLES = {"coordinator": "거점학교 관리교사", "instructor": "강사", "participant": "참여학교 담당교사"}
+ROLES = {"coordinator": "관리교사", "instructor": "강의교사", "participant": "관리교사"}
 
 
 async def login_required(request: Request) -> dict:
@@ -65,6 +65,7 @@ async def list_hubs(request: Request):
 
 class ApplyReq(BaseModel):
     role: str = Field(pattern="^(coordinator|instructor|participant)$")
+    replace_membership_id: int | None = None
     hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 담당교사: 소속 학교
     hub_id: int | None = None  # 강사: 거점학교 고르기
     name: str = Field(min_length=1, max_length=30)
@@ -72,6 +73,7 @@ class ApplyReq(BaseModel):
     # 소속 구분: school 학교 교원 / univ 대학 교원 / cert 교원자격 소지자(미임용) / other 기타
     affil_type: str = Field(default="", pattern="^(school|univ|cert|other)?$")
     office: str = Field(default="", max_length=30)  # 소속 교육청 (학교 교원)
+    department: str = Field(default="", max_length=60)  # 학과 (대학 교원)
     license: str = Field(default="", max_length=100)  # 교원자격 (교원자격 소지자)
     email: str = Field(default="", max_length=200)  # 연락받을 이메일
     contact: str = Field(min_length=1, max_length=100)  # 연락처 (전화번호)
@@ -101,25 +103,33 @@ async def apply(req: ApplyReq, request: Request):
     u = await login_required(request)
     if not req.pledge:
         raise HTTPException(400, "개인정보 보호 서약에 동의해야 신청할 수 있어요.")
-    if req.birth:
-        check_dates(req.birth, "", "생년월일")
-        if not ("1920-01-01" <= req.birth <= today_kst()):
-            raise HTTPException(400, "생년월일을 확인해 주세요.")
+    if not req.birth:
+        raise HTTPException(400, "생년월일을 입력해 주세요.")
+    from app.auth import check_student_age
+    check_student_age(req.birth)
     hub_name = req.hub_name.strip()
+    affiliation = req.affiliation.strip()
     if req.role in ("coordinator", "participant"):
-        what = "거점학교" if req.role == "coordinator" else "소속 학교"
+        what = "거점학교" if req.role == "coordinator" else "근무 중인 참여학교"
         if not hub_name:
             raise HTTPException(400, f"{what}를 골라 주세요.")
         schools = await db.run(get_schools)  # 울산 시내 학교 목록에서만
         if schools and hub_name not in schools:
             raise HTTPException(400, f"{what}는 목록에 있는 학교 중에서 골라 주세요.")
+        if req.affil_type not in ("", "school"):
+            raise HTTPException(400, "관리교사는 근무 중인 학교에 소속되어 있어야 해요.")
+        affiliation = affiliation or hub_name  # 예전 신청 형식에도 소속학교를 반드시 남긴다.
+        if affiliation != hub_name:
+            raise HTTPException(400, "소속 학교와 담당 학교가 같아야 해요.")
     if req.affil_type:  # 새 신청서: 소속 구분에 따라 필요한 칸
         if req.affil_type == "school" and not (req.office and req.affiliation.strip()):
             raise HTTPException(400, "소속 교육청과 소속 학교를 적어 주세요.")
+        if req.affil_type == "school" and req.role in ("coordinator", "participant") and req.affiliation.strip() != hub_name:
+            raise HTTPException(400, "소속 학교와 담당 거점학교·참여학교가 같아야 해요.")
         if req.office and req.office not in OFFICES:
             raise HTTPException(400, "소속 교육청을 목록에서 골라 주세요.")
-        if req.affil_type == "univ" and not req.affiliation.strip():
-            raise HTTPException(400, "소속 대학(학과)을 적어 주세요.")
+        if req.affil_type == "univ" and not (req.affiliation.strip() and req.department.strip()):
+            raise HTTPException(400, "소속 대학과 학과를 각각 적어 주세요.")
         if req.affil_type == "cert" and not req.license.strip():
             raise HTTPException(400, "가지고 있는 교원자격을 적어 주세요. (예: 중등학교 2급 정교사(사회))")
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", req.email.strip()):
@@ -142,6 +152,12 @@ async def apply(req: ApplyReq, request: Request):
     def run():
         m = db.memberships.c
         with db.engine.begin() as c:
+            replacing = None
+            if req.replace_membership_id:
+                replacing = c.execute(select(db.memberships).where(m.id == req.replace_membership_id,
+                    m.user_id == u["id"])).first()
+                if not replacing or not membership_status(dict(replacing._mapping)) in ("approved", "scheduled"):
+                    raise HTTPException(409, "변경할 기존 권한을 확인할 수 없어요.")
             hub_id = req.hub_id
             if req.role == "instructor" and not hub_id:
                 hub_id = hub_for_school(c, hub_name)
@@ -149,10 +165,16 @@ async def apply(req: ApplyReq, request: Request):
                 raise HTTPException(404, "거점학교를 찾을 수 없어요.")
             # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
             # 이름은 처음 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
-            locked = u.get("name_locked") and not u["is_admin"]
+            locked = bool(u.get("name")) and not u["is_admin"]
             if locked and req.name.strip() != (u["name"] or ""):
                 raise HTTPException(400, NAME_LOCKED)
-            who = {"name": req.name.strip(), "school": req.affiliation.strip(), "terms_version": POLICY_VERSION, "terms_at": now,
+            if req.gender and u.get("gender") and req.gender != u["gender"]:
+                raise HTTPException(400, "성별은 내 정보에 저장된 값과 같아야 해요.")
+            current_manager = next((manager for manager in c.execute(select(db.memberships).where(
+                m.user_id == u["id"], m.role.in_(["coordinator", "participant"]))).all()
+                if membership_active(dict(manager._mapping))), None)
+            profile_affiliation = current_manager.hub_name if current_manager else affiliation
+            who = {"name": req.name.strip(), "school": profile_affiliation, "terms_version": POLICY_VERSION, "terms_at": now,
                    **({} if u["is_admin"] else {"name_locked": 1})}
             if req.birth:
                 who["birth"] = req.birth
@@ -164,22 +186,44 @@ async def apply(req: ApplyReq, request: Request):
             if req.role == "instructor" and req.subjects.strip():
                 who["subjects"] = " ".join(req.subjects.split())
             c.execute(update(db.users).where(db.users.c.id == u["id"]).values(**who))
-            same = (m.hub_id == hub_id) if req.role == "instructor" else (func.lower(m.hub_name) == hub_name.lower())
-            row = c.execute(select(db.memberships).where(m.user_id == u["id"], m.role == req.role, same)).first()
+            changing_school = False
+            if req.role in ("participant", "coordinator"):
+                existing = c.execute(select(db.memberships).where(
+                    m.user_id == u["id"], m.role == req.role)).all()
+                if len(existing) > 1:
+                    raise HTTPException(409, "같은 담당 역할의 학교 권한이 중복돼 있어 전체 관리자의 확인이 필요해요.")
+                row = existing[0] if existing else None
+                changing_school = bool(row and row.hub_name.lower() != hub_name.lower())
+                if changing_school and (membership_status(dict(row._mapping)) in ("approved", "scheduled") or row.transfer_from):
+                    raise HTTPException(409, "담당 학교 변경은 내 정보에서 신청해 주세요.")
+            else:
+                row = c.execute(select(db.memberships).where(
+                    m.user_id == u["id"], m.role == req.role, m.hub_id == hub_id)).first()
             values = {"contact": req.contact.strip(), "pledge_at": now, "affil_type": req.affil_type,
+                      "affiliation": affiliation,
                       "office": req.office if req.affil_type == "school" else "",
+                      "department": req.department.strip() if req.affil_type == "univ" else "",
                       "license": req.license.strip() if req.affil_type == "cert" else "", "email": req.email.strip(),
                       "kind": "assistant" if req.role == "instructor" and req.assistant else ""}
             if req.role == "instructor":
                 values.update(wish_from=req.wish_from, wish_until=req.wish_until)
             else:
                 values["message"] = req.message.strip()
+            values["replace_membership_id"] = replacing.id if replacing else None
+            if changing_school:
+                values.update(hub_name=hub_name, transfer_from="")
+                if req.role == "coordinator":
+                    values["hub_id"] = None
             if row and membership_status(dict(row._mapping)) in ("approved", "scheduled"):
+                if replacing:
+                    raise HTTPException(409, "이미 활동 중인 유형·학교예요.")
                 # 지금 활동 중(또는 시작 전)이면 연락처 등만 고친다. 기간이 끝났으면 아래에서 다시 '승인 대기'로.
                 # 참여 형태(주강사·보조교사)는 승인받은 그대로 둔다 (바꾸려면 다시 승인받아야 함)
                 values.pop("kind")
                 c.execute(update(db.memberships).where(m.id == row.id).values(**values))
             elif row:  # 대기 중 수정, 또는 거절·해제 뒤 다시 신청
+                if replacing and row.id == replacing.id:
+                    raise HTTPException(400, "현재 권한과 같은 유형·학교예요.")
                 c.execute(update(db.memberships).where(m.id == row.id)
                           .values(status="pending", decided_at=None, requested_at=now, **values))
             else:
@@ -209,25 +253,33 @@ async def applications(role: str, request: Request):
         m = db.memberships.c
         with db.engine.connect() as c:
             q = (select(db.memberships, db.users.c.name, db.users.c.email, db.users.c.school, db.users.c.google_name,
-                        db.users.c.birth, db.users.c.gender)
+                        db.users.c.birth, db.users.c.gender, db.users.c.position)
                  .join(db.users, db.users.c.id == m.user_id).where(m.role == role))
             if not u["is_admin"] and role == "instructor":
                 q = q.where(m.hub_id.in_(hubs))
             rows = c.execute(q.order_by(m.requested_at.desc())).all()
             names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
-            return rows, names
+            replaced_ids = {r.replace_membership_id for r in rows if r.replace_membership_id}
+            replaced = {r.id: r for r in c.execute(select(db.memberships).where(m.id.in_(replaced_ids))).all()} if replaced_ids else {}
+            return rows, names, replaced
 
-    rows, names = await db.run(run)
+    rows, names, replaced = await db.run(run)
     out = []
     for r in rows:
         x = dict(r._mapping)
+        old = replaced.get(x["replace_membership_id"])
+        old_label = f"{ROLES[old.role]} ({names.get(old.hub_id) or old.hub_name})" if old else ""
         out.append({"id": x["id"], "user_id": x["user_id"], "name": x["name"] or x["google_name"], "email": x["email"],
-                    "affiliation": x["school"], "hub_id": x["hub_id"], "hub": names.get(x["hub_id"]) or x["hub_name"],
+                    "affiliation": x["affiliation"] or x["school"], "hub_id": x["hub_id"], "hub": x["hub_name"] if x["transfer_from"] else (names.get(x["hub_id"]) or x["hub_name"]),
+                    "transfer_from": x["transfer_from"], "replace_membership_id": x["replace_membership_id"],
+                    "replace_from": old_label,
                     "status": membership_status(x), "valid_from": x["valid_from"], "valid_until": x["valid_until"],
                     "wish_from": x["wish_from"], "wish_until": x["wish_until"], "contact": x["contact"],
                     "message": x["message"], "admin_note": x["admin_note"], "pledged": bool(x["pledge_at"]),
-                    "kind": x["kind"], "affil_type": x["affil_type"], "office": x["office"], "license": x["license"],
+                    "kind": x["kind"], "affil_type": x["affil_type"], "office": x["office"],
+                    "department": x["department"], "license": x["license"],
                     "contact_email": x["email"], "birth": x["birth"] or "", "gender": x["gender"] or "",
+                    "position": x["position"] or "",
                     "requested_at": x["requested_at"]})
     return {"applications": out, "today": today_kst()}
 
@@ -245,6 +297,7 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
     u = await login_required(request)
     check_dates(req.valid_from, req.valid_until, "활동 기간")
     status = {"approve": "approved", "reject": "rejected", "revoke": "revoked"}[req.action]
+    schools = await db.run(get_schools)
 
     def run():
         m = db.memberships.c
@@ -256,13 +309,28 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
                 raise HTTPException(403, "관리 권한이 없어요.")
             if row.user_id == u["id"] and not u["is_admin"]:
                 raise HTTPException(403, "자기 신청은 처리할 수 없어요.")
-            values = {"status": status, "decided_at": time.time(), "decided_by": u["id"], "admin_note": req.note.strip()}
+            if req.action == "approve" and row.role in ("participant", "coordinator"):
+                other = c.execute(select(m.id).where(m.user_id == row.user_id,
+                    m.role.in_(["participant", "coordinator"]), m.status == "approved",
+                    m.id != row.id, m.id != row.replace_membership_id).limit(1)).first()
+                if other:
+                    raise HTTPException(409, "이미 승인된 다른 학교 관리교사 권한이 있어요. 기존 권한 변경 신청으로 처리해 주세요.")
+            values = {"status": status, "decided_at": time.time(), "decided_by": u["id"],
+                      "admin_note": req.note.strip(), "transfer_from": ""}
             if req.action == "approve":
+                if row.replace_membership_id and row.status == "pending":
+                    previous = c.execute(select(db.memberships).where(m.id == row.replace_membership_id,
+                        m.user_id == row.user_id)).first()
+                    if not previous or previous.status != "approved" or previous.id == row.id:
+                        raise HTTPException(409, "변경 전 권한을 확인할 수 없어요. 신청자에게 다시 신청을 요청해 주세요.")
                 values.update(valid_from=req.valid_from, valid_until=req.valid_until)
                 if row.role == "participant":
                     values.update(hub_name=(req.hub_name or row.hub_name).strip())
                     if not values["hub_name"]:
                         raise HTTPException(400, "소속 학교를 정해 주세요.")
+                    if schools and values["hub_name"] not in schools:
+                        raise HTTPException(400, "소속 학교는 학교 목록에서 골라 주세요.")
+                    values["hub_id"] = hub_for_school(c, values["hub_name"])
                 elif row.role == "instructor":
                     if not req.valid_until:  # 기간이 끝나면 저절로 권한이 꺼지도록 강사는 끝나는 날이 꼭 있어야 한다
                         raise HTTPException(400, "강사는 활동 기간이 끝나는 날을 정해 주세요.")
@@ -275,12 +343,145 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
                         insert(db.hubs).values(name=name, created_at=time.time())).inserted_primary_key[0]
                     values.update(hub_id=hub_id, hub_name=name)
             c.execute(update(db.memberships).where(m.id == membership_id).values(**values))
+            if req.action == "approve" and row.role in ("participant", "coordinator"):
+                c.execute(update(db.users).where(db.users.c.id == row.user_id)
+                          .values(school=values.get("hub_name", row.hub_name)))
+            if req.action == "approve" and row.replace_membership_id and row.status == "pending":
+                c.execute(update(db.memberships).where(m.id == row.replace_membership_id).values(
+                    status="revoked", decided_at=time.time(), decided_by=u["id"],
+                    admin_note="가입 유형·담당 학교 변경 승인으로 권한 해제"))
+            if req.action == "approve" and row.role == "instructor" and row.affiliation:
+                remaining_manager = c.execute(select(m.id).where(
+                    m.user_id == row.user_id, m.role.in_(["coordinator", "participant"]),
+                    m.status == "approved").limit(1)).first()
+                if not remaining_manager:
+                    c.execute(update(db.users).where(db.users.c.id == row.user_id)
+                              .values(school=row.affiliation))
+            if req.action == "revoke" and row.role in ("coordinator", "participant"):
+                remaining_manager = c.execute(select(m.id).where(
+                    m.user_id == row.user_id, m.role.in_(["coordinator", "participant"]),
+                    m.status == "approved").limit(1)).first()
+                if not remaining_manager:
+                    instructor = c.execute(select(m.affiliation).where(
+                        m.user_id == row.user_id, m.role == "instructor", m.status == "approved",
+                        m.affiliation != "").order_by(m.id.desc()).limit(1)).scalar()
+                    if instructor:
+                        c.execute(update(db.users).where(db.users.c.id == row.user_id)
+                                  .values(school=instructor))
+            return row.user_id
 
-    await db.run(run)
+    target_uid = await db.run(run)
+    from app.classroom import refresh_user_connections
+    await refresh_user_connections(target_uid)
+    return {"ok": True}
+
+
+@router.get("/api/admin/change-requests")
+async def profile_change_requests(request: Request, field: str = Query(pattern="^(name|school)$")):
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+
+    def run():
+        q = db.profile_change_requests.c
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.profile_change_requests, db.users.c.name, db.users.c.email,
+                db.users.c.role).join(db.users, db.users.c.id == q.user_id).where(
+                    q.field == field, db.users.c.role != "student" if field == "school" else True)
+                .order_by(q.requested_at.desc()).limit(100)).all()
+            return [{"id": r.id, "user_id": r.user_id, "field": r.field,
+                     "old_value": r.old_value, "new_value": r.new_value, "status": r.status,
+                     "requested_at": r.requested_at, "name": r.name, "email": r.email,
+                     "role": r.role, "note": r.note} for r in rows]
+
+    return {"requests": await db.run(run)}
+
+
+class ProfileChangeDecision(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = Field(default="", max_length=300)
+
+
+@router.post("/api/admin/change-requests/{change_id}")
+async def decide_profile_change(change_id: int, req: ProfileChangeDecision, request: Request):
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+    schools = await db.run(get_schools)
+
+    def run():
+        q = db.profile_change_requests.c
+        with db.engine.begin() as c:
+            row = c.execute(select(db.profile_change_requests).where(q.id == change_id)).first()
+            if not row:
+                raise HTTPException(404, "변경 신청을 찾을 수 없어요.")
+            if row.status != "pending":
+                raise HTTPException(409, "이미 처리한 신청이에요.")
+            target = c.execute(select(db.users).where(db.users.c.id == row.user_id)).first()
+            if not target or target.account_state != "active":
+                raise HTTPException(404, "회원을 찾을 수 없어요.")
+            if row.field == "school" and target.role == "student":
+                raise HTTPException(403, "학생 소속학교 변경은 새 학교의 참여학교 담당교사가 승인해요.")
+            if req.action == "approve":
+                if (getattr(target, row.field) or "").strip() != row.old_value:
+                    raise HTTPException(409, "현재 정보가 신청 당시와 달라졌어요. 다시 신청해야 해요.")
+                if row.field == "school":
+                    if target.role == "student":
+                        if schools and row.new_value not in schools:
+                            raise HTTPException(400, "목록에 있는 학교만 승인할 수 있어요.")
+                        check_school_gender(row.new_value, target.gender or "")
+                    m = db.memberships.c
+                    managers = c.execute(select(db.memberships).where(m.user_id == row.user_id,
+                        m.role.in_(["participant", "coordinator"]))).all()
+                    if any(r.status == "approved" or (r.status == "pending" and r.transfer_from) for r in managers):
+                        raise HTTPException(409, "담당 학교 권한이 생겼어요. 담당 학교 변경 신청으로 처리해 주세요.")
+                values = {row.field: row.new_value}
+                if row.field == "name":
+                    values["name_locked"] = 1
+                c.execute(update(db.users).where(db.users.c.id == row.user_id).values(**values))
+                if row.field == "name" and row.old_value:
+                    c.execute(update(db.courses).where(db.courses.c.teacher_id == row.user_id,
+                        db.courses.c.instructor == row.old_value).values(instructor=row.new_value))
+            c.execute(update(db.profile_change_requests).where(q.id == change_id).values(
+                status="approved" if req.action == "approve" else "rejected",
+                decided_at=time.time(), decided_by=u["id"], note=req.note.strip()))
+            return row.user_id, row.field
+
+    target_id, field = await db.run(run)
+    if req.action == "approve" and field == "school":
+        from app.classroom import refresh_user_connections
+        await refresh_user_connections(target_id)
     return {"ok": True}
 
 
 # ───────────────────────── 학교 목록 (학생 가입용) ─────────────────────────
+
+
+@router.get("/api/admin/classroom")
+async def admin_classroom(request: Request):
+    """전체 관리자에게 개설 강좌와 진행 중인 강좌 수업의 현황을 보여 준다."""
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+
+    def run():
+        co, cl = db.courses.c, db.classes.c
+        with db.engine.connect() as c:
+            courses = c.execute(select(co.id, co.title, co.instructor, co.hub_school,
+                co.start_date, co.end_date).where(co.archived == 0, co.approval == "approved")
+                .order_by(co.hub_school, co.title)).all()
+            active = c.execute(select(cl.course_id, cl.title, cl.created_at).where(
+                cl.course_id.is_not(None), cl.ended_at.is_(None),
+                cl.created_at > time.time() - 24 * 3600)).all()
+        by_course = {}
+        for row in active:
+            by_course.setdefault(row.course_id, []).append({"title": row.title,
+                "started_at": row.created_at})
+        return [{"id": row.id, "title": row.title, "instructor": row.instructor,
+                 "hub_school": row.hub_school, "start_date": row.start_date,
+                 "end_date": row.end_date, "live": by_course.get(row.id, [])} for row in courses]
+
+    return {"courses": await db.run(run)}
 
 
 class SchoolsReq(BaseModel):
@@ -386,7 +587,7 @@ async def find_users(request: Request, q: str = Query(min_length=1, max_length=6
         uc = db.users.c
         with db.engine.connect() as c:
             return c.execute(select(uc.id, uc.name, uc.google_name, uc.email, uc.role, uc.school, uc.grade, uc.class_no, uc.number)
-                             .where(or_(uc.name.like(word), uc.email.like(word), uc.google_name.like(word)))
+                             .where(uc.account_state == "active", or_(uc.name.like(word), uc.email.like(word), uc.google_name.like(word)))
                              .order_by(uc.name).limit(50)).all()
 
     return {"users": [{"id": r.id, "name": r.name or "", "google_name": r.google_name or "", "email": r.email,

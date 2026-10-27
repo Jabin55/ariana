@@ -1,6 +1,10 @@
 /* 지난 수업 자료: 목록(/live/materials)과 보기(/live/materials?class=번호) */
 const qs = new URLSearchParams(location.search);
 const classId = Number(qs.get("class")) || null;
+if (qs.get("from") === "courses") {
+  $("#m-back").href = "/live?classroom=1&tab=courses";
+  $("#m-back").textContent = "← 내 강좌";
+}
 
 async function showList() {
   const box = $("#m-list");

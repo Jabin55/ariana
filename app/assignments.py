@@ -246,6 +246,9 @@ class GradeReq(BaseModel):
 async def grade_submission(aid: int, req: GradeReq, request: Request):
     t = await require_user(request, "teacher")
     await teacher_assignment(aid, t)
+    a = await db.run(_assignment, aid)
+    if not await db.run(is_enrolled, a.course_id, req.user_id):
+        raise HTTPException(404, "이 과제의 수강생을 찾을 수 없어요.")
 
     def run():
         s = db.submissions.c

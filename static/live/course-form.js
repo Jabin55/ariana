@@ -90,7 +90,7 @@ async function courseForm(c, done) {
     h("div", { class: "wz-table two" },
       row("소속 교육청", office, officeNote),
       row("거점학교", hubSel,
-        byName && !schoolNames.length ? h("span", { class: "error", style: "font-size:0.85rem" }, "울산 고등학교 목록이 비어 있어요. 전체 관리 → 🏫 울산 고등학교 목록을 먼저 채워 주세요.") : null)),
+        byName && !schoolNames.length ? h("span", { class: "error", style: "font-size:0.85rem" }, "울산 고등학교 목록이 비어 있어요. 전체 운영 관리자에게 문의해 주세요.") : null)),
     h("h3", { class: "wz-h" }, "팀 티칭 교강사 정보"),
     h("div", { class: "wz-table" }, row("팀티칭 여부", teamToggle, coBox)));
 

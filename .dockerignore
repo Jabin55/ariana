@@ -4,6 +4,7 @@
 .venv
 .env
 live.db
+.evidence-key
 tests
 deploy
 board

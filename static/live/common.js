@@ -90,7 +90,8 @@ class LiveSocket {
   connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     // 로그인 쿠키로 누구인지 확인한다
-    const ws = new WebSocket(`${proto}://${location.host}/ws/live/${CODE}`);
+    const studentMode = new URLSearchParams(location.search).has("as_student") ? "?as_student=1" : "";
+    const ws = new WebSocket(`${proto}://${location.host}/ws/live/${CODE}${studentMode}`);
     this.ws = ws;
     ws.onopen = () => { this.retry = 0; this.lastMsg = Date.now(); this.onStatus(true); };
     ws.onmessage = (e) => {

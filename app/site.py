@@ -1,5 +1,4 @@
-"""외솔온닷 안내 화면: 소개 · 수강안내 · 수업신청(강좌 목록) · 이용안내.
-마이페이지는 /live (로그인 뒤 학생·선생님 화면)."""
+"""외솔온닷 안내 화면: 소개 · 정보마당 · 수강신청 · 강의실 · 교무실."""
 
 from __future__ import annotations
 
@@ -14,10 +13,10 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 
 from app import db
-from app.auth import KST, require_user, today_kst
+from app.auth import KST, current_user, require_user, today_kst
 from app.courses import course_grades, sessions_of, subject_info
 from app.policy import settings
 
@@ -49,19 +48,29 @@ def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_cla
 @router.get("/live/about", response_class=HTMLResponse)
 async def about():
     return site_page("외솔온닷 소개", f"""
-<section class="info-block">
-  <h2>집에서 듣는, 울산의 실시간 공동 수업</h2>
-  <p>외솔온닷은 울산의 고등학생이 자기 학교에 없는 과목도 거점학교 선생님께 실시간으로 배울 수 있도록 만든 <b>온라인 공동교육과정</b> 수업 공간이에요.
-  학생은 집에서 학교 구글 계정으로 들어오고, 선생님은 어디서든 수업을 열 수 있어요.</p>
+<section class="g-hero about-hero">
+  <div class="g-hero-in">
+    <div><p class="bb-kicker">외솔온닷</p>
+      <h2>어디서든 연결되는<br><b>실시간 온라인 수업</b></h2>
+      <p>선생님과 학생이 함께 배우고 활동하는 온라인 교실이에요.</p></div>
+    <div class="about-badge" aria-hidden="true"><b>온닷</b><span>실시간 교실</span></div>
+  </div>
 </section>
-<h2 class="home-h">온라인 공동교육과정<span>이란?</span></h2>
+<div class="home-wrap">
+<h2 class="home-h g-title">외솔온닷 <span>소개</span></h2>
+<section class="info-block">
+  <h2>어디서든 함께 배우는 실시간 온라인 수업</h2>
+  <p>외솔온닷은 선생님이 온라인 수업을 열고 학생이 실시간으로 참여하며, 수업 자료와 활동 기록을 한곳에서 관리하는 <b>온라인 수업 플랫폼</b>이에요.
+  학교 수업과 특강 등 여러 수업에 활용할 수 있고, 서로 다른 학교의 학생이 함께 배우는 <a href="/live/joint">공동교육과정</a> 운영에도 잘 맞아요.</p>
+</section>
+<h2 class="home-h">외솔온닷의 <span>온라인 수업</span></h2>
 <section class="oc-grid">
-  <div class="oc-card"><span class="oc-tag">개념</span><h3>교실 밖으로 나온 공동교육과정</h3>
-    <p>여러 학교 학생이 함께 듣던 공동교육과정을, 이제 <b>실시간·쌍방향 온라인</b>으로 만나요. 거점학교까지 가지 않아도 집에서 같은 수업에 참여해요.</p></div>
+  <div class="oc-card"><span class="oc-tag">방식</span><h3>어디서든 함께하는 실시간 수업</h3>
+    <p>선생님과 학생이 학교나 집 등 각자의 자리에서 <b>실시간·쌍방향</b>으로 만나고 수업에 참여해요.</p></div>
   <div class="oc-card"><span class="oc-tag">의의</span><h3>보기만 하는 동영상 수업이 아니에요</h3>
     <p>선생님과 얼굴을 보며 <b>묻고 답하고, 토론하고, 함께 활동하는</b> 참여형 수업이에요. 거꾸로 수업·블렌디드 러닝·모둠 토론처럼 다양한 방식으로 배워요.</p></div>
-  <div class="oc-card"><span class="oc-tag">강점</span><h3>시간·공간의 벽을 넘어요</h3>
-    <p>학교 사정 때문에 열리지 않던 과목도 들을 수 있어 <b>과목 선택권이 넓어지고</b>, 나의 소질·적성·진로에 맞는 배움을 스스로 설계할 수 있어요.</p></div>
+  <div class="oc-card"><span class="oc-tag">강점</span><h3>학교를 잇는 수업에도 잘 맞아요</h3>
+    <p>강좌 신청과 승인, 실시간 수업, 출결과 활동 기록을 이어서 관리해 <b>여러 학교가 함께 운영하는 공동교육과정</b>에도 활용하기 좋아요.</p></div>
 </section>
 <h2 class="home-h">외솔온닷 <span>시스템 특징</span></h2>
 <section class="sys-feat">
@@ -98,35 +107,95 @@ async def about():
   <div class="feature"><span class="f-ico">👥</span><h3>모둠 활동</h3><p>모둠별 회의실에서 토론하고, 선생님은 모든 모둠을 한눈에 살펴요.</p></div>
   <div class="feature"><span class="f-ico">📝</span><h3>과제와 피드백</h3><p>파일로 과제를 내고, 점수와 선생님 피드백을 받아요.</p></div>
 </section>
-<section class="info-block">
-  <h2>누가 쓰나요</h2>
-  <ul class="role-list">
-    <li><strong>학생</strong> — 울산 지역 고등학생. 학교 구글 계정으로 가입하고 강좌를 수강신청해요.</li>
-    <li><strong>강의교사</strong> — 거점학교에서 강의하는 선생님(학교 교사, 대학교수 등). 등록을 신청해 승인받아요.</li>
-    <li><strong>거점학교 관리교사</strong> — 강의교사 등록과 과목 개설을 승인하고, 수업 기록을 살펴봐요.</li>
-    <li><strong>참여학교 담당교사</strong> — 우리 학교 학생의 수강 현황을 보고, 학생 탈퇴를 승인해요.</li>
-  </ul>
-</section>
 <section class="cta-row">
   <a class="button primary big" href="/live/courses">개설 강좌 보기</a>
   <a class="button big" href="/live/guide">수강 방법 보기</a>
 </section>
-""", "울산 어디서나, 함께 듣는 실시간 수업")
+</div>
+""", hero=False, main_class="site-main home")
 
 
-GUIDE_ART = """<svg viewBox="0 0 360 260" aria-hidden="true">
-  <ellipse cx="190" cy="236" rx="150" ry="14" fill="rgba(0,0,0,0.12)"/>
-  <rect x="96" y="118" width="190" height="112" rx="12" fill="#e9eef5"/><rect x="104" y="126" width="174" height="96" rx="8" fill="#fff"/>
-  <rect x="112" y="134" width="96" height="80" rx="6" fill="#cfeadb"/><circle cx="160" cy="166" r="16" fill="#ffd9b8"/><path d="M136 206c4-18 44-18 48 0" fill="#3d63dd"/>
-  <rect x="214" y="134" width="56" height="24" rx="5" fill="#ffe8a3"/><rect x="214" y="162" width="56" height="24" rx="5" fill="#d6e4ff"/><rect x="214" y="190" width="56" height="24" rx="5" fill="#ffd6e0"/>
-  <path d="M80 230h222l-14 10H94z" fill="#c9d3e0"/>
-  <circle cx="80" cy="120" r="30" fill="#ffd9b8"/><path d="M50 116c0-24 60-30 60 0" fill="#3b2a20"/><path d="M48 122q-2-34 32-36 34 2 32 36" fill="none" stroke="#1b6b4a" stroke-width="7" stroke-linecap="round"/>
-  <rect x="42" y="116" width="12" height="20" rx="5" fill="#e8663a"/><rect x="106" y="116" width="12" height="20" rx="5" fill="#e8663a"/>
-  <circle cx="70" cy="122" r="3" fill="#2b2b2b"/><circle cx="90" cy="122" r="3" fill="#2b2b2b"/><path d="M72 134q8 6 16 0" stroke="#2b2b2b" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M40 232c0-50 80-50 80 0z" fill="#e8663a"/><path d="M112 200l30 6" stroke="#ffd9b8" stroke-width="10" stroke-linecap="round"/>
-  <circle cx="300" cy="60" r="20" fill="#ffd34d"/><path d="M300 30v-10M300 100v-10M270 60h-10M340 60h-10" stroke="#ffd34d" stroke-width="4" stroke-linecap="round"/>
-  <path d="M200 70q20-30 40 0" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".8"/><path d="M190 52q30-44 60 0" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".5"/>
-</svg>"""
+@router.get("/live/joint", response_class=HTMLResponse)
+async def joint_page():
+    return site_page("공동교육과정", """
+<section class="g-hero joint-hero">
+  <div class="g-hero-in">
+    <div><p class="bb-kicker">공동교육과정</p>
+      <h2>학교가 함께 열고<br><b>학생이 함께 배우는 수업</b></h2>
+      <p>한 학교에서 열기 어려운 과목도 학교 간 협력으로 배울 수 있어요.</p></div>
+    <div class="joint-badge" aria-hidden="true"><b>함께</b><span>배우는 교실</span></div>
+  </div>
+</section>
+<div class="home-wrap">
+<h2 class="home-h g-title">공동교육과정<span>이란?</span></h2>
+<section class="joint-overview" aria-label="공동교육과정의 정의와 추진 목적">
+  <div class="joint-card"><h3>정의</h3>
+    <p>희망 학생이 적거나 교사 수급이 어려운 등의 이유로 한 학교에서 개설하기 어려운 <b>소인수·심화 과목</b>을 학교 간 연계·협력으로 운영하는 정규교육과정이에요.</p></div>
+  <div class="joint-card"><h3>추진 목적</h3>
+    <ul><li>학생의 소질·적성과 진로에 따른 수요를 반영해 다양한 과목을 개설하고, 과목 선택권과 진로에 맞는 학업 설계를 지원해요.</li>
+      <li>학교 간, 학교와 지역·대학, 학교와 교육청의 연계·협력으로 학교 교육력을 높이고 교육 공동체를 만들어요.</li></ul></div>
+</section>
+<section class="info-block joint-terms"><h2>용어 안내</h2>
+  <dl>
+    <div><dt>강좌</dt><dd>공동교육과정 과목을 운영하기 위해 개설하는 개별 수업 단위예요.</dd></div>
+    <div><dt>거점학교</dt><dd>공동교육과정 과목을 개설하고 강좌 운영, 나이스(NEIS) 편제 등록과 성적 처리를 담당하는 학교예요.</dd></div>
+    <div><dt>참여학교</dt><dd>공동교육과정에 참여하는 학생이 다니는 학교예요.</dd></div>
+    <div><dt>관리교사</dt><dd>소속 학교의 거점학교 운영과 참여학교 담당 업무를 함께 맡는 교사예요.</dd></div>
+    <div><dt>수업교사(강사)</dt><dd>공동교육과정 강좌를 개설하고 수업하는 교사 또는 강사예요. 외솔온닷에서는 강의교사라고 불러요.</dd></div>
+    <div><dt>협력교사</dt><dd>강사를 채용해 운영할 때 수업·평가·기록과 나이스(NEIS) 등 행정 업무를 지원하는 교사예요.</dd></div>
+  </dl>
+</section>
+<section class="info-block joint-rules-block">
+  <h2>2022 개정 교육과정에 따른 공동교육과정 주요 내용</h2>
+  <table class="joint-rules"><tbody>
+    <tr><th scope="row">이수 기준</th><td>
+      <p>공동교육과정으로 개설되는 모든 과목에 학점 이수 인정 기준이 적용돼요.</p>
+      <ul><li><b>공통 과목:</b> 과목 출석률 2/3 이상과 학업성취율 40% 이상</li>
+        <li><b>선택 과목·교양 교과 과목:</b> 과목 출석률 2/3 이상</li></ul>
+      <p>기준에 도달하지 못하면 최소 성취수준 보장지도 또는 추가학습으로 학점을 취득할 기회가 제공돼요.</p>
+    </td></tr>
+    <tr><th scope="row">학기당 수강 강좌 수</th><td>
+      <p>정규 일과시간 안팎을 구분하지 않고, <b>공동교육과정과 온라인학교 개설 과목을 합쳐 학기당 최대 2강좌</b>까지 이수할 수 있어요.</p>
+      <p>부득이하게 초과해야 한다면 시교육청과 사전 협의 및 승인이 필요해요.</p>
+    </td></tr>
+    <tr><th scope="row">학교생활기록부 반영</th><td>
+      <p>이수 기준에 도달하지 못하고 최소 성취수준 보장지도 또는 추가학습도 이수하지 않으면, 교과학습발달상황의 비고란에 <b>미이수</b>로 기재돼요.</p>
+      <p>공통 과목은 출석률 2/3 이상·학업성취율 40% 이상, 선택 과목과 교양 교과 과목은 출석률 2/3 이상을 기준으로 해요.</p>
+    </td></tr>
+    <tr><th scope="row">1학점 수업량</th><td><p>일반계고와 직업계고 모두 <b>1학점당 16회 수업</b>을 기준으로 해요.</p></td></tr>
+    <tr><th scope="row">학점 초과 이수 제한</th><td>
+      <p>교과 이수 학점이 174학점인 경우 국어·수학·영어 교과의 이수 학점 합계는 <b>81학점 이내</b>예요.</p>
+      <p>174학점을 넘겨 이수하면 국어·수학·영어 교과에 추가되는 학점은 <b>전체 초과 이수 학점의 50% 이내</b>로 제한돼요. 과목별 산정은 소속 학교에 확인하세요.</p>
+    </td></tr>
+  </tbody></table>
+</section>
+<section class="info-block">
+  <h2>외솔온닷에서 운영할 때</h2>
+  <p>여러 학교 학생이 같은 강좌를 신청하고, 담당 교사가 승인 상황을 확인할 수 있어요. 수업이 시작되면 실시간 화상·자료 발표·활동을 함께 진행하고, 수업 뒤에는 출결과 수업 자료를 살펴볼 수 있어요.</p>
+  <p>외솔온닷은 이런 수업 흐름을 지원하는 온라인 플랫폼이에요. 과목의 개설·이수·성적 처리에 관한 세부 절차는 각 학교와 교육청의 운영 기준을 확인해 주세요.</p>
+</section>
+<section class="cta-row"><a class="button primary big" href="/live/courses">개설 강좌 보기</a>
+  <a class="button big" href="/live/guide">수강 방법 보기</a></section>
+</div>
+""", hero=False, main_class="site-main home")
+
+
+@router.get("/live/sitemap", response_class=HTMLResponse)
+async def sitemap_page():
+    return site_page("사이트맵", """
+<div class="sitemap-grid">
+  <section class="info-block"><h2>외솔온닷 소개</h2><ul>
+    <li><a href="/live/about">기본방향</a></li><li><a href="/live/joint">공동교육과정</a></li><li><a href="/live/credit">고교학점제</a></li>
+    <li><a href="/live/sitemap">사이트맵</a></li></ul></section>
+  <section class="info-block"><h2>정보마당</h2><ul>
+    <li><a href="/live/notices">공지사항</a></li><li><a href="/live/guide">수강안내</a></li>
+    <li><a href="/live/help">이용안내</a></li><li><a href="/live/community">소통마당</a></li></ul></section>
+  <section class="info-block"><h2>수강신청</h2><ul>
+    <li><a href="/live/courses">수강신청</a></li><li><a href="/live/course-requests">희망과목 개설 신청</a></li></ul></section>
+  <section class="info-block"><h2>수업 공간</h2><ul>
+    <li><a href="/live?classroom=1">강의실</a></li><li><a href="/live?office=1">교무실</a></li></ul></section>
+</div>
+""", hero=False)
 
 
 def mock(url: str, body: str) -> str:
@@ -165,7 +234,7 @@ async def guide():
     domain = ", ".join(f"@{d}" for d in sorted(ALLOWED_DOMAINS)) or "학교 계정"
     steps = [
         step(1, "회원가입 · 로그인", [
-            "메인 화면이나 <b>[마이페이지]</b>에서 <b>[학생으로 시작]</b>을 눌러요.",
+            "메인 화면이나 <b>[강의실]</b>에서 <b>[학생으로 시작]</b>을 눌러요.",
             f"<b>학교에서 받은 구글 계정</b>({html.escape(domain)})으로 로그인해요. 개인 계정으로는 학생 가입이 안 돼요.",
             "<b>학교</b>(목록에서 고르기)·<b>학년·반·번호</b>·<b>이름(실명)</b>을 적고, 이용약관과 개인정보 처리방침에 동의하면 가입 끝!",
         ], mock("class…/live", """
@@ -175,7 +244,7 @@ async def guide():
 <div class="m-agree">☑ 이용약관과 개인정보 처리방침에 동의해요</div>"""
             + pin(1, "6%", "4%") + pin(2, "33%", "4%") + pin(3, "55%", "4%"))),
         step(2, "수업 검색", [
-            "<b>[수업신청]</b> 메뉴에서 과목·선생님·학교 이름으로 듣고 싶은 강좌를 찾아요.",
+            "<b>[수강신청]</b> 메뉴에서 과목·학교 이름으로 듣고 싶은 강좌를 찾아요.",
             "<b>학년</b>을 고르면 내 학년이 들을 수 있는 강좌만 보여요. 1·2학년, 2·3학년처럼 여러 학년이 함께 듣는 강좌도 있어요.",
             "강좌 카드에서 <b>모집 기간·학점·평가 방법·수업계획서</b>를 확인해요. <b>수강모집</b> 표시가 있는 강좌만 신청할 수 있어요.",
         ], mock("class…/live/courses", f"""
@@ -183,16 +252,16 @@ async def guide():
 <div class="m-tiles">{sample_tiles()}</div>"""
             + pin(1, "4%", "2%") + pin(2, "-1%", "93%") + pin(3, "40%", "2%"))),
         step(3, "수강 신청", [
-            "로그인한 뒤 <b>[마이페이지] → 수강신청</b>에서 원하는 강좌의 <b>[수강신청]</b>을 눌러요.",
-            "<b>강사 선생님이 승인</b>하면 바로 <b>수강 확정</b>! 진행 상황은 마이페이지 '내 강좌'에서 보여요.",
+            "학생으로 로그인한 뒤 <b>[수강신청]</b>에서 원하는 강좌의 <b>[수강신청]</b>을 눌러요.",
+            "<b>강사 선생님이 승인</b>하면 <b>수강 확정</b>! 확정된 강좌는 [강의실]의 '내 강좌'에서 보여요.",
             "승인 전에는 언제든 신청을 취소할 수 있어요. 정원이 차거나 모집 기간이 끝나면 신청할 수 없어요.",
-        ], mock("class…/live (마이페이지)", """
+        ], mock("class…/live/courses", """
 <div class="m-line"><div><b>인공지능 기초</b><small>강사 김○○ · △△고등학교 · 1·2학년 · 4학점</small></div><span class="m-btn">수강신청</span></div>
 <div class="m-flow"><span class="done">신청</span><i>›</i><span class="now">강사 승인</span><i>›</i><span>수강 확정</span></div>
 <div class="m-line"><div><b>법과 사회</b><small>강사 승인 대기</small></div><span class="m-btn ghost">신청 취소</span></div>"""
             + pin(1, "10%", "2%") + pin(2, "42%", "2%") + pin(3, "72%", "2%"))),
         step(4, "실시간 수업 듣기", [
-            "수업 시간이 되면 마이페이지 <b>[지금 들어갈 수 있는 수업]</b>에 강좌가 떠요. <b>[들어가기]</b>만 누르면 돼요. 수업 코드는 필요 없어요.",
+            "수업 시간이 되면 <b>[강의실] → [지금 들어갈 수 있는 수업]</b>에 강좌가 떠요. <b>[들어가기]</b>만 누르면 돼요. 수업 코드는 필요 없어요.",
             "처음 들어갈 때 브라우저가 묻는 <b>카메라·마이크 사용을 [허용]</b>해 주세요. 울림이 없도록 <b>이어폰</b>을 꼭 써요.",
             "말하고 싶으면 <b>[🎤 마이크]</b>를 켜고 말해요(말이 끝나면 꺼 주세요). 할 말이 있으면 <b>[✋ 손 들기]</b>, 궁금한 건 <b>[질문]</b>으로 선생님께 보내요.",
             "선생님이 띄운 <b>발표 자료·판서</b>를 보고, <b>퀴즈·투표</b>와 <b>모둠 활동</b>에도 화면에서 바로 참여해요.",
@@ -204,24 +273,16 @@ async def guide():
 <div class="m-bar"><span>🎤 마이크</span><span>✋ 손 들기</span><span>❓ 질문</span><span>💬 채팅</span></div></div>"""
             + pin(1, "3%", "2%") + pin(2, "22%", "64%") + pin(3, "86%", "2%") + pin(4, "64%", "2%"))),
         step(5, "과제 · 복습", [
-            "<b>[마이페이지] → 과제</b>에서 파일이나 글로 과제를 내요. 마감 전에는 다시 낼 수 있어요.",
+            "<b>[강의실] → 평가 활동</b>에서 파일이나 글로 과제를 내요. 마감 전에는 다시 낼 수 있어요.",
             "<b>[지난 수업 자료]</b>에서 선생님이 띄운 자료와 판서를 다시 봐요. 결석한 날 수업도 따라잡을 수 있어요.",
-            "퀴즈 결과와 과제 점수·<b>선생님 피드백</b>도 마이페이지에서 확인해요.",
-        ], mock("class…/live (마이페이지)", """
+            "퀴즈 결과와 과제 점수·<b>선생님 피드백</b>도 강의실에서 확인해요.",
+        ], mock("class…/live (강의실)", """
 <div class="m-line"><div><b>📝 선거 제도 보고서</b><small>마감 11.20 23:59 · 보고서.pdf 제출함</small></div><span class="m-btn ghost">다시 내기</span></div>
 <div class="m-line"><div><b>📚 지난 수업 자료</b><small>3차시 헌법과 기본권 · 자료 2개 · 판서 4쪽</small></div><span class="m-btn ghost">보기</span></div>
 <div class="m-line"><div><b>💬 선생님 피드백</b><small>근거가 아주 좋아요! · 9점</small></div></div>"""
             + pin(1, "10%", "2%") + pin(2, "42%", "2%") + pin(3, "72%", "2%"))),
     ]
     return site_page("수강안내", f"""
-<section class="g-hero">
-  <div class="g-hero-in">
-    <div><p class="bb-kicker">수강방법안내</p>
-      <h2>우리 학교 밖,<br><b>또 하나의 교실</b></h2>
-      <p>컴퓨터나 휴대폰, 이어폰만 있으면<br>어디서든 선생님·친구들과 실시간으로 만나요.</p></div>
-    <div class="g-art">{GUIDE_ART}</div>
-  </div>
-</section>
 <div class="home-wrap">
   <h2 class="home-h g-title">수강방법 <span>안내</span></h2>
   <nav class="g-toc">
@@ -295,16 +356,12 @@ async def credit_page():
     <div class="info-card"><h3>🧩 최소 성취수준 보장</h3><p>출석률이나 학업성취율이 기준에 못 미칠 것 같으면 <b>보충 지도</b>를 받아 다시 도전해요.</p></div>
   </section>
 
-  <h2 class="home-h">공동교육과정과 <span>외솔온닷</span></h2>
+  <h2 class="home-h">과목 선택을 넓히는 <span>온라인 수업</span></h2>
   <section class="credit-joint">
-    <p>학생이 원하는 과목이 우리 학교에 없으면 <b>여러 학교가 함께 여는 공동교육과정</b>으로 들을 수 있어요.
-      외솔온닷은 울산의 <b>거점학교 선생님</b>과 여러 학교 학생이 <b>실시간 화상으로 만나는 온라인 공동교육과정 교실</b>이에요.</p>
-    <ul>
-      <li>들은 과목의 성적과 학점은 <b>내가 다니는 학교의 학교생활기록부</b>에 기록돼요.</li>
-      <li>공동교육과정도 학교 수업과 똑같이 <b>출석과 학업성취 기준</b>이 적용돼요. 출결은 외솔온닷에 자동으로 남아요.</li>
-      <li>수강신청 전에 <b>담임·진로 선생님과 과목 선택을 상담</b>하고, 학교의 공동교육과정 신청 절차도 함께 확인하세요.</li>
-    </ul>
-    <div class="cta-row"><a class="button primary big" href="/live/courses">공동교육과정 강좌 보기 →</a>
+    <p>학교에서 개설하기 어려운 과목을 여러 학교가 함께 운영하는 공동교육과정도 과목 선택의 한 방법이에요.
+      외솔온닷은 <b>실시간 수업과 수강·출결·활동 기록</b>을 지원해 이런 수업을 온라인으로 운영할 때 활용할 수 있어요.</p>
+    <div class="cta-row"><a class="button primary big" href="/live/joint">공동교육과정 알아보기 →</a>
+      <a class="button big" href="/live/courses">개설 강좌 보기</a>
       <a class="button big" href="/live/guide">수강 방법 보기</a>
       <a class="button big" href="https://www.hscredit.kr" target="_blank" rel="noopener">고교학점제 지원센터 ↗</a></div>
   </section>
@@ -338,42 +395,11 @@ async def catalog():
 async def courses_page():
     return site_page("수강신청", """
 <section class="info-block">
-  <p style="margin:0 0 12px">신청은 <b>학교 구글 계정으로 로그인</b>한 뒤 마이페이지에서 해요.</p>
+  <div id="courses-access"></div>
   <div id="course-search"></div>
 </section>
 <section class="catalog" id="catalog"><p class="muted">불러오는 중…</p></section>
-<script>
-(async () => {
-  const box = document.getElementById("catalog");
-  const esc = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const d = (s) => (s || "").replaceAll("-", ".");
-  let list = [];
-  try { list = (await (await fetch("/api/courses/catalog")).json()).courses; } catch { box.innerHTML = '<p class="error">강좌 목록을 불러오지 못했어요.</p>'; return; }
-  const search = window.courseSearch(list, (shown) => draw(shown));
-  document.getElementById("course-search").append(search.form);
-  const draw = (shown) => {
-    box.innerHTML = shown.length ? shown.map((c) => {
-      // 대상학년 · 학기 · 강좌명 · 학점 · 인원 · 거점학교 · 성취도 · 평가방식만
-      // 학년만 하나씩 (학년도·학기는 머리 띠에 있다). 대상 학년을 안 정했으면 1~3학년 모두
-      const grades = (c.grades.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`);
-      const facts = [
-        ["학점", c.credits ? `${c.credits}학점` : "-"],
-        ["인원", c.capacity ? `${c.capacity}명` : "제한 없음"],
-        ["거점학교", c.hub_school || "-"],
-        ["성취도", c.achievement_text || "-"],
-        ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
-      ];
-      return `<article class="course-tile with-thumb">${window.courseThumb(c)}<div class="ct-body">
-      <div class="ct-top">${grades.map((g) => `<span class="tag soft">${esc(g)}</span>`).join("")}</div>
-      <h3>${esc(c.title)}</h3>
-      <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-    </div></article>`;
-    }).join("") : '<p class="muted">조건에 맞는 강좌가 없어요.</p>';
-  };
-  draw(search.filter());
-})();
-</script>
-""", "지금 신청할 수 있는 강좌")
+""", "지금 신청할 수 있는 강좌", scripts='<script src="/static/live/enroll-page.js"></script>')
 
 
 @router.get("/live/help", response_class=HTMLResponse)
@@ -401,6 +427,30 @@ async def help_page():
 </section>
 <section class="info-block"><h2>문의</h2><p>{contact}</p></section>
 """, "자주 묻는 질문과 도움말")
+
+
+@router.get("/live/course-requests", response_class=HTMLResponse)
+async def course_requests_page():
+    return site_page("희망과목 개설 신청", """
+<section class="info-block"><h2>학생들이 신청한 과목</h2>
+  <div id="wish-page-summary">불러오는 중…</div>
+  <p class="error" id="wish-page-board-error" role="alert"></p>
+</section>
+<section class="info-block" id="wish-page-own" hidden><h2>내가 신청한 과목</h2>
+  <div id="wish-page-mine"></div>
+  <button class="primary" type="button" id="wish-page-open">신청서 작성</button>
+  <form id="wish-page-form" hidden>
+    <label>연도 <input id="wish-page-year" type="number" min="2020" max="2100" required></label>
+    <label>학기 <select id="wish-page-term" required><option value="">학기 선택</option>
+      <option>1학기</option><option>여름학기</option><option>2학기</option><option>겨울학기</option></select></label>
+    <label>희망 과목 <input id="wish-page-subject" list="wish-page-subjects" maxlength="60" required placeholder="예: 인공지능 기초"></label>
+    <datalist id="wish-page-subjects"></datalist>
+    <label>신청 이유 (선택) <input id="wish-page-note" maxlength="300" placeholder="신청 이유"></label>
+    <button class="primary" type="submit">신청하기</button>
+    <p class="error" id="wish-page-error" role="alert"></p>
+  </form>
+</section>
+""", hero=False, scripts='<script src="/static/live/wish-page.js"></script>')
 
 
 # ───────────────────────── 메인 화면 ─────────────────────────
@@ -446,7 +496,7 @@ async def home_page():
     <div class="home-courses" id="home-courses"><p class="muted">불러오는 중…</p></div>
   </section>
   <section class="home-box">
-    <div class="home-box-h"><h2>🙋 학생들이 듣고 싶은 과목</h2><a href="/live?wish=1" id="wish-link">나도 요청하기 +</a></div>
+    <div class="home-box-h"><h2>🙋 학생들이 듣고 싶은 과목</h2><a href="/live/course-requests" id="wish-link">희망과목 개설 신청 +</a></div>
     <div class="wish-cloud" id="home-wishes"><p class="muted">불러오는 중…</p></div>
   </section>
 </div>
@@ -566,14 +616,24 @@ NOTICE_SCRIPT = '<script src="/static/live/notices.js"></script>'
 @router.get("/live/notices", response_class=HTMLResponse)
 async def notices_page():
     rows = await db.run(notice_rows)
-    items = "".join(
-        f'<li class="{"pinned" if r.pinned else ""}"><a href="/live/notices/{r.id}">'
-        f'{"<span class=tag>공지</span>" if r.pinned else ""}{html.escape(r.title)}'
-        f'{"<span class=new-dot>N</span>" if notice_json(r)["new"] else ""}</a>'
-        f'<span class="muted">{notice_json(r)["date"]}</span></li>' for r in rows)
+    next_number = sum(not r.pinned for r in rows)
+    items = []
+    for r in rows:
+        j = notice_json(r)
+        number = "공지" if r.pinned else str(next_number)
+        if not r.pinned:
+            next_number -= 1
+        items.append(
+            f'<tr class="{"pinned" if r.pinned else ""}"><td>{number}</td>'
+            f'<td><a href="/live/notices/{r.id}">{html.escape(r.title)}'
+            f'{"<span class=new-dot>N</span>" if j["new"] else ""}</a></td>'
+            f'<td>{html.escape(r.author or "—")}</td><td>{j["date"]}</td></tr>')
+    body = "".join(items) or '<tr><td colspan="4" class="muted">아직 공지사항이 없어요.</td></tr>'
     return site_page("공지사항", '<div id="notice-tools"></div>'
-                     f'<section class="info-block"><ul class="notice-list big">{items or "<li class=muted>아직 공지사항이 없어요.</li>"}</ul></section>',
-                     "외솔온닷 소식과 안내", scripts=NOTICE_SCRIPT)
+                     f'<section class="info-block"><div class="table-wrap"><table class="att community-board notice-board" aria-label="공지사항 목록">'
+                     '<thead><tr><th scope="col">번호</th><th scope="col">제목</th><th scope="col">작성자</th>'
+                     f'<th scope="col">작성일</th></tr></thead><tbody>{body}</tbody></table></div></section>',
+                     hero=False, scripts=NOTICE_SCRIPT)
 
 
 @router.get("/live/notices/{nid}", response_class=HTMLResponse)
@@ -603,7 +663,7 @@ async def notice_page(nid: int):
   {attach}
 </article>
 <p class="row"><a class="button" href="/live/notices">← 목록으로</a><span class="grow"></span><span id="notice-tools"></span></p>""",
-                     "외솔온닷 소식과 안내", scripts=NOTICE_SCRIPT)
+                     hero=False, scripts=NOTICE_SCRIPT)
 
 
 class NoticeReq(BaseModel):
@@ -690,6 +750,94 @@ async def delete_notice(nid: int, request: Request):
     return {"ok": True}
 
 
+# ───────────────────────── 소통마당: 비회원도 글쓰기 ─────────────────────────
+
+COMMUNITY_PAGE_SIZE = 20
+COMMUNITY_SCRIPT = '<script src="/static/live/community.js"></script>'
+
+
+@router.get("/live/community", response_class=HTMLResponse)
+async def community_page(page: int = Query(default=1, ge=1)):
+    def run():
+        with db.engine.connect() as c:
+            count = c.execute(select(func.count()).select_from(db.community_posts)).scalar_one()
+            rows = c.execute(select(db.community_posts).order_by(db.community_posts.c.created_at.desc(),
+                db.community_posts.c.id.desc()).offset((page - 1) * COMMUNITY_PAGE_SIZE).limit(COMMUNITY_PAGE_SIZE)).all()
+            return count, rows
+
+    count, rows = await db.run(run)
+    items = "".join(f'<tr><td>{count - (page - 1) * COMMUNITY_PAGE_SIZE - i}</td>'
+        f'<td><a href="/live/community/{r.id}">{html.escape(r.title)}</a></td>'
+        f'<td>{html.escape(r.author)}</td>'
+        f'<td>{datetime.fromtimestamp(r.created_at, KST):%Y-%m-%d}</td></tr>' for i, r in enumerate(rows))
+    pagination = '<nav class="row" aria-label="소통마당 페이지">' + (
+        f'<a class="button small" href="/live/community?page={page - 1}">← 이전</a>' if page > 1 else '') + (
+        f'<a class="button small" href="/live/community?page={page + 1}">다음 →</a>'
+        if page * COMMUNITY_PAGE_SIZE < count else '') + '</nav>'
+    return site_page("소통마당", f"""
+<div class="row notice-actions"><span class="grow"></span><button class="primary" type="button" id="community-write">글쓰기</button></div>
+<div id="community-editor"></div>
+<section class="info-block"><div class="table-wrap"><table class="att community-board">
+  <thead><tr><th>번호</th><th>제목</th><th>작성자</th><th>날짜</th></tr></thead>
+  <tbody>{items or '<tr><td colspan="4" class="muted">아직 글이 없어요.</td></tr>'}</tbody>
+</table></div></section>{pagination}
+""", "누구나 의견을 나누는 공간", scripts=COMMUNITY_SCRIPT)
+
+
+@router.get("/live/community/{pid}", response_class=HTMLResponse)
+async def community_detail(pid: int):
+    def run():
+        with db.engine.connect() as c:
+            return c.execute(select(db.community_posts).where(db.community_posts.c.id == pid)).first()
+
+    r = await db.run(run)
+    if not r:
+        raise HTTPException(404, "글을 찾을 수 없어요.")
+    date = datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d %H:%M")
+    return site_page("소통마당", f"""
+<article class="info-block notice-view"><h2>{html.escape(r.title)}</h2>
+  <p class="muted">{html.escape(r.author)} · {date}</p>
+  <div class="notice-body">{html.escape(r.body)}</div></article>
+<p class="row"><a class="button" href="/live/community">← 목록으로</a>
+  <span class="grow"></span><button class="danger" type="button" id="community-delete" data-id="{pid}" hidden>관리자 삭제</button></p>
+""", "누구나 의견을 나누는 공간", scripts=COMMUNITY_SCRIPT)
+
+
+class CommunityPostReq(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=10000)
+    nickname: str = Field(default="", max_length=30)
+
+
+@router.post("/api/community")
+async def add_community_post(req: CommunityPostReq, request: Request):
+    title, body, nickname = req.title.strip(), req.body.strip(), req.nickname.strip()
+    if not title or not body:
+        raise HTTPException(400, "제목과 내용을 적어 주세요.")
+    u = await current_user(request)
+    author = f"{'회원' if u else '비회원'} · {nickname or '익명'}"
+
+    def run():
+        with db.engine.begin() as c:
+            return c.execute(insert(db.community_posts).values(title=title, body=body, author=author,
+                author_id=u["id"] if u else None, created_at=time.time())).inserted_primary_key[0]
+
+    return {"id": await db.run(run)}
+
+
+@router.post("/api/admin/community/{pid}/delete")
+async def delete_community_post(pid: int, request: Request):
+    await require_admin(request)
+
+    def run():
+        with db.engine.begin() as c:
+            return c.execute(delete(db.community_posts).where(db.community_posts.c.id == pid)).rowcount
+
+    if not await db.run(run):
+        raise HTTPException(404, "글을 찾을 수 없어요.")
+    return {"ok": True}
+
+
 # ───────────────────────── 메인 배너(전광판) ─────────────────────────
 
 THEMES = ("green", "orange", "blue", "purple", "yellow")
@@ -732,7 +880,9 @@ def banner_dir():
 
 @router.post("/api/admin/banners")
 async def save_banners(req: BannersReq, request: Request):
-    await require_teacher(request)  # 선생님 누구나 메인 전광판을 꾸밀 수 있다 (강좌 홍보 등)
+    u = await require_teacher(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
     out = []
     for b in req.banners:
         d = b.model_dump()
@@ -763,7 +913,9 @@ async def save_banners(req: BannersReq, request: Request):
 @router.post("/api/admin/banners/image")
 async def upload_banner_image(request: Request, name: str = Query(default="banner.png", max_length=150)):
     """배너 그림 올리기 (PNG·JPG·WEBP·GIF, 5MB까지). 요청 본문 = 그림 파일 그대로"""
-    await require_teacher(request)
+    u = await require_teacher(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in IMAGE_TYPES:
         raise HTTPException(415, "그림은 PNG, JPG, WEBP, GIF 파일로 올려 주세요.")

@@ -213,7 +213,7 @@ async def meetings_history(request: Request):
 
 
 @router.get("/api/hub/class-log")
-async def hub_class_log(request: Request):
+async def hub_class_log(request: Request, course_id: int | None = Query(default=None, ge=1)):
     """거점학교 관리교사: 내 거점학교 강좌에서 언제 수업했는지 (수업 날짜·시각·길이·참여 인원)"""
     u = await require_user(request)
     hubs = managed_hubs(u)
@@ -224,9 +224,14 @@ async def hub_class_log(request: Request):
             q = select(db.courses).where(co.hub_id.is_not(None))
             if hubs is not None:
                 q = q.where(co.hub_id.in_(hubs))
+            if course_id is not None:
+                q = q.where(co.id == course_id)
             courses = {x.id: x for x in c.execute(q).all()}
-            rows = c.execute(select(db.classes).where(cl.course_id.in_(list(courses) or [-1]))
-                             .order_by(cl.created_at.desc()).limit(500)).all()
+            class_query = select(db.classes).where(cl.course_id.in_(list(courses) or [-1]))
+            class_query = class_query.order_by(cl.created_at.desc())
+            if course_id is None:
+                class_query = class_query.limit(500)
+            rows = c.execute(class_query).all()
             return courses, rows, _counts(c, rows)
 
     courses, rows, counts = await db.run(run)
@@ -240,6 +245,44 @@ async def hub_class_log(request: Request):
                     "minutes": round((end - r.created_at) / 60) if end else None,
                     "live": class_row(r)["live"], "attended": counts[r.id]})
     return {"classes": out}
+
+
+@router.get("/api/hub/courses/{course_id}/attendance")
+async def hub_course_attendance(course_id: int, request: Request):
+    """관리교사: 담당 거점학교 강좌의 승인된 수강생과 수업별 출석 기록."""
+    u = await require_user(request)
+    hubs = managed_hubs(u)
+
+    def run():
+        co, en, cl, at = db.courses.c, db.enrollments.c, db.classes.c, db.attendance.c
+        with db.engine.connect() as c:
+            course = c.execute(select(db.courses).where(co.id == course_id)).first()
+            if not course or course.hub_id is None or (hubs is not None and course.hub_id not in hubs):
+                raise HTTPException(404, "강좌를 찾을 수 없어요.")
+            roster = c.execute(select(db.users).join(db.enrollments, db.users.c.id == en.user_id)
+                               .where(en.course_id == course_id, en.status == "approved",
+                                      db.users.c.account_state == "active")).all()
+            classes = c.execute(select(db.classes).where(cl.course_id == course_id)
+                                .order_by(cl.created_at, cl.id)).all()
+            attended = set(c.execute(select(at.class_id, at.user_id).where(
+                at.class_id.in_([x.id for x in classes] or [-1]),
+                at.user_id.in_([x.id for x in roster] or [-1]))).all())
+        return course, roster, classes, attended
+
+    course, roster, classes, attended = await db.run(run)
+    class_rows = [{"id": x.id, "title": x.title,
+                   "date": datetime.fromtimestamp(x.created_at, KST).strftime("%Y-%m-%d"),
+                   "start": kst(x.created_at)[:5], "end": kst(x.ended_at)[:5] if x.ended_at else "",
+                   "live": class_row(x)["live"]} for x in classes]
+    students = []
+    for r in roster:
+        marks = [(x.id, r.id) in attended for x in classes]
+        students.append({"school": r.school or "", "student_no": student_no(r._mapping),
+                         "name": r.name or r.google_name, "attendance": marks,
+                         "attended_count": sum(marks)})
+    students.sort(key=lambda x: (x["school"], x["student_no"] or "~", x["name"]))
+    return {"course": {"id": course.id, "title": course.title}, "classes": class_rows,
+            "students": students}
 
 
 def my_class_filter(c, t: dict):
@@ -418,7 +461,7 @@ async def attendance_log_csv(class_id: int, request: Request):
 def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
     """수업 중 '선생님께 질문'과 답변. user_id 를 주면 그 학생 것만."""
     with db.engine.connect() as c:
-        q = (select(db.questions, db.users, db.classes.c.title, db.classes.c.code,
+        q = (select(db.questions, db.users, db.classes.c.title, db.classes.c.code, db.classes.c.course_id,
                     db.classes.c.created_at.label("class_created"))
              .join(db.users, db.users.c.id == db.questions.c.user_id)
              .join(db.classes, db.classes.c.id == db.questions.c.class_id))
@@ -429,7 +472,7 @@ def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
         m = r._mapping
         out.append({
             "student_no": student_no(m), "name": m["name"] or m["google_name"], "school": m["school"] or "",
-            "class_title": m["title"], "class_code": m["code"],
+            "class_title": m["title"], "class_code": m["code"], "course_id": m["course_id"],
             "date": datetime.fromtimestamp(m["class_created"], KST).strftime("%Y-%m-%d"),
             "time": kst(m["created_at"]), "text": m["text"], "reply": m["reply"] or "",
             "reply_time": kst(m["replied_at"]), "done": bool(m["done"]),
@@ -462,7 +505,7 @@ async def my_questions(request: Request):
     """학생: 지난 수업들에서 선생님께 한 질문과 받은 답변"""
     u = await require_user(request, "student")
     qs = await db.run(_questions, 0, u["id"])
-    return {"questions": [{k: q[k] for k in ("class_title", "date", "time", "text", "reply", "reply_time")}
+    return {"questions": [{k: q[k] for k in ("class_title", "course_id", "date", "time", "text", "reply", "reply_time")}
                           for q in reversed(qs[-100:])]}
 
 

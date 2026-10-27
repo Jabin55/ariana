@@ -15,7 +15,8 @@ from typing import Literal
 
 import anthropic
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
@@ -32,6 +33,8 @@ from app.courses import router as courses_router
 from app.grading import router as grading_router
 from app.history import router as history_router
 from app.prompts import SYSTEM_PROMPT
+from app.evidence import retention_loop, router as evidence_router
+from app.privacy_filter import known_member_names, redact_messages
 
 # AI 조교는 비용을 아끼기 위해 가장 가벼운(저렴한) 모델을 쓴다. 바꾸려면 CHATBOT_MODEL 설정
 MODEL = os.environ.get("CHATBOT_MODEL", "claude-haiku-5-5")
@@ -50,8 +53,10 @@ client = anthropic.AsyncAnthropic()
 async def lifespan(_app: FastAPI):
     await db.run(db.init)
     task = asyncio.create_task(heartbeat_loop())
+    retention_task = asyncio.create_task(retention_loop())
     yield
     task.cancel()
+    retention_task.cancel()
 
 
 SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
@@ -59,6 +64,12 @@ if not os.environ.get("SECRET_KEY"):
     log.warning("SECRET_KEY 가 없어 임시 키를 씁니다. 서버가 다시 시작되면 모두 다시 로그인해야 해요.")
 
 app = FastAPI(title="정치쌤 챗봇", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def private_validation_error(request, exc):
+    return JSONResponse({"detail": [{k: e[k] for k in ("type", "loc", "msg") if k in e}
+                                    for e in exc.errors()]}, status_code=422)
 app.add_middleware(
     SessionMiddleware, secret_key=SECRET_KEY, session_cookie="live_session",
     max_age=14 * 24 * 3600, same_site="lax",
@@ -87,6 +98,7 @@ app.include_router(policy_router)
 app.include_router(materials_router)
 app.include_router(assignments_router)
 app.include_router(site_router)
+app.include_router(evidence_router)
 
 
 class ChatMessage(BaseModel):
@@ -136,7 +148,8 @@ async def live_student(code: str) -> FileResponse:
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest) -> StreamingResponse:
-    messages = [m.model_dump() for m in req.messages]
+    names = await db.run(known_member_names)
+    messages = redact_messages([m.model_dump() for m in req.messages], names)
     if messages[0]["role"] != "user" or messages[-1]["role"] != "user":
         raise HTTPException(400, "대화는 학생 질문으로 시작하고 끝나야 합니다.")
 
@@ -176,8 +189,8 @@ async def chat(req: ChatRequest) -> StreamingResponse:
         except anthropic.APIConnectionError:
             log.exception("Claude API 연결 실패")
             yield sse("error", {"text": "서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요."})
-        except Exception:  # API 키 누락 등 설정 오류
-            log.exception("챗봇 응답 생성 실패")
+        except Exception as error:  # 원문 예외에는 개인정보가 들어 있을 수 있다.
+            log.error("챗봇 응답 생성 실패 (%s)", type(error).__name__)
             yield sse("error", {"text": "챗봇 설정에 문제가 있어요. 선생님께 알려 주세요."})
 
     return StreamingResponse(generate(), media_type="text/event-stream")

@@ -52,7 +52,7 @@ else
 fi
 
 # ── 선생님이 바꾸는 설정 (처음 한 번만 만든다. 이후에는 live-config 로 고친다)
-SETTING_NAMES="GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY LOW_BANDWIDTH MIC_LOCK OPERATOR_NAME PRIVACY_OFFICER PRIVACY_CONTACT RETENTION SERVER_REGION GOOGLE_API_KEY GOOGLE_APP_ID ALLOW_RECORDING CONSENT_TO NEIS_API_KEY CHATBOT_MODEL"
+SETTING_NAMES="GOOGLE_CLIENT_ID ADMIN_EMAILS ALLOWED_DOMAINS TEACHER_EMAILS SCHOOLS ANTHROPIC_API_KEY LOW_BANDWIDTH MIC_LOCK OPERATOR_NAME PRIVACY_OFFICER PRIVACY_CONTACT RETENTION EVIDENCE_RETENTION_DAYS EVIDENCE_RETENTION_BASIS SERVER_REGION GOOGLE_API_KEY GOOGLE_APP_ID ALLOW_RECORDING CONSENT_TO NEIS_API_KEY CHATBOT_MODEL"
 if [ ! -f "$DIR/app.env" ]; then
   {
     echo "# 수업 사이트 설정. 바꾸려면 콘솔에서:  live-config 이름=값   (예: live-config ADMIN_EMAILS=me@gmail.com)"
@@ -304,7 +304,7 @@ umask 077
 cd "$DIR"
 f="backups/live-\$(date +%Y%m%d-%H%M).sql.gz"
 docker compose exec -T db pg_dump -U live live | gzip > "\$f.tmp" && mv "\$f.tmp" "\$f"
-find backups -name 'live-*.sql.gz' -mtime +14 -delete
+find backups -name 'live-*.sql.gz' -mmin +20160 -delete
 echo "백업: $DIR/\$f"
 EOF
 cat > "$BIN/live-restore" <<EOF

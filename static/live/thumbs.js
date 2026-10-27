@@ -10,6 +10,7 @@
   };
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const today = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const courseAreaColors = (area) => (AREA[area] || ["📚", "#7fc8a9", "#1b6b4a"]).slice(1);
 
   /** 모집 상태 글자: 수강모집 · 모집예정 · 수업중 · 마감 */
   function courseState(c) {
@@ -22,7 +23,8 @@
 
   /** 카드 머리 그림 HTML */
   function courseThumb(c) {
-    const [ico, a, b] = AREA[c.subject_area] || ["📚", "#7fc8a9", "#1b6b4a"];
+    const [ico] = AREA[c.subject_area] || ["📚"];
+    const [a, b] = courseAreaColors(c.subject_area);
     // 동그라미: 과목군(사회·국어…). 네 글자 이상이면 두 줄로
     const area = c.subject_area || "교양";
     const cut = area.includes("·") ? area.indexOf("·") + 1 : Math.floor(area.length / 2);
@@ -37,5 +39,6 @@
   }
 
   window.courseThumb = courseThumb;
+  window.courseAreaColors = courseAreaColors;
   window.courseState = courseState;
 })();

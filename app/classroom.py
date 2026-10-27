@@ -304,6 +304,8 @@ async def new_code() -> str:
 def _att_open(class_id: int, user_id: int) -> int:
     now = time.time()
     with db.engine.begin() as c:
+        if c.execute(select(db.users.c.account_state).where(db.users.c.id == user_id)).scalar() != "active":
+            raise HTTPException(403, "이용이 종료된 계정이에요.")
         return c.execute(insert(db.attendance).values(
             class_id=class_id, user_id=user_id, joined_at=now, last_seen=now)).inserted_primary_key[0]
 
@@ -372,6 +374,9 @@ async def heartbeat_loop() -> None:
             except Exception:
                 log.warning("출결 갱신 실패", exc_info=True)
         for k in list(classes.values()):
+            for uid in {c.ws.session.get("uid") for c in list(k.conns)}:
+                if uid:
+                    await refresh_user_connections(uid)
             await save_boards(k)
         prune_classes()
 
@@ -387,6 +392,8 @@ def write_question(fn, *args) -> None:
 
 def _question_insert(class_id: int, user_id: int, q: dict) -> None:
     with db.engine.begin() as c:
+        if c.execute(select(db.users.c.account_state).where(db.users.c.id == user_id)).scalar() != "active":
+            return
         c.execute(insert(db.questions).values(
             uid=q["id"], class_id=class_id, user_id=user_id, text=q["text"],
             reply="", done=0, created_at=q["ts"]))
@@ -423,6 +430,10 @@ def save_activity(k: Klass, a: dict | None) -> None:
 
     def run():
         with db.engine.begin() as c:
+            # 탈퇴 처리 중 늦게 도착한 저장 작업이 답안을 다시 생성하지 못하게 한다.
+            responses = json.loads(values["responses"])
+            active = set(c.execute(select(db.users.c.id).where(db.users.c.account_state == "active")).scalars())
+            values["responses"] = json.dumps({uid: value for uid, value in responses.items() if int(uid) in active}, ensure_ascii=False)
             if a.get("db_id"):
                 c.execute(update(db.activities).where(db.activities.c.id == a["db_id"]).values(**values))
             else:
@@ -899,9 +910,10 @@ async def join_class(code: str, request: Request):
     """입장: 강좌 수업은 수강 확정 학생만, 특강·회의는 로그인한 사람 누구나(다른 선생님도) 참가자로"""
     u = await require_user(request)
     k = await get_class(code)
-    if await is_class_teacher(k, u):
+    as_student = u["is_admin"] and request.query_params.get("as_student") == "1"
+    if not as_student and await is_class_teacher(k, u):
         return {"teacher": True, "code": k.code}  # 이 수업의 선생님이면 선생님 화면으로
-    if u["role"] != "student" and k.course_id:
+    if u["role"] != "student" and not u["is_admin"] and k.course_id:
         raise HTTPException(403, "강좌 수업은 수강 확정된 학생만 들어올 수 있어요.")
     await ensure_enrolled(k, u)
     s = add_student(k, u)
@@ -922,6 +934,14 @@ async def is_class_teacher(k: Klass, u: dict) -> bool:
     """이 수업의 선생님: 수업을 연 사람, 또는 그 강좌를 함께 가르치는 팀티칭 선생님"""
     if u["role"] != "teacher":
         return False
+    if k.course_id:
+        from app.courses import hub_locked
+        def allowed():
+            with db.engine.connect() as c:
+                course = c.execute(select(db.courses).where(db.courses.c.id == k.course_id)).first()
+            return course is not None and not hub_locked(course, u)
+        if not await db.run(allowed):
+            return False
     if u["id"] == k.teacher_id:
         return True
     return bool(k.course_id) and await db.run(_teaches_course, k.course_id, u["id"])
@@ -933,7 +953,8 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
     k = await get_class(code)
     if not livekit_ready():
         raise HTTPException(503, "화상 서버(LiveKit)가 아직 설정되지 않았어요.")
-    if await is_class_teacher(k, u):
+    as_student = u["is_admin"] and request.query_params.get("as_student") == "1"
+    if not as_student and await is_class_teacher(k, u):
         if req.room != "main" and not any(g["id"] == req.room for g in k.groups):
             raise HTTPException(404, "없는 모둠이에요.")
         # 팀티칭: 수업을 연 선생님은 'teacher', 함께 가르치는 선생님은 따로 (같은 이름이면 서로 밀어냄)
@@ -1044,7 +1065,7 @@ async def get_media(code: str, fid: str, request: Request):
     """이 수업의 선생님과 들어온 학생만 본다 (구간 요청을 지원해 원하는 곳부터 재생)."""
     u = await require_user(request)
     k = await get_class(code)
-    if not (await is_class_teacher(k, u) or (u["role"] == "student" and str(u["id"]) in k.students)):
+    if not (await is_class_teacher(k, u) or ((u["role"] == "student" or u["is_admin"]) and str(u["id"]) in k.students)):
         raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
     f = next((x for x in k.media_files if x["id"] == fid), None)
     path = media_dir(k) / f"{fid}{f['ext']}" if f else None
@@ -1058,7 +1079,7 @@ async def download_file(code: str, fid: str, request: Request):
     """이 수업의 선생님과 들어온 학생만 받을 수 있다."""
     u = await require_user(request)
     k = await get_class(code)
-    ok = await is_class_teacher(k, u) or (u["role"] == "student" and str(u["id"]) in k.students)
+    ok = await is_class_teacher(k, u) or ((u["role"] == "student" or u["is_admin"]) and str(u["id"]) in k.students)
     if not ok:
         raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
     if not any(f["id"] == fid for f in k.files):
@@ -1268,6 +1289,101 @@ def same_origin(ws: WebSocket) -> bool:
     return not origin or urlparse(origin).netloc == ws.headers.get("host")
 
 
+async def connection_allowed(k: Klass, conn: Conn) -> bool:
+    if conn.evicted:
+        return False
+    u = await current_user(conn.ws)
+    if not u:
+        return False
+    if conn.role == "teacher":
+        return await is_class_teacher(k, u)
+    if needs_profile(u) or (k.course_id and u["role"] != "student" and not u["is_admin"]):
+        return False
+    return not k.course_id or await db.run(is_enrolled, k.course_id, u["id"])
+
+
+async def disconnect_connection(k: Klass, conn: Conn):
+    conn.evicted = True
+    conn.leave_reason = "revoked"
+    uid = conn.ws.session.get("uid")
+    if conn.sid:
+        drop_conn(k, conn, k.students.get(conn.sid))
+    elif conn in k.conns:
+        k.conns.remove(conn)
+
+    async def close():
+        try:
+            await conn.ws.close(code=1008)
+        except Exception:
+            pass
+    if conn.loop is asyncio.get_running_loop():
+        await close()
+    elif conn.loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(close(), conn.loop)
+        try:
+            await asyncio.wait_for(asyncio.wrap_future(future), 2)
+        except Exception:
+            pass
+
+    if uid and livekit_ready():
+        identity = f"s-{uid}" if conn.sid else ("teacher" if uid == k.teacher_id else f"t-{uid}")
+        async def remove(api):
+            for room in ["main"] + [g["id"] for g in k.groups]:
+                try:
+                    await api.room.remove_participant(lk.RoomParticipantIdentity(room=lk_room_name(k.code, room), identity=identity))
+                except Exception:
+                    pass
+        try:
+            await asyncio.wait_for(lk_call(remove), 3)
+        except Exception:
+            log.warning("권한 회수 후 화상 연결 종료를 확인해야 합니다.")
+
+
+async def disconnect_user(uid: int):
+    for k in list(classes.values()):
+        for conn in list(k.conns):
+            if conn.ws.session.get("uid") == uid:
+                await disconnect_connection(k, conn)
+
+
+async def refresh_user_connections(uid: int):
+    for k in list(classes.values()):
+        for conn in list(k.conns):
+            if conn.ws.session.get("uid") == uid and not await connection_allowed(k, conn):
+                await disconnect_connection(k, conn)
+
+
+def student_evidence(uid: int) -> list[dict]:
+    sid = str(uid)
+    result = []
+    for k in list(classes.values()):
+        if sid not in k.students and not any(q.get("sid") == sid for q in k.questions):
+            continue
+        activity = None
+        if k.activity:
+            activity = {**k.activity, "responses": {sid: k.activity["responses"][sid]} if sid in k.activity["responses"] else {}}
+        result.append({"class_id": k.db_id, "title": k.title, "activity": activity,
+                       "questions": [dict(q) for q in k.questions if q.get("sid") == sid],
+                       "events": [dict(e) for e in k.events if e.get("sid") == sid],
+                       "stickers": k.stickers.get(sid, 0)})
+    return result
+
+
+def forget_student(uid: int):
+    sid = str(uid)
+    for k in list(classes.values()):
+        k.students.pop(sid, None)
+        k.roster = [r for r in k.roster if str(r["id"]) != sid]
+        k.questions = [q for q in k.questions if q.get("sid") != sid]
+        k.events = [e for e in k.events if e.get("sid") != sid]
+        k.chat = [m for m in k.chat if str(m.get("sid")) != sid and str(m.get("to")) != sid]
+        k.stickers.pop(sid, None)
+        if k.activity:
+            k.activity["responses"].pop(sid, None)
+        k.layout["pair"] = [p for p in k.layout.get("pair", []) if p != sid]
+        flush(k)  # 탈퇴 직후 연결된 교사 화면에서도 즉시 제거한다.
+
+
 async def reject(ws: WebSocket, code: str, text: str) -> None:
     await ws.send_text(json.dumps({"t": "error", "code": code, "text": text}, ensure_ascii=False))
     await ws.close()
@@ -1285,10 +1401,11 @@ async def live_socket(ws: WebSocket, code: str):
     u = await current_user(ws)
     if not u:
         return await reject(ws, "login", "로그인이 필요해요.")
-    if await is_class_teacher(k, u):
+    as_student = u["is_admin"] and ws.query_params.get("as_student") == "1"
+    if not as_student and await is_class_teacher(k, u):
         conn = Conn(ws=ws, role="teacher", sid=None)
         k.roster = await db.run(load_roster, k.course_id)  # 선생님이 들어올 때마다 수강생 명단을 새로 읽는다
-    elif not needs_profile(u) and (u["role"] == "student" or not k.course_id):
+    elif not needs_profile(u) and (u["role"] == "student" or u["is_admin"] or not k.course_id):
         try:
             await ensure_enrolled(k, u)
             s = add_student(k, u)
@@ -1349,14 +1466,18 @@ async def live_socket(ws: WebSocket, code: str):
                 continue
             if not isinstance(msg, dict):
                 continue
+            if msg.get("t") == "leave":  # 종료 의사는 즉시 기록한다.
+                if not conn.evicted:
+                    conn.leave_reason = "leave"
+                continue
+            if not await connection_allowed(k, conn):
+                await disconnect_connection(k, conn)
+                break
             if msg.get("t") == "ping":
                 send(conn, {"t": "pong", "now": time.time()})
                 continue
             if conn.sid and conn.sid not in k.students:
                 break  # 강퇴됨
-            if msg.get("t") == "leave":  # 학생이 '나가기'를 눌렀다 (곧 연결을 끊는다)
-                conn.leave_reason = "leave"
-                continue
             k.last_active = time.time()
             if conn.role == "teacher":
                 handle_teacher(k, conn, msg)

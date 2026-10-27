@@ -22,6 +22,7 @@ from sqlalchemy import and_, delete, func, insert, or_, select, update
 
 from app import auth, db, subjects
 from app.auth import require_user, student_no
+from app.privacy_filter import known_member_names, redact
 
 router = APIRouter()
 KST = ZoneInfo("Asia/Seoul")
@@ -766,6 +767,33 @@ async def approve_all(course_id: int, request: Request):
 # ───────────────────────── 학생 ─────────────────────────
 
 
+@router.get("/api/courses/my-learning")
+async def my_learning_courses(request: Request):
+    """학생 본인의 모든 수강신청 이력. 종료·보관된 강좌도 포함한다."""
+    u = await require_user(request, "student")
+
+    def run():
+        with db.engine.connect() as c:
+            mine = {e.course_id: (e.status, e.note) for e in c.execute(
+                select(db.enrollments).where(db.enrollments.c.user_id == u["id"]))}
+            if not mine:
+                return [], mine, {}, {}
+            co = db.courses.c
+            rows = c.execute(
+                select(db.courses, db.users.c.name.label("teacher_name"))
+                .join(db.users, db.users.c.id == co.teacher_id)
+                .where(co.id.in_(list(mine)))
+                .order_by(co.created_at.desc())).all()
+            approved = [cid for cid, (status, _) in mine.items() if status == "approved"]
+            return rows, mine, sessions_of(c, [r.id for r in rows]), course_notices_of(c, approved)
+
+    rows, mine, sessions, notices = await db.run(run)
+    return {"courses": [{**course_row(r), "instructor": r.instructor or r.teacher_name,
+                         "status": mine[r.id][0], "note": mine[r.id][1] if mine[r.id][0] == "rejected" else "",
+                         "sessions": sessions.get(r.id, []), "notices": notices.get(r.id, [])}
+                        for r in rows]}
+
+
 @router.get("/api/courses/available")
 async def available_courses(request: Request):
     """수강신청할 수 있는 강좌 + 내 신청 상태.
@@ -790,7 +818,7 @@ async def available_courses(request: Request):
     for r in rows:
         status, note = mine.get(r.id, (None, ""))
         row = course_row(r)
-        if status is None and (row["recruit"] == "closed" or not grade_ok(r, u["grade"])):
+        if status is None and (row["recruit"] == "closed" or (not u["is_admin"] and not grade_ok(r, u["grade"]))):
             continue  # 신청 마감·기간 끝남·대상 학년 아님 + 신청한 적 없음
         out.append({**row, "instructor": r.instructor or r.teacher_name, "status": status, "sessions": sess.get(r.id, []),
                     "notices": notes.get(r.id, []),
@@ -822,9 +850,9 @@ async def enroll(course_id: int, request: Request):
                 if n >= co.capacity:
                     raise HTTPException(409, f"수강 인원({co.capacity}명)이 다 찼어요.")
             joined = [x for x in (co.schools or "").split("\n") if x]
-            if joined and u["school"] not in joined and u["school"] != co.hub_school:
+            if joined and not u["is_admin"] and u["school"] not in joined and u["school"] != co.hub_school:
                 raise HTTPException(409, f"이 강좌는 참여 학교({', '.join(joined[:5])}{' 등' if len(joined) > 5 else ''}) 학생만 신청할 수 있어요.")
-            if not grade_ok(co, u["grade"]):
+            if not u["is_admin"] and not grade_ok(co, u["grade"]):
                 raise HTTPException(409, f"{'·'.join(map(str, course_grades(co)))}학년 대상 강좌예요.")
             if row:  # 거절됐던 강좌에 다시 신청
                 c.execute(update(db.enrollments).where(e.id == row.id)
@@ -981,12 +1009,80 @@ def my_schools(u: dict) -> set[str] | None:
     return schools
 
 
+@router.get("/api/school/change-requests")
+async def school_change_requests(request: Request):
+    """새 학교의 참여학교 담당교사에게 학생 전입 신청만 보여 준다."""
+    u = await require_user(request)
+    schools = set(u.get("participant_schools") or [])
+    if not schools:
+        raise HTTPException(403, "참여학교 담당교사만 할 수 있어요.")
+
+    def run():
+        q = db.profile_change_requests.c
+        s = db.users.c
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.profile_change_requests, s.name, s.role, s.grade, s.class_no, s.number)
+                .join(db.users, s.id == q.user_id)
+                .where(q.field == "school", q.status == "pending", q.new_value.in_(schools),
+                       s.role == "student", s.account_state == "active")
+                .order_by(q.requested_at.desc())).all()
+            return [{"id": r.id, "name": r.name, "student_no": student_no(r._mapping),
+                     "grade": r.grade, "class_no": r.class_no,
+                     "old_value": r.old_value, "new_value": r.new_value,
+                     "requested_at": r.requested_at} for r in rows]
+
+    return {"requests": await db.run(run)}
+
+
+class SchoolChangeDecision(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = Field(default="", max_length=300)
+
+
+@router.post("/api/school/change-requests/{change_id}")
+async def decide_school_change(change_id: int, req: SchoolChangeDecision, request: Request):
+    u = await require_user(request)
+    schools = set(u.get("participant_schools") or [])
+    if not schools:
+        raise HTTPException(403, "참여학교 담당교사만 할 수 있어요.")
+    valid_schools = await db.run(auth.get_schools)
+
+    def run():
+        q = db.profile_change_requests.c
+        with db.engine.begin() as c:
+            row = c.execute(select(db.profile_change_requests).where(q.id == change_id)).first()
+            if not row or row.field != "school" or row.new_value not in schools:
+                raise HTTPException(404, "우리 학교의 변경 신청을 찾을 수 없어요.")
+            if row.status != "pending":
+                raise HTTPException(409, "이미 처리한 신청이에요.")
+            student = c.execute(select(db.users).where(db.users.c.id == row.user_id)).first()
+            if not student or student.role != "student" or student.account_state != "active":
+                raise HTTPException(404, "학생을 찾을 수 없어요.")
+            if student.school != row.old_value:
+                raise HTTPException(409, "학생의 현재 학교가 신청 당시와 달라졌어요. 다시 신청해야 해요.")
+            if req.action == "approve":
+                if valid_schools and row.new_value not in valid_schools:
+                    raise HTTPException(400, "학교 목록에 없는 학교예요.")
+                auth.check_school_gender(row.new_value, student.gender or "")
+                c.execute(update(db.users).where(db.users.c.id == student.id).values(school=row.new_value))
+            c.execute(update(db.profile_change_requests).where(q.id == row.id).values(
+                status="approved" if req.action == "approve" else "rejected",
+                decided_at=time.time(), decided_by=u["id"], note=req.note.strip()))
+            return student.id
+
+    student_id = await db.run(run)
+    if req.action == "approve":
+        from app.classroom import refresh_user_connections
+        await refresh_user_connections(student_id)
+    return {"ok": True}
+
+
 def withdraw_requests(schools: set[str] | None, uid: int | None = None) -> list[dict]:
     """탈퇴를 신청한 학생. 참여학교 담당교사는 자기 학교 학생만, 전체 관리자는 모두 본다."""
     today = auth.today_kst()
     with db.engine.connect() as c:
         u = db.users.c
-        q = select(db.users).where(u.withdraw_at.is_not(None), u.role == "student")
+        q = select(db.users).where(u.withdraw_at.is_not(None), u.role == "student", u.account_state == "active")
         if schools is not None:
             q = q.where(u.school.in_(schools))
         if uid is not None:
@@ -1011,7 +1107,7 @@ def school_students(schools: set[str] | None) -> list[dict]:
     """우리 학교 학생과 수강신청 (수업신청자 관리와 같은 칸: 교육과정·과목·거점학교·담당교사·신청일·상태)"""
     with db.engine.connect() as c:
         u = db.users.c
-        q = select(db.users).where(u.role == "student")
+        q = select(db.users).where(u.role == "student", u.account_state == "active")
         if schools is not None:
             q = q.where(u.school.in_(schools))
         users = c.execute(q).all()
@@ -1053,7 +1149,8 @@ async def school_overview(request: Request):
     return {"schools": sorted(schools) if schools is not None else [],
             "students": await db.run(school_students, schools),
             "withdrawals": await db.run(withdraw_requests, schools),
-            "withdrawn": await db.run(withdrawn_rows, schools)}
+            "withdrawn": [],
+            "evidence_url": "/live/evidence" if auth.public_user(u).get("evidence_reader") else None}
 
 
 class WithdrawDecide(BaseModel):
@@ -1063,23 +1160,15 @@ class WithdrawDecide(BaseModel):
 
 @router.post("/api/school/withdrawals/{uid}")
 async def school_withdraw_decide(uid: int, req: WithdrawDecide, request: Request):
-    """참여학교 담당교사: 우리 학교 학생 탈퇴 승인(계정과 기록을 모두 지움) 또는 반려"""
+    """탈퇴 승인: 이용을 종료하고 수업 증빙을 암호화 보관소로 이동한다."""
     u = await require_user(request)
     schools = my_schools(u)
     if not await db.run(withdraw_requests, schools, uid):
         raise HTTPException(404, "탈퇴 신청을 찾을 수 없어요.")
     if req.action == "approve":
-        def log():
-            # 계정·기록을 지우기 전에 '누가 언제 탈퇴했는지'만 남긴다
-            with db.engine.begin() as c:
-                x = c.execute(select(db.users).where(db.users.c.id == uid)).first()
-                c.execute(insert(db.withdrawn).values(
-                    name=x.name or "", school=x.school or "", student_no=student_no(dict(x._mapping)), grade=x.grade,
-                    class_no=x.class_no, reason=x.withdraw_reason or "", requested_at=x.withdraw_at, approved_at=time.time(),
-                    approved_by=u["name"] or ""))
-
-        await db.run(log)
-        await db.run(auth._withdraw, uid)
+        from app.evidence import archive_student
+        archive_id = await archive_student(uid, u["id"])
+        return {"ok": True, "evidence_id": archive_id}
     else:
         def run():
             with db.engine.begin() as c:
@@ -1093,40 +1182,54 @@ async def school_withdraw_decide(uid: int, req: WithdrawDecide, request: Request
 
 
 class WishReq(BaseModel):
+    school_year: int = Field(ge=2020, le=2100)
+    term: str = Field(min_length=1, max_length=10)
     subject: str = Field(min_length=1, max_length=60)
     note: str = Field(default="", max_length=300)  # 듣고 싶은 이유 등 (선택)
 
 
+async def require_course_requester(request: Request) -> dict:
+    u = await require_user(request)
+    if u["role"] != "student" and not u["is_admin"]:
+        raise HTTPException(403, "학생 또는 전체 관리자만 신청할 수 있어요.")
+    return u
+
+
 @router.get("/api/my/course-requests")
 async def my_course_requests(request: Request):
-    u = await require_user(request, "student")
+    u = await require_course_requester(request)
 
     def run():
         with db.engine.connect() as c:
             return c.execute(select(db.course_requests).where(db.course_requests.c.user_id == u["id"])
                              .order_by(db.course_requests.c.created_at.desc())).all()
 
-    return {"requests": [{"id": r.id, "subject": r.subject, "note": r.note,
+    return {"requests": [{"id": r.id, "school_year": r.school_year or datetime.fromtimestamp(r.created_at, KST).year,
+                          "term": r.term, "subject": r.subject, "note": r.note,
                           "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d")}
                          for r in await db.run(run)]}
 
 
 @router.post("/api/course-requests")
 async def add_course_request(req: WishReq, request: Request):
-    """학생: 듣고 싶은 과목을 요청한다 (한 사람이 같은 과목은 한 번, 모두 5개까지)"""
-    u = await require_user(request, "student")
+    """학생·전체 관리자: 같은 학기에 같은 과목은 한 번, 학기당 5개까지 요청한다."""
+    u = await require_course_requester(request)
+    if req.term not in subjects.TERMS:
+        raise HTTPException(400, "신청 학기를 골라 주세요.")
     subject = " ".join(req.subject.split())
+    note = redact(req.note.strip(), await db.run(known_member_names))
 
     def run():
         cr = db.course_requests.c
         with db.engine.begin() as c:
-            mine = c.execute(select(db.course_requests).where(cr.user_id == u["id"])).all()
+            mine = c.execute(select(db.course_requests).where(
+                cr.user_id == u["id"], cr.school_year == req.school_year, cr.term == req.term)).all()
             if any(r.subject == subject for r in mine):
                 raise HTTPException(409, "이미 요청한 과목이에요.")
             if len(mine) >= 5:
-                raise HTTPException(409, "과목 요청은 5개까지 할 수 있어요. 필요 없는 요청을 지우고 다시 해 주세요.")
-            c.execute(insert(db.course_requests).values(user_id=u["id"], subject=subject, note=req.note.strip(),
-                                                        created_at=time.time()))
+                raise HTTPException(409, "한 학기에는 과목을 5개까지 신청할 수 있어요.")
+            c.execute(insert(db.course_requests).values(user_id=u["id"], school_year=req.school_year,
+                                                        term=req.term, subject=subject, note=note, created_at=time.time()))
 
     await db.run(run)
     return {"ok": True}
@@ -1134,26 +1237,70 @@ async def add_course_request(req: WishReq, request: Request):
 
 @router.post("/api/course-requests/{rid}/delete")
 async def delete_course_request(rid: int, request: Request):
-    u = await require_user(request, "student")
+    await require_course_requester(request)
+    raise HTTPException(403, "신청한 글은 삭제할 수 없어요.")
+
+
+@router.get("/api/course-requests/board")
+async def course_request_board(request: Request):
+    """공개 게시판: 작성자 식별정보 없이 신청 이유와 공감 수를 표시한다."""
+    u = await auth.current_user(request)
 
     def run():
-        cr = db.course_requests.c
+        with db.engine.connect() as c:
+            rows = c.execute(select(db.course_requests).order_by(
+                db.course_requests.c.created_at.desc(), db.course_requests.c.id.desc())).all()
+            likes = dict(c.execute(select(db.course_request_likes.c.request_id, func.count())
+                                   .group_by(db.course_request_likes.c.request_id)).all())
+            liked = set(c.execute(select(db.course_request_likes.c.request_id).where(
+                db.course_request_likes.c.user_id == u["id"])).scalars()) if u else set()
+        names = known_member_names()
+        return [{"id": r.id, "school_year": r.school_year or datetime.fromtimestamp(r.created_at, KST).year,
+                 "term": r.term, "subject": r.subject, "note": redact(r.note, names),
+                 "date": datetime.fromtimestamp(r.created_at, KST).strftime("%Y-%m-%d"),
+                 "likes": likes.get(r.id, 0), "liked": r.id in liked} for r in rows]
+
+    return {"requests": await db.run(run)}
+
+
+@router.post("/api/course-requests/{rid}/like")
+async def toggle_course_request_like(rid: int, request: Request):
+    u = await require_user(request)
+
+    def run():
+        likes = db.course_request_likes.c
         with db.engine.begin() as c:
-            c.execute(delete(db.course_requests).where(cr.id == rid, cr.user_id == u["id"]))
+            if c.execute(select(db.course_requests.c.id).where(db.course_requests.c.id == rid)).first() is None:
+                raise HTTPException(404, "신청 글을 찾을 수 없어요.")
+            mine = c.execute(select(likes.request_id).where(
+                likes.request_id == rid, likes.user_id == u["id"])).first()
+            if mine:
+                c.execute(delete(db.course_request_likes).where(
+                    likes.request_id == rid, likes.user_id == u["id"]))
+            else:
+                c.execute(insert(db.course_request_likes).values(request_id=rid, user_id=u["id"]))
+            count = c.execute(select(func.count()).select_from(db.course_request_likes).where(
+                likes.request_id == rid)).scalar_one()
+        return {"likes": count, "liked": not bool(mine)}
 
-    await db.run(run)
-    return {"ok": True}
+    return await db.run(run)
 
 
-def request_groups() -> list[dict]:
+def request_groups(include_likes: bool = False) -> list[dict]:
     """과목별 개설 요청: 요청 학생 수 · 학년 · 학교 · 하고 싶은 말 (학생 이름 없이)"""
     def run():
         with db.engine.connect() as c:
-            return c.execute(select(db.course_requests, db.users.c.school, db.users.c.grade)
+            rows = c.execute(select(db.course_requests, db.users.c.school, db.users.c.grade)
                              .join(db.users, db.users.c.id == db.course_requests.c.user_id)).all()
+            likes = dict(c.execute(select(db.course_requests.c.subject, func.count())
+                .select_from(db.course_request_likes.join(db.course_requests,
+                    db.course_request_likes.c.request_id == db.course_requests.c.id))
+                .group_by(db.course_requests.c.subject)).all()) if include_likes else {}
+            return rows, likes
 
     groups: dict = {}
-    for r in run():
+    rows, likes = run()
+    for r in rows:
         g = groups.setdefault(r.subject, {"subject": r.subject, "count": 0, "grades": {}, "schools": {}, "notes": [],
                                           "latest": 0})
         g["count"] += 1
@@ -1164,10 +1311,16 @@ def request_groups() -> list[dict]:
         if r.note:
             g["notes"].append(r.note)
         g["latest"] = max(g["latest"], r.created_at)
-    known = {x["name"] for x in subjects.SUBJECTS}
+    known = {x["name"]: x for x in subjects.SUBJECTS}
+    if include_likes:
+        for subject, g in groups.items():
+            g["likes"] = likes.get(subject, 0)
+            g["count"] += g["likes"]
     out = sorted(groups.values(), key=lambda g: (-g["count"], -g["latest"]))
     for g in out:
-        g["in_curriculum"] = g["subject"] in known
+        subject = known.get(g["subject"])
+        g["in_curriculum"] = subject is not None
+        g["subject_area"] = subject["area"] if subject else ""
         g["notes"] = g["notes"][-5:]
     return out
 
@@ -1182,9 +1335,10 @@ async def hub_course_requests(request: Request):
 
 @router.get("/api/course-requests/summary")
 async def course_request_summary():
-    """메인 화면: 학생들이 듣고 싶은 과목 (누구나). 과목·요청 수·학년만 보인다 (학교·하고 싶은 말은 빼서 누군지 알 수 없게)"""
-    out = await db.run(request_groups)
-    return {"requests": [{"subject": g["subject"], "count": g["count"], "grades": g["grades"],
+    """메인 화면: 신청 글 수와 공감 수를 합친 희망 인원을 보여 준다."""
+    out = await db.run(request_groups, True)
+    return {"requests": [{"subject": g["subject"], "subject_area": g["subject_area"],
+                          "count": g["count"], "likes": g["likes"], "grades": g["grades"],
                           "in_curriculum": g["in_curriculum"]} for g in out[:12]]}
 
 

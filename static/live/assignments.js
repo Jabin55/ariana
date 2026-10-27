@@ -114,10 +114,14 @@ async function renderSubmissions(a, box, reload) {
 
 /* ───────────── 학생 ───────────── */
 
-async function loadMyAssignments() {
+let activeStudentCourseId = null;
+async function loadMyAssignments(courseId = activeStudentCourseId) {
+  activeStudentCourseId = courseId;
   let list;
   try { ({ assignments: list } = await api("/api/my/assignments")); } catch { return; }
-  if (!list.length) return;
+  if (courseId !== activeStudentCourseId) return;
+  if (courseId !== null) list = list.filter((a) => a.course_id === courseId);
+  if (!list.length) { $("#student-assignments").hidden = true; return; }
   $("#student-assignments").hidden = false;
   const box = $("#my-assignments");
   const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.id));
