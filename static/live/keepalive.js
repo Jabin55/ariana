@@ -8,7 +8,7 @@
     try {
       const r = await fetch("/api/auth/ping", { method: "POST", credentials: "same-origin", cache: "no-store" });
       const { user } = await r.json();
-      if (wasIn && !user) location.reload(); // 로그인이 끝났으면 로그인 화면으로
+      if (wasIn && !user) location.replace("/live?login=1"); // 로그인이 끝났으면 로그인 화면으로
       wasIn = user;
     } catch { /* 인터넷이 잠깐 끊김: 다음에 다시 */ }
   }

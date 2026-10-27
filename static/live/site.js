@@ -103,7 +103,7 @@
     user.replaceChildren();
     if (!u) {
       user.append(
-        el("a", { class: "site-user", href: "/live" }, "로그인"),
+        el("a", { class: "site-user", href: "/live?login=1" }, "로그인"),
         el("a", { class: "site-user site-signup", href: "/live?signup=1" }, "회원가입")
       );
       return;

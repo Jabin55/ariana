@@ -2,7 +2,7 @@
 let CFG = null; // /api/me 설정 (구글 드라이브 연결 등)
 api("/api/me").then((cfg) => {
   CFG = cfg;
-  if (!cfg.user || cfg.user.role !== "teacher") location.replace("/live");
+  if (!cfg.user || cfg.user.role !== "teacher") location.replace(cfg.user ? "/live" : "/live?login=1");
   $("#rec-btn").hidden = !cfg.recording_allowed;
 }).catch(() => {});
 
@@ -80,7 +80,7 @@ function onMessage(msg) {
       finish("수업을 종료했어요.");
       break;
     case "error":
-      if (msg.code === "login") location.replace("/live");
+      if (msg.code === "login") location.replace("/live?login=1");
       else finish(msg.text);
       break;
   }

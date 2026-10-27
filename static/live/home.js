@@ -30,7 +30,12 @@ async function boot() {
   CONFIG = await api("/api/me");
   ME = CONFIG.user;
   window.WaesolHeader?.render(ME); // 이름·내 정보·로그아웃은 맨 위 머리글에만
-  if (!ME) return showLogin();
+  if (!ME) {
+    // 로그인 전에 그냥 /live 로 들어오면 메인 페이지부터 (로그인·회원가입·교무실 등 목적이 있으면 로그인 화면)
+    const purpose = ["login", "signup", "start", "wish", "office", "profile", "apply", "tab", "course", "c", "classroom"];
+    if (!purpose.some((k) => params.has(k))) { location.replace("/live/home"); return; }
+    return showLogin();
+  }
   // 회원가입: [회원 유형 선택] → [가입정보 입력] → [약관 동의] → [가입완료 안내]
   if (ME.role_choice) {
     // 학교 계정으로 처음 들어옴: 첫 화면에서 고른 것(학생/선생님)이 있으면 그대로, 없으면 물어본다

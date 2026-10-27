@@ -20,7 +20,7 @@ async function showList() {
       h("div", { class: "muted", style: "font-size:0.85rem" },
         [c.files ? `📄 자료 ${c.files}개` : "", c.whiteboard ? "🖊️ 화이트보드" : ""].filter(Boolean).join(" · ")))));
   } catch (err) {
-    if (err.status === 401) location.replace("/live");
+    if (err.status === 401) location.replace("/live?login=1");
     $("#m-error").textContent = err.message;
   }
 }
@@ -30,7 +30,7 @@ async function showViewer() {
   try {
     data = await api(`/api/materials/class/${classId}`);
   } catch (err) {
-    if (err.status === 401) return location.replace("/live");
+    if (err.status === 401) return location.replace("/live?login=1");
     $("#m-error").textContent = err.message;
     return;
   }
