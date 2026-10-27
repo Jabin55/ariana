@@ -355,9 +355,6 @@ async function drawTeacherProfile() {
       row("이름", h("div", { class: "me-school" }, f.name, ME.name && !ME.is_admin ? h("button", { class: "small", type: "button", onclick: () => { nameBox.hidden = !nameBox.hidden; } }, "변경 신청") : null)),
       row("성별", f.gender),
       row("생년월일", f.birth),
-      row("가입 유형", h("div", { class: "row" },
-        h("span", { class: "grow" }, joinedTypes.length ? joinedTypes.join(", ") : "거점학교 강의교사"),
-        h("button", { class: "small", type: "button", onclick: () => showGuest(true, true, true) }, "변경 신청"))),
       row("소속", h("div", { class: "me-school" }, f.school,
         h("button", { class: "small", type: "button", onclick: () => {
           const box = managedRoles.length ? transferBox : schoolBox;
@@ -365,7 +362,10 @@ async function drawTeacherProfile() {
           if (!transferBox.hidden) transferSchool.focus();
         } }, "변경 신청"))),
       row("직위", f.position),
-      row("권한정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
+      row("가입 유형", h("div", { class: "row" },
+        h("span", { class: "grow" }, joinedTypes.length ? joinedTypes.join(", ") : "거점학교 강의교사"),
+        h("button", { class: "small", type: "button", onclick: () => showGuest(true, true, true) }, "변경 신청"))),
+      row("권한 정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
         pending.length ? h("div", { class: "muted", style: "font-size:0.82rem" }, pending.join(", ")) : null),
       row("이메일", h("strong", {}, ME.email), h("span", { class: "muted", style: "font-size:0.82rem" }, "  (가입한 구글 계정)")),
       row("휴대전화", f.phone))),
