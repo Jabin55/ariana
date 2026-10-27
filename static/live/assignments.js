@@ -78,7 +78,7 @@ async function renderCourseAssignments(c, box) {
   });
   box.replaceChildren(
     h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.9rem" }, "수행평가 공간이에요. 과제를 내면 학생이 마이페이지에서 파일·글로 제출하고, 선생님이 '제출 현황·채점'에서 점수와 피드백을 줘요."),
-    form, ...(items.length ? items : [h("p", { class: "muted" }, "아직 낸 과제가 없어요.")]));
+    ...(items.length ? items : [h("p", { class: "muted" }, "아직 낸 과제가 없어요.")]), form);
 }
 
 async function renderSubmissions(a, box, reload) {
