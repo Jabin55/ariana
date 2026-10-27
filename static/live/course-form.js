@@ -39,7 +39,7 @@ async function courseForm(c, done) {
   // 개설학교 정보: 소속 교육청과 거점학교를 목록에서만 고른다 (고칠 때도 바꿀 수 있음, 정식 이름만)
   // 강사는 승인받은 거점학교 중에서, 전체 관리자는 울산 고등학교 목록 전체에서
   const leadHubs = ME.lead_hubs || [];
-  const byName = !leadHubs.length || ME.is_admin;
+  const byName = !leadHubs.length || ME.is_admin || ME.lead_any; // 울산 고등학교 어디든 거점학교로 고른다
   const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...schools, ...(c.hub_school ? [c.hub_school] : [])])].sort();
   const office = h("select", { required: true }, koSort(meta.offices).map((o) => h("option", { value: o, selected: o === "울산광역시교육청" }, o)));
   const hubSel = h("select", { required: true }, h("option", { value: "" }, "거점학교를 고르세요"),
@@ -64,8 +64,12 @@ async function courseForm(c, done) {
   async function loadCo() {
     coBox.replaceChildren();
     if (!team.checked) return;
-    const hubId = hubIdNow();
-    if (!hubId) { coBox.append(h("p", { class: "muted" }, "이 거점학교에 승인된 강사가 아직 없어요. 강사가 이 학교로 등록 승인을 받으면 보조교사로 고를 수 있어요.")); return; }
+    // 거점학교 번호를 모르면 이름으로 찾고, 아직 없는 학교면 0 (거점학교를 정하지 않은 강의교사만 나온다)
+    let hubId = hubIdNow();
+    if (!hubId && hubSel.value) {
+      try { hubId = (await api("/api/hubs")).hubs.find((x) => x.name === hubSel.value)?.id || 0; } catch { hubId = 0; }
+    }
+    if (hubId == null || !hubSel.value) { coBox.append(h("p", { class: "muted" }, "먼저 거점학교를 골라 주세요.")); return; }
     try {
       const { teachers } = await api(`/api/hubs/${hubId}/teachers`);
       coBox.append(...(teachers.length ? teachers.map((x) => h("label", { class: "switch" },

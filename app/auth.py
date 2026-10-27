@@ -91,6 +91,7 @@ def public_user(u) -> dict:
         "student_no": student_no(d), "display": display_name(d), "needs_profile": needs_profile(d),
         "is_admin": bool(d.get("is_admin")), "memberships": d.get("memberships", []),
         "coordinator_hubs": d.get("coordinator_hubs", []), "teach_hubs": d.get("teach_hubs", []), "lead_hubs": d.get("lead_hubs", []),
+        "teach_any": bool(d.get("teach_any")), "lead_any": bool(d.get("lead_any")),
         "participant_schools": d.get("participant_schools", []), "birth": d.get("birth") or "",
         # 이름은 가입 때 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
         "name_locked": bool(d.get("name_locked")) and not d.get("is_admin"),
@@ -108,8 +109,10 @@ def public_user(u) -> dict:
 
 
 def membership_active(m: dict) -> bool:
-    # 거점학교 관리교사·강사는 거점학교(hub_id), 참여학교 담당교사는 학교 이름(hub_name)이 있어야 한다
-    if m["status"] != "approved" or not (m.get("hub_id") or (m["role"] == "participant" and m.get("hub_name"))):
+    # 거점학교 관리교사는 거점학교(hub_id), 참여학교 담당교사는 학교 이름(hub_name)이 있어야 한다.
+    # 강의교사는 거점학교 없이도 된다 (과목을 열 때마다 거점학교를 고른다)
+    if m["status"] != "approved" or not (m.get("hub_id") or m["role"] == "instructor"
+                                         or (m["role"] == "participant" and m.get("hub_name"))):
         return False
     today = today_kst()
     return (not m["valid_from"] or m["valid_from"] <= today) and (not m["valid_until"] or today <= m["valid_until"])
@@ -212,10 +215,15 @@ def _load_with_role(uid: int) -> dict | None:
     # 예전 participant 가입 기록도 관리교사로 취급한다. 강의는 별도 강의교사 승인이 필요하다.
     u["coordinator_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
                                     if m["role"] in ("coordinator", "participant") and m["hub_id"]})
-    u["teach_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active if m["role"] == "instructor"})
+    u["teach_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
+                              if m["role"] == "instructor" and m["hub_id"]})
     # 강좌를 직접 열 수 있는 거점학교 (팀티칭 보조교사로만 승인된 곳은 빠진다)
     u["lead_hubs"] = sorted({(m["hub_id"], hub_names.get(m["hub_id"], "")) for m in active
-                             if m["role"] == "instructor" and m.get("kind") != "assistant"})
+                             if m["role"] == "instructor" and m.get("kind") != "assistant" and m["hub_id"]})
+    # 거점학교를 정하지 않고 전체 관리자가 승인한 강의교사: 과목을 열 때마다 거점학교를 고른다
+    # (과목 개설은 그 거점학교 관리교사가 승인)
+    u["teach_any"] = any(m["role"] == "instructor" and not m["hub_id"] for m in active)
+    u["lead_any"] = any(m["role"] == "instructor" and not m["hub_id"] and m.get("kind") != "assistant" for m in active)
     u["participant_schools"] = sorted({m["hub_name"] or hub_names.get(m["hub_id"], "") for m in active
                                        if m["role"] in ("coordinator", "participant") and
                                        (m["hub_name"] or hub_names.get(m["hub_id"], ""))})

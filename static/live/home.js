@@ -85,7 +85,7 @@ function showDone(kind, role, place) {
     $("#done-actions").replaceChildren(go("수강신청하러 가기", () => boot(), true), h("a", { class: "button", href: "/live/courses" }, "개설 강좌 둘러보기"));
     return;
   }
-  const WHO = { instructor: `${place || "거점학교"} 관리교사`, coordinator: "전체 관리자", participant: "전체 관리자" };
+  const WHO = { instructor: "전체 관리자", coordinator: "전체 관리자", participant: "전체 관리자" };
   const NAME = { instructor: "강의교사", coordinator: "관리교사", participant: "관리교사" };
   $("#done-ico").textContent = "📨";
   $("#done-title").textContent = "가입 신청이 완료되었어요";
@@ -639,18 +639,9 @@ async function showGuest(fromTeacher = false, returnToProfile = false, replacing
       m.status === "pending" ? h("div", { class: "muted", style: "font-size:0.85rem" },
         m.role === "coordinator" ? "전체 관리자가 승인하면 관리교사 기능이 켜져요."
           : m.role === "participant" ? "전체 관리자가 승인하면 우리 학교 학생을 관리할 수 있어요."
-            : `${m.hub} 관리교사가 승인하면 강좌를 개설할 수 있어요.`) : null);
+            : "전체 관리자가 승인하면 과목을 개설할 수 있어요.") : null);
   }));
-  // 거점학교 목록 (강사 신청용)
-  // 강사 거점학교: 울산 고등학교 목록에서 검색해 고른다 (목록이 아직 없으면 등록된 거점학교 중에서)
-  const useList = CONFIG.schools.length > 0;
-  $("#a-hub-search").hidden = !useList;
-  $("#a-hub").hidden = useList;
-  if (!useList) {
-    const { hubs } = await api("/api/hubs");
-    $("#a-hub").replaceChildren(...(hubs.length ? koSort(hubs, (x) => x.name).map((x) => h("option", { value: x.id }, x.name))
-      : [h("option", { value: "" }, "아직 등록된 거점학교가 없어요")]));
-  }
+  // 강의교사는 거점학교를 정하지 않는다 (과목을 열 때마다 고른다)
   updateApplyRole();
 }
 
@@ -698,10 +689,6 @@ function updateApplyRole() {
   affiliationType.disabled = role !== "instructor";
   updateAffil();
   $("#a-kind-wrap").hidden = role !== "instructor";
-  $("#a-hub-pick").hidden = role !== "instructor";
-  const useList = CONFIG.schools.length > 0;
-  $("#a-hub").required = role === "instructor" && !useList;
-  $("#a-hub-search").required = role === "instructor" && useList;
   $("#a-hub-name-wrap").hidden = role === "instructor";
   $("#a-hub-name").required = role !== "instructor";
   $("#a-hub-name-label").textContent = "근무 중인 학교";
@@ -718,17 +705,16 @@ $("#apply").addEventListener("submit", async (e) => {
   $("#apply-error").textContent = "";
   const role = document.querySelector("input[name=a-role]:checked").value;
   const first = !ME.memberships.length; // 처음 가입 신청이면 '가입완료' 안내로
-  const place = role === "instructor" ? (CONFIG.schools.length ? $("#a-hub-search").value.trim() : $("#a-hub").selectedOptions[0]?.textContent || "")
-    : $("#a-hub-name").value.trim();
+  const place = role === "instructor" ? "" : $("#a-hub-name").value.trim();
   withConsent("guest-view", () => sendApply(role, first, place));
 });
 
 async function sendApply(role, first, place) {
   try {
     await api("/api/staff/apply", {
-      role, hub_id: role === "instructor" && !CONFIG.schools.length ? Number($("#a-hub").value) || null : null,
+      role, hub_id: null,
       replace_membership_id: guestReplacingRole ? Number($("#a-replace").value) || null : null,
-      hub_name: role !== "instructor" ? $("#a-hub-name").value : role === "instructor" && CONFIG.schools.length ? $("#a-hub-search").value.trim() : "",
+      hub_name: role !== "instructor" ? $("#a-hub-name").value : "",
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value, gender: $("#a-gender").value,
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       department: $("#a-affil-type").value === "univ" ? $("#a-dept").value.trim() : "",
@@ -741,7 +727,7 @@ async function sendApply(role, first, place) {
     });
     toast(role === "coordinator" ? "신청했어요. 전체 관리자가 승인하면 학교 운영·학생 관리 기능이 켜져요."
       : role === "participant" ? "신청했어요. 전체 관리자가 승인하면 우리 학교 학생을 관리할 수 있어요."
-        : "신청했어요. 거점학교 관리교사가 승인하면 강좌를 개설할 수 있어요.");
+        : "신청했어요. 전체 관리자가 승인하면 과목을 개설할 수 있어요.");
     CONFIG = await api("/api/me");
     ME = CONFIG.user;
     if (first) return showDone("teacher", role, place);
@@ -1244,17 +1230,19 @@ async function loadAdmin() {
     catch (err) { if (adminSub === selected) fill(box, h("p", { class: "error" }, err.message)); }
     return;
   }
-  let co, pa;
-  try { [co, pa] = await Promise.all([api("/api/staff/applications?role=coordinator"), api("/api/staff/applications?role=participant")]); }
+  let co, pa, ins;
+  try { [co, pa, ins] = await Promise.all([api("/api/staff/applications?role=coordinator"), api("/api/staff/applications?role=participant"),
+    api("/api/staff/applications?role=instructor")]); }
   catch (err) { if (adminSub === selected) fill(box, h("p", { class: "error" }, err.message)); return; }
   if (adminSub !== selected) return;
   co.applications.forEach((x) => { x.role = "coordinator"; });
   pa.applications.forEach((x) => { x.role = "participant"; });
-  const list = [...co.applications, ...pa.applications];
+  ins.applications.forEach((x) => { x.role = "instructor"; });
+  const list = [...co.applications, ...pa.applications, ...ins.applications];
   const pending = list.filter((x) => x.status === "pending").length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
-  fill(box, staffBoard("admin", list, co.today, loadAdmin, "관리교사"));
+  fill(box, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
 }
 
 async function profileChangeBoard(field) {

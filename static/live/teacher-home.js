@@ -4,7 +4,7 @@ let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 과목 운영에서 연 과목
 let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(평가 활동) learn(학습 관리)
-let hubSub = "approve"; // 거점학교 운영: approve(강의교사) courses(강좌 개설) days(수업일) attendance(출석부)
+let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
 let adminSub = "approve";
@@ -667,17 +667,13 @@ async function activitiesOf(classId, key, box) {
 /* ───────────────────────── 거점학교 운영: 승인·수업일·출석부 ───────────────────────── */
 
 async function loadHub() {
-  const [inst, ov] = await Promise.all([
-    api("/api/staff/applications?role=instructor"), api("/api/hub/overview")]);
-  inst.applications.forEach((x) => { x.role = "instructor"; });
+  const ov = await api("/api/hub/overview");
   const waitCourses = ov.courses.filter((c) => c.approval === "pending");
-  const waitStaff = inst.applications.filter((x) => x.status === "pending").length;
-  const badge = waitCourses.length + waitStaff;
+  const badge = waitCourses.length;
   $("#hub-badge").textContent = badge;
   $("#hub-badge").hidden = !badge;
   const box = h("div");
   const subs = [
-    ["approve", `강의교사 승인${waitStaff ? ` (${waitStaff})` : ""}`],
     ["courses", `강좌 개설 승인${waitCourses.length ? ` (${waitCourses.length})` : ""}`],
     ["days", "강좌별 수업일"],
     ["attendance", "강좌별 출석부"],
@@ -686,8 +682,7 @@ async function loadHub() {
     h("nav", { class: "tabs sub-tabs", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
       onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; loadHub(); } }, label))),
     box);
-  if (hubSub === "approve") fill(box, staffBoard("hub", inst.applications, inst.today, loadHub, "강의교사 승인"));
-  else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
+  if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
     if (hubRecordCourseId) {
       const log = await api(`/api/hub/class-log?course_id=${hubRecordCourseId}`);

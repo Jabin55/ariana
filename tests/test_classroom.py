@@ -753,30 +753,33 @@ def test_hub_structure_and_course_approval(monkeypatch):
     hub_id = me["coordinator_hubs"][0]["id"]
     assert [h["name"] for h in coord.get("/api/hubs").json()["hubs"]] == ["가나고등학교"]
 
-    # 2) 강사(대학교수) 신청: 거점학교를 골라 신청 → 그 학교 관리교사가 승인 (전체 관리자가 아니어도)
+    # 2) 강의교사(대학교수) 신청: 거점학교를 정하지 않는다 → 전체 관리자가 승인
     prof = guest("prof@univ.ac.kr")
-    iform = {"role": "instructor", "hub_id": hub_id, "name": "김교수", "affiliation": "한국대학교", **pledge}
+    iform = {"role": "instructor", "name": "김교수", "affiliation": "한국대학교", **pledge}
     assert staff_apply(prof, iform).status_code == 400  # 희망 기간 없음
     assert staff_apply(prof, {**iform, "wish_from": "2020-01-01", "wish_until": "2020-02-01"}).status_code == 400
     assert staff_apply(prof, {**iform, "wish_from": "2027-01-01", "wish_until": "2099-02-28",
                                                "message": "무시됨"}).status_code == 200
     other_coord_view = teacher().get("/api/staff/applications", params={"role": "instructor"})
     assert other_coord_view.status_code == 403  # 관리교사가 아니면 못 봄
-    iapps = coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
-    assert iapps[0]["name"] == "김교수" and iapps[0]["hub"] == "가나고등학교"
+    assert coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"] == []  # 관리교사에겐 안 보임
+    iapps = admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
+    assert iapps[0]["name"] == "김교수" and iapps[0]["hub_id"] is None
     assert (iapps[0]["wish_from"], iapps[0]["wish_until"], iapps[0]["message"]) == ("2027-01-01", "2099-02-28", "")
-    assert coord.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve"}).status_code == 400  # 끝나는 날 필수
-    assert coord.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
+    assert coord.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 403
+    assert admin.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve"}).status_code == 400  # 끝나는 날 필수
+    assert admin.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
     pme = prof.get("/api/me").json()["user"]
-    assert pme["role"] == "teacher" and pme["teach_hubs"] == [{"id": hub_id, "name": "가나고등학교"}] and not pme["coordinator_hubs"]
+    assert pme["role"] == "teacher" and pme["teach_hubs"] == [] and pme["lead_any"] and not pme["coordinator_hubs"]
     # 강사는 관리교사 권한 없음
     assert prof.get("/api/hub/overview").status_code == 403
 
-    # 3) 강사: 승인받은 거점학교에만 강좌 개설 (거점학교명은 자동)
+    # 3) 강의교사: 과목을 열 때 거점학교를 고른다 (울산 고등학교 어디든, 개설은 그 학교 관리교사가 승인)
     base = {"title": "정치 보충", "instructor": "김교수", "start_date": "2027-01-05", "end_date": "2099-02-20"}
     assert prof.post("/api/courses", json=base).status_code == 400  # 거점학교 안 고름
-    assert prof.post("/api/courses", json={**base, "hub_id": 999}).status_code == 403
-    cid = prof.post("/api/courses", json={**base, "hub_id": hub_id}).json()["id"]
+    assert prof.post("/api/courses", json={**base, "hub_id": 999}).status_code == 404
+    cid = prof.post("/api/courses", json={**base, "hub_school": "가나고등학교"}).json()["id"]
+    assert prof.get("/api/courses/mine").json()["courses"][0]["hub_id"] == hub_id
 
     # 4) 강좌 개설은 거점학교 관리교사가 승인해야 열린다 (그 전엔 학생 목록에 없고 수업도 못 연다)
     s1, s2 = student(1), student(2)
@@ -868,13 +871,14 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
 
     # 1) 강사였던 B: 가나고 강사 (작년, 기간 끝남) → 올해 같은 학교 관리교사도 신청
     b = guest("b@gmail.com")
-    staff_apply(b, {"role": "instructor", "hub_id": hub, "name": "강사B", **form})
-    bi = [x for x in apps(a, "instructor") if x["name"] == "강사B"][0]
-    approve(a, "instructor", bi["id"], valid_from="2025-01-01", valid_until="2025-12-31")
+    staff_apply(b, {"role": "instructor", "name": "강사B", **form})
+    assert [x for x in apps(a, "instructor") if x["name"] == "강사B"] == []  # 강의교사 가입은 전체 관리자가 승인
+    bi = [x for x in apps(admin, "instructor") if x["name"] == "강사B"][0]
+    approve(admin, "instructor", bi["id"], valid_from="2025-01-01", valid_until="2025-12-31")
     assert b.get("/api/me").json()["user"]["role"] == "guest"  # 기간 끝남
-    # 기간이 끝난 강사가 다시 신청하면 '승인 대기'로 돌아가 관리교사에게 보인다 (연장 요청)
-    staff_apply(b, {"role": "instructor", "hub_id": hub, "name": "강사B", **form})
-    assert [x["status"] for x in apps(a, "instructor") if x["name"] == "강사B"] == ["pending"]
+    # 기간이 끝난 강사가 다시 신청하면 '승인 대기'로 돌아간다 (연장 요청)
+    staff_apply(b, {"role": "instructor", "name": "강사B", **form})
+    assert [x["status"] for x in apps(admin, "instructor") if x["name"] == "강사B"] == ["pending"]
     # 같은 학교 관리교사 신청 → 전체 관리자 승인 → 두 역할을 함께 가진다
     assert staff_apply(b, {"role": "coordinator", "hub_name": "가나고등학교", "name": "강사B", **form}).status_code == 200
     bc = [x for x in apps(admin, "coordinator") if x["name"] == "강사B"][0]
@@ -884,22 +888,23 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
     assert sorted(m["role"] for m in me["memberships"]) == ["coordinator", "instructor"]
 
     # 2) 관리교사 A가 자기 학교 강사로도 등록: 본인 신청은 본인이 승인할 수 없다
-    staff_apply(a, {"role": "instructor", "hub_id": hub, "name": "관리A", **form,
+    staff_apply(a, {"role": "instructor", "name": "관리A", **form,
                     "affil_type": "univ", "affiliation": "울산대학교", "department": "교육학과",
                     "email": "a@univ.ac.kr"})
-    ai = [x for x in apps(a, "instructor") if x["name"] == "관리A"][0]
+    ai = [x for x in apps(admin, "instructor") if x["name"] == "관리A"][0]
     assert ai["affiliation"] == "울산대학교"
     assert a.get("/api/me").json()["user"]["school"] == "가나고등학교"
     assert approve(a, "instructor", ai["id"]).status_code == 403
-    # 같은 학교의 다른 관리교사(B)나 전체 관리자가 승인
-    assert approve(b, "instructor", ai["id"], valid_until="2099-02-28").status_code == 200
+    # 관리교사(B)는 강의교사 가입을 승인할 수 없고, 전체 관리자가 승인
+    assert approve(b, "instructor", ai["id"], valid_until="2099-02-28").status_code == 403
+    assert approve(admin, "instructor", ai["id"], valid_until="2099-02-28").status_code == 200
     roles = sorted(m["role"] for m in a.get("/api/me").json()["user"]["memberships"] if m["status"] == "approved")
     assert roles == ["coordinator", "instructor"]
     assert a.get("/api/me").json()["user"]["school"] == "가나고등학교"
 
 
-def test_instructor_moves_to_another_hub(monkeypatch):
-    """거점학교를 옮기면 예전 거점학교 강좌는 관리할 수 없다 (다른 학교에서 강사로 활동 중이어도)"""
+def test_instructor_opens_courses_at_any_hub(monkeypatch):
+    """강의교사는 거점학교에 묶이지 않는다: 과목마다 거점학교를 고르고, 그 학교 관리교사만 관리한다"""
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
     admin = login("admin@gmail.com", name="전체관리자")
     form = {"contact": "010", "pledge": True, "affiliation": "", "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
@@ -919,29 +924,24 @@ def test_instructor_moves_to_another_hub(monkeypatch):
         admin.post(f"/api/staff/{x['id']}", json={"action": "approve"})
     hubs = {h["name"]: h["id"] for h in admin.get("/api/hubs").json()["hubs"]}
     t = guest("t@gmail.com")
-    for school in ("가나고", "다라고"):
-        staff_apply(t, {"role": "instructor", "hub_id": hubs[school], "name": "강사", **form})
-    ids = {x["hub"]: x["id"] for x in admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]}
-    for i in ids.values():
-        admin.post(f"/api/staff/{i}", json={"action": "approve", "valid_until": "2099-02-28"})
+    staff_apply(t, {"role": "instructor", "name": "강사", **form})
+    iid = admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"][0]["id"]
+    admin.post(f"/api/staff/{iid}", json={"action": "approve", "valid_until": "2099-02-28"})
     cid = t.post("/api/courses", json={**COURSE, "hub_id": hubs["가나고"]}).json()["id"]
-    admin.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"})
+    cid2 = t.post("/api/courses", json={**COURSE, "title": "경제", "hub_id": hubs["다라고"]}).json()["id"]
+    assert coordinators["다라고"].post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"}).status_code in (403, 404)
+    coordinators["가나고"].post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"})
+    coordinators["다라고"].post(f"/api/hub/courses/{cid2}/approval", json={"action": "approve"})
     assert create(t, title="1주차", course_id=cid)["code"]
     assert coordinators["가나고"].get(f"/api/hub/courses/{cid}/attendance").status_code == 200
     assert coordinators["다라고"].get(f"/api/hub/courses/{cid}/attendance").status_code == 404
     assert coordinators["다라고"].get("/api/hub/class-log", params={"course_id": cid}).json()["classes"] == []
 
-    # 가나고 강사 해제 → 다라고에서는 여전히 강사지만 가나고 강좌는 잠긴다
-    admin.post(f"/api/staff/{ids['가나고']}", json={"action": "revoke"})
-    me = t.get("/api/me").json()["user"]
-    assert me["role"] == "teacher" and me["teach_hubs"] == [{"id": hubs["다라고"], "name": "다라고"}]
-    assert t.get("/api/courses/mine").json()["courses"][0]["locked"] is True
+    # 강의교사 권한을 해제하면 과목이 잠기고, 다시 승인받으면 풀린다
+    admin.post(f"/api/staff/{iid}", json={"action": "revoke"})
     assert t.post("/api/live/classes", json={"title": "2주차", "course_id": cid}).status_code == 403
-    assert t.get(f"/api/courses/{cid}/enrollments").status_code == 403
-    assert t.post(f"/api/courses/{cid}", json={"open": False}).status_code == 403
-    # 다시 승인받으면 풀린다
-    admin.post(f"/api/staff/{ids['가나고']}", json={"action": "approve", "valid_until": "2099-02-28"})
-    assert t.get("/api/courses/mine").json()["courses"][0]["locked"] is False
+    admin.post(f"/api/staff/{iid}", json={"action": "approve", "valid_until": "2099-02-28"})
+    assert all(not c["locked"] for c in t.get("/api/courses/mine").json()["courses"])
 
 
 def test_students_from_other_schools(monkeypatch):
@@ -1713,7 +1713,7 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     hub_id = manager["coordinator_hubs"][0]["id"]
     # 강사: 대학 교원(주강사) / 미임용 교원자격 소지자(팀티칭 보조교사)
     prof = guest("prof@univ.ac.kr")
-    pform = {**base, "role": "instructor", "hub_id": hub_id, "name": "김교수", "affil_type": "univ", "office": "",
+    pform = {**base, "role": "instructor", "name": "김교수", "affil_type": "univ", "office": "",
              "affiliation": "", "email": "kim@univ.ac.kr", "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
     assert staff_apply(prof, pform).status_code == 400  # 대학 이름 필요
     assert staff_apply(prof, {**pform, "affiliation": "울산대학교"}).status_code == 400  # 학과도 필요
@@ -1724,11 +1724,11 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     aform = {**pform, "name": "이보조", "affil_type": "cert", "email": "lee@gmail.com", "assistant": True}
     assert staff_apply(asst, aform).status_code == 400  # 교원자격 필요
     assert staff_apply(asst, {**aform, "license": "중등학교 2급 정교사(사회)"}).status_code == 200
-    for x in coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]:
-        assert coord.post(f"/api/staff/{x['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
+    for x in boss.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]:
+        assert boss.post(f"/api/staff/{x['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
     instructor = prof.get("/api/me").json()["user"]
     assert instructor["participant_schools"] == [] and instructor["coordinator_hubs"] == []
-    assert instructor["teach_hubs"][0]["id"] == hub_id
+    assert instructor["teach_hubs"] == [] and instructor["lead_any"]
     assert prof.get("/api/school/overview").status_code == 403
     assert prof.get("/api/hub/overview").status_code == 403
     ame = asst.get("/api/me").json()["user"]
@@ -1994,7 +1994,7 @@ def test_roles_are_separate_and_one_step_enrollment(monkeypatch):
 
 
 def test_instructor_applies_to_any_ulsan_school(monkeypatch):
-    """강사는 울산 고등학교 목록에서 거점학교를 고른다. 관리교사가 없는 학교면 전체 관리자가 승인"""
+    """강의교사는 가입 때 거점학교를 고르지 않는다. 과목을 열 때 울산 고등학교 목록에서 고른다"""
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
     boss.post("/api/admin/schools", json={"text": "신정고등학교\n울산고등학교"})
@@ -2002,19 +2002,17 @@ def test_instructor_applies_to_any_ulsan_school(monkeypatch):
     google_login(prof, "prof@univ.ac.kr")
     form = {"role": "instructor", "name": "김교수", "contact": "010", "pledge": True,
             "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
-    assert staff_apply(prof, {**form, "hub_name": "아무고"}).status_code == 400
-    assert staff_apply(prof, {**form, "hub_name": "울산고등학교"}).status_code == 200
+    assert staff_apply(prof, form).status_code == 200
     app_ = boss.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"][0]
-    assert app_["hub"] == "울산고등학교"
+    assert app_["hub_id"] is None
     boss.post(f"/api/staff/{app_['id']}", json={"action": "approve", "valid_until": "2099-02-28"})
     me = prof.get("/api/me").json()["user"]
-    assert [h["name"] for h in me["lead_hubs"]] == ["울산고등학교"]
-    cid = prof.post("/api/courses", json={**COURSE, "hub_id": me["lead_hubs"][0]["id"]}).json()["id"]
-    assert prof.post("/api/courses", json={**COURSE, "hub_school": "신정고등학교"}).status_code == 403  # 승인 안 받은 학교
-    # 전체 관리자: 울산 고등학교 이름으로 열면 거점학교로 묶인다 (거점학교 관리 탭에 보임)
-    boss.post("/api/courses", json={**COURSE, "title": "정치", "hub_school": "신정고등학교"})
-    hubs = {c["title"]: c["hub_id"] for c in boss.get("/api/hub/overview").json()["courses"]}
-    assert hubs["정치"] and cid in [c["id"] for c in boss.get("/api/hub/overview").json()["courses"]]
+    assert me["lead_hubs"] == [] and me["lead_any"]
+    assert prof.post("/api/courses", json={**COURSE, "hub_school": "아무고"}).status_code == 400  # 목록에 없는 학교
+    cid = prof.post("/api/courses", json={**COURSE, "hub_school": "울산고등학교"}).json()["id"]
+    cid2 = prof.post("/api/courses", json={**COURSE, "title": "경제", "hub_school": "신정고등학교"}).json()["id"]
+    ov = {c["id"]: c["hub_school"] for c in boss.get("/api/hub/overview").json()["courses"]}
+    assert ov[cid] == "울산고등학교" and ov[cid2] == "신정고등학교"
 
 
 def test_course_sessions_joined_schools_and_recruit_time(monkeypatch):

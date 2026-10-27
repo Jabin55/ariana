@@ -43,7 +43,8 @@ def is_enrolled(course_id: int, user_id: int) -> bool:
 def hub_locked(course, t: dict) -> bool:
     """거점학교 강좌인데 그 거점학교 강사(관리교사) 활동 기간이 아니면 관리할 수 없다.
     (다른 거점학교로 옮겼거나 기간이 끝났거나 해제된 경우)"""
-    return bool(course.hub_id) and not t["is_admin"] and course.hub_id not in {h["id"] for h in t["teach_hubs"]}
+    return (bool(course.hub_id) and not t["is_admin"] and not t.get("teach_any")
+            and course.hub_id not in {h["id"] for h in t["teach_hubs"]})
 
 
 def hub_for_school(c, name: str) -> int:
@@ -330,9 +331,11 @@ def check_co_teachers(c, hub_id: int | None, owner_id: int, ids: list[int]) -> s
 
 def hub_teachers(c, hub_id: int) -> list[dict]:
     m = db.memberships.c
+    # 그 거점학교 강사·관리교사 + 거점학교를 정하지 않은(전체 관리자가 승인한) 강의교사
     rows = c.execute(select(db.memberships, db.users.c.name, db.users.c.google_name, db.users.c.school)
                      .join(db.users, db.users.c.id == m.user_id)
-                     .where(m.hub_id == hub_id, m.role.in_(["instructor", "coordinator"]))).all()
+                     .where(or_(and_(m.hub_id == hub_id, m.role.in_(["instructor", "coordinator"])),
+                                and_(m.hub_id.is_(None), m.role == "instructor")))).all()
     out = {}
     for r in rows:
         if auth.membership_active(dict(r._mapping)):
@@ -347,7 +350,7 @@ def hub_teachers(c, hub_id: int) -> list[dict]:
 async def hub_teacher_list(hub_id: int, request: Request):
     """팀티칭 보조교사 고르기: 그 거점학교에서 활동 중인 강사"""
     t = await require_user(request, "teacher")
-    if hub_id not in {h["id"] for h in t["teach_hubs"]} and not t["is_admin"]:
+    if hub_id not in {h["id"] for h in t["teach_hubs"]} and not (t["is_admin"] or t.get("teach_any")):
         raise HTTPException(403, "그 거점학교 강사만 볼 수 있어요.")
 
     def run():
@@ -418,23 +421,26 @@ async def create_course(req: CourseReq, request: Request):
     teach_hubs = {h["id"]: h["name"] for h in t["lead_hubs"]}
     schools = await db.run(auth.get_schools)
     hub_school = " ".join(req.hub_school.split())
+    anywhere = t["is_admin"] or t.get("lead_any")  # 울산 고등학교 어디든 거점학교로 골라 과목을 연다
     if req.hub_id is not None:
-        if req.hub_id not in teach_hubs and not t["is_admin"]:
-            if req.hub_id in {h["id"] for h in t["teach_hubs"]}:
+        if req.hub_id not in teach_hubs and not anywhere:
+            if req.hub_id in {h["id"] for h in t["teach_hubs"]} or t.get("teach_any"):
                 raise HTTPException(403, "팀티칭 보조교사는 강좌를 직접 열 수 없어요. 주강사가 강좌를 열 때 보조교사로 넣어 줘요.")
             raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
     elif not hub_school:
         raise HTTPException(400, "거점학교를 골라 주세요. 거점학교 없이는 강좌를 열 수 없어요.")
     elif schools and hub_school not in schools:
         raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
-    elif not (t["is_admin"] or independent):
+    elif not (anywhere or independent):
+        if t.get("teach_any"):
+            raise HTTPException(403, "팀티칭 보조교사는 강좌를 직접 열 수 없어요. 주강사가 강좌를 열 때 보조교사로 넣어 줘요.")
         raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
     extra = {**subject_values(req.model_dump()), **extra_values(req.model_dump(), schools)}
 
     def run():
         with db.engine.begin() as c:
             hub_id = req.hub_id
-            if hub_id is None and t["is_admin"]:  # 전체 관리자: 울산 고등학교 이름 → 거점학교 (없으면 만든다)
+            if hub_id is None and anywhere:  # 울산 고등학교 이름 → 거점학교 (없으면 만든다)
                 hub_id = hub_for_school(c, hub_school)
             co_teachers = check_co_teachers(c, hub_id, t["id"], req.co_teachers) if req.team_teaching else ""
             name = hub_school
@@ -505,7 +511,7 @@ async def new_hub(t: dict, hub_id: int | None, name: str) -> dict:
     if hub_id is None:
         hub_id = next((i for i, n in lead.items() if n == name), None)
     if hub_id is not None:
-        if hub_id not in lead and not t["is_admin"]:
+        if hub_id not in lead and not (t["is_admin"] or t.get("lead_any")):
             raise HTTPException(403, "강사로 승인받은 거점학교로만 바꿀 수 있어요.")
 
         def find():
@@ -519,7 +525,7 @@ async def new_hub(t: dict, hub_id: int | None, name: str) -> dict:
     schools = await db.run(auth.get_schools)
     if not name or (schools and name not in schools):
         raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
-    if not t["is_admin"]:
+    if not (t["is_admin"] or t.get("lead_any")):
         if t["email"].lower() in auth.TEACHER_EMAILS:  # 거점학교 밖 강사(설정으로 등록): 학교 이름만
             return {"hub_id": None, "hub_school": name}
         raise HTTPException(403, "강사로 승인받은 거점학교로만 바꿀 수 있어요.")

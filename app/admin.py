@@ -43,7 +43,8 @@ async def login_required(request: Request) -> dict:
 
 
 def can_manage(u: dict, m) -> bool:
-    """관리교사·참여학교 담당교사 신청은 전체 관리자만, 강사 신청은 그 거점학교 관리교사나 전체 관리자가 처리한다."""
+    """관리교사·참여학교 담당교사·강의교사 가입은 전체 관리자가 처리한다.
+    (예전에 거점학교를 정해 가입한 강의교사는 그 거점학교 관리교사도 처리할 수 있다)"""
     if u["is_admin"]:
         return True
     return m.role == "instructor" and m.hub_id in {h["id"] for h in u["coordinator_hubs"]}
@@ -135,13 +136,8 @@ async def apply(req: ApplyReq, request: Request):
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", req.email.strip()):
             raise HTTPException(400, "연락받을 이메일 주소를 정확히 적어 주세요.")
     if req.role == "instructor":
-        # 강사: 울산 고등학교 목록에서 거점학교를 고른다 (관리교사가 아직 없는 학교면 전체 관리자가 승인)
-        if not req.hub_id and not hub_name:
-            raise HTTPException(400, "강의할 거점학교를 골라 주세요.")
-        if not req.hub_id:
-            schools = await db.run(get_schools)
-            if schools and hub_name not in schools:
-                raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
+        # 강의교사: 거점학교를 정하지 않는다 (여러 거점학교에서 강의할 수 있다).
+        # 가입은 전체 관리자가 승인하고, 과목을 열 때 고른 거점학교의 관리교사가 과목 개설을 승인한다.
         if not (req.wish_from and req.wish_until):
             raise HTTPException(400, "희망 기간(시작일·종료일)을 적어 주세요.")
         check_dates(req.wish_from, req.wish_until, "희망 기간")
@@ -158,11 +154,7 @@ async def apply(req: ApplyReq, request: Request):
                     m.user_id == u["id"])).first()
                 if not replacing or not membership_status(dict(replacing._mapping)) in ("approved", "scheduled"):
                     raise HTTPException(409, "변경할 기존 권한을 확인할 수 없어요.")
-            hub_id = req.hub_id
-            if req.role == "instructor" and not hub_id:
-                hub_id = hub_for_school(c, hub_name)
-            if req.role == "instructor" and not c.execute(select(db.hubs.c.id).where(db.hubs.c.id == hub_id)).first():
-                raise HTTPException(404, "거점학교를 찾을 수 없어요.")
+            hub_id = None
             # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
             # 이름은 처음 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
             locked = bool(u.get("name")) and not u["is_admin"]
@@ -198,7 +190,7 @@ async def apply(req: ApplyReq, request: Request):
                     raise HTTPException(409, "담당 학교 변경은 내 정보에서 신청해 주세요.")
             else:
                 row = c.execute(select(db.memberships).where(
-                    m.user_id == u["id"], m.role == req.role, m.hub_id == hub_id)).first()
+                    m.user_id == u["id"], m.role == req.role, m.hub_id.is_(None))).first()
             values = {"contact": req.contact.strip(), "pledge_at": now, "affil_type": req.affil_type,
                       "affiliation": affiliation,
                       "office": req.office if req.affil_type == "school" else "",

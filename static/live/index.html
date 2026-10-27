@@ -156,12 +156,9 @@
         <label class="wide" id="a-replace-wrap" hidden><span>변경할 기존 가입 유형 <b class="required-mark" aria-hidden="true">*</b></span><select id="a-replace"></select></label>
         <h3 class="wide form-sec">1) 회원 구분 <b class="required-mark" aria-hidden="true">*</b></h3>
         <div class="wide role-pick">
-          <label class="switch"><input type="radio" name="a-role" value="coordinator"> <span><strong>관리교사</strong> — 우리 학교의 강의교사·강좌 승인과 학생 관리 (전체 관리자가 승인)</span></label>
-          <label class="switch"><input type="radio" name="a-role" value="instructor" checked> <span><strong>강의교사</strong> — 거점학교에서 강의 (그 학교 관리교사가 승인)</span></label>
+          <label class="switch"><input type="radio" name="a-role" value="coordinator"> <span><strong>관리교사</strong> — 우리 학교 과목 개설 승인과 학생 관리 (전체 관리자가 승인)</span></label>
+          <label class="switch"><input type="radio" name="a-role" value="instructor" checked> <span><strong>강의교사</strong> — 거점학교 과목 강의 (전체 관리자가 승인)</span></label>
         </div>
-        <label class="wide" id="a-hub-pick"><span>강의할 거점학교 (울산) <b class="required-mark" aria-hidden="true">*</b></span>
-          <input id="a-hub-search" list="school-options" maxlength="60" autocomplete="off" placeholder="학교 이름 일부를 입력해 검색 (예: 신정)">
-          <select id="a-hub" hidden></select></label>
         <div class="wide role-pick" id="a-kind-wrap"><span>참여 형태 <b class="required-mark" aria-hidden="true">*</b></span>
           <label class="switch"><input type="radio" name="a-kind" value="main" checked> <span><strong>주강사</strong> — 강좌를 직접 열고 운영해요</span></label>
           <label class="switch"><input type="radio" name="a-kind" value="assistant"> <span><strong>팀티칭 보조교사</strong> — 주강사가 연 강좌에 함께 들어가 수업을 도와요</span></label>
