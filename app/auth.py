@@ -538,7 +538,8 @@ def _set_photo(uid: int, fid: str) -> None:
         old = c.execute(select(db.users.c.photo).where(db.users.c.id == uid)).scalar() or ""
         c.execute(update(db.users).where(db.users.c.id == uid).values(photo=fid))
     if old and old != fid:
-        (photo_dir() / old).unlink(missing_ok=True)
+        from app.wipe import wipe
+        wipe(photo_dir() / old)
 
 
 @router.post("/api/me/photo")
@@ -700,8 +701,9 @@ def _withdraw(uid: int) -> None:
     """수업을 보유하지 않은 비학생 계정의 탈퇴."""
     with db.engine.begin() as c:
         cleanup = _purge_user_rows(c, uid)
+    from app.wipe import wipe
     for path in cleanup:
-        path.unlink(missing_ok=True)
+        wipe(path)
 
 
 def owns_classes(uid: int) -> bool:

@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from sqlalchemy import and_, delete, or_, select
 
 from app import db
+from app.wipe import wipe
 
 KEEP_DAYS = 365
 log = logging.getLogger(__name__)
@@ -49,9 +50,9 @@ def purge_expired_files(today: date | None = None) -> dict:
         c.execute(delete(db.submission_files).where(f.id.in_([r.id for r in rows] or ["-"])))
         removed_files = [(r.assignment_id, r.id) for r in rows]
     for class_id, fid in removed_materials:
-        (SLIDES_DIR / str(class_id) / f"{fid}.pdf").unlink(missing_ok=True)
+        wipe(SLIDES_DIR / str(class_id) / f"{fid}.pdf")
     for assignment_id, fid in removed_files:
-        file_path(assignment_id, fid).unlink(missing_ok=True)
+        wipe(file_path(assignment_id, fid))
     return {"materials": len(removed_materials), "submission_files": len(removed_files)}
 
 

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, select, update
 
 from app import db
+from app.wipe import wipe
 from app.auth import KST, require_user, student_no
 from app.courses import course_roster, is_enrolled, owned_course
 
@@ -191,7 +192,7 @@ async def delete_assignment(aid: int, request: Request):
         folder = FILES_DIR / "assignments" / str(aid)
         if folder.is_dir():
             for f in folder.iterdir():
-                f.unlink(missing_ok=True)
+                wipe(f)
             folder.rmdir()
 
     await db.run(run)
@@ -440,7 +441,7 @@ async def delete_submission_file(fid: str, request: Request):
         with db.engine.begin() as c:
             c.execute(delete(db.submission_files).where(db.submission_files.c.id == fid))
             _refresh_submitted(c, f.submission_id)
-        file_path(f.assignment_id, fid).unlink(missing_ok=True)
+        wipe(file_path(f.assignment_id, fid))
 
     await db.run(run)
     return {"ok": True}

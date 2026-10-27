@@ -20,20 +20,22 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy import delete, insert, select, update
 
 from app import db
+from app.wipe import wipe
 
 router = APIRouter()
 Purpose = Literal["record_check", "certificate", "appeal"]
 PRIVATE = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+MAX_DAYS = 365  # 탈퇴 증빙 최대 보존 기간 (탈퇴 승인일부터 1년)
 
 
 def retention_policy() -> tuple[int | None, str]:
-    # 운영 기준: 탈퇴 승인 후 최대 5년. 더 짧은 기간만 설정할 수 있다.
+    # 운영 기준: 탈퇴 승인 후 최대 1년(365일). 더 짧은 기간만 설정할 수 있다.
     basis = os.environ.get("EVIDENCE_RETENTION_BASIS", "").strip() or "운영 기관의 수업·활동 증빙 보존 기준"
     try:
-        days = int(os.environ.get("EVIDENCE_RETENTION_DAYS", "1825"))
+        days = int(os.environ.get("EVIDENCE_RETENTION_DAYS", str(MAX_DAYS)))
     except ValueError:
-        days = 1825
-    days = max(1, min(days, 1825))
+        days = MAX_DAYS
+    days = max(1, min(days, MAX_DAYS))
     if len(basis) > 500:
         basis = basis[:500]
     return days, basis
@@ -188,7 +190,7 @@ async def archive_student(uid: int, actor_id: int) -> str:
     classroom.forget_student(uid)
     for path in cleanup:
         try:
-            await db.run(path.unlink, True)
+            await db.run(wipe, path)
         except OSError:
             # 원본 API에서는 이미 조회 불가. 디스크 정리 실패를 민감정보 없이 기록한다.
             audit(None, "source_cleanup_failed", archive_id)
@@ -196,7 +198,7 @@ async def archive_student(uid: int, actor_id: int) -> str:
 
 
 def maintain_retention():
-    """탈퇴 승인일부터 최대 1,825일 보관하고, 매일 만료 자료를 파기한다."""
+    """탈퇴 승인일부터 최대 365일 보관하고, 만료 자료는 내용을 지운 뒤 삭제한다(되살릴 수 없음)."""
     now = time.time()
     days, basis = retention_policy()
     with db.engine.begin() as c:
@@ -207,6 +209,9 @@ def maintain_retention():
                           .values(expires_at=limit, basis=basis))
         expired = c.execute(select(db.evidence_archives).where(db.evidence_archives.c.expires_at <= now)).all()
         for row in expired:
+            # 지우기 전에 암호문을 비워 둔다 (DB 안에 내용이 남지 않게)
+            c.execute(update(db.evidence_files).where(db.evidence_files.c.archive_id == row.id).values(payload=""))
+            c.execute(update(db.evidence_archives).where(db.evidence_archives.c.id == row.id).values(payload=""))
             c.execute(delete(db.evidence_files).where(db.evidence_files.c.archive_id == row.id))
             c.execute(delete(db.evidence_archives).where(db.evidence_archives.c.id == row.id))
             c.execute(delete(db.users).where(db.users.c.id == row.subject_id, db.users.c.account_state == "withdrawn"))
@@ -240,7 +245,7 @@ def _get(archive_id: str, schools: set[str] | None):
     with db.engine.connect() as c:
         row = c.execute(select(db.evidence_archives).where(db.evidence_archives.c.id == archive_id)).first()
     if not row or (schools is not None and row.school not in schools) or (
-        min(row.expires_at or float("inf"), row.created_at + 1825 * 86400) <= time.time()
+        min(row.expires_at or float("inf"), row.created_at + MAX_DAYS * 86400) <= time.time()
     ):
         raise HTTPException(404, "증빙을 찾을 수 없어요.")
     return row
@@ -267,7 +272,7 @@ async def list_evidence(request: Request, purpose: Purpose, school: str = Query(
         with db.engine.connect() as c:
             now = time.time()
             q = select(db.evidence_archives).where(
-                db.evidence_archives.c.created_at > now - 1825 * 86400,
+                db.evidence_archives.c.created_at > now - MAX_DAYS * 86400,
                 (db.evidence_archives.c.expires_at.is_(None)) |
                 (db.evidence_archives.c.expires_at > now))
             if schools is not None:

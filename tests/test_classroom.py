@@ -1137,7 +1137,7 @@ def test_policy_pages(monkeypatch):
     assert "다른 법령이 해당 개인정보를 수집 대상으로 명시한 경우" in p
     assert "수업 자료라는 이유만으로 요청을 일괄 제한하지 않으며" in p
     assert "백업 생성일부터 14일이 지난 사본은 다음 자동 백업 작업에서 삭제" in p
-    assert "시행일 최소 7일 전에" in p and "탈퇴 승인일부터 최대 5년(1,825일)" in p
+    assert "시행일 최소 7일 전에" in p and "탈퇴 승인일부터 최대 365일" in p and "복구할 수 없도록" in p
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert "Anthropic" in c.get("/live/privacy").text and "AI 조교" in c.get("/live/terms").text
     assert c.get("/api/me").json()["policy_ready"] is True
@@ -1393,7 +1393,7 @@ def test_withdraw(monkeypatch, tmp_path):
     assert a.get("/live/evidence").status_code == 401
     assert p1.get("/api/evidence").status_code == 422
     listing = p1.get("/api/evidence", params=params)
-    assert listing.status_code == 200 and listing.json()["policy"]["days"] == 1825
+    assert listing.status_code == 200 and listing.json()["policy"]["days"] == 365
     assert [x["id"] for x in listing.json()["archives"]] == [evidence_id]
     assert p2.get("/api/evidence", params=params).json()["archives"] == []
     assert p2.get(f"/api/evidence/{evidence_id}", params=params).status_code == 404
@@ -2105,14 +2105,35 @@ def test_student_signup_rejects_under_fourteen_and_school_mismatch():
                                "contact": "010", "pledge": True, "birth": "2015-01-01"}).status_code == 403
 
 
-def test_evidence_retention_never_exceeds_five_years(monkeypatch):
+def test_evidence_retention_never_exceeds_one_year(monkeypatch):
     from app.evidence import retention_policy
     monkeypatch.delenv("EVIDENCE_RETENTION_DAYS", raising=False)
-    assert retention_policy()[0] == 1825
-    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "3000")
-    assert retention_policy()[0] == 1825
-    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "365")
     assert retention_policy()[0] == 365
+    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "3000")
+    assert retention_policy()[0] == 365
+    monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "90")
+    assert retention_policy()[0] == 90
+
+
+def test_wipe_overwrites_then_deletes(tmp_path):
+    from app.wipe import wipe
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"secret" * 1000)
+    seen = []
+    real_unlink = type(f).unlink
+
+    def check(self, missing_ok=False):
+        seen.append(self.read_bytes())
+        real_unlink(self, missing_ok=missing_ok)
+
+    import pathlib
+    pathlib.Path.unlink, old = check, pathlib.Path.unlink
+    try:
+        wipe(f)
+    finally:
+        pathlib.Path.unlink = old
+    assert seen == [bytes(6000)] and not f.exists()  # 지우기 직전 내용은 모두 0
+    wipe(tmp_path / "없는파일")  # 없으면 조용히 넘어간다
 
 
 def test_private_chat_layout_and_roster():

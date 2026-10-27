@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import delete, or_, select
 
 from app import db
+from app.wipe import wipe
 from app.auth import KST, require_user
 from app import classroom
 from app.classroom import classes as live_classes, push
@@ -157,7 +158,7 @@ async def delete_material(fid: str, request: Request):
         with db.engine.begin() as c:
             c.execute(delete(db.materials).where(db.materials.c.id == fid))
             c.execute(delete(db.boards).where(db.boards.c.class_id == m.class_id, db.boards.c.key.like(f"{fid}:%")))
-        (classroom.SLIDES_DIR / str(m.class_id) / f"{fid}.pdf").unlink(missing_ok=True)
+        wipe(classroom.SLIDES_DIR / str(m.class_id) / f"{fid}.pdf")
 
     await db.run(run)
     k = _live(m.class_id)
