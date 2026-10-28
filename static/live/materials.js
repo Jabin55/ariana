@@ -18,7 +18,7 @@ async function showList() {
       h("div", { class: "muted", style: "font-size:0.85rem" }, `${c.date.replaceAll("-", ".")}${c.course_title ? ` · ${c.course_title}` : ""}${c.live ? " · 진행 중" : ""}`),
       h("strong", {}, c.title),
       h("div", { class: "muted", style: "font-size:0.85rem" },
-        [c.files ? `📄 자료 ${c.files}개` : "", c.whiteboard ? "🖊️ 화이트보드" : ""].filter(Boolean).join(" · ")))));
+        [c.files ? `📄 자료 ${c.files}개` : "", c.whiteboard ? "🖊️ 화이트보드" : "", c.removed ? `🗑 파기된 자료 ${c.removed}개` : ""].filter(Boolean).join(" · ")))));
   } catch (err) {
     if (err.status === 401) location.replace("/live?login=1");
     $("#m-error").textContent = err.message;
@@ -43,6 +43,10 @@ async function showViewer() {
   // 볼 것: PDF 자료들 + 화이트보드
   const items = data.files.map((f) => ({ mode: "slides", file: f.id, name: f.name, pages: f.pages }));
   if (data.board_pages) items.push({ mode: "board", name: "화이트보드", pages: data.board_pages });
+  // 공유했지만 파기한 자료는 이름만 남는다
+  const removedNote = (data.removed || []).length ? h("div", { class: "muted", style: "font-size:0.85rem;margin-top:8px" },
+    "🗑 파기된 자료(내용은 볼 수 없어요): ", data.removed.map((x) => x.name).join(", ")) : null;
+  if (removedNote) $("#m-viewer").after(removedNote);
   if (!items.length) {
     $("#m-viewer").replaceChildren(h("p", { class: "muted" }, "남아 있는 자료가 없어요."));
     return;

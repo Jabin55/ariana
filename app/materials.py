@@ -13,7 +13,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 
 from app import db
 from app.wipe import wipe
@@ -66,7 +66,7 @@ async def list_materials(request: Request, course_id: int | None = None):
 
     def run():
         with db.engine.connect() as c:
-            with_files = set(c.execute(select(db.materials.c.class_id)).scalars())
+            with_files = set(c.execute(select(db.materials.c.class_id)).scalars())  # 파기한 자료도 기록은 보인다
             with_boards = set(c.execute(select(db.boards.c.class_id)).scalars())
             ids = _allowed_class_ids(c, u, sorted(with_files | with_boards))
             if not ids:
@@ -78,11 +78,15 @@ async def list_materials(request: Request, course_id: int | None = None):
             rows = c.execute(q if course_id is not None else q.limit(100)).all()
             titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)).all())
             counts: dict[int, int] = {}
-            for cid in c.execute(select(db.materials.c.class_id).where(db.materials.c.class_id.in_(ids))).scalars():
-                counts[cid] = counts.get(cid, 0) + 1
+            removed: dict[int, int] = {}
+            for cid, gone in c.execute(select(db.materials.c.class_id, db.materials.c.deleted_at)
+                                       .where(db.materials.c.class_id.in_(ids))).all():
+                bucket = removed if gone is not None else counts
+                bucket[cid] = bucket.get(cid, 0) + 1
             boards = set(c.execute(select(db.boards.c.class_id).where(
                 db.boards.c.class_id.in_(ids), db.boards.c.key.like("wb:%"))).scalars())
-            return [{**_class_info(r, titles), "files": counts.get(r.id, 0), "whiteboard": r.id in boards} for r in rows]
+            return [{**_class_info(r, titles), "files": counts.get(r.id, 0), "removed": removed.get(r.id, 0),
+                     "whiteboard": r.id in boards} for r in rows]
 
     return {"classes": await db.run(run)}
 
@@ -97,19 +101,22 @@ async def class_materials(class_id: int, request: Request):
                 raise HTTPException(403, "이 수업 자료를 볼 수 없어요.")
             r = c.execute(select(db.classes).where(db.classes.c.id == class_id)).first()
             titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title)).all())
-            files = [{"id": m.id, "name": m.name, "pages": m.pages} for m in c.execute(
-                select(db.materials).where(db.materials.c.class_id == class_id).order_by(db.materials.c.created_at))]
+            rows = c.execute(select(db.materials).where(db.materials.c.class_id == class_id)
+                             .order_by(db.materials.c.created_at)).all()
+            files = [{"id": m.id, "name": m.name, "pages": m.pages} for m in rows if m.deleted_at is None]
+            # 공유했지만 파기한 자료: 파일명과 파기 시각만 (내용은 볼 수 없다)
+            removed = [{"name": m.name, "deleted_at": m.deleted_at} for m in rows if m.deleted_at is not None]
             boards = {b.key: json.loads(b.strokes) for b in c.execute(
                 select(db.boards).where(db.boards.c.class_id == class_id))}
-            return r, titles, files, boards
+            return r, titles, files, removed, boards
 
-    r, titles, files, boards = await db.run(run)
+    r, titles, files, removed, boards = await db.run(run)
     k = _live(class_id)
     if k:  # 진행 중인 수업이면 아직 저장 전인 판서까지
         boards.update({key: v for key, v in k.strokes.items()})
     boards = {key: v for key, v in boards.items() if v}
     wb_pages = max([int(x[3:]) for x in boards if x.startswith("wb:")] + [0])
-    return {"class": _class_info(r, titles), "files": files, "boards": boards, "board_pages": wb_pages,
+    return {"class": _class_info(r, titles), "files": files, "removed": removed, "boards": boards, "board_pages": wb_pages,
             "can_delete": u["role"] == "teacher" and await db.run(can_edit_class, r.id, u)}
 
 
@@ -133,6 +140,8 @@ async def material_file(fid: str, request: Request):
     m = await db.run(_material, fid) if fid.isalnum() else None
     if not m:
         raise HTTPException(404, "자료를 찾을 수 없어요.")
+    if m.deleted_at is not None:
+        raise HTTPException(410, "파기된 자료라 볼 수 없어요.")
 
     def allowed():
         with db.engine.connect() as c:
@@ -151,12 +160,13 @@ async def delete_material(fid: str, request: Request):
     """수업을 연 선생님이 자료를 지운다 (그 자료 위 판서도 함께)."""
     u = await require_user(request, "teacher")
     m = await db.run(_material, fid) if fid.isalnum() else None
-    if not m or not await db.run(can_edit_class, m.class_id, u):
+    if not m or m.deleted_at is not None or not await db.run(can_edit_class, m.class_id, u):
         raise HTTPException(404, "자료를 찾을 수 없어요.")
 
     def run():
         with db.engine.begin() as c:
-            c.execute(delete(db.materials).where(db.materials.c.id == fid))
+            # 공유한 기록(파일명)은 남기고 파기 표시만 한다
+            c.execute(update(db.materials).where(db.materials.c.id == fid).values(deleted_at=time.time()))
             c.execute(delete(db.boards).where(db.boards.c.class_id == m.class_id, db.boards.c.key.like(f"{fid}:%")))
         wipe(classroom.SLIDES_DIR / str(m.class_id) / f"{fid}.pdf")
 

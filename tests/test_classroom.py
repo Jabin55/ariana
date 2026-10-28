@@ -1044,25 +1044,21 @@ def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
         tw.send_json({"t": "end_class"})
         until(tw, lambda m: m["t"] == "ended")
     time.sleep(0.3)
-    # 수업이 끝나도 자료는 남는다 → 지난 수업 자료
+    # 과목 없이 연 수업(특강·회의)을 끝내면 자료 내용은 바로 파기되고, 공유한 기록(파일명)만 남는다
     cid = c["class_id"]
-    assert (tmp_path / str(cid) / f"{fid}.pdf").exists()
+    for _ in range(30):
+        if not (tmp_path / str(cid) / f"{fid}.pdf").exists():
+            break
+        time.sleep(0.1)
+    assert not (tmp_path / str(cid) / f"{fid}.pdf").exists()
     lst = s1.get("/api/materials").json()["classes"]
-    assert [x["id"] for x in lst] == [cid] and lst[0]["files"] == 1
+    assert [(x["id"], x["files"], x["removed"]) for x in lst] == [(cid, 0, 1)]
     detail = s1.get(f"/api/materials/class/{cid}").json()
-    assert detail["files"][0]["name"] == "선거제도.pdf" and detail["can_delete"] is False
-    assert s1.get(f"/api/materials/file/{fid}").content == pdf
-    # 수업에 들어오지 않았고 수강생도 아닌 학생은 볼 수 없다
+    assert detail["files"] == [] and [x["name"] for x in detail["removed"]] == ["선거제도.pdf"]
+    assert s1.get(f"/api/materials/file/{fid}").status_code == 410
+    # 수업에 들어오지 않았고 수강생도 아닌 학생은 기록도 볼 수 없다
     assert s2.get("/api/materials").json()["classes"] == []
     assert s2.get(f"/api/materials/class/{cid}").status_code == 403
-    assert s2.get(f"/api/materials/file/{fid}").status_code == 403
-    # 다른 선생님은 지울 수 없고, 수업을 연 선생님은 지울 수 있다
-    other = teacher("other@gmail.com")
-    assert other.post(f"/api/materials/file/{fid}/delete").status_code == 404
-    assert t.get(f"/api/materials/class/{cid}").json()["can_delete"] is True
-    assert t.post(f"/api/materials/file/{fid}/delete").status_code == 200
-    assert not (tmp_path / str(cid) / f"{fid}.pdf").exists()
-    assert s1.get(f"/api/materials/class/{cid}").json()["files"] == []
 
 
 def test_groups_by_size_and_teacher_controls_mic():
@@ -2742,3 +2738,42 @@ def test_pdf_upload_limit_is_2mb():
     r = t.post(f"/api/live/classes/{code}/files?name=big.pdf", content=big)
     assert r.status_code == 413 and "2MB" in r.json()["detail"]
     assert t.post(f"/api/live/classes/{code}/files?name=ok.pdf", content=b"%PDF-1.4\nsmall").status_code == 200
+
+
+def test_meeting_materials_deleted_when_meeting_ends(monkeypatch, tmp_path):
+    """과목 없이 연 특강·회의는 끝내면 발표 자료(PDF) 내용과 판서를 바로 지운다(회의·공유 기록은 남음). 끝내지 않고 닫은 회의도 하루 뒤 정리."""
+    from app.file_retention import purge_expired_files
+    from sqlalchemy import select
+    monkeypatch.setattr(cr, "SLIDES_DIR", tmp_path / "slides")
+    t = teacher()
+    c = create(t)
+    code, cid = c["code"], c["class_id"]
+    fid = t.post(f"/api/live/classes/{code}/files?name=a.pdf", content=b"%PDF-1.4\nsmall").json()["id"]
+    pdf = tmp_path / "slides" / str(cid) / f"{fid}.pdf"
+    assert pdf.exists()
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        state(tw)
+        tw.send_json({"t": "present_board", "page": 1})
+        state(tw, lambda m: m.get("present"))
+        tw.send_json({"t": "stroke", "key": "wb:1", "id": "w1", "pts": [[0.2, 0.2]]})
+        tw.send_json({"t": "end_class"})
+        until(tw, lambda m: m["t"] == "ended")
+    for _ in range(30):
+        if not pdf.exists():
+            break
+        time.sleep(0.1)
+    assert not pdf.exists()
+    with db.engine.connect() as conn:
+        row = conn.execute(select(db.materials).where(db.materials.c.class_id == cid)).first()
+        assert row.name == "a.pdf" and row.deleted_at is not None  # 공유한 기록은 남고 파기 표시만
+        assert conn.execute(select(db.boards).where(db.boards.c.class_id == cid)).first() is None
+    # 끝내지 않고 닫은 회의: 하루가 지나면 정기 정리에서 지운다
+    now = time.time()
+    with db.engine.begin() as conn:
+        old = conn.execute(db.classes.insert().values(code="OLDMTG", title="회의", teacher_id=1,
+                           created_at=now - 2 * 86400)).inserted_primary_key[0]
+        conn.execute(db.materials.insert().values(id="mold", class_id=old, teacher_id=1, name="a.pdf", created_at=now))
+    (tmp_path / "slides" / str(old)).mkdir(parents=True)
+    (tmp_path / "slides" / str(old) / "mold.pdf").write_bytes(b"pdf")
+    assert purge_expired_files()["materials"] == 1
+    assert not (tmp_path / "slides" / str(old) / "mold.pdf").exists()

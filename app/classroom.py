@@ -246,7 +246,8 @@ async def get_class(code: str) -> Klass:
 def _load_materials(class_id: int) -> tuple[list[dict], dict[str, list]]:
     with db.engine.connect() as c:
         files = [{"id": r.id, "name": r.name, "pages": r.pages, "size": r.size} for r in c.execute(
-            select(db.materials).where(db.materials.c.class_id == class_id).order_by(db.materials.c.created_at))]
+            select(db.materials).where(db.materials.c.class_id == class_id, db.materials.c.deleted_at.is_(None))
+            .order_by(db.materials.c.created_at))]
         boards = {r.key: json.loads(r.strokes) for r in c.execute(
             select(db.boards).where(db.boards.c.class_id == class_id))}
     return files, boards
@@ -1175,7 +1176,7 @@ def _material_pages(fid: str, pages: int) -> None:
 
 def _material_delete(class_id: int, fid: str, path: Path) -> None:
     with db.engine.begin() as c:
-        c.execute(delete(db.materials).where(db.materials.c.id == fid))
+        c.execute(update(db.materials).where(db.materials.c.id == fid).values(deleted_at=time.time()))  # 기록은 남긴다
         c.execute(delete(db.boards).where(db.boards.c.class_id == class_id, db.boards.c.key.like(f"{fid}:%")))
     path.unlink(missing_ok=True)
 
@@ -1836,7 +1837,11 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 send(c, {"t": "ended"})
         close_livekit_rooms(k)
         classes.pop(k.code, None)
-        asyncio.get_running_loop().create_task(save_boards(k))  # 자료·판서는 남겨 둔다(지난 수업 자료)
+        meeting = not k.course_id  # 특강·회의: 자료·판서를 남기지 않고 바로 지운다
+        if meeting:
+            k.dirty_boards.clear()  # 지울 판서는 저장하지 않는다
+        else:
+            asyncio.get_running_loop().create_task(save_boards(k))  # 과목 수업은 자료·판서를 남겨 둔다(지난 수업 자료)
         class_id = k.db_id
 
         def run():
@@ -1845,6 +1850,9 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 if open_ids:
                     c.execute(update(db.attendance).where(db.attendance.c.id.in_(open_ids))
                               .values(left_at=ended_at, last_seen=ended_at, left_reason="ended"))
+            if meeting:
+                from app.file_retention import purge_meeting
+                purge_meeting(class_id)
 
         asyncio.get_running_loop().create_task(db.run(run))
 

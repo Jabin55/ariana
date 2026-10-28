@@ -383,6 +383,7 @@ materials = Table(
     Column("pages", Integer, nullable=False, default=0),
     Column("size", Integer, nullable=False, default=0),
     Column("created_at", Float, nullable=False),
+    Column("deleted_at", Float),  # 파일을 파기한 시각: 공유한 기록(파일명)은 남기고 내용만 지운다
 )
 
 boards = Table(
@@ -462,6 +463,7 @@ def init() -> None:
     metadata.create_all(engine)
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
+             ("materials", "deleted_at", "FLOAT"),
              ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),
              ("activities", "points", "FLOAT NOT NULL DEFAULT 1"),
              ("classes", "course_id", "INTEGER"),
