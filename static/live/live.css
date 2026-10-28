@@ -1478,14 +1478,9 @@ body.class-t .sharebox #share-url { display: none; }
 .meet-mid .card { margin: 0; min-width: 0; }
 @media (max-width: 720px) { .meet-mid { grid-template-columns: 1fr; } }
 /* 날짜 입력: [년▼][월▼][일▼][📅] (원래 입력칸은 달력용으로 숨김) */
-.ymd { display: inline-flex; align-items: center; gap: 4px; position: relative; flex-wrap: wrap; max-width: 100%; }
-.ymd select { width: auto !important; min-width: 0; padding-left: 8px; padding-right: 24px; }
-.ymd .ymd-y { min-width: 7em; }
-.ymd .ymd-m, .ymd .ymd-d { min-width: 5.3em; }
+.ymd { display: inline-flex; align-items: center; gap: 4px; position: relative; flex-wrap: nowrap; max-width: 100%; }
+.ymd select { width: auto !important; flex: 1 1 auto; padding: 6px 18px 6px 6px; background-position: right 4px center; }
+.ymd .ymd-y { min-width: 92px; }
+.ymd .ymd-m, .ymd .ymd-d, .ymd .ymd-h, .ymd .ymd-min, .ymd .ymd-ap { min-width: 64px; }
 .ymd .ymd-cal { padding: 4px 8px; min-height: 0; background: transparent; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .ymd input.ymd-native { position: absolute; left: 0; bottom: 0; width: 1px !important; height: 1px; opacity: 0; pointer-events: none; padding: 0; border: 0; }
-/* 특강/회의 예약: 날짜 세 칸 아래 줄에 [📅][시간]이 나란히 */
-#meet-book .row { flex-wrap: wrap; position: relative; }
-#meet-book .ymd { display: contents; }
-#meet-book .ymd select { flex: 1 1 0; }
-#meet-book #book-time { flex: 1 1 auto; width: auto; min-width: 0; }

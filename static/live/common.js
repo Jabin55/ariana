@@ -718,9 +718,62 @@ function enhanceDateInput(input) {
   show();
 }
 
+/* 시간 입력: [오전/오후▼][시▼][분▼][🕐] (분은 5분 단위, 이미 들어 있는 값은 그대로 보인다) */
+function enhanceTimeInput(input) {
+  if (input.dataset.ymd) return;
+  input.dataset.ymd = "1";
+  const opt = (v, t) => h("option", { value: v }, t);
+  const ap = h("select", { class: "ymd-ap", "aria-label": "오전/오후" }, opt("am", "오전"), opt("pm", "오후"));
+  const hs = h("select", { class: "ymd-h", "aria-label": "시" }, opt("", "시"), ...Array.from({ length: 12 }, (_, i) => opt(i + 1, `${i + 1}시`)));
+  const ms = h("select", { class: "ymd-min", "aria-label": "분" });
+  const clock = h("button", { type: "button", class: "ymd-cal", title: "시계에서 고르기" }, "🕐");
+  const wrap = h("span", { class: "ymd" }, ap, hs, ms, clock);
+  input.before(wrap);
+  wrap.append(input);
+  input.classList.add("ymd-native");
+  const fillMinutes = (keep) => {
+    const list = Array.from({ length: 12 }, (_, i) => i * 5);
+    if (keep != null && !list.includes(keep)) { list.push(keep); list.sort((a, b) => a - b); }
+    ms.replaceChildren(opt("", "분"), ...list.map((m) => opt(m, `${String(m).padStart(2, "0")}분`)));
+  };
+  const show = () => {
+    const m = /^(\d{2}):(\d{2})/.exec(dateNative.get.call(input) || "");
+    fillMinutes(m ? Number(m[2]) : null);
+    if (!m) { ap.value = "pm"; hs.value = ms.value = ""; return; } // 비어 있으면 '오후'부터
+    const H = Number(m[1]);
+    ap.value = H < 12 ? "am" : "pm";
+    hs.value = String(H % 12 || 12);
+    ms.value = String(Number(m[2]));
+    for (const s of [ap, hs, ms]) s.disabled = input.disabled;
+  };
+  const commit = () => {
+    if (hs.value && !ap.value) ap.value = "pm"; // 시를 고르면 나머지는 오후·00분부터
+    if (hs.value && !ms.value) ms.value = "0";
+    const two = (n) => String(n).padStart(2, "0");
+    const H = hs.value ? (Number(hs.value) % 12) + (ap.value === "pm" ? 12 : 0) : null;
+    const v = H != null && ms.value !== "" ? `${two(H)}:${two(ms.value)}` : "";
+    if (v === dateNative.get.call(input)) return;
+    dateNative.set.call(input, v);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  for (const s of [ap, hs, ms]) s.addEventListener("change", commit);
+  clock.addEventListener("click", () => { try { input.showPicker(); } catch { input.focus(); } });
+  input.addEventListener("change", show);
+  input.addEventListener("input", show);
+  Object.defineProperty(input, "value", {
+    configurable: true,
+    get() { return dateNative.get.call(this); },
+    set(v) { dateNative.set.call(this, v); show(); },
+  });
+  show();
+}
+
 function enhanceDates(root) {
   if (root.matches?.('input[type="date"]')) enhanceDateInput(root);
   root.querySelectorAll?.('input[type="date"]').forEach(enhanceDateInput);
+  if (root.matches?.('input[type="time"]')) enhanceTimeInput(root);
+  root.querySelectorAll?.('input[type="time"]').forEach(enhanceTimeInput);
 }
 if (typeof document !== "undefined") {
   const startDates = () => {
