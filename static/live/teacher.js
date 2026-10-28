@@ -791,7 +791,7 @@ function renderPresent() {
     onclick: () => { presenter.tool = { kind, color: color || presenter.tool.color }; renderPresent(); },
   }, label);
   const last = v.page >= v.pages;
-  bar.replaceChildren(
+  bar.replaceChildren(...[ // 빈 칸(null)이 "null" 글자로 찍히지 않게 걸러 낸다
     h("button", { class: "small", disabled: v.page <= 1, onclick: () => goPage(v.page - 1), title: "이전 쪽 (←)" }, "◀"),
     h("span", { class: "pageno" }, `${v.page} / ${v.pages || "?"}`),
     v.mode === "board" && last
@@ -817,8 +817,9 @@ function renderPresent() {
       h("button", { class: "small", title: "확대 (Ctrl + 마우스 휠로도 돼요)", onclick: () => presenter.setZoom(presenter.zoomZ() * 1.5) }, "🔍＋"),
       h("button", { class: "small", title: "축소", disabled: presenter.zoomZ() <= 1, onclick: () => presenter.setZoom(presenter.zoomZ() / 1.5) }, "🔍－"),
       h("span", { class: "pageno", title: "확대 배율 (학생 화면도 같이 확대돼요)" }, `${Math.round(presenter.zoomZ() * 100)}%`),
-      presenter.zoomZ() > 1 ? tool("pan", null, "✋ 이동", "확대한 자료를 끌어서 보고 싶은 곳으로 옮겨요") : null,
-      presenter.zoomZ() > 1 ? h("button", { class: "small", title: "쪽 전체 보기", onclick: () => { presenter.setZoom(1, 0.5, 0.5); if (presenter.tool.kind === "pan") presenter.tool = { kind: "pen", color: PEN_COLORS[0] }; } }, "맞춤") : null,
+      // 확대하지 않았을 때도 늘 보이게 (누를 수 없게만 해 둔다)
+      (() => { const b = tool("pan", null, "✋", "이동: 확대한 자료를 끌어서 보고 싶은 곳으로 옮겨요"); b.disabled = presenter.zoomZ() <= 1; return b; })(),
+      h("button", { class: "small", title: "쪽 전체 보기", disabled: presenter.zoomZ() <= 1, onclick: () => { presenter.setZoom(1, 0.5, 0.5); if (presenter.tool.kind === "pan") presenter.tool = { kind: "pen", color: PEN_COLORS[0] }; } }, "맞춤"),
     ] : []),
     h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"),
     h("button", { class: "small", title: "이 쪽 판서 모두 지우기", onclick: () => { if (confirm("이 쪽에 그린 것을 모두 지울까요?")) presenter.clear(); } }, "🗑"),
@@ -831,7 +832,7 @@ function renderPresent() {
         showStudents = e.target.checked; store.set("present-show-students", showStudents); renderPresent(); if (mainRoom) renderMain(mainRoom);
       } }), "학생 영상 보기"),
     h("button", { class: "small", onclick: openFiles }, "📄 자료"),
-    h("button", { class: "small danger", onclick: () => sock.send({ t: "present_close" }) }, "발표 끝내기"));
+    h("button", { class: "small danger", onclick: () => sock.send({ t: "present_close" }) }, "발표 끝내기")].filter(Boolean));
 }
 
 function goPage(page) { if (S.present) sock.send({ t: "present_page", page }); }

@@ -1449,3 +1449,7 @@ body.class-t .topbar .code, body.class-t .topbar .tb-count { white-space: nowrap
 body.class-t .topbar .status { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
 body.class-t #mic, body.class-t #cam { min-width: 44px; font-size: 1.15rem; padding: 4px 10px; }
 body.class-t #cam:not(.on) { opacity: 0.55; } /* 카메라 꺼짐 */
+/* 수업 화면(어두운 바탕) 위 발표 막대: 흰 버튼에 글씨가 흐리게 물려받지 않도록 검정 글씨 */
+body.class-t .present-bar button:not(.danger):not(.primary) { color: #1f2328; }
+body.class-t .present-bar button:disabled { opacity: 0.45; }
+.media-bar button:not(.primary) { color: #1f2328; } /* 어두운 막대 위 흰 버튼: 글씨는 검정 */
