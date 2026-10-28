@@ -1266,7 +1266,8 @@ img.me-avatar { object-fit: cover; }
 .me-avatar { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #0f4a5c; color: #fff; font-size: 1.5rem; font-weight: 700; }
 .me-school { display: flex; align-items: center; gap: 8px; max-width: 560px; }
 .me-school select { flex: 0 0 auto; width: auto !important; }
-.me-school input { flex: 1; min-width: 0; }
+.me-school input, .me-school .me-value { flex: 1; min-width: 0; }
+.me-school .me-value { max-width: 420px; }
 @media (max-width: 560px) { .me-table th { width: 78px; padding: 8px; } .me-table td { padding: 6px 8px; } .me-school { flex-wrap: wrap; } }
 /* 온라인 수업 열기: 회차표 — 날짜를 누르면 그 아래에서 주제를 적고 연다 */
 .sess-open .link-btn { color: var(--brand); font-size: inherit; padding: 0; font-weight: 600; }
@@ -1418,6 +1419,11 @@ table.att.school-change-table td:last-child { min-width: 150px; }
 @media (max-width: 520px) { .transfer-card dl { grid-template-columns: minmax(0, 1fr); } }
 
 /* 전체 관리 > 접속기록 */
-table.att.log-table { table-layout: auto; min-width: 860px; }
-table.att.log-table th, table.att.log-table td { white-space: nowrap; font-size: 13px; }
-table.att.log-table td:last-child { white-space: normal; }
+table.att.audit-table { table-layout: auto; min-width: 860px; }
+table.att.audit-table th, table.att.audit-table td { white-space: nowrap; font-size: 13px; }
+table.att.audit-table td:last-child { white-space: normal; }
+
+/* 전체 관리 > 이름 변경 승인 */
+table.att.change-table { table-layout: auto; min-width: 720px; }
+table.att.change-table th, table.att.change-table td { text-align: center; white-space: nowrap; }
+.change-actions { display: inline-flex; gap: 6px; }

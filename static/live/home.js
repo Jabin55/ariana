@@ -419,8 +419,8 @@ async function drawTeacherProfile() {
           if (!transferBox.hidden) transferSchool.focus();
         } }, "변경 신청"))),
       row("직위", f.position),
-      row("가입 유형", h("div", { class: "row" },
-        h("span", { class: "grow" }, joinedTypes.length ? joinedTypes.join(", ") : "거점학교 강의교사"),
+      row("가입 유형", h("div", { class: "me-school" },
+        h("span", { class: "me-value" }, joinedTypes.length ? joinedTypes.join(", ") : "거점학교 강의교사"),
         h("button", { class: "small", type: "button", onclick: () => showGuest(true, true, true) }, "변경 신청"))),
       row("권한 정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
         pending.length ? h("div", { class: "muted", style: "font-size:0.82rem" }, pending.join(", ")) : null),
@@ -1321,7 +1321,7 @@ function accessLogBoard() {
     try {
       const p = new URLSearchParams({ q: q.value, action: action.value, days: days.value });
       const { logs } = await api(`/api/admin/access-logs?${p}`);
-      fill(out, logs.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+      fill(out, logs.length ? h("div", { class: "table-wrap" }, h("table", { class: "att audit-table" },
         h("thead", {}, h("tr", {}, ["일시", "접속자", "IP", "행위", "무엇을", "대상"].map((t) => h("th", {}, t)))),
         h("tbody", {}, logs.map((x) => h("tr", {},
           h("td", {}, when(x.at)), h("td", {}, `${x.actor_name || "-"} (${x.actor_email})`), h("td", {}, x.ip || "-"),
@@ -1340,6 +1340,7 @@ function accessLogBoard() {
 async function profileChangeBoard(field) {
   try {
     const { requests } = await api(`/api/admin/change-requests?field=${field}`);
+    if (field === "name") return nameChangeTable(requests);
     const pending = requests.filter((r) => r.status === "pending");
     return pending.length ? pending.map((r) => h("div", { class: "card", style: "margin:10px 0" },
       h("strong", {}, `${r.name} (${r.email})`),
@@ -1358,6 +1359,35 @@ async function profileChangeBoard(field) {
       }, action === "approve" ? "승인" : "반려")))))
       : h("p", { class: "muted" }, "승인 대기 중인 신청이 없어요.");
   } catch (e) { return h("p", { class: "error" }, e.message); }
+}
+
+async function decideChange(r, field, action) {
+  if (action === "approve" && !confirm(`${r.name}님의 ${field === "name" ? "이름" : "소속"} 변경을 승인할까요?`)) return;
+  const note = action === "reject" ? prompt("반려 사유를 입력하세요.", "") : "";
+  if (note === null) return;
+  try {
+    await api(`/api/admin/change-requests/${r.id}`, { action, note });
+    toast(action === "approve" ? "변경을 승인했어요." : "변경을 반려했어요.");
+    loadAdmin();
+  } catch (e) { toast(e.message); }
+}
+
+/** 이름 변경 승인: 표 (대기 중인 신청은 상태 칸에서 바로 승인·반려) */
+function nameChangeTable(requests) {
+  if (!requests.length) return h("p", { class: "muted" }, "이름 변경 신청이 없어요.");
+  const day = (t) => (t ? new Date(t * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "");
+  const KIND = { student: "학생" };
+  const STATE = { approved: "승인", rejected: "반려" };
+  const state = (r) => r.status === "pending"
+    ? h("div", { class: "change-actions" },
+      h("button", { type: "button", class: "primary small", onclick: () => decideChange(r, "name", "approve") }, "승인"),
+      h("button", { type: "button", class: "small", onclick: () => decideChange(r, "name", "reject") }, "반려"))
+    : h("span", { title: r.note || "" }, STATE[r.status] || r.status);
+  return h("div", { class: "table-wrap" }, h("table", { class: "att change-table" },
+    h("thead", {}, h("tr", {}, ["번호", "신청일", "회원 구분", "소속", "변경 전 이름", "변경 후 이름", "상태"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, requests.map((r, i) => h("tr", {},
+      h("td", {}, requests.length - i), h("td", {}, day(r.requested_at)), h("td", {}, KIND[r.role] || "교사"),
+      h("td", {}, r.school || "-"), h("td", {}, r.old_value || "-"), h("td", {}, r.new_value), h("td", {}, state(r)))))));
 }
 
 /** 전체 관리자: 다른 사람의 이름 고치기 (가입 뒤에는 본인이 이름을 못 바꾼다 — 오타 등) */

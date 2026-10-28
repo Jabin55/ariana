@@ -380,13 +380,13 @@ async def profile_change_requests(request: Request, field: str = Query(pattern="
         q = db.profile_change_requests.c
         with db.engine.connect() as c:
             rows = c.execute(select(db.profile_change_requests, db.users.c.name, db.users.c.email,
-                db.users.c.role).join(db.users, db.users.c.id == q.user_id).where(
+                db.users.c.role, db.users.c.school).join(db.users, db.users.c.id == q.user_id).where(
                     q.field == field, db.users.c.role != "student" if field == "school" else True)
                 .order_by(q.requested_at.desc()).limit(100)).all()
             return [{"id": r.id, "user_id": r.user_id, "field": r.field,
                      "old_value": r.old_value, "new_value": r.new_value, "status": r.status,
                      "requested_at": r.requested_at, "name": r.name, "email": r.email,
-                     "role": r.role, "note": r.note} for r in rows]
+                     "role": r.role, "school": r.school or "", "note": r.note} for r in rows]
 
     return {"requests": await db.run(run)}
 

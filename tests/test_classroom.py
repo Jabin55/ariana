@@ -2358,7 +2358,9 @@ def test_name_is_locked_and_teacher_profile(monkeypatch):
     assert requested.status_code == 200
     change_id = requested.json()["id"]
     assert s.get("/api/me").json()["user"]["name"] == "학생1"
-    assert [r["id"] for r in boss.get("/api/admin/change-requests?field=name").json()["requests"]] == [change_id]
+    reqs = boss.get("/api/admin/change-requests?field=name").json()["requests"]
+    assert [(r["id"], r["role"], r["school"], r["old_value"], r["new_value"]) for r in reqs] == [
+        (change_id, "student", SCHOOL, "학생1", "새학생이름")]
     assert boss.post(f"/api/admin/change-requests/{change_id}", json={"action": "approve"}).status_code == 200
     assert s.get("/api/me").json()["user"]["name"] == "새학생이름"
 
