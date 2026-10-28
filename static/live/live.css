@@ -1473,3 +1473,7 @@ body.class-t .present-bar .small-switch { white-space: nowrap; }
 /* 수업 화면: 입장 코드를 한 줄로 ("입장 코드  J95WLG"). 주소는 위쪽 [참여 링크 복사]로 */
 body.class-t .sharebox { display: flex; align-items: baseline; justify-content: center; gap: 10px; padding: 6px 8px; }
 body.class-t .sharebox #share-url { display: none; }
+/* 특강/회의: 가운데 줄 (왼쪽 진행 중 · 오른쪽 예약) */
+.meet-mid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+.meet-mid .card { margin: 0; min-width: 0; }
+@media (max-width: 720px) { .meet-mid { grid-template-columns: 1fr; } }
