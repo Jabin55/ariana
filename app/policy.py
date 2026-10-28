@@ -41,7 +41,8 @@ def settings() -> dict:
         "region": setting("SERVER_REGION", "독일 또는 핀란드 (EU)"),
         # 보호자 동의서를 받는 곳 (예: 울산광역시교육청). 비우면 '운영 기관장'
         "consent_to": setting("CONSENT_TO", f"{setting('OPERATOR_NAME', MISSING)}장"),
-        "ai": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        # AI 조교(미국 Anthropic) 안내는 켜고 끄는 것과 상관없이 처리방침·약관·안내문에 늘 싣는다
+        "ai": True,
         "rec": os.environ.get("ALLOW_RECORDING", "1") != "0",
     }
 
