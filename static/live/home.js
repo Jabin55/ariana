@@ -578,14 +578,14 @@ $("#profile").addEventListener("submit", async (e) => {
 window.showProfile = showProfile; // 머리글의 '내 정보' 버튼
 
 const WITHDRAW_TEXT = {
-  student: "탈퇴를 신청하면 우리 학교 <b>참여학교 담당 선생님이 승인</b>한 뒤 탈퇴돼요. 승인되면 로그인과 일반 수업 화면에서 내 정보와 기록이 제거됩니다. 수업 증빙에 필요한 기록은 암호화해 별도로 보관하며 승인된 우리 학교 담당자와 전체 관리자만 사유를 남기고 열람할 수 있습니다. 승인 전에는 신청을 취소할 수 있어요.",
+  student: "탈퇴를 신청하면 우리 학교 담당 선생님이 승인한 이후에 가능해요. 승인되면 로그인과 일반 수업 화면에서 내 정보와 기록이 제거됩니다. 수업 증빙에 필요한 기록은 암호화해 별도로 보관하며 승인된 우리 학교 선생님과 사이트 전체 관리자만 열람할 수 있습니다. 탈퇴 승인되기 전에는 탈퇴 신청을 철회할 수 있어요.",
   other: "탈퇴하면 내 정보와 등록 신청 기록이 <b>바로 지워지고 되살릴 수 없어요.</b> 다만 직접 연 과목이나 수업이 있으면, 학생들의 출결·과제·점수 기록을 지키기 위해 그 과목·수업 기록은 남고 <b>강의한 선생님으로 이름이 기록에 남아요.</b> (이메일·연락처·생년월일 등 다른 정보는 지워져요.) 진행 중인 과목은 더 이상 수강신청을 받지 않아요.",
 };
 
 function drawWithdraw() {
   const student = ME.role === "student";
   $("#withdraw-box").hidden = !!ME.needs_profile;
-  $("#withdraw-text").innerHTML = WITHDRAW_TEXT[student ? "student" : "other"] + (student ? " 다시 이용하려면 운영 담당자에게 재가입을 문의해 주세요." : " 같은 구글 계정으로 다시 로그인하면 새로 가입돼요.");
+  $("#withdraw-text").innerHTML = WITHDRAW_TEXT[student ? "student" : "other"] + (student ? "" : " 같은 구글 계정으로 다시 로그인하면 새로 가입돼요.");
   $("#withdraw-btn").textContent = student ? "탈퇴 신청" : "탈퇴하기";
   $("#withdraw").hidden = !!ME.withdraw_requested;
   $("#withdraw-error").textContent = "";
