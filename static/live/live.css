@@ -1454,3 +1454,11 @@ body.class-t .present-bar button:not(.danger):not(.primary) { color: #1f2328; }
 body.class-t .present-bar button:disabled { opacity: 0.45; }
 .media-bar button:not(.primary):not(.danger) { color: #1f2328; } /* 어두운 막대 위 흰 버튼: 글씨는 검정 */
 #board-sticker-pop { top: calc(100% + 8px); bottom: auto; } /* 화이트보드 이모지: 위로 뜨면 가려져서 아래로 */
+/* 전체 관리 > 서버 용량 */
+.storage-meter { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 8px 0 12px; background: var(--surface); }
+.storage-meter .sm-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
+.storage-meter .sm-head strong { font-size: 1.15rem; }
+.storage-meter .sm-bar { height: 12px; border-radius: 999px; background: var(--surface-2, #eef0f3); margin-top: 10px; overflow: hidden; }
+.storage-meter .sm-bar i { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+.storage-meter.warn .sm-bar i { background: #e0a100; }
+.storage-meter.danger .sm-bar i { background: var(--danger); }

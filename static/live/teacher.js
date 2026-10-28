@@ -876,7 +876,7 @@ function openFiles() {
       h("p", { class: "muted", style: "margin:0;font-size:0.85rem" },
         CFG?.drive_picker ? "내 컴퓨터의 PowerPoint는 PDF로 저장해서 올리거나, 드라이브에 올려 두고 드라이브에서 열어 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. "
           : "PowerPoint(PPT)는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요. 애니메이션·영상이 필요하면 '화면 공유'를 쓰세요. ",
-        "올린 자료와 판서는 수업이 끝나도 남아서, 수업을 못 들은 학생도 첫 화면 '지난 수업 자료'에서 다시 볼 수 있어요.")));
+        "PDF는 한 파일에 2MB까지 올릴 수 있어요. 올린 자료와 판서는 수업이 끝나도 남아서, 수업을 못 들은 학생도 첫 화면 '지난 수업 자료'에서 다시 볼 수 있어요. 과목이 끝나면 바로 지워져요.")));
   document.body.append(dlg);
 }
 
@@ -889,7 +889,11 @@ $("#board-btn").addEventListener("click", () => {
   else sock.send({ t: "present_board", page: 1 });
 });
 /** PDF를 이 수업 자료로 올리고 바로 발표를 시작한다 */
+const MAX_PDF_MB = 2; // 서버와 같게: 발표 PDF 하나 2MB까지
 async function uploadPdf(blob, name) {
+  if (blob.size > MAX_PDF_MB * 1024 * 1024) {
+    throw new Error(`PDF가 너무 커요 (${(blob.size / 1024 / 1024).toFixed(1)}MB). ${MAX_PDF_MB}MB 이하로 줄여서 올려 주세요. PDF로 저장할 때 '최소 크기'·'웹용'을 고르거나 큰 사진을 줄이면 작아져요.`);
+  }
   toast("자료를 올리는 중…", 20000);
   const res = await fetch(`/api/live/classes/${CODE}/files?name=${encodeURIComponent(name)}`, {
     method: "POST", headers: { "Content-Type": "application/pdf" }, body: blob,

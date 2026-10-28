@@ -1,8 +1,7 @@
-"""수업 자료(PDF)와 과제 제출 파일 자동 삭제: 과목이 끝나고 1년이 지나면 지운다.
+"""수업 자료(PDF)와 과제 제출 파일 자동 삭제.
 
-- 과목(강좌) 수업: 과목 끝나는 날(end_date)부터 365일이 지나면
-  · 그 과목 수업들의 발표 자료(PDF)와 그 위 판서
-  · 그 과목 과제에 학생이 낸 파일 (점수·피드백·글 제출은 남긴다)
+- 과목(강좌) 수업의 발표 자료(PDF)와 그 위 판서: 과목 끝나는 날(end_date)이 지나면 바로 (서버 공간 절약)
+- 그 과목 과제에 학생이 낸 파일: 과목이 끝나고 365일이 지나면 (점수·피드백·글 제출은 남긴다)
 - 과목 없이 연 수업(특강·회의): 수업을 연 날부터 365일이 지나면 발표 자료와 판서
 탈퇴 학생의 분리 보관 증빙(evidence)은 따로 정한 보존 기간을 따른다.
 """
@@ -19,7 +18,8 @@ from sqlalchemy import and_, delete, or_, select
 from app import db
 from app.wipe import wipe
 
-KEEP_DAYS = 365
+KEEP_DAYS = 365  # 과제 제출 파일, 과목 없는 수업의 자료
+MATERIAL_KEEP_DAYS = 0  # 과목 수업의 발표 자료(PDF)·판서: 과목이 끝나면 바로
 log = logging.getLogger(__name__)
 
 
@@ -34,8 +34,10 @@ def purge_expired_files(today: date | None = None) -> dict:
     removed_materials, removed_files = [], []
     with db.engine.begin() as c:
         done = [r.id for r in c.execute(select(co.id).where(co.end_date != "", co.end_date < cutoff))]
-        # 수업 자료: 끝난 지 1년 지난 과목의 수업 + 과목 없이 연 지 1년 지난 수업
-        old_classes = select(cl.id).where(or_(cl.course_id.in_(done or [-1]),
+        mat_cutoff = (today - timedelta(days=MATERIAL_KEEP_DAYS)).isoformat()
+        ended = [r.id for r in c.execute(select(co.id).where(co.end_date != "", co.end_date < mat_cutoff))]
+        # 수업 자료: 끝난 과목의 수업 + 과목 없이 연 지 1년 지난 수업
+        old_classes = select(cl.id).where(or_(cl.course_id.in_(ended or [-1]),
                                               and_(cl.course_id.is_(None), cl.created_at < cutoff_ts)))
         mats = c.execute(select(m.id, m.class_id).where(m.class_id.in_(old_classes))).all()
         for x in mats:

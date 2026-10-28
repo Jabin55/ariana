@@ -614,3 +614,70 @@ async def fix_name(uid: int, req: NameReq, request: Request):
 
     old = await db.run(run)
     return {"ok": True, "old": old, "name": name}
+
+
+# ───────────────────────── 서버 저장 공간 (전체 관리자) ─────────────────────────
+
+
+def _dir_size(path, skip: tuple[str, ...] = ()) -> tuple[int, int]:
+    """폴더 안 파일들의 (전체 크기 바이트, 파일 수). skip: 빼고 셀 하위 폴더 이름"""
+    from pathlib import Path
+
+    total = count = 0
+    root = Path(path)
+    if not root.exists():
+        return 0, 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        if Path(dirpath) == root:
+            dirnames[:] = [d for d in dirnames if d not in skip]
+        for name in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, name))
+                count += 1
+            except OSError:
+                pass
+    return total, count
+
+
+def _storage_report() -> dict:
+    import shutil
+
+    from app.assignments import FILES_DIR
+    from app.classroom import SLIDES_DIR
+
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
+    disk = shutil.disk_usage(FILES_DIR)
+    slides, slides_n = _dir_size(SLIDES_DIR)
+    media = media_n = 0
+    if SLIDES_DIR.exists():  # 미디어 공유 파일은 수업 폴더 안 media/ 에 있다
+        for d in SLIDES_DIR.glob("*/media"):
+            b, n = _dir_size(d)
+            media, media_n = media + b, media_n + n
+    parts = [
+        ("수업 자료(PDF)·판서", slides - media, slides_n - media_n, "과목이 끝나면 바로 삭제"),
+        ("미디어 공유(동영상·음악)", media, media_n, "수업을 끝내면 바로 삭제"),
+        ("과제 제출 파일", *_dir_size(FILES_DIR / "assignments"), "과목이 끝나고 365일 뒤 자동 삭제"),
+        ("공지 첨부 파일", *_dir_size(FILES_DIR / "notices"), ""),
+        ("프로필 사진", *_dir_size(FILES_DIR / "photos"), ""),
+        ("메인 배너", *_dir_size(FILES_DIR / "banners"), ""),
+        ("그 밖의 파일(증빙 보관 등)", *_dir_size(FILES_DIR, ("assignments", "notices", "photos", "banners")), ""),
+    ]
+    try:
+        if db.engine.dialect.name == "postgresql":
+            with db.engine.connect() as c:
+                db_bytes = int(c.execute(select(func.pg_database_size(func.current_database()))).scalar() or 0)
+        else:
+            db_bytes = os.path.getsize(db.engine.url.database) if db.engine.url.database else 0
+    except Exception:
+        db_bytes = None
+    rows = [{"name": n, "bytes": b, "files": f, "note": note} for n, b, f, note in parts]
+    rows.append({"name": "데이터베이스(회원·수업 기록)", "bytes": db_bytes, "files": None, "note": "백업은 14일치만 유지"})
+    return {"disk": {"total": disk.total, "used": disk.used, "free": disk.free}, "parts": rows, "at": time.time()}
+
+
+@router.get("/api/admin/storage")
+async def storage(request: Request):
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 볼 수 있어요.")
+    return await db.run(_storage_report)

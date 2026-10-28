@@ -71,7 +71,7 @@ MIC_LOCK_DEFAULT = False
 ALLOW_RECORDING = os.environ.get("ALLOW_RECORDING", "1") != "0"
 # 발표 자료(PDF)는 수업이 끝나도 남겨 둔다(그 수업을 들은 학생·강좌 수강생이 나중에 다시 봄)
 SLIDES_DIR = Path(os.environ.get("SLIDES_DIR") or Path(tempfile.gettempdir()) / "live-slides")
-MAX_FILE_BYTES = 40 * 1024 * 1024
+MAX_FILE_BYTES = 2 * 1024 * 1024  # 발표 PDF 하나 2MB까지 (서버 공간 절약)
 # 미디어 공유: 선생님이 올린 동영상·음악 (수업이 끝나면 지운다) 또는 유튜브 영상
 MAX_MEDIA_BYTES = 500 * 1024 * 1024
 MEDIA_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".m4v": "video/mp4",
@@ -344,7 +344,7 @@ def drop_conn(k: Klass, conn: Conn, s: Student | None) -> None:
     reason = conn.leave_reason or "closed"
     # 연결이 끊긴 경우 실제로 나간 시각은 마지막으로 신호를 받은 때다
     at = conn.last_recv if reason == "network" else time.time()
-    if reason in GRACE_REASONS and classes.get(k.code) is k and s.away is None:
+    if RECONNECT_GRACE > 0 and reason in GRACE_REASONS and classes.get(k.code) is k and s.away is None:
         # 바로 나간 것으로 치지 않고 1분 기다린다. 그 안에 다시 붙으면 출결이 그대로 이어진다.
         timer = asyncio.get_running_loop().call_later(RECONNECT_GRACE, finish_away, k, s)
         s.away = (at, reason, timer, time.time() + RECONNECT_GRACE)
@@ -1050,7 +1050,8 @@ async def upload_file(code: str, request: Request, name: str = Query(default="�
     async for chunk in request.stream():
         data += chunk
         if len(data) > MAX_FILE_BYTES:
-            raise HTTPException(413, f"파일이 너무 커요. {MAX_FILE_BYTES // 1024 // 1024}MB 이하로 올려 주세요.")
+            raise HTTPException(413, f"PDF가 너무 커요. {MAX_FILE_BYTES // 1024 // 1024}MB 이하로 줄여서 올려 주세요. "
+                                     "(PDF로 저장할 때 '최소 크기'·'웹용'을 고르거나, 큰 사진을 줄이면 작아져요)")
     if not data.startswith(b"%PDF-"):
         raise HTTPException(415, "PDF 파일만 올릴 수 있어요. PowerPoint는 '파일 → 내보내기 → PDF'로 저장해서 올려 주세요.")
     fid = uuid.uuid4().hex[:12]

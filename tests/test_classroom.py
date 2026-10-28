@@ -2430,7 +2430,7 @@ def test_admin_fixes_names(monkeypatch):
 
 
 def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
-    """과목이 끝나고 1년이 지나면 수업 자료(PDF)와 과제 제출 파일을 지운다 (점수·피드백은 남는다)"""
+    """수업 자료(PDF)·판서는 과목이 끝나면 바로, 과제 제출 파일은 1년이 지나면 지운다 (점수·피드백은 남는다)"""
     import app.assignments as asg
     from datetime import date
     from app import classroom as cr_mod
@@ -2462,9 +2462,12 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
         (tmp_path / "slides" / str(cls) / f"m{name}.pdf").write_bytes(b"pdf")
         asg.file_path(aid, f"f{name}").parent.mkdir(parents=True, exist_ok=True)
         asg.file_path(aid, f"f{name}").write_bytes(b"hwp")
-    # 끝난 지 1년이 안 됐으면 그대로
+    # 과목 마지막 날까지는 그대로 → 다음 날 PDF·판서 삭제 → 1년 뒤 과제 파일 삭제
+    assert purge_expired_files(date(2024, 7, 20)) == {"materials": 0, "submission_files": 0}
+    assert purge_expired_files(date(2024, 7, 21)) == {"materials": 1, "submission_files": 0}
+    assert asg.file_path(ids["old"][1], "fold").exists()
     assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0}
-    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 1, "submission_files": 1}
+    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1}
     assert not (tmp_path / "slides" / str(ids["old"][0]) / "mold.pdf").exists()
     assert not asg.file_path(ids["old"][1], "fold").exists()
     assert (tmp_path / "slides" / str(ids["new"][0]) / "mnew.pdf").exists() and asg.file_path(ids["new"][1], "fnew").exists()
@@ -2714,3 +2717,28 @@ def test_students_draw_on_whiteboard_only_own_strokes():
 
 def a_id(client):
     return str(client.get("/api/me").json()["user"]["id"])
+
+
+def test_admin_storage_report(monkeypatch):
+    """전체 관리자는 서버 남은 공간과 항목별 사용량을 볼 수 있다."""
+    from app.assignments import FILES_DIR
+
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    (FILES_DIR / "notices").mkdir(parents=True, exist_ok=True)
+    (FILES_DIR / "notices" / "storage-test").write_bytes(b"x" * 2048)
+    assert teacher().get("/api/admin/storage").status_code == 403
+    d = login("admin@gmail.com", name="관리자", school=SCHOOL).get("/api/admin/storage").json()
+    assert d["disk"]["total"] >= d["disk"]["free"] > 0
+    parts = {p["name"]: p for p in d["parts"]}
+    assert parts["공지 첨부 파일"]["bytes"] >= 2048 and parts["데이터베이스(회원·수업 기록)"]["bytes"] > 0
+    (FILES_DIR / "notices" / "storage-test").unlink()
+
+
+
+def test_pdf_upload_limit_is_2mb():
+    t = teacher()
+    code = create(t)["code"]
+    big = b"%PDF-1.4\n" + b"0" * (2 * 1024 * 1024)
+    r = t.post(f"/api/live/classes/{code}/files?name=big.pdf", content=big)
+    assert r.status_code == 413 and "2MB" in r.json()["detail"]
+    assert t.post(f"/api/live/classes/{code}/files?name=ok.pdf", content=b"%PDF-1.4\nsmall").status_code == 200

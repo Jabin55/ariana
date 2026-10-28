@@ -1268,7 +1268,7 @@ async function bannersEditor(reload) {
 
 async function loadAdmin() {
   const selected = adminSub;
-  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속기록"]];
+  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속기록"], ["storage", "서버 용량"]];
   $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, label]) => h("button", {
     type: "button", class: adminSub === key ? "active" : "", onclick: () => { adminSub = key; loadAdmin(); }
   }, label)));
@@ -1282,6 +1282,11 @@ async function loadAdmin() {
   if (selected === "name") {
     const board = await profileChangeBoard("name");
     if (adminSub === selected) fill(box, h("h2", {}, "이름 변경 승인"), board, nameFixer());
+    return;
+  }
+  if (selected === "storage") {
+    try { const box2 = await storageBoard(); if (adminSub === selected) fill(box, box2); }
+    catch (err) { if (adminSub === selected) fill(box, h("p", { class: "error" }, err.message)); }
     return;
   }
   if (selected === "logs") {
@@ -1306,6 +1311,32 @@ async function loadAdmin() {
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
   fill(box, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
+}
+
+/** 전체 관리 > 서버 용량: 디스크 전체·남은 공간과 항목별 사용량 */
+async function storageBoard() {
+  const d = await api("/api/admin/storage");
+  const size = (b) => {
+    if (b == null) return "-";
+    const u = ["B", "KB", "MB", "GB", "TB"];
+    let i = 0, v = b;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+  };
+  const pct = Math.round((d.disk.used / d.disk.total) * 100);
+  const level = pct >= 90 ? "danger" : pct >= 75 ? "warn" : "ok";
+  return h("div", {},
+    h("h2", {}, "서버 용량"),
+    h("div", { class: `storage-meter ${level}` },
+      h("div", { class: "sm-head" }, h("strong", {}, `남은 공간 ${size(d.disk.free)}`), h("span", { class: "muted" }, `전체 ${size(d.disk.total)} 중 ${size(d.disk.used)} 사용 (${pct}%)`)),
+      h("div", { class: "sm-bar" }, h("i", { style: `width:${pct}%` }))),
+    level !== "ok" ? h("p", { class: level === "danger" ? "error" : "muted" },
+      level === "danger" ? "⚠️ 공간이 거의 찼어요. 오래된 자료를 정리하거나 서버 디스크를 늘려야 해요." : "공간이 75% 넘게 찼어요. 여유를 확인해 주세요.") : null,
+    h("div", { class: "table-wrap" }, h("table", { class: "att change-table" },
+      h("thead", {}, h("tr", {}, ["항목", "크기", "파일 수", "자동 정리"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, d.parts.map((r) => h("tr", {},
+        h("td", { style: "text-align:left" }, r.name), h("td", {}, size(r.bytes)), h("td", {}, r.files == null ? "-" : `${r.files}개`), h("td", {}, r.note || "-")))))),
+    h("p", { class: "muted", style: "font-size:0.85rem" }, "디스크 사용량에는 운영체제·프로그램·백업 파일도 포함돼요. 화면 공유와 카메라 영상은 서버에 저장되지 않아요."));
 }
 
 function accessLogBoard() {
