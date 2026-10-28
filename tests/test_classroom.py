@@ -2509,3 +2509,30 @@ def test_coordinator_school_comes_from_affiliation(monkeypatch):
     assert a["hub"] == "다라고등학교"
     boss.post(f"/api/staff/{a['id']}", json={"action": "approve"})
     assert [h["name"] for h in g.get("/api/me").json()["user"]["coordinator_hubs"]] == ["다라고등학교"]
+
+
+def test_teacher_with_courses_withdraws_but_name_stays(monkeypatch):
+    """직접 연 과목이 있는 선생님도 탈퇴할 수 있다: 개인정보는 지우고, 과목·학생 기록과 이름은 남긴다"""
+    from sqlalchemy import select
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    t = teacher()
+    tid = t.get("/api/me").json()["user"]["id"]
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    boss.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"})
+    s = student(1)
+    s.post(f"/api/courses/{cid}/enroll")
+    assert t.post("/api/me/withdraw", json={"confirm": "탈퇴"}).status_code == 409  # 안내 확인 전
+    r = t.post("/api/me/withdraw", json={"confirm": "탈퇴", "keep_name_ok": True}).json()
+    assert r["kept_name"] is True
+    assert t.get("/api/me").json()["user"] is None  # 로그아웃
+    with db.engine.connect() as c:
+        u = c.execute(select(db.users).where(db.users.c.id == tid)).first()
+        co = c.execute(select(db.courses).where(db.courses.c.id == cid)).first()
+        enrolled = c.execute(select(db.enrollments).where(db.enrollments.c.course_id == cid)).all()
+    assert u.name == "박선생" and u.email == "" and u.account_state == "withdrawn" and u.phone == ""
+    assert co.instructor and co.open == 0 and len(enrolled) == 1  # 과목·학생 기록은 그대로, 수강신청은 닫힘
+    # 같은 구글 계정으로 다시 로그인하면 새 계정
+    again = TestClient(app)
+    google_login(again, "teacher@gmail.com")
+    assert again.get("/api/me").json()["user"]["id"] != tid

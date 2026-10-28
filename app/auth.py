@@ -681,6 +681,7 @@ NAME_LOCKED = "이름 변경은 내 정보에서 신청한 뒤 전체 관리자 
 class Withdraw(BaseModel):
     confirm: str
     reason: str = Field(default="", max_length=300)
+    keep_name_ok: bool = False  # 직접 연 과목·수업이 있는 선생님: '이름은 기록에 남는다'는 안내를 확인함
 
 
 def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
@@ -733,6 +734,21 @@ def _withdraw(uid: int) -> None:
         wipe(path)
 
 
+def _withdraw_teacher_keep_name(uid: int) -> None:
+    """직접 연 과목·수업이 있는 선생님의 탈퇴: 계정과 개인정보는 지우고, 과목·수업과 학생 기록은 남긴다.
+    나중에 문제가 생겼을 때 찾을 수 있도록 '이름'만 기록에 남긴다. 같은 구글 계정으로 다시 가입할 수 있다."""
+    with db.engine.begin() as c:
+        name = c.execute(select(db.users.c.name, db.users.c.google_name).where(db.users.c.id == uid)).first()
+        keep = (name.name or name.google_name or "") if name else ""
+        cleanup = _purge_user_rows(c, uid, keep_account=True)
+        c.execute(update(db.users).where(db.users.c.id == uid).values(
+            name=keep[:30], google_sub=f"withdrawn-{uuid.uuid4().hex}"))  # 로그인 연결은 끊는다 (다시 가입하면 새 계정)
+        c.execute(update(db.courses).where(db.courses.c.teacher_id == uid).values(open=0))  # 더는 수강신청을 받지 않는다
+    from app.wipe import wipe
+    for path in cleanup:
+        wipe(path)
+
+
 def owns_classes(uid: int) -> bool:
     """직접 연 강좌·수업이 있는지 (있으면 학생 기록이 딸려 있어 탈퇴로 지울 수 없다)"""
     with db.engine.connect() as c:
@@ -751,9 +767,12 @@ async def withdraw(req: Withdraw, request: Request):
         raise HTTPException(401, "로그인이 필요해요.")
     if req.confirm.strip() != "탈퇴":
         raise HTTPException(400, "확인 칸에 '탈퇴'라고 적어 주세요.")
-    if await db.run(owns_classes, u["id"]):
-        raise HTTPException(409, "직접 연 강좌나 수업이 있어 바로 탈퇴할 수 없어요. 학생들의 출결·과제 기록이 함께 지워지기 때문이에요. "
-                                 "개인정보 보호책임자(이용안내의 문의처)에게 요청해 주세요.")
+    if u["role"] != "student" and await db.run(owns_classes, u["id"]):
+        if not req.keep_name_ok:
+            raise HTTPException(409, "직접 연 과목이나 수업이 있어요. 학생 기록을 지키기 위해 과목·수업 기록과 선생님 이름은 남는다는 안내를 확인해 주세요.")
+        await db.run(_withdraw_teacher_keep_name, u["id"])
+        request.session.clear()
+        return {"ok": True, "requested": False, "kept_name": True}
     if u["role"] == "student":
         def ask():
             with db.engine.begin() as c:

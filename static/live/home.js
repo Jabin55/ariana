@@ -560,7 +560,7 @@ window.showProfile = showProfile; // 머리글의 '내 정보' 버튼
 
 const WITHDRAW_TEXT = {
   student: "탈퇴를 신청하면 우리 학교 <b>참여학교 담당 선생님이 승인</b>한 뒤 탈퇴돼요. 승인되면 로그인과 일반 수업 화면에서 내 정보와 기록이 제거됩니다. 수업 증빙에 필요한 기록은 암호화해 별도로 보관하며 승인된 우리 학교 담당자와 전체 관리자만 사유를 남기고 열람할 수 있습니다. 승인 전에는 신청을 취소할 수 있어요.",
-  other: "탈퇴하면 내 정보와 등록 신청 기록이 <b>바로 지워지고 되살릴 수 없어요.</b> 직접 연 강좌나 수업이 있으면 학생 기록 보호를 위해 바로 탈퇴할 수 없어요.",
+  other: "탈퇴하면 내 정보와 등록 신청 기록이 <b>바로 지워지고 되살릴 수 없어요.</b> 다만 직접 연 과목이나 수업이 있으면, 학생들의 출결·과제·점수 기록을 지키기 위해 그 과목·수업 기록은 남고 <b>강의한 선생님으로 이름이 기록에 남아요.</b> (이메일·연락처·생년월일 등 다른 정보는 지워져요.) 진행 중인 과목은 더 이상 수강신청을 받지 않아요.",
 };
 
 function drawWithdraw() {
@@ -592,9 +592,10 @@ $("#withdraw").addEventListener("submit", async (e) => {
     return;
   }
   const student = ME.role === "student";
-  if (!confirm(student ? "탈퇴를 신청할까요? 승인되면 로그인할 수 없고 수업 증빙 기록은 별도로 보관됩니다." : "정말 탈퇴할까요? 내 기록이 모두 지워지고 되살릴 수 없어요.")) return;
+  if (!confirm(student ? "탈퇴를 신청할까요? 승인되면 로그인할 수 없고 수업 증빙 기록은 별도로 보관됩니다."
+    : "정말 탈퇴할까요? 내 정보가 지워지고 되살릴 수 없어요.\n\n직접 연 과목·수업이 있으면 학생 기록을 지키기 위해 그 기록은 남고, 강의한 선생님으로 이름이 기록에 남아요.")) return;
   try {
-    const r = await api("/api/me/withdraw", { confirm: "탈퇴", reason: $("#withdraw-reason").value.trim() });
+    const r = await api("/api/me/withdraw", { confirm: "탈퇴", reason: $("#withdraw-reason").value.trim(), keep_name_ok: !student });
     if (r.requested) {
       ME = (await api("/api/me")).user;
       $("#withdraw-confirm").value = "";
