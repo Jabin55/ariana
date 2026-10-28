@@ -483,7 +483,7 @@ def test_student_media_permissions():
     code = create(t)["code"]
     a = student(1)
     assert a.post(f"/api/live/classes/{code}/join").status_code == 200
-    assert sources(a) == ["camera", "microphone"]
+    assert sources(a) == ["camera", "microphone", "screen_share", "screen_share_audio"]
     with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
         st = state(sa)
         assert st["settings"]["lowbw"] is True and st["settings"]["chat"] is True
@@ -494,16 +494,16 @@ def test_student_media_permissions():
         assert until(sa, lambda m: m["t"] == "cmd")["cmd"] == "mute"
         st = state(sa, lambda m: m["me"]["mic_blocked"])
         assert st["settings"]["lowbw"] is True and st["settings"]["chat"] is True
-        assert sources(a) == ["camera"]  # 카메라는 그대로
+        assert sources(a) == ["camera", "screen_share", "screen_share_audio"]  # 카메라는 그대로
         tw.send_json({"t": "cmd", "cmd": "mic_on", "target": sid})
         state(sa, lambda m: not m["me"]["mic_blocked"])
-        assert sources(a) == ["camera", "microphone"]
+        assert sources(a) == ["camera", "microphone", "screen_share", "screen_share_audio"]
         tw.send_json({"t": "cmd", "cmd": "mute", "target": "all"})  # 모두 음소거는 끄기만
         until(sa, lambda m: m["t"] == "cmd")
-        assert not state(sa)["me"]["mic_blocked"] and sources(a) == ["camera", "microphone"]
+        assert not state(sa)["me"]["mic_blocked"] and sources(a) == ["camera", "microphone", "screen_share", "screen_share_audio"]
         tw.send_json({"t": "cmd", "cmd": "cam_off", "target": sid})  # 카메라를 꺼도 학생이 다시 켤 수 있다
         assert until(sa, lambda m: m["t"] == "cmd")["cmd"] == "cam_off"
-        assert sources(a) == ["camera", "microphone"]
+        assert sources(a) == ["camera", "microphone", "screen_share", "screen_share_audio"]
         # 모둠에서는 화면 공유까지
         tw.send_json({"t": "breakout_plan", "n": 1})
         tw.send_json({"t": "breakout_start"})
@@ -1090,7 +1090,7 @@ def test_groups_by_size_and_teacher_controls_mic():
         who = next(s for s in studs if str(s.get("/api/me").json()["user"]["id"]) == sid)
         with who.websocket_connect(f"/ws/live/{code}") as sw:
             assert state(sw)["settings"]["mic_lock"] is False
-            assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone"]  # 카메라·마이크는 학생 마음대로
+            assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone", "screen_share", "screen_share_audio"]  # 카메라·마이크는 학생 마음대로
             sw.send_json({"t": "mic_req", "on": True})  # 마이크 요청은 이제 필요 없어 무시
             sw.send_json({"t": "hand", "up": True})
             st2 = state(tw, lambda m: any(x["hand"] for x in m["students"]))
@@ -1103,12 +1103,12 @@ def test_groups_by_size_and_teacher_controls_mic():
             tw.send_json({"t": "cmd", "cmd": "cam_on", "target": sid})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "cam_on"
             state(sw, lambda m: m["me"]["can_cam"])
-            assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone"]
+            assert sorted(grants(who, "main").can_publish_sources) == ["camera", "microphone", "screen_share", "screen_share_audio"]
             # 선생님이 한 학생 마이크를 끄면 다시 켜 줄 때까지 못 켠다
             tw.send_json({"t": "cmd", "cmd": "mic_off", "target": sid})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mute"
             state(sw, lambda m: m["me"]["mic_blocked"])
-            assert grants(who, "main").can_publish_sources == ["camera"]
+            assert grants(who, "main").can_publish_sources == ["camera", "screen_share", "screen_share_audio"]
             tw.send_json({"t": "cmd", "cmd": "mute", "target": "all"})
             assert until(sw, lambda m: m["t"] == "cmd")["cmd"] == "mute"
 

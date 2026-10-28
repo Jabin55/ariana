@@ -267,15 +267,20 @@ function renderMedia(room) {
   } else {
     // 선생님이 고른 화면 구성: teacher(선생님 크게) grid(모두 나열) debate(토론: 학생 둘 나란히)
     const mode = S?.layout?.mode || "teacher";
-    const sc = teacher ? screenItem(room, teacher) : null;
+    // 크게 보일 공유 화면: 선생님 화면이 먼저, 없으면 다른 친구의 공유 화면 (내 공유 화면은 겹쳐 보이지 않게 빼고)
+    const sharer = teacher && screenItem(room, teacher) ? teacher
+      : people.find((p) => !isTeacher(p) && p !== room.localParticipant && screenItem(room, p));
+    const sc = sharer ? screenItem(room, sharer) : null;
     const stageItems = [];
     if (mode === "debate" && !sc) {
       for (const x of S.layout.pair || []) {
         const p = x.id === S.me.id ? room.localParticipant : room.remoteParticipants.get(x.identity);
         if (p) stageItems.push(cameraItem(room, p, { name: x.name, flag: "🗣️" }));
       }
+    } else if (sc && sharer !== teacher) {
+      stageItems.push(sc, cameraItem(room, sharer, { pip: true, name: sharer.name || sharer.identity }));
     } else if (teacher && (mode === "teacher" || sc)) {
-      if (sc) stageItems.push(sc, cameraItem(room, teacher, { pip: true, name: "선생님" }));
+      if (sc) stageItems.push(sc, cameraItem(room, sharer, { pip: true, name: sharer === teacher ? "선생님" : sharer.name }));
       else stageItems.push(cameraItem(room, teacher, { name: "선생님" }));
     }
     stage.hidden = !stageItems.length && mode === "grid";
@@ -359,7 +364,7 @@ function renderControls() {
   hand.classList.toggle("on", S.me.hand);
   hand.textContent = S.me.hand ? "✋ 손 내리기" : "✋ 손 들기";
   const inGroup = S.room !== "main";
-  $("#screen").hidden = !inGroup;
+  $("#screen").hidden = false; // 전체 수업·모둠 어디서나 화면 공유(발표) 가능
   $("#screen").disabled = !connected;
   $("#screen").classList.toggle("on", !!prefs.screen);
   $("#help").hidden = !inGroup;

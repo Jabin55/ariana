@@ -729,6 +729,7 @@ def student_sources(k: Klass, s: Student, room: str) -> list[str]:
     if not s.mic_blocked:  # 선생님이 이 학생 마이크를 강제로 끈 동안은 못 켠다
         out.append("microphone")
     out.append("camera")  # 카메라는 언제나 학생이 켜고 끈다 (데이터 절약 모드는 화질만 낮춘다)
+    out += ["screen_share", "screen_share_audio"]  # 화면 공유(발표)도 전체 수업에서 할 수 있다
     return out
 
 

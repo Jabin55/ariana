@@ -230,7 +230,11 @@ function renderMain(room) {
   const pair = mode === "debate" ? (S.layout.pair || []).map((id) => `s-${id}`) : [];
   const duo = pair.map((id) => room.remoteParticipants.get(id)).filter(Boolean).map((p) => cameraItem(room, p, { flag: "🗣️" }));
   const me = cameraItem(room, lp, { name: "선생님 (나)" });
-  const stageItems = presenting ? [] : sc ? [sc, { ...me, pip: true }] : duo.length ? duo : mode === "teacher" ? [me] : [];
+  // 학생이 화면을 공유하면 크게 보여 준다 (선생님이 공유 중이면 선생님 화면이 먼저)
+  const sharer = sc ? null : [...room.remoteParticipants.values()].find((p) => !isTeacher(p) && screenItem(room, p));
+  const ssc = sharer ? screenItem(room, sharer) : null;
+  const stageItems = presenting ? [] : sc ? [sc, { ...me, pip: true }]
+    : ssc ? [ssc, cameraItem(room, sharer, { pip: true })] : duo.length ? duo : mode === "teacher" ? [me] : [];
   stage.hidden = !stageItems.length;
   stage.classList.toggle("duo", !sc && duo.length === 2);
   syncTiles(stage, stageItems);
