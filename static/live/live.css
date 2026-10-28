@@ -1453,7 +1453,7 @@ body.class-t #cam:not(.on) { opacity: 0.55; } /* 카메라 꺼짐 */
 body.class-t .present-bar button:not(.danger):not(.primary) { color: #1f2328; }
 body.class-t .present-bar button:disabled { opacity: 0.45; }
 .media-bar button:not(.primary):not(.danger) { color: #1f2328; } /* 어두운 막대 위 흰 버튼: 글씨는 검정 */
-#board-sticker-pop { top: calc(100% + 8px); bottom: auto; } /* 화이트보드 이모지: 위로 뜨면 가려져서 아래로 */
+#board-sticker-pop { position: fixed; bottom: auto; z-index: 60; } /* 화이트보드 이모지: 위로 뜨면 가려져서 아래로 */
 /* 전체 관리 > 서버 용량 */
 .storage-meter { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 8px 0 12px; background: var(--surface); }
 .storage-meter .sm-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }

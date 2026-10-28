@@ -808,7 +808,17 @@ function renderPresent() {
     tool("text", null, "가", "글자 쓰기 (누른 곳에 입력 · Enter로 올리기, Shift+Enter 줄바꿈) — 지금 고른 펜 색으로 써져요"),
     h("span", { class: "sticker-wrap" },
       h("button", { class: `small tool ${presenter.tool.kind === "sticker" ? "on" : ""}`, title: "이모지 스티커 붙이기",
-        onclick: (e) => { e.stopPropagation(); const pop = $("#board-sticker-pop"); pop.hidden = !pop.hidden; } }, presenter.tool.kind === "sticker" ? presenter.tool.emoji : "😀"),
+        onclick: (e) => {
+          e.stopPropagation();
+          const pop = $("#board-sticker-pop");
+          pop.hidden = !pop.hidden;
+          if (pop.hidden) return;
+          // 막대가 옆으로 밀리는 칸이라 그 안에서는 잘린다 → 화면 기준으로 버튼 바로 아래에 띄운다
+          const r = e.currentTarget.getBoundingClientRect();
+          const half = pop.offsetWidth / 2;
+          pop.style.left = `${Math.min(window.innerWidth - half - 8, Math.max(half + 8, r.left + r.width / 2))}px`;
+          pop.style.top = `${r.bottom + 8}px`;
+        } }, presenter.tool.kind === "sticker" ? presenter.tool.emoji : "😀"),
       h("div", { class: "sticker-pop", id: "board-sticker-pop", hidden: true },
         h("div", { class: "board-stickers" }, BOARD_STICKERS.map((em) => h("button", { type: "button", class: "small", onclick: () => {
           presenter.tool = { kind: "sticker", emoji: em, color: presenter.tool.color };
