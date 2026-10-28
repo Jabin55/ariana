@@ -243,7 +243,10 @@ async def current_user(request_or_ws) -> dict | None:
     session = request_or_ws.session
     if session.get("remember") is False:
         now = time.time()
-        if now - (session.get("login_at") or 0) > SHORT_SESSION_SECONDS or now - (session.get("seen") or 0) > IDLE_SECONDS:
+        is_http = request_or_ws.scope["type"] == "http"
+        # 실시간 수업 연결(WebSocket)은 접속할 때의 쿠키를 계속 들고 있어 '화면이 열려 있다' 시각이 갱신되지 않는다.
+        # 연결이 살아 있다는 것 자체가 화면이 열려 있다는 뜻이므로, 여기서는 12시간 제한만 본다.
+        if now - (session.get("login_at") or 0) > SHORT_SESSION_SECONDS or (is_http and now - (session.get("seen") or 0) > IDLE_SECONDS):
             if hasattr(session, "clear") and request_or_ws.scope["type"] == "http":
                 session.clear()  # 브라우저를 닫았다가 다시 열었다 → 로그아웃
             return None

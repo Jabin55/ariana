@@ -56,6 +56,8 @@ HEARTBEAT = 60  # 접속 중인 학생의 '마지막 확인 시각'을 DB에 적
 SILENCE_LIMIT = 70
 # 같은 학생이 새로 연결했을 때, 이만큼 조용하던 옛 연결은 끊긴 것으로 바로 정리한다
 STALE_AFTER = 30
+RECONNECT_GRACE = 60  # 연결이 끊겨도 이 시간(초) 안에 다시 붙으면 나간 것으로 치지 않는다
+GRACE_REASONS = {"network", "closed"}  # 인터넷 끊김·새로고침 (강퇴·권한 회수·수업 종료는 바로 처리)
 TEXT_LIMIT = 500
 # 저대역폭 모드 기본값: 전체 교실에서는 학생 카메라를 끄고(모둠 활동 때만 허용) 영상 화질을 낮춘다.
 # 화상 서버 데이터 비용과 학생 휴대폰 데이터를 크게 줄인다. LOW_BANDWIDTH=0 이면 기본으로 끔.
@@ -80,6 +82,7 @@ STICKERS = {"👏": "박수", "👍": "좋아요", "⭐": "칭찬", "💯": "최
 MAX_FILES = 20  # 수업당 올릴 수 있는 파일 수
 MAX_BOARD_PAGES = 50
 MAX_STROKES = 1500  # 한 쪽에 남길 수 있는 획 수
+BOARD_TEXT_LIMIT = 200  # 판서 글자 한 덩이의 최대 글자 수
 MAX_POINTS = 4000  # 한 획의 점 수
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -111,6 +114,12 @@ class Student:
     last_chat: float = 0.0
     att_id: int | None = None  # 지금 열려 있는 출결 기록
     sessions: int = 0  # 이 수업에 들어온 횟수 (2 이상이면 재입장)
+    away: Any = None  # 연결이 끊겨 다시 붙기를 기다리는 중: (끊긴 시각, 이유, 타이머, 기다리는 마감 시각)
+
+    @property
+    def online(self) -> bool:
+        """접속 중으로 볼지: 연결이 있거나, 끊긴 지 1분이 안 됐다"""
+        return self.conns > 0 or (self.away is not None and time.time() < self.away[3])
 
 
 @dataclass
@@ -330,10 +339,38 @@ def drop_conn(k: Klass, conn: Conn, s: Student | None) -> None:
     s.conns = max(0, s.conns - 1)
     if s.conns or not s.att_id:
         return
-    att_id, s.att_id = s.att_id, None
     reason = conn.leave_reason or "closed"
     # 연결이 끊긴 경우 실제로 나간 시각은 마지막으로 신호를 받은 때다
     at = conn.last_recv if reason == "network" else time.time()
+    if reason in GRACE_REASONS and classes.get(k.code) is k and s.away is None:
+        # 바로 나간 것으로 치지 않고 1분 기다린다. 그 안에 다시 붙으면 출결이 그대로 이어진다.
+        timer = asyncio.get_running_loop().call_later(RECONNECT_GRACE, finish_away, k, s)
+        s.away = (at, reason, timer, time.time() + RECONNECT_GRACE)
+        return
+    close_attendance(k, s, at, reason)
+
+
+def finish_away(k: Klass, s: Student) -> None:
+    """1분 안에 다시 붙지 않았다 → 끊긴 시각에 나간 것으로 기록한다"""
+    if s.away is None:
+        return
+    at, reason = s.away[0], s.away[1]
+    s.away = None
+    if s.conns or not s.att_id:
+        return
+    close_attendance(k, s, at, reason)
+    if classes.get(k.code) is k:
+        push(k)
+
+
+def cancel_away(s: Student) -> None:
+    if s.away is not None:
+        s.away[2].cancel()
+        s.away = None
+
+
+def close_attendance(k: Klass, s: Student, at: float, reason: str) -> None:
+    att_id, s.att_id = s.att_id, None
     log_event(k, s, "leave", reason, at)
     if classes.get(k.code) is k:
         flush(k)  # 선생님 화면에 바로 알린다
@@ -367,6 +404,10 @@ def _att_touch(ids: list[int]) -> None:
 async def heartbeat_loop() -> None:
     while True:
         await asyncio.sleep(HEARTBEAT)
+        for k in list(classes.values()):  # 유예가 지났는데 타이머가 못 돈 경우까지 정리
+            for s in list(k.students.values()):
+                if s.away is not None and not s.online:
+                    finish_away(k, s)
         ids = [s.att_id for k in classes.values() for s in k.students.values() if s.att_id and s.conns]
         if ids:
             try:
@@ -545,7 +586,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "media": k.media if room == "main" else None,
         "announce": k.announce,
         "my_questions": [q for q in k.questions if q["sid"] == s.id][-20:],
-        "online_count": sum(1 for m in k.students.values() if m.conns > 0),
+        "online_count": sum(1 for m in k.students.values() if m.online),
     }
 
 
@@ -558,7 +599,7 @@ def load_roster(course_id: int | None) -> list[dict]:
 
 def roster_rows(k: Klass) -> list[dict]:
     """선생님 학생 목록: 들어온 학생 + 아직 안 들어온 수강생(회색)"""
-    rows = [{"id": s.id, "name": s.name, "school": s.school, "online": s.conns > 0, "hand": s.hand, "mic_req": s.mic_req,
+    rows = [{"id": s.id, "name": s.name, "school": s.school, "online": s.online, "hand": s.hand, "mic_req": s.mic_req,
              "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "mic_blocked": s.mic_blocked,
              "group": s.group, "room": k.room_of(s), "sessions": s.sessions, "absent": False,
              "stickers": k.stickers.get(s.id, 0)}
@@ -1199,15 +1240,24 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
             size = m.get("size")
             size = float(size) if isinstance(size, (int, float)) and 0.5 <= size <= 60 else 3.0
             st = {"id": sid, "color": color, "size": size, "hl": bool(m.get("hl")), "pts": []}
+            text = clean(m.get("text"), BOARD_TEXT_LIMIT) if isinstance(m.get("text"), str) else ""
+            if text:  # 글자·이모지 스티커: 점 하나(왼쪽 위)에 글자를 쓴다
+                st["text"] = text
             page.append(st)
+        elif st.get("text"):
+            return True  # 글자는 처음 한 번만 보낸다
         room = MAX_POINTS - len(st["pts"])
         pts = pts[:max(0, room)]
         if not pts:
             return True
+        if st.get("text"):
+            pts = pts[:1]
         st["pts"].extend(pts)
         k.dirty_boards.add(key)
-        relay(k, conn, {"t": "stroke", "key": key, "id": sid, "color": st["color"], "size": st["size"],
-                        "hl": st["hl"], "pts": pts})
+        out = {"t": "stroke", "key": key, "id": sid, "color": st["color"], "size": st["size"], "hl": st["hl"], "pts": pts}
+        if st.get("text"):
+            out["text"] = st["text"]
+        relay(k, conn, out)
     elif t == "stroke_del":  # 지우개·되돌리기
         key, ids = m.get("key"), m.get("ids")
         if key != before or not isinstance(ids, list):
@@ -1248,7 +1298,7 @@ def groups_needed(k: Klass, m: dict) -> int:
     """모둠 수를 정하거나(n), 모둠당 인원(size)을 정하면 필요한 모둠 수를 계산한다."""
     size = m.get("size")
     if isinstance(size, int) and size >= 1:
-        count = sum(1 for s in k.students.values() if s.conns > 0) or len(k.students)
+        count = sum(1 for s in k.students.values() if s.online) or len(k.students)
         return max(1, math.ceil(count / size))
     n = m.get("n")
     return n if isinstance(n, int) and n >= 1 else 4
@@ -1272,7 +1322,7 @@ def plan_groups(k: Klass, n: int) -> None:
     """모둠을 만들고 접속한 학생을 무작위로 고르게 나눈다."""
     n = max(1, min(MAX_GROUPS, n))
     k.groups = [{"id": f"g{i}", "name": group_name(i)} for i in range(1, n + 1)]
-    members = [s for s in k.students.values() if s.conns > 0] or list(k.students.values())
+    members = [s for s in k.students.values() if s.online] or list(k.students.values())
     random.shuffle(members)
     for s in k.students.values():
         s.group = None
@@ -1434,7 +1484,10 @@ async def live_socket(ws: WebSocket, code: str):
     k.last_active = time.time()
     if conn.role == "student":
         s = k.students[conn.sid]
+        if s.away is not None and not s.online:
+            finish_away(k, s)  # 유예가 이미 지났다 → 나간 것으로 닫고 새로 들어온 것으로
         s.conns += 1
+        cancel_away(s)  # 1분 안에 다시 붙었다 → 계속 들어와 있던 것으로 본다
         if s.conns == 1 and not s.att_id:  # 출결: 접속 시작
             s.sessions += 1
             log_event(k, s, "rejoin" if s.sessions > 1 else "join")
@@ -1754,6 +1807,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
         open_ids = [s.att_id for s in k.students.values() if s.att_id]
         for s in k.students.values():
             s.att_id = None
+            cancel_away(s)
         ended_at = time.time()
         send_to_students(k, {"t": "ended"})
         for c in k.conns:

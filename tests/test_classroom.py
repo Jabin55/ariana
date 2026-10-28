@@ -37,6 +37,7 @@ def setup(monkeypatch):
     monkeypatch.setattr(auth, "TEACHER_EMAILS", {"teacher@gmail.com", "other@gmail.com"})
     monkeypatch.setattr(auth, "ALLOWED_DOMAINS", {"s.school.kr"})
     monkeypatch.setattr(auth, "ULSAN_SCHOOLS", [])  # 테스트는 학교 목록 없이 시작 (필요하면 테스트에서 저장)
+    monkeypatch.setattr(cr, "RECONNECT_GRACE", 0)  # 기존 테스트는 끊기면 바로 나간 것으로 (유예는 따로 테스트)
     monkeypatch.setattr(cr, "LIVEKIT_URL", "ws://localhost:7880")
     monkeypatch.setattr(cr, "LIVEKIT_API_KEY", "devkey")
     monkeypatch.setattr(cr, "LIVEKIT_API_SECRET", "secret-secret-secret-secret-secret")
@@ -444,9 +445,10 @@ def test_silent_device_is_recorded_as_network_drop(monkeypatch):
         with pytest.raises(Exception):  # 서버가 연결을 끊는다
             for _ in range(20):
                 sa.receive_json()
+    time.sleep(0.2)  # (유예 0초) 나간 것으로 처리될 때까지
     k = cr.classes[code]
     assert k.events[-1]["kind"] == "leave" and k.events[-1]["reason"] == "network"
-    # 2) 끊긴 줄 모르는 사이 다시 연결되면 옛 연결을 '연결 끊김'으로 정리하고 재입장으로 기록
+    # 2) 끊긴 줄 모르는 사이 다시 연결되면 옛 연결을 '연결 끊김'으로 정리하고 재입장으로 기록 (유예 0초일 때)
     monkeypatch.setattr(cr, "SILENCE_LIMIT", 60)
     monkeypatch.setattr(cr, "STALE_AFTER", 0.5)
     with t.websocket_connect(f"/ws/live/{code}") as tw:
@@ -2618,3 +2620,45 @@ def test_privacy_mentions_access_logs():
     html = TestClient(app).get("/live/privacy").text
     assert "별도의 로그인 이력 데이터베이스는 운영하지 않습니다" not in html
     assert "접속기록" in html and "365일간 보관" in html
+
+
+def test_reconnect_within_grace_keeps_attendance(monkeypatch):
+    """연결이 끊겨도 유예 시간 안에 다시 붙으면 계속 접속 중이고 출결이 한 번으로 이어진다. 넘기면 나간 것으로."""
+    monkeypatch.setattr(cr, "RECONNECT_GRACE", 1.0)
+    t = teacher()
+    c = create(t, target_grade=2, target_class=3)
+    code, cid = c["code"], c["class_id"]
+    a = student(1)
+    with a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)
+    time.sleep(0.2)
+    p1 = next(p for p in t.get(f"/api/live/history/{cid}").json()["students"] if p["student_no"] == "20301")
+    assert p1["online"]  # 끊긴 지 1초가 안 됨 → 아직 접속 중
+    with a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(sa)
+        p1 = next(p for p in t.get(f"/api/live/history/{cid}").json()["students"] if p["student_no"] == "20301")
+        assert p1["count"] == 1 and p1["online"]  # 다시 붙음 → 새 접속으로 세지 않는다
+    time.sleep(1.5)
+    p1 = next(p for p in t.get(f"/api/live/history/{cid}").json()["students"] if p["student_no"] == "20301")
+    assert p1["count"] == 1 and not p1["online"]  # 유예가 지나 나간 것으로 처리
+
+
+def test_websocket_not_dropped_by_idle_check(monkeypatch):
+    """자동 로그인 없이 들어온 사람의 수업 연결은 '화면 열림' 시각이 갱신되지 않아도 끊지 않는다."""
+    import asyncio
+
+    class FakeWS:
+        scope = {"type": "websocket"}
+
+        def __init__(self, session):
+            self.session = session
+
+    t = teacher()
+    uid = t.get("/api/me").json()["user"]["id"]
+    with db.engine.begin() as c:
+        key = c.execute(db.users.select().where(db.users.c.id == uid)).first().session_key
+    old = time.time() - 600
+    ws = FakeWS({"uid": uid, "auth_key": key, "remember": False, "login_at": old, "seen": old})
+    assert asyncio.run(auth.current_user(ws))["id"] == uid
+    ws.session["login_at"] = time.time() - 13 * 3600  # 12시간 제한은 그대로
+    assert asyncio.run(auth.current_user(ws)) is None

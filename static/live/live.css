@@ -1215,14 +1215,14 @@ body.class-t .layout-pick { color: #e9edf2; }
 body.class-t .layout-pick select { background: #3a404a; color: #e9edf2; border-color: #4a515c; }
 body.class-t .rec-btn { color: #ff6b6b !important; font-weight: 700; }
 body.class-t .workspace { grid-template-columns: 78px minmax(0, 1fr) 340px; }
-body.class-t .rail { background: #38b2ac; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 4px; overflow-y: auto; }
+body.class-t .rail { background: #1b6b4a; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 4px; overflow-y: auto; }
 body.class-t .rail-clock { color: #fff; font: 700 0.72rem ui-monospace, monospace; text-align: center; padding: 4px 0 8px; border-bottom: 1px solid #ffffff44; margin-bottom: 4px; }
 body.class-t .rail-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; background: transparent; border: 0; color: #fff;
   border-radius: 10px; min-height: 0; width: 100%; }
 body.class-t .rail-btn .ri { font-size: 1.35rem; line-height: 1; }
 body.class-t .rail-btn .rl { font-size: 0.68rem; font-weight: 600; white-space: nowrap; }
 body.class-t .rail-btn:hover { background: #ffffff26; }
-body.class-t .rail-btn.on { background: #ffffff; color: #1d6f6b; }
+body.class-t .rail-btn.on { background: #ffffff; color: #1b6b4a; }
 body.class-t .rail .sticker-wrap { display: block; }
 body.class-t .rail .sticker-pop { bottom: auto; top: 0; left: calc(100% + 8px); transform: none; color: var(--text, #222); }
 body.class-t .mainarea { background: #1d2128; color: #e9edf2; }
@@ -1427,3 +1427,16 @@ table.att.audit-table td:last-child { white-space: normal; }
 table.att.change-table { table-layout: auto; min-width: 720px; }
 table.att.change-table th, table.att.change-table td { text-align: center; white-space: nowrap; }
 .change-actions { display: inline-flex; gap: 6px; }
+
+/* 판서 글자 입력칸 · 학생 화면 확대 버튼 */
+.board-text-input { position: absolute; z-index: 3; min-width: 8em; max-width: 70%; padding: 2px 4px; margin: 0; resize: none; overflow: hidden;
+  background: #ffffffe6; border: 1.5px dashed #1b6b4a; border-radius: 4px; font-weight: 600; line-height: 1.25; font-family: inherit; }
+.viewer-zoom { position: absolute; right: 8px; bottom: 8px; z-index: 4; display: flex; align-items: center; gap: 4px;
+  background: #000000a6; color: #fff; border-radius: 999px; padding: 4px 6px; font-size: 0.85rem; }
+.viewer-zoom button { background: transparent; color: #fff; border: 0; min-width: 28px; height: 28px; border-radius: 999px; cursor: pointer; font-weight: 700; }
+.viewer-zoom button:hover { background: #ffffff33; }
+.viewer-zoom button:disabled { opacity: 0.4; cursor: default; }
+.viewer-zoom .vz-label { min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
+.sheet canvas.ink.grab { cursor: grab; touch-action: none; }
+.board-stickers { display: inline-flex; gap: 2px; }
+.board-stickers button { font-size: 1.05rem; padding: 2px 4px; }

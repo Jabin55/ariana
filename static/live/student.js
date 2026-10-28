@@ -13,7 +13,7 @@ let textDraft = "";
 const MAX_PEER_VIDEOS = 6;
 let videoSlots = []; // 영상을 받는 친구들
 // 선생님 발표(PDF)·화이트보드: 이때는 자료 화면만 크게 보여 준다(선생님 목소리는 계속 들림)
-const presenter = new Presenter($("#present"), { code: CODE, canDraw: false, send: () => {} });
+const presenter = new Presenter($("#present"), { code: CODE, canDraw: false, viewerZoom: true, send: () => {} });
 
 $("#code").textContent = CODE;
 api("/api/me").then(({ user }) => {

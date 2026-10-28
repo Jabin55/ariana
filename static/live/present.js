@@ -15,6 +15,9 @@ async function loadPdfjs() {
 
 const BOARD_RATIO = 16 / 9;
 const PEN_COLORS = ["#222222", "#d92d20", "#1d5fd6", "#16803c"];
+const TEXT_SIZE = 30; // 판서 글자 크기 (종이 폭 1000px일 때 px)
+const STICKER_SIZE = 56; // 이모지 스티커 크기
+const BOARD_STICKERS = ["👍", "⭐", "❤️", "✅", "❌", "❓", "💡", "🎉", "👏", "🔥", "📌", "😀"];
 
 class Presenter {
   /**
@@ -41,6 +44,7 @@ class Presenter {
     box.append(this.area);
     new ResizeObserver(() => this.layout()).observe(this.area);
     if (opt.canDraw) this.enableDrawing();
+    else if (opt.viewerZoom) this.enableViewerZoom();
   }
 
   get key() { return this.view?.key || null; }
@@ -57,6 +61,8 @@ class Presenter {
       return;
     }
     this.localZoom = null;
+    this.ownZoom = null;
+    this.zoomBadge?.();
     const seq = ++this.renderSeq;
     if (view.mode === "board") {
       this.pageSize = { w: 1600, h: 1600 / BOARD_RATIO };
@@ -98,8 +104,11 @@ class Presenter {
   async pageCount(fid) { return (await this.doc(fid)).numPages; }
 
   /** 확대 배율 (PDF 발표만, 선생님이 정하면 학생 화면도 같이) */
-  zoomZ() { return this.view?.mode === "slides" ? (this.localZoom?.z || this.view.zoom?.z || 1) : 1; }
-  zoomXY() { const z = this.localZoom || this.view?.zoom || {}; return [z.x ?? 0.5, z.y ?? 0.5]; }
+  zoomZ() {
+    if (this.ownZoom) return this.ownZoom.z; // 학생이 자기 화면만 확대한 경우
+    return this.view?.mode === "slides" ? (this.localZoom?.z || this.view.zoom?.z || 1) : 1;
+  }
+  zoomXY() { const z = this.ownZoom || this.localZoom || this.view?.zoom || {}; return [z.x ?? 0.5, z.y ?? 0.5]; }
 
   /** 자리 크기에 맞춰 종이 크기를 정하고 다시 그린다 */
   layout() {
@@ -179,12 +188,13 @@ class Presenter {
     const list = this.strokes.get(msg.key) || [];
     this.strokes.set(msg.key, list);
     let st = list.find((s) => s.id === msg.id);
-    if (!st) { st = { id: msg.id, color: msg.color, size: msg.size, hl: msg.hl, pts: [] }; list.push(st); }
+    if (!st) { st = { id: msg.id, color: msg.color, size: msg.size, hl: msg.hl, pts: [] }; if (msg.text) st.text = msg.text; list.push(st); }
+    if (st.text && st.pts.length) return; // 글자는 한 점만
     const from = Math.max(0, st.pts.length - 1);
     st.pts.push(...msg.pts);
     if (msg.key !== this.key) return;
     // 형광펜은 반투명이라 나눠 그리면 이음새가 진해진다 → 판서 전체를 다시 그린다
-    if (st.hl) this.redrawInk();
+    if (st.hl || st.text) this.redrawInk();
     else this.drawStroke(this.inkCanvas.getContext("2d"), st, from);
   }
 
@@ -201,9 +211,40 @@ class Presenter {
     for (const st of this.strokes.get(this.key) || []) this.drawStroke(ctx, st, 0);
   }
 
+  /** 글자 판서의 글꼴과 줄들 (캔버스 픽셀 기준) */
+  textLayout(ctx, st) {
+    const c = this.inkCanvas;
+    const px = Math.max(6, (st.size * c.width) / 1000);
+    ctx.font = `600 ${px}px ${getComputedStyle(document.body).fontFamily || "sans-serif"}`;
+    const lines = String(st.text).split("\n");
+    const w = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    return { px, lines, w, lh: px * 1.25 };
+  }
+
+  /** 글자 판서가 차지하는 칸 (0~1 비율) — 지우개 판정용 */
+  textBox(st) {
+    const c = this.inkCanvas;
+    const ctx = c.getContext("2d");
+    ctx.save();
+    const { lines, w, lh } = this.textLayout(ctx, st);
+    ctx.restore();
+    const [x, y] = st.pts[0];
+    return [x, y, x + w / c.width, y + (lh * lines.length) / c.height];
+  }
+
   drawStroke(ctx, st, from) {
     const c = this.inkCanvas;
     if (!st.pts.length) return;
+    if (st.text) {
+      ctx.save();
+      const { lines, lh } = this.textLayout(ctx, st);
+      ctx.fillStyle = st.color;
+      ctx.textBaseline = "top";
+      const [x, y] = st.pts[0];
+      lines.forEach((l, i) => ctx.fillText(l, x * c.width, y * c.height + i * lh));
+      ctx.restore();
+      return;
+    }
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -238,7 +279,13 @@ class Presenter {
     const erase = (p) => {
       const list = this.strokes.get(this.key) || [];
       const r = 12 / c.getBoundingClientRect().width; // 지우개 반경 (비율)
-      const hit = list.filter((s) => s.pts.some((q) => Math.hypot(q[0] - p[0], (q[1] - p[1]) * (c.height / c.width)) < r + (s.size / 2000)));
+      const hit = list.filter((s) => {
+        if (s.text && s.pts.length) {
+          const [x0, y0, x1, y1] = this.textBox(s);
+          return p[0] >= x0 - r && p[0] <= x1 + r && p[1] >= y0 - r && p[1] <= y1 + r;
+        }
+        return s.pts.some((q) => Math.hypot(q[0] - p[0], (q[1] - p[1]) * (c.height / c.width)) < r + (s.size / 2000));
+      });
       if (!hit.length) return;
       const ids = hit.map((s) => s.id);
       this.removeStrokes(this.key, ids);
@@ -254,6 +301,13 @@ class Presenter {
         return;
       }
       if (this.tool.kind === "eraser") { cur = { eraser: true }; erase(pos(e)); return; }
+      if (this.tool.kind === "text") { this.openTextInput(pos(e)); return; }
+      if (this.tool.kind === "sticker") {
+        const [x, y] = pos(e);
+        const half = STICKER_SIZE / 2000; // 이모지 한 글자 ≈ 글자 크기만큼 넓다 → 누른 곳이 가운데 오게
+        this.addText(this.tool.emoji || BOARD_STICKERS[0], [x - half, y - (half * c.width) / c.height], STICKER_SIZE, "#222222");
+        return;
+      }
       const hl = this.tool.kind === "hl";
       cur = { key: this.key, id: Math.random().toString(36).slice(2, 12), color: this.tool.color, size: hl ? 18 : 3, hl };
       const mine = this.mine.get(cur.key) || [];
@@ -287,6 +341,100 @@ class Presenter {
     }, { passive: false });
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
+  }
+
+  /** 글자·스티커 한 덩이를 올린다 (모두에게 보이고, 되돌리기·지우개로 지울 수 있다) */
+  addText(text, p, size, color) {
+    text = String(text).trim().slice(0, 200);
+    if (!text || !this.key) return;
+    const pt = [Math.min(1, Math.max(0, p[0])), Math.min(1, Math.max(0, p[1]))];
+    const id = Math.random().toString(36).slice(2, 12);
+    const mine = this.mine.get(this.key) || [];
+    mine.push(id);
+    this.mine.set(this.key, mine);
+    this.addPoints({ key: this.key, id, color, size, hl: false, text, pts: [pt] });
+    this.opt.send({ t: "stroke", key: this.key, id, color, size, hl: false, text, pts: [pt] });
+  }
+
+  /** 글자 도구: 누른 자리에 입력칸을 띄운다. Enter = 올리기, Shift+Enter = 줄바꿈, Esc = 취소 */
+  openTextInput(p) {
+    this.textInput?.remove();
+    const key = this.key;
+    const color = this.tool.color;
+    const px = (TEXT_SIZE * this.sheet.offsetWidth) / 1000;
+    const box = h("textarea", { class: "board-text-input", rows: 1, maxlength: 200, placeholder: "글자 입력 후 Enter",
+      style: `left:${p[0] * 100}%;top:${p[1] * 100}%;font-size:${px}px;color:${color}` });
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      const text = box.value;
+      box.remove();
+      if (this.textInput === box) this.textInput = null;
+      if (ok && key === this.key) this.addText(text, p, TEXT_SIZE, color);
+    };
+    const grow = () => { box.style.height = "auto"; box.style.height = `${box.scrollHeight}px`; };
+    box.addEventListener("input", grow);
+    box.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // 화살표 키로 쪽이 넘어가지 않게
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); finish(true); }
+      if (e.key === "Escape") finish(false);
+    });
+    box.addEventListener("blur", () => finish(true));
+    this.sheet.append(box);
+    this.textInput = box;
+    setTimeout(() => { box.focus(); grow(); }, 0);
+  }
+
+  /** 학생: 내 화면만 확대·축소하고 끌어서 옮긴다 (선생님 화면에는 영향 없음) */
+  enableViewerZoom() {
+    const label = h("span", { class: "vz-label" });
+    const out = h("button", { type: "button", title: "축소" }, "－");
+    const fit = h("button", { type: "button", title: "쪽 전체 보기" }, "맞춤");
+    const set = (z, x, y) => {
+      if (!this.view) return;
+      const [cx, cy] = this.zoomXY();
+      const nz = Math.min(4, Math.max(1, Math.round(z * 100) / 100));
+      this.ownZoom = nz <= 1 ? null : { z: nz, x: Math.min(1, Math.max(0, x ?? cx)), y: Math.min(1, Math.max(0, y ?? cy)) };
+      this.layout();
+      this.zoomBadge();
+    };
+    this.zoomBadge = () => {
+      const z = this.zoomZ();
+      label.textContent = `${Math.round(z * 100)}%`;
+      out.disabled = !this.ownZoom;
+      fit.hidden = !this.ownZoom;
+      this.inkCanvas.classList.toggle("grab", !!this.ownZoom);
+    };
+    out.onclick = () => set(this.zoomZ() / 1.5);
+    fit.onclick = () => set(1);
+    this.area.append(h("div", { class: "viewer-zoom", title: "내 화면만 크게 보기 (선생님 화면에는 영향 없어요)" },
+      h("button", { type: "button", title: "확대", onclick: () => set(this.zoomZ() * 1.5) }, "＋"), out, label, fit));
+    this.zoomBadge();
+    const c = this.inkCanvas;
+    let drag = null;
+    c.addEventListener("pointerdown", (e) => {
+      if (!this.ownZoom) return;
+      e.preventDefault();
+      c.setPointerCapture(e.pointerId);
+      const [x0, y0] = this.zoomXY();
+      drag = { sx: e.clientX, sy: e.clientY, x0, y0 };
+    });
+    c.addEventListener("pointermove", (e) => {
+      if (!drag || !this.ownZoom) return;
+      this.ownZoom.x = Math.min(1, Math.max(0, drag.x0 - (e.clientX - drag.sx) / this.sheet.offsetWidth));
+      this.ownZoom.y = Math.min(1, Math.max(0, drag.y0 - (e.clientY - drag.sy) / this.sheet.offsetHeight));
+      this.place();
+    });
+    const end = () => { drag = null; };
+    c.addEventListener("pointerup", end);
+    c.addEventListener("pointercancel", end);
+    c.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const r = c.getBoundingClientRect();
+      set(this.zoomZ() * (e.deltaY < 0 ? 1.2 : 1 / 1.2), (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    }, { passive: false });
   }
 
   undo() {

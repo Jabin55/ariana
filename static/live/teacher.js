@@ -752,7 +752,9 @@ $("#sticker-btn").addEventListener("click", (e) => {
     h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.8rem" }, "학생을 고르면 그 학생 화면에 크게 뜨고, 받은 스티커 수가 학생 목록에 쌓여요."));
   pop.hidden = false;
 });
-document.addEventListener("click", (e) => { if (!e.target.closest(".sticker-wrap")) $("#sticker-pop").hidden = true; });
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".sticker-wrap")) { $("#sticker-pop").hidden = true; const bp = $("#board-sticker-pop"); if (bp) bp.hidden = true; }
+});
 
 /* ───── 자료 발표(PDF)·화이트보드 ───── */
 
@@ -785,6 +787,17 @@ function renderPresent() {
     ...PEN_COLORS.map((c, i) => tool("pen", c, "●", ["검정 펜", "빨강 펜", "파랑 펜", "초록 펜"][i])),
     tool("hl", "#f5c400", "▮", "형광펜"),
     tool("eraser", null, "지우개", "지우개 (선을 문지르면 지워져요)"),
+    tool("text", null, "가", "글자 쓰기 (누른 곳에 입력 · Enter로 올리기, Shift+Enter 줄바꿈) — 지금 고른 펜 색으로 써져요"),
+    h("span", { class: "sticker-wrap" },
+      h("button", { class: `small tool ${presenter.tool.kind === "sticker" ? "on" : ""}`, title: "이모지 스티커 붙이기",
+        onclick: (e) => { e.stopPropagation(); const pop = $("#board-sticker-pop"); pop.hidden = !pop.hidden; } }, presenter.tool.kind === "sticker" ? presenter.tool.emoji : "😀"),
+      h("div", { class: "sticker-pop", id: "board-sticker-pop", hidden: true },
+        h("div", { class: "board-stickers" }, BOARD_STICKERS.map((em) => h("button", { type: "button", class: "small", onclick: () => {
+          presenter.tool = { kind: "sticker", emoji: em, color: presenter.tool.color };
+          $("#board-sticker-pop").hidden = true;
+          renderPresent();
+        } }, em))),
+        h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.8rem" }, "고른 뒤 화면을 누르면 그 자리에 붙어요. 지우개로 지울 수 있어요."))),
     ...(v.mode === "slides" ? [
       h("span", { class: "sep" }),
       h("button", { class: "small", title: "확대 (Ctrl + 마우스 휠로도 돼요)", onclick: () => presenter.setZoom(presenter.zoomZ() * 1.5) }, "🔍＋"),

@@ -349,7 +349,7 @@ def attendance_report(cls, teacher_id: int) -> dict:
         m = r._mapping
         uid = m["user_id"]
         online = m["left_at"] is None and live is not None and str(uid) in live.students \
-            and live.students[str(uid)].conns > 0
+            and live.students[str(uid)].online
         end = m["left_at"] or (now if online else m["last_seen"])
         p = people.setdefault(uid, {
             "user_id": uid, "student_no": student_no(m), "name": m["name"] or m["google_name"],
