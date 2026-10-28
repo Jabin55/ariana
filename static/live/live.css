@@ -1215,7 +1215,7 @@ body.class-t .layout-pick { color: #e9edf2; }
 body.class-t .layout-pick select { background: #3a404a; color: #e9edf2; border-color: #4a515c; }
 body.class-t .rec-btn { color: #ff6b6b !important; font-weight: 700; }
 body.class-t .workspace { grid-template-columns: 78px minmax(0, 1fr) 340px; }
-body.class-t .rail { background: #e8663a; /* 외솔온닷 주황 (로고의 '온닷' 색) */ display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 4px; overflow-y: auto; }
+body.class-t .rail { background: #f08a5d; /* 외솔온닷 주황 (로고의 '온닷' 색) */ display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 4px; overflow-y: auto; }
 body.class-t .rail-clock { color: #fff; font: 700 0.72rem ui-monospace, monospace; text-align: center; padding: 4px 0 8px; border-bottom: 1px solid #ffffff55; margin-bottom: 4px; }
 body.class-t .rail-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; background: transparent; border: 0; color: #fff;
   border-radius: 10px; min-height: 0; width: 100%; }
