@@ -1130,8 +1130,8 @@ def test_policy_pages(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     p = c.get("/live/privacy").text
     assert "가나고등학교&lt;script&gt;" in p and "<script>" not in p  # 설정 값은 그대로 출력하지 않는다
-    assert "Hetzner" in p and "Anthropic, PBC (미국)" in p  # AI 조교 설정과 상관없이 미국 이전 항목은 늘 보인다
-    assert "고객센터: +49 (0)9831 505-0" in p
+    assert "Hetzner" in p and "Anthropic, PBC" in p and "이전 국가" in p  # AI 조교 설정과 상관없이 미국 이전 항목은 늘 보인다
+    assert "고객센터 +49 (0)9831 505-0" in p
     assert "회원 탈퇴 신청 또는 서비스 이용 중단을 통해 향후 국외 이전을 거부" in p
     assert "가장 최근 성공 로그인 시각 1건만 저장" in p
     assert "다른 법령이 해당 개인정보를 수집 대상으로 명시한 경우" in p
