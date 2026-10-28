@@ -467,7 +467,10 @@ async function renderOpenClass(c, box) {
       h("a", { class: "button small primary", href: `/live/teacher/${x.code}` }, `▶ ${x.title} 들어가기`))) : null,
     notYet ? h("p", { class: "muted", style: "font-size:0.9rem" }, `⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.`) : null,
     c.archived ? h("p", { class: "muted" }, "보관한 강좌에는 수업을 열 수 없어요. '보관 해제'를 먼저 눌러 주세요.")
-      : sessions.length ? table() : plain());
+      : sessions.length ? [table(),
+        // 회차표에 없는 날(보강·추가 수업)도 주제만 적고 바로 열 수 있게
+        h("p", { class: "muted", style: "margin:14px 0 6px;font-size:0.9rem" }, "회차표에 없는 날 추가로 수업을 열 때 (보강·특강 등)"),
+        plain()] : plain());
 }
 
 /* ───── 학습 관리: 위에 [수업참석률][공지][설문][퀴즈][활동] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
