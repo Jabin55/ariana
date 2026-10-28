@@ -688,24 +688,30 @@ function youtubeId(text) {
 }
 
 function openMediaDialog() {
-  document.querySelector(".files-dlg")?.remove();
+  $("#media-dialog")?.remove();
+  const close = () => dlg.remove();
   const yt = h("input", { class: "grow", placeholder: "유튜브 주소 붙여 넣기 (예: https://youtu.be/…)" });
-  const dlg = h("div", { class: "files-dlg card" },
-    h("div", { class: "row" }, h("strong", { class: "grow" }, "🎬 미디어공유"), h("button", { class: "small", onclick: () => dlg.remove() }, "닫기")),
-    h("p", { class: "muted", style: "margin:4px 0 10px;font-size:0.88rem" }, "선생님이 재생·멈춤·건너뛰기를 하면 학생 화면도 같은 곳으로 맞춰져요."),
-    h("div", { class: "row" }, yt, h("button", { class: "primary", onclick: () => {
-      const id = youtubeId(yt.value);
-      if (!id) { toast("유튜브 주소를 확인해 주세요."); return; }
-      sock.send({ t: "media_open", kind: "youtube", src: id });
-      dlg.remove();
-    } }, "띄우기")),
-    h("div", { class: "row", style: "margin-top:8px" },
-      h("button", { onclick: () => $("#media-input").click() }, "📁 내 컴퓨터의 동영상·음악 올리기"),
-      h("span", { class: "muted", style: "font-size:0.82rem" }, "mp4·webm·mov·mp3·m4a, 500MB까지 · 수업이 끝나면 지워져요")),
-    S.media_files.length ? h("div", { style: "margin-top:10px" }, h("strong", {}, "올린 미디어"),
-      S.media_files.map((f) => h("div", { class: "row" }, h("span", { class: "grow" }, `${[".mp3", ".m4a", ".wav", ".ogg"].includes(f.ext) ? "🎵" : "🎞️"} ${f.name}`),
-        h("button", { class: "small primary", onclick: () => { sock.send({ t: "media_open", kind: "file", src: f.id }); dlg.remove(); } }, "띄우기")))) : null,
-    S.media ? h("button", { class: "danger", style: "margin-top:10px", onclick: () => { sock.send({ t: "media_close" }); dlg.remove(); } }, "지금 공유 끝내기") : null);
+  const showYt = () => {
+    const id = youtubeId(yt.value);
+    if (!id) { toast("유튜브 주소를 확인해 주세요."); return; }
+    sock.send({ t: "media_open", kind: "youtube", src: id });
+    close();
+  };
+  yt.addEventListener("keydown", (e) => { if (e.key === "Enter") showYt(); });
+  const list = S.media_files.map((f) => h("div", { class: "person" },
+    h("span", { class: "grow" }, `${[".mp3", ".m4a", ".wav", ".ogg"].includes(f.ext) ? "🎵" : "🎞️"} ${f.name}`),
+    h("span", { class: "acts" }, h("button", { class: "primary", onclick: () => { sock.send({ t: "media_open", kind: "file", src: f.id }); close(); } }, "띄우기"))));
+  const dlg = h("div", { class: "overlay", id: "media-dialog", onclick: (e) => { if (e.target === dlg) close(); } },
+    h("div", { class: "card" },
+      h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, "🎬 미디어 공유"), h("button", { class: "small", onclick: close }, "닫기")),
+      h("p", { class: "muted", style: "margin:0;font-size:0.88rem" }, "선생님이 재생·멈춤·건너뛰기를 하면 학생 화면도 같은 곳으로 맞춰져요."),
+      h("strong", {}, "유튜브 영상"),
+      h("div", { class: "row" }, yt, h("button", { class: "primary", onclick: showYt }, "띄우기")),
+      h("strong", {}, "내 컴퓨터의 동영상·음악"),
+      list.length ? h("div", { class: "people" }, list) : null,
+      h("div", { class: "row" }, h("button", { onclick: () => { close(); $("#media-input").click(); } }, "＋ 파일 올리기")),
+      h("p", { class: "muted", style: "margin:0;font-size:0.85rem" }, "mp4·webm·mov·mp3·m4a, 500MB까지 · 올린 파일은 수업이 끝나면 지워져요."),
+      S.media ? h("button", { class: "danger", onclick: () => { sock.send({ t: "media_close" }); close(); } }, "지금 공유 끝내기") : null));
   document.body.append(dlg);
   yt.focus();
 }
@@ -714,7 +720,7 @@ $("#media-input").addEventListener("change", async (e) => {
   const f = e.target.files[0];
   e.target.value = "";
   if (!f) return;
-  document.querySelector(".files-dlg")?.remove();
+  $("#media-dialog")?.remove();
   const note = toast(`'${f.name}' 올리는 중…`, 600000);
   try {
     // 큰 파일: 진행률을 보여 주려고 XMLHttpRequest로 올린다
