@@ -190,8 +190,30 @@ apps:
                 connection_policies:
                   - alpn: ["http/1.1"]
               - handler: proxy
+                proxy_protocol: v2  # 접속한 사람의 실제 IP를 안쪽으로 넘긴다 (접속기록용)
                 upstreams:
-                  - dial: ["localhost:8000"]
+                  - dial: ["127.0.0.1:8001"]
+  http:
+    servers:
+      site:
+        # 수업 사이트 안쪽 관문: 실제 IP를 X-Forwarded-For 로 붙여 앱(8000)에 넘긴다.
+        # 바깥에서 보낸 X-Forwarded-For 는 믿지 않고 덮어쓴다.
+        listen: ["127.0.0.1:8001"]
+        listener_wrappers:
+          - wrapper: proxy_protocol
+            allow: ["127.0.0.1/32"]
+        automatic_https:
+          disable: true
+        routes:
+          - handle:
+              - handler: reverse_proxy
+                flush_interval: -1
+                upstreams:
+                  - dial: "127.0.0.1:8000"
+                headers:
+                  request:
+                    set:
+                      X-Forwarded-Proto: ["https"]
 EOF
 
 cat > "$DIR/docker-compose.yaml" <<EOF
@@ -290,9 +312,11 @@ cat > "$BIN/live-update" <<EOF
 set -euo pipefail
 cd "$DIR"
 git -C src pull --ff-only
+before=\$(sha256sum caddy.yaml 2>/dev/null || true)
 LIVE_DIR="$DIR" LIVE_BIN="$BIN" SKIP_SYSTEM=1 bash src/deploy/server/setup.sh >/dev/null
 docker compose build app
 docker compose up -d
+if [ "\$before" != "\$(sha256sum caddy.yaml)" ]; then docker compose restart caddy >/dev/null; fi  # 연결 설정이 바뀌었으면 적용
 echo "✅ 최신 버전으로 올렸어요."
 EOF
 

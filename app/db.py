@@ -443,6 +443,21 @@ grades = Table(
 )
 
 
+access_logs = Table(
+    "access_logs", metadata,  # 개인정보취급자 접속기록: 교사·관리자가 학생 정보를 보거나 고친 기록 (365일 보관 후 자동 삭제)
+    Column("id", Integer, primary_key=True),
+    Column("at", Float, nullable=False, index=True),
+    Column("actor_id", Integer, nullable=False, index=True),
+    Column("actor_name", String(60), nullable=False, default=""),
+    Column("actor_email", String(200), nullable=False, default=""),
+    Column("ip", String(64), nullable=False, default=""),
+    Column("action", String(10), nullable=False),  # 조회 다운로드 수정 삭제
+    Column("what", String(80), nullable=False, default=""),  # 무엇을 (예: 강좌 수강생 명단)
+    Column("target", String(200), nullable=False, default=""),  # 누구 정보를 (강좌·학생)
+    Column("path", String(200), nullable=False, default=""),
+)
+
+
 def init() -> None:
     metadata.create_all(engine)
     # 예전 버전으로 만든 표에 새 칸 추가

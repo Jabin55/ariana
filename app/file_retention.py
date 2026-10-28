@@ -59,6 +59,11 @@ def purge_expired_files(today: date | None = None) -> dict:
 async def file_retention_loop():
     while True:
         try:
+            from app.access_log import purge_old
+
+            old_logs = await db.run(purge_old)
+            if old_logs:
+                log.info("보관 기간(365일)이 지난 접속기록 삭제: %d건", old_logs)
             result = await db.run(purge_expired_files)
             if any(result.values()):
                 log.info("보관 기간이 지난 파일 삭제: 수업 자료 %d개, 과제 파일 %d개",

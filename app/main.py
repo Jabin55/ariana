@@ -35,6 +35,7 @@ from app.history import router as history_router
 from app.prompts import SYSTEM_PROMPT
 from app.evidence import retention_loop, router as evidence_router
 from app.file_retention import file_retention_loop
+from app.access_log import AccessLogMiddleware, router as access_log_router
 from app.privacy_filter import known_member_names, redact_messages
 
 # AI 조교는 비용을 아끼기 위해 가장 가벼운(저렴한) 모델을 쓴다. 바꾸려면 CHATBOT_MODEL 설정
@@ -73,6 +74,7 @@ app = FastAPI(title="정치쌤 챗봇", lifespan=lifespan)
 async def private_validation_error(request, exc):
     return JSONResponse({"detail": [{k: e[k] for k in ("type", "loc", "msg") if k in e}
                                     for e in exc.errors()]}, status_code=422)
+app.add_middleware(AccessLogMiddleware)  # 세션 안쪽: 누가 학생 정보를 봤는지 남긴다
 app.add_middleware(
     SessionMiddleware, secret_key=SECRET_KEY, session_cookie="live_session",
     max_age=14 * 24 * 3600, same_site="lax",
@@ -128,6 +130,7 @@ app.include_router(materials_router)
 app.include_router(assignments_router)
 app.include_router(site_router)
 app.include_router(evidence_router)
+app.include_router(access_log_router)
 
 
 class ChatMessage(BaseModel):

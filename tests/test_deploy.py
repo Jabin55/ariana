@@ -50,8 +50,12 @@ def test_setup_generates_configs_and_keeps_keys(tmp_path):
         "class.49-12-34-56.sslip.io", "rtc.class.49-12-34-56.sslip.io", "turn.class.49-12-34-56.sslip.io"]
     routes = {r["match"][0]["tls"]["sni"][0]: r["handle"][-1]["upstreams"][0]["dial"][0]
               for r in caddy["apps"]["layer4"]["servers"]["main"]["routes"]}
-    assert routes == {"class.49-12-34-56.sslip.io": "localhost:8000", "rtc.class.49-12-34-56.sslip.io": "localhost:7880",
+    assert routes == {"class.49-12-34-56.sslip.io": "127.0.0.1:8001", "rtc.class.49-12-34-56.sslip.io": "localhost:7880",
                       "turn.class.49-12-34-56.sslip.io": "localhost:5349"}
+    # 수업 사이트는 실제 접속 IP(접속기록용)를 PROXY 프로토콜로 안쪽 관문(8001)에 넘기고, 관문이 앱(8000)으로 보낸다
+    site = caddy["apps"]["http"]["servers"]["site"]
+    assert site["listen"] == ["127.0.0.1:8001"] and site["listener_wrappers"][0]["wrapper"] == "proxy_protocol"
+    assert site["routes"][0]["handle"][0]["upstreams"][0]["dial"] == "127.0.0.1:8000"
     compose = yaml.safe_load((live / "docker-compose.yaml").read_text())
     assert set(compose["services"]) == {"caddy", "livekit", "db", "app"}
     assert all(s["restart"] == "unless-stopped" for s in compose["services"].values())

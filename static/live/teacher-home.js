@@ -269,6 +269,7 @@ function drawEnrollResult(box) {
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const text = "﻿" + [head, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
     const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: `수강생_${today()}.csv` });
+    api("/api/access-log/export", { what: `수강생 명단 엑셀 (${list.length}명)` }).catch(() => {});
     document.body.append(a);
     a.click();
     a.remove();
@@ -1097,6 +1098,7 @@ function drawSchoolResult(box) {
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const text = "\ufeff" + [HEAD, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
     const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: `우리학교_학생관리_${today()}.csv` });
+    api("/api/access-log/export", { what: `우리 학교 학생 관리 엑셀 (${list.length}명)` }).catch(() => {});
     document.body.append(a);
     a.click();
     a.remove();

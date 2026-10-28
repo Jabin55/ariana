@@ -1268,7 +1268,7 @@ async function bannersEditor(reload) {
 
 async function loadAdmin() {
   const selected = adminSub;
-  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"]];
+  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속기록"]];
   $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, label]) => h("button", {
     type: "button", class: adminSub === key ? "active" : "", onclick: () => { adminSub = key; loadAdmin(); }
   }, label)));
@@ -1282,6 +1282,10 @@ async function loadAdmin() {
   if (selected === "name") {
     const board = await profileChangeBoard("name");
     if (adminSub === selected) fill(box, h("h2", {}, "이름 변경 승인"), board, nameFixer());
+    return;
+  }
+  if (selected === "logs") {
+    if (adminSub === selected) fill(box, accessLogBoard());
     return;
   }
   if (selected === "banner") {
@@ -1302,6 +1306,35 @@ async function loadAdmin() {
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
   fill(box, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
+}
+
+function accessLogBoard() {
+  const q = h("input", { type: "search", placeholder: "이름·이메일·학생·강좌·IP 검색" });
+  const action = h("select", {}, ["", "조회", "다운로드", "수정", "삭제"].map((v) => h("option", { value: v }, v || "전체 행위")));
+  const days = h("select", {}, [[7, "최근 7일"], [30, "최근 30일"], [90, "최근 90일"], [365, "최근 365일"]].map(([v, t]) =>
+    h("option", { value: v, selected: v === 30 }, t)));
+  const out = h("div", {});
+  const two = (n) => String(n).padStart(2, "0");
+  const when = (t) => { const d = new Date(t * 1000); return `${d.getFullYear()}.${two(d.getMonth() + 1)}.${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
+  const load = async () => {
+    fill(out, h("p", { class: "muted" }, "불러오는 중…"));
+    try {
+      const p = new URLSearchParams({ q: q.value, action: action.value, days: days.value });
+      const { logs } = await api(`/api/admin/access-logs?${p}`);
+      fill(out, logs.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+        h("thead", {}, h("tr", {}, ["일시", "접속자", "IP", "행위", "무엇을", "대상"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, logs.map((x) => h("tr", {},
+          h("td", {}, when(x.at)), h("td", {}, `${x.actor_name || "-"} (${x.actor_email})`), h("td", {}, x.ip || "-"),
+          h("td", {}, x.action), h("td", {}, x.what), h("td", {}, x.target || "-"))))))
+        : h("p", { class: "muted" }, "해당 기간에 남은 접속기록이 없어요."));
+    } catch (e) { fill(out, h("p", { class: "error" }, e.message)); }
+  };
+  [action, days].forEach((el) => el.addEventListener("change", load));
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+  load();
+  return h("div", {}, h("h2", {}, "접속기록"),
+    h("p", { class: "muted" }, "교사·관리자가 학생 정보를 조회·내려받기·수정·삭제한 기록입니다. 365일 보관 후 자동 삭제됩니다."),
+    h("div", { class: "row" }, q, action, days, h("button", { type: "button", class: "small", onclick: load }, "검색")), out);
 }
 
 async function profileChangeBoard(field) {

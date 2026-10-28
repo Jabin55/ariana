@@ -2574,3 +2574,45 @@ def test_withdrawn_student_course_requests_stay_anonymous():
     assert len(likes) == 2 and uid not in likes
     board = TestClient(app).get("/api/course-requests/board").json()["requests"]
     assert board[0]["likes"] == 2
+
+
+def test_access_logs_record_staff_handling_of_student_data(monkeypatch):
+    """교사가 학생 정보를 보거나 고치면 접속기록이 남고, 전체 관리자만 볼 수 있으며, 365일 지나면 지워진다."""
+    from app import access_log
+
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    t = teacher()
+    cid = t.post("/api/courses", json={**COURSE, "title": "기록 강좌"}).json()["id"]
+    a = student(1)
+    assert a.post(f"/api/courses/{cid}/enroll").status_code == 200
+    uid = t.get(f"/api/courses/{cid}/enrollments").json()["enrollments"][0]["user_id"]
+    assert t.post(f"/api/courses/{cid}/enrollments/{uid}", json={"status": "approved"}).status_code == 200
+    assert t.post("/api/access-log/export", json={"what": "수강생 명단 엑셀 (1명)"}).status_code == 200
+    a.get("/api/my/enrollments")  # 학생 본인 조회는 기록하지 않는다
+    assert t.get("/api/courses/999/enrollments").status_code == 404  # 실패한 요청도 남기지 않는다
+
+    assert t.get("/api/admin/access-logs").status_code == 403
+    admin = login("admin@gmail.com", name="관리자", school=SCHOOL)
+    logs = admin.get("/api/admin/access-logs").json()["logs"]
+    rows = [(x["actor_email"], x["action"], x["what"], x["target"]) for x in reversed(logs)]
+    assert rows == [
+        ("teacher@gmail.com", "조회", "강좌 수강생 명단", "강좌 기록 강좌"),
+        ("teacher@gmail.com", "수정", "수강 승인·반려", f"강좌 기록 강좌 · 회원 학생1 ({SCHOOL})"),
+        ("teacher@gmail.com", "다운로드", "수강생 명단 엑셀 (1명)", ""),
+    ]
+    assert all(x["ip"] for x in logs) and logs[0]["actor_name"] == "박선생"
+    assert admin.get("/api/admin/access-logs?action=다운로드").json()["logs"][0]["what"].startswith("수강생 명단")
+    # 관리자가 접속기록을 본 것도 남는다
+    assert admin.get("/api/admin/access-logs?q=admin@gmail.com").json()["logs"][0]["what"] == "접속기록"
+
+    with db.engine.begin() as c:
+        c.execute(db.access_logs.update().where(db.access_logs.c.what == "강좌 수강생 명단").values(at=time.time() - 366 * 86400))
+    assert access_log.purge_old() == 1
+    with db.engine.begin() as c:
+        assert c.execute(db.access_logs.select().where(db.access_logs.c.what == "강좌 수강생 명단")).first() is None
+
+
+def test_privacy_mentions_access_logs():
+    html = TestClient(app).get("/live/privacy").text
+    assert "별도의 로그인 이력 데이터베이스는 운영하지 않습니다" not in html
+    assert "접속기록" in html and "365일간 보관" in html

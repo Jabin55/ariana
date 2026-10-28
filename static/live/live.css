@@ -1416,3 +1416,8 @@ table.att.school-change-table td:last-child { min-width: 150px; }
 .transfer-card dl { grid-template-columns: 10.5em minmax(0, 1fr); }
 .transfer-items { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; }
 @media (max-width: 520px) { .transfer-card dl { grid-template-columns: minmax(0, 1fr); } }
+
+/* 전체 관리 > 접속기록 */
+table.att.log-table { table-layout: auto; min-width: 860px; }
+table.att.log-table th, table.att.log-table td { white-space: nowrap; font-size: 13px; }
+table.att.log-table td:last-child { white-space: normal; }
