@@ -571,7 +571,7 @@ class MediaShare {
     this.title = h("strong", { class: "grow" }, `🎬 ${m.title}`);
     this.tap = h("button", { class: "primary", hidden: true, onclick: () => { this.tap.hidden = true; this.sync(true); } }, "▶ 눌러서 함께 보기");
     const bar = h("div", { class: "media-bar" }, this.title, this.tap,
-      this.teacher ? h("button", { class: "small", onclick: () => this.onClose?.() }, "공유 끝내기") : null);
+      this.teacher ? h("button", { class: "small danger", onclick: () => this.onClose?.() }, "공유 끝내기") : null);
     const stage = h("div", { class: "media-stage" });
     this.box.append(bar, stage);
     if (m.kind === "youtube") {
