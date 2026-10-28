@@ -845,7 +845,7 @@ function renderPresent() {
       h("input", { type: "checkbox", checked: showStudents, onchange: (e) => {
         showStudents = e.target.checked; store.set("present-show-students", showStudents); renderPresent(); if (mainRoom) renderMain(mainRoom);
       } }), "영상 보기"),
-    h("button", { class: "small", title: "발표 자료 (올리기·고르기)", onclick: openFiles }, "📄"),
+    h("button", { class: "small", title: "발표 자료 (올리기·고르기)", onclick: openFiles }, "문서"),
     h("button", { class: "small danger", onclick: () => sock.send({ t: "present_close" }) }, "발표 끝내기")].filter(Boolean));
 }
 
