@@ -266,6 +266,14 @@
       <div data-panel="meet" hidden>
         <div class="meet-grid">
           <section class="card">
+            <h2>🔑 입장 코드로 참가</h2>
+            <form id="meet-join">
+              <input id="meet-code" maxlength="12" placeholder="받은 입장 코드" autocomplete="off" style="text-transform:uppercase">
+              <button class="primary" type="submit">참가하기</button>
+              <p class="error" id="meet-join-error"></p>
+            </form>
+          </section>
+          <section class="card">
             <h2>🎥 지금 바로 열기</h2>
             <form id="meet-now">
               <input id="meet-title" maxlength="60" placeholder="이름 (예: 1학년 진로 특강, 교과협의회)">
@@ -279,14 +287,6 @@
               <input id="book-title" maxlength="60" required placeholder="이름 (예: 학부모 설명회)">
               <div class="row"><input type="date" id="book-date" required><input type="time" id="book-time" required></div>
               <button class="primary" type="submit">예약하고 입장 코드 받기</button>
-            </form>
-          </section>
-          <section class="card">
-            <h2>🔑 입장 코드로 참가</h2>
-            <form id="meet-join">
-              <input id="meet-code" maxlength="12" placeholder="받은 입장 코드" autocomplete="off" style="text-transform:uppercase">
-              <button class="primary" type="submit">참가하기</button>
-              <p class="error" id="meet-join-error"></p>
             </form>
           </section>
         </div>
