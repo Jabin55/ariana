@@ -111,7 +111,9 @@ async def apply(req: ApplyReq, request: Request):
     hub_name = req.hub_name.strip()
     affiliation = req.affiliation.strip()
     if req.role in ("coordinator", "participant"):
-        what = "거점학교" if req.role == "coordinator" else "근무 중인 참여학교"
+        # 관리교사가 관리할 학교 = 신청서의 소속 학교 (따로 고르지 않는다)
+        hub_name = hub_name or affiliation
+        what = "소속 학교" if req.role == "coordinator" else "근무 중인 참여학교"
         if not hub_name:
             raise HTTPException(400, f"{what}를 골라 주세요.")
         schools = await db.run(get_schools)  # 울산 시내 학교 목록에서만

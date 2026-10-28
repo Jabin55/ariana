@@ -2492,3 +2492,20 @@ def test_remember_me_controls_login_cookie(monkeypatch):
     assert "max-age=1209600" in r.headers["set-cookie"].lower()
     monkeypatch.setattr(auth_mod.time, "time", lambda: real() + 13 * 3600)
     assert k.get("/api/me").json()["user"]["email"] == "keep@gmail.com"
+
+
+def test_coordinator_school_comes_from_affiliation(monkeypatch):
+    """관리교사 신청: 따로 고르지 않아도 소속 학교가 관리할 거점학교가 된다"""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    boss.post("/api/admin/schools", json={"text": "가나고등학교\n다라고등학교"})
+    g = TestClient(app)
+    google_login(g, "coord2@gmail.com")
+    form = {"role": "coordinator", "name": "한관리", "contact": "010", "pledge": True, "affil_type": "school",
+            "office": "울산광역시교육청", "email": "han@use.go.kr"}
+    assert staff_apply(g, {**form, "affiliation": "없는학교"}).status_code == 400  # 목록에 없는 학교
+    assert staff_apply(g, {**form, "affiliation": "다라고등학교"}).status_code == 200
+    a = boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"][0]
+    assert a["hub"] == "다라고등학교"
+    boss.post(f"/api/staff/{a['id']}", json={"action": "approve"})
+    assert [h["name"] for h in g.get("/api/me").json()["user"]["coordinator_hubs"]] == ["다라고등학교"]

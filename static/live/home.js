@@ -696,11 +696,16 @@ const AFFIL = {
   cert: ["소속 (있으면)", "없으면 비워 두세요", false],
   other: ["소속 기관 (있으면)", "예: ○○연구소", false],
 };
+/** 관리교사: 소속 학교를 울산 고등학교 목록에서 고르면 그 학교가 관리할 거점학교가 된다 */
 function syncManagedSchool() {
   const role = document.querySelector("input[name=a-role]:checked").value;
-  const sameSchool = role !== "instructor" && $("#a-affil-type").value === "school";
-  $("#a-aff").readOnly = sameSchool;
-  if (sameSchool) $("#a-aff").value = $("#a-hub-name").value.trim();
+  const aff = $("#a-aff");
+  aff.readOnly = false;
+  if (role !== "instructor") {
+    aff.setAttribute("list", "school-options");
+    aff.setAttribute("autocomplete", "off");
+    aff.placeholder = "학교 이름 일부를 입력해 검색 (예: 신정)";
+  } else aff.removeAttribute("list");
 }
 function updateAffil() {
   const t = $("#a-affil-type").value;
@@ -718,7 +723,6 @@ function updateAffil() {
   syncManagedSchool();
 }
 $("#a-affil-type").addEventListener("change", updateAffil);
-$("#a-hub-name").addEventListener("input", syncManagedSchool);
 
 function updateApplyRole() {
   const role = document.querySelector("input[name=a-role]:checked").value;
@@ -727,9 +731,6 @@ function updateApplyRole() {
   affiliationType.disabled = role !== "instructor";
   updateAffil();
   $("#a-kind-wrap").hidden = role !== "instructor";
-  $("#a-hub-name-wrap").hidden = role === "instructor";
-  $("#a-hub-name").required = role !== "instructor";
-  $("#a-hub-name-label").textContent = "근무 중인 학교";
   $("#a-wish-wrap").hidden = role !== "instructor";
   $("#a-wish-from").required = $("#a-wish-until").required = role === "instructor";
   $("#a-msg-wrap").hidden = role !== "coordinator";
@@ -743,7 +744,7 @@ $("#apply").addEventListener("submit", async (e) => {
   $("#apply-error").textContent = "";
   const role = document.querySelector("input[name=a-role]:checked").value;
   const first = !ME.memberships.length; // 처음 가입 신청이면 '가입완료' 안내로
-  const place = role === "instructor" ? "" : $("#a-hub-name").value.trim();
+  const place = role === "instructor" ? "" : $("#a-aff").value.trim();
   withConsent("guest-view", () => sendApply(role, first, place));
 });
 
@@ -752,7 +753,7 @@ async function sendApply(role, first, place) {
     await api("/api/staff/apply", {
       role, hub_id: null,
       replace_membership_id: guestReplacingRole ? Number($("#a-replace").value) || null : null,
-      hub_name: role !== "instructor" ? $("#a-hub-name").value : "",
+      hub_name: role !== "instructor" ? $("#a-aff").value.trim() : "", // 관리교사: 소속 학교 = 관리할 거점학교
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value, gender: $("#a-gender").value,
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
       department: $("#a-affil-type").value === "univ" ? $("#a-dept").value.trim() : "",
