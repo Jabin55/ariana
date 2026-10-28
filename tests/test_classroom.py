@@ -2695,6 +2695,7 @@ def test_students_draw_on_whiteboard_only_own_strokes():
         key = state(sa, lambda m: m.get("present") and m["present"]["mode"] == "board") and cr.present_key(k)
         tw.send_json({"t": "stroke", "key": key, "id": "t1", "color": "#222222", "size": 3, "pts": [[0.5, 0.5]]})
         sa.send_json({"t": "stroke", "key": key, "id": "a1", "color": "#d92d20", "size": 3, "pts": [[0.1, 0.1], [0.2, 0.2]]})
+        time.sleep(0.3)  # 학생 둘의 메시지는 처리 순서가 정해져 있지 않다 → a의 획이 먼저 들어가게
         sb.send_json({"t": "stroke", "key": key, "id": "a1", "color": "#1d5fd6", "size": 3, "pts": [[0.9, 0.9]]})  # 남의 획에 이어 쓰기
         sb.send_json({"t": "stroke_del", "key": key, "ids": ["t1", "a1"]})  # 남의 획 지우기
         tw.send_json({"t": "ping"})

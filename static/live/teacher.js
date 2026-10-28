@@ -748,22 +748,26 @@ $("#media-input").addEventListener("change", async (e) => {
 $("#quiz-btn").addEventListener("click", () => showTab("activity"));
 
 const STICKERS = [["👏", "박수"], ["👍", "좋아요"], ["⭐", "칭찬"], ["💯", "최고"], ["🎉", "축하"], ["❤️", "하트"], ["💡", "좋은 생각"], ["🔥", "열정"]];
-$("#sticker-btn").addEventListener("click", (e) => {
-  e.stopPropagation();
-  const pop = $("#sticker-pop");
-  if (!pop.hidden) { pop.hidden = true; return; }
+$("#sticker-btn").addEventListener("click", () => {
+  $("#sticker-dialog")?.remove();
+  const close = () => dlg.remove();
   const online = koSort(S.students.filter((s) => s.online), (s) => s.name);
   const to = h("select", {}, h("option", { value: "" }, "👥 모두에게"), online.map((s) => h("option", { value: s.id }, `${s.name}${s.stickers ? ` (⭐${s.stickers})` : ""}`)));
-  pop.replaceChildren(
-    h("div", { class: "row" }, h("strong", { class: "grow" }, "🏅 칭찬 스티커"), to),
-    h("div", { class: "sticker-grid" }, STICKERS.map(([s, label]) => h("button", { type: "button", title: label, onclick: () => {
-      sock.send({ t: "sticker", s, target: to.value || null });
-    } }, h("span", { class: "sticker-ico" }, s), h("small", {}, label)))),
-    h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.8rem" }, "학생을 고르면 그 학생 화면에 크게 뜨고, 받은 스티커 수가 학생 목록에 쌓여요."));
-  pop.hidden = false;
+  const dlg = h("div", { class: "overlay", id: "sticker-dialog", onclick: (e) => { if (e.target === dlg) close(); } },
+    h("div", { class: "card" },
+      h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, "🏅 칭찬 스티커"), h("button", { class: "small", onclick: close }, "닫기")),
+      h("label", { class: "row" }, "받을 사람", to),
+      h("div", { class: "sticker-grid" }, STICKERS.map(([s, label]) => h("button", { type: "button", title: label, onclick: () => {
+        sock.send({ t: "sticker", s, target: to.value || null });
+        toast(`${s} ${label} 스티커를 ${to.value ? to.selectedOptions[0].textContent.replace(/ \(⭐\d+\)$/, "") : "모두"}에게 보냈어요.`);
+        close();
+      } }, h("span", { class: "sticker-ico" }, s), h("small", {}, label)))),
+      h("p", { class: "muted", style: "margin:0;font-size:0.85rem" }, "학생을 고르면 그 학생 화면에 크게 뜨고, 받은 스티커 수가 학생 목록에 쌓여요.")));
+  document.body.append(dlg);
 });
+
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".sticker-wrap")) { $("#sticker-pop").hidden = true; const bp = $("#board-sticker-pop"); if (bp) bp.hidden = true; }
+  if (!e.target.closest(".sticker-wrap")) { const bp = $("#board-sticker-pop"); if (bp) bp.hidden = true; }
 });
 
 /* ───── 자료 발표(PDF)·화이트보드 ───── */
