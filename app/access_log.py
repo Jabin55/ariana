@@ -13,7 +13,7 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 
 from app import db
 
@@ -39,7 +39,7 @@ _RULES = [
     ("POST", r"/api/admin/change-requests/\d+", "수정", "이름·소속 변경 처리"),
     ("GET", r"/api/admin/users", "조회", "회원 검색"),
     ("POST", r"/api/admin/users/(?P<user>\d+)/name", "수정", "회원 이름 수정"),
-    ("GET", r"/api/admin/access-logs", "조회", "접속기록"),
+    ("GET", r"/api/admin/access-logs", "조회", "접속 기록"),
     ("GET", r"/api/courses/(?P<course>\d+)/learning", "조회", "학습 기록"),
     ("GET", r"/api/live/history/(?P<class>\d+)", "조회", "수업 기록(출결·답안)"),
     ("GET", r"/api/live/history/(?P<class>\d+)/questions", "조회", "수업 질문"),
@@ -157,14 +157,16 @@ async def log_export(body: Export, request: Request):
 
 
 @router.get("/api/admin/access-logs")
-async def list_logs(request: Request, q: str = "", action: str = "", days: int = 30, limit: int = 300):
+async def list_logs(request: Request, q: str = "", action: str = "", days: int = 30, size: int = 30, page: int = 1):
+    """접속 기록 목록: 한 쪽에 size(30·50·100)개씩, page쪽 (최근 것부터)"""
     from app.auth import require_user
 
     u = await require_user(request)
     if not u["is_admin"]:
         raise HTTPException(403, "전체 관리자만 볼 수 있어요.")
     days = max(1, min(days, KEEP_DAYS))
-    limit = max(1, min(limit, 2000))
+    size = size if size in (30, 50, 100) else 30
+    page = max(1, page)
 
     def load():
         t = db.access_logs.c
@@ -176,6 +178,9 @@ async def list_logs(request: Request, q: str = "", action: str = "", days: int =
             stmt = stmt.where(t.actor_name.like(like) | t.actor_email.like(like) | t.target.like(like)
                               | t.what.like(like) | t.ip.like(like))
         with db.engine.begin() as c:
-            return [dict(r._mapping) for r in c.execute(stmt.order_by(t.at.desc()).limit(limit))]
+            total = c.execute(select(func.count()).select_from(stmt.subquery())).scalar() or 0
+            rows = [dict(r._mapping) for r in c.execute(stmt.order_by(t.at.desc()).limit(size).offset((page - 1) * size))]
+            return total, rows
 
-    return {"logs": await db.run(load), "keep_days": KEEP_DAYS}
+    total, rows = await db.run(load)
+    return {"logs": rows, "total": total, "page": page, "size": size, "keep_days": KEEP_DAYS}

@@ -1268,7 +1268,7 @@ async function bannersEditor(reload) {
 
 async function loadAdmin() {
   const selected = adminSub;
-  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속기록"], ["storage", "서버 용량"]];
+  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속 기록"], ["storage", "서버 용량"]];
   $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, label]) => h("button", {
     type: "button", class: adminSub === key ? "active" : "", onclick: () => { adminSub = key; loadAdmin(); }
   }, label)));
@@ -1344,28 +1344,39 @@ function accessLogBoard() {
   const action = h("select", {}, ["", "조회", "다운로드", "수정", "삭제"].map((v) => h("option", { value: v }, v || "전체 행위")));
   const days = h("select", {}, [[7, "최근 7일"], [30, "최근 30일"], [90, "최근 90일"], [365, "최근 365일"]].map(([v, t]) =>
     h("option", { value: v, selected: v === 30 }, t)));
+  let size = 30;
+  try { size = Number(localStorage.getItem("access-log-size")) || 30; } catch { /* 저장 안 됨 */ }
+  const per = h("select", { title: "한 쪽에 보일 개수" }, [30, 50, 100].map((n) => h("option", { value: n, selected: n === size }, `${n}개씩`)));
+  let page = 1;
   const out = h("div", {});
   const two = (n) => String(n).padStart(2, "0");
   const when = (t) => { const d = new Date(t * 1000); return `${d.getFullYear()}.${two(d.getMonth() + 1)}.${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`; };
   const load = async () => {
     fill(out, h("p", { class: "muted" }, "불러오는 중…"));
     try {
-      const p = new URLSearchParams({ q: q.value, action: action.value, days: days.value });
-      const { logs } = await api(`/api/admin/access-logs?${p}`);
+      const p = new URLSearchParams({ q: q.value, action: action.value, days: days.value, size: per.value, page });
+      const { logs, total } = await api(`/api/admin/access-logs?${p}`);
+      const pages = Math.max(1, Math.ceil(total / Number(per.value)));
+      const go = (n) => { page = n; load(); };
+      const pager = total > logs.length ? h("div", { class: "row", style: "justify-content:center;margin-top:10px" },
+        h("button", { type: "button", class: "small", disabled: page <= 1, onclick: () => go(page - 1) }, "◀ 이전"),
+        h("span", { class: "muted" }, `${page} / ${pages}쪽 · 모두 ${total}건`),
+        h("button", { type: "button", class: "small", disabled: page >= pages, onclick: () => go(page + 1) }, "다음 ▶")) : null;
       fill(out, logs.length ? h("div", { class: "table-wrap" }, h("table", { class: "att audit-table" },
         h("thead", {}, h("tr", {}, ["일시", "접속자", "IP", "행위", "무엇을", "대상"].map((t) => h("th", {}, t)))),
         h("tbody", {}, logs.map((x) => h("tr", {},
           h("td", {}, when(x.at)), h("td", {}, `${x.actor_name || "-"} (${x.actor_email})`), h("td", {}, x.ip || "-"),
           h("td", {}, x.action), h("td", {}, x.what), h("td", {}, x.target || "-"))))))
-        : h("p", { class: "muted" }, "해당 기간에 남은 접속기록이 없어요."));
+        : h("p", { class: "muted" }, "해당 기간에 남은 접속 기록이 없어요."), pager);
     } catch (e) { fill(out, h("p", { class: "error" }, e.message)); }
   };
-  [action, days].forEach((el) => el.addEventListener("change", load));
-  q.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+  [action, days].forEach((el) => el.addEventListener("change", () => { page = 1; load(); }));
+  per.addEventListener("change", () => { try { localStorage.setItem("access-log-size", per.value); } catch { /* 무시 */ } page = 1; load(); });
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") { page = 1; load(); } });
   load();
-  return h("div", {}, h("h2", {}, "접속기록"),
+  return h("div", {}, h("h2", {}, "접속 기록"),
     h("p", { class: "muted" }, "교사·관리자가 학생 정보를 조회·내려받기·수정·삭제한 기록입니다. 365일 보관 후 자동 삭제됩니다."),
-    h("div", { class: "row" }, q, action, days, h("button", { type: "button", class: "small", onclick: load }, "검색")), out);
+    h("div", { class: "row" }, q, action, days, per, h("button", { type: "button", class: "small", onclick: () => { page = 1; load(); } }, "검색")), out);
 }
 
 async function profileChangeBoard(field) {

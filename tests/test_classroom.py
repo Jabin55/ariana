@@ -2609,7 +2609,7 @@ def test_access_logs_record_staff_handling_of_student_data(monkeypatch):
     assert all(x["ip"] for x in logs) and logs[0]["actor_name"] == "박선생"
     assert admin.get("/api/admin/access-logs?action=다운로드").json()["logs"][0]["what"].startswith("수강생 명단")
     # 관리자가 접속기록을 본 것도 남는다
-    assert admin.get("/api/admin/access-logs?q=admin@gmail.com").json()["logs"][0]["what"] == "접속기록"
+    assert admin.get("/api/admin/access-logs?q=admin@gmail.com").json()["logs"][0]["what"] == "접속 기록"
 
     with db.engine.begin() as c:
         c.execute(db.access_logs.update().where(db.access_logs.c.what == "강좌 수강생 명단").values(at=time.time() - 366 * 86400))
@@ -2779,3 +2779,18 @@ def test_meeting_materials_deleted_when_meeting_ends(monkeypatch, tmp_path):
     (tmp_path / "slides" / str(old) / "mold.pdf").write_bytes(b"pdf")
     assert purge_expired_files()["materials"] == 1
     assert not (tmp_path / "slides" / str(old) / "mold.pdf").exists()
+
+
+def test_access_logs_paging(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    admin = login("admin@gmail.com", name="관리자", school=SCHOOL)
+    now = time.time()
+    with db.engine.begin() as c:
+        for i in range(65):
+            c.execute(db.access_logs.insert().values(at=now - i, actor_id=1, actor_name="박선생", actor_email="t@x",
+                                                     ip="1.1.1.1", action="조회", what=f"항목{i}", target="", path="/"))
+    d = admin.get("/api/admin/access-logs?q=항목").json()
+    assert (d["total"], d["size"], len(d["logs"]), d["logs"][0]["what"]) == (65, 30, 30, "항목0")
+    d = admin.get("/api/admin/access-logs?q=항목&size=50&page=2").json()
+    assert (len(d["logs"]), d["logs"][0]["what"]) == (15, "항목50")
+    assert admin.get("/api/admin/access-logs?size=7").json()["size"] == 30  # 30·50·100만
