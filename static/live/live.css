@@ -1215,14 +1215,14 @@ body.class-t .layout-pick { color: #e9edf2; }
 body.class-t .layout-pick select { background: #3a404a; color: #e9edf2; border-color: #4a515c; }
 body.class-t .rec-btn { color: #ff6b6b !important; font-weight: 700; }
 body.class-t .workspace { grid-template-columns: 78px minmax(0, 1fr) 340px; }
-body.class-t .rail { background: #f5f1ea; /* 사이트 메뉴 막대와 같은 미색 */ display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 4px; overflow-y: auto; }
-body.class-t .rail-clock { color: #1b6b4a; font: 700 0.72rem ui-monospace, monospace; text-align: center; padding: 4px 0 8px; border-bottom: 1px solid rgba(120, 100, 70, 0.18); margin-bottom: 4px; }
-body.class-t .rail-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; background: transparent; border: 0; color: #3b3530;
+body.class-t .rail { background: #e8663a; /* 외솔온닷 주황 (로고의 '온닷' 색) */ display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 4px; overflow-y: auto; }
+body.class-t .rail-clock { color: #fff; font: 700 0.72rem ui-monospace, monospace; text-align: center; padding: 4px 0 8px; border-bottom: 1px solid #ffffff55; margin-bottom: 4px; }
+body.class-t .rail-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; background: transparent; border: 0; color: #fff;
   border-radius: 10px; min-height: 0; width: 100%; }
 body.class-t .rail-btn .ri { font-size: 1.35rem; line-height: 1; }
 body.class-t .rail-btn .rl { font-size: 0.68rem; font-weight: 600; white-space: nowrap; }
-body.class-t .rail-btn:hover { background: rgba(120, 100, 70, 0.10); }
-body.class-t .rail-btn.on { background: #1b6b4a; color: #fff; }
+body.class-t .rail-btn:hover { background: #ffffff2e; }
+body.class-t .rail-btn.on { background: #fff; color: #c94f24; }
 body.class-t .rail .sticker-wrap { display: block; }
 body.class-t .rail .sticker-pop { bottom: auto; top: 0; left: calc(100% + 8px); transform: none; color: var(--text, #222); }
 body.class-t .mainarea { background: #1d2128; color: #e9edf2; }
