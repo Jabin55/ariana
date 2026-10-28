@@ -153,7 +153,8 @@ class Klass:
     questions: list[dict] = field(default_factory=list)
     activity: dict | None = None
     settings: dict = field(default_factory=lambda: {
-        "chat": True, "ai": True, "mic_lock": MIC_LOCK_DEFAULT, "lowbw": LOW_BANDWIDTH_DEFAULT})
+        "chat": True, "ai": True, "mic_lock": MIC_LOCK_DEFAULT, "lowbw": LOW_BANDWIDTH_DEFAULT,
+        "mirror": True})  # mirror: 카메라 영상 좌우 반전 (모두의 화면에 같이)
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
     ends_at: float | None = None
@@ -1623,7 +1624,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     if handle_present(k, conn, m):
         return
     if t == "settings":
-        for name in ("ai",):  # 학생 채팅·데이터 절약 모드는 언제나 켜져 있다
+        for name in ("ai", "mirror"):  # 학생 채팅·데이터 절약 모드는 언제나 켜져 있다
             if name in m:
                 k.settings[name] = bool(m[name])
         if "mic_lock" in m:  # 통제를 바꾸면 남아 있는 마이크 요청은 지운다

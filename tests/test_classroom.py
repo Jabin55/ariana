@@ -2662,3 +2662,17 @@ def test_websocket_not_dropped_by_idle_check(monkeypatch):
     assert asyncio.run(auth.current_user(ws))["id"] == uid
     ws.session["login_at"] = time.time() - 13 * 3600  # 12시간 제한은 그대로
     assert asyncio.run(auth.current_user(ws)) is None
+
+
+def test_mirror_setting_toggles_for_everyone():
+    """카메라 좌우 반전은 기본으로 켜져 있고, 선생님이 끄면 학생 상태에도 같이 반영된다."""
+    t = teacher()
+    code = create(t)["code"]
+    a = student(1)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        assert state(tw)["settings"]["mirror"] is True
+        tw.send_json({"t": "settings", "mirror": False})
+        assert state(sa, lambda m: m["settings"]["mirror"] is False)["settings"]["mirror"] is False
+        sa.send_json({"t": "settings", "mirror": True})  # 학생은 바꿀 수 없다
+        tw.send_json({"t": "ping"})
+        assert cr.classes[code].settings["mirror"] is False

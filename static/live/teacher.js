@@ -254,9 +254,11 @@ function renderMain(room) {
 
 function renderControls() {
   const ok = mainRoom?.state === "connected";
-  $("#mic").textContent = prefs.mic ? "🎤 마이크 켜짐" : "🔇 마이크 꺼짐";
+  $("#mic").textContent = prefs.mic ? "🎤" : "🔇";
+  $("#mic").title = prefs.mic ? "내 마이크 켜짐 (누르면 꺼져요)" : "내 마이크 꺼짐 (누르면 켜져요)";
   $("#mic").classList.toggle("on", prefs.mic);
-  $("#cam").textContent = prefs.cam ? "📷 카메라 켜짐" : "📷 카메라 꺼짐";
+  $("#cam").textContent = "📷";
+  $("#cam").title = prefs.cam ? "내 카메라 켜짐 (누르면 꺼져요)" : "내 카메라 꺼짐 (누르면 켜져요)";
   $("#cam").classList.toggle("on", prefs.cam);
   $("#screen .rl").textContent = prefs.screen ? "공유 중지" : "화면공유";
   $("#screen").classList.toggle("on", prefs.screen);
@@ -650,6 +652,8 @@ function render() {
   tickTimer();
 
   $("#set-ai").checked = S.settings.ai;
+  document.body.classList.toggle("no-mirror", S.settings.mirror === false);
+  $("#mirror-btn").classList.toggle("on", S.settings.mirror !== false);
   renderLayout();
   applyQuality();
   renderPeople();
@@ -1081,6 +1085,7 @@ function renderPeople() {
 }
 
 $("#set-ai").addEventListener("change", (e) => sock.send({ t: "settings", ai: e.target.checked }));
+$("#mirror-btn").addEventListener("click", () => sock.send({ t: "settings", mirror: S?.settings.mirror === false }));
 $("#mute-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "mute", target: "all" }); toast("모든 학생의 마이크를 껐어요."); });
 
 /* ───── 학생 화면 구성: 선생님 크게 / 모두 나열 / 토론(학생 둘) ───── */

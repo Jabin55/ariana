@@ -429,6 +429,7 @@ function renderQuestions() {
 
 function renderTabs() {
   $("#ai-tab").hidden = !S.settings.ai;
+  document.body.classList.toggle("no-mirror", S.settings.mirror === false);
   if (!S.settings.ai && activeTab === "ai") showTab("chat");
   if (S.settings.ai && !ai) ai = new AIChat($("#ai-panel"));
 }

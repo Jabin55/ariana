@@ -165,6 +165,7 @@ label.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .tile.screen video { object-fit: contain; background: #000; }
 /* 카메라 영상은 거울처럼 좌우 반전해서 보여 준다 (모든 사람 화면에서 같게). 화면 공유는 글자가 뒤집히지 않게 그대로 */
 .tile:not(.screen) video { transform: scaleX(-1); }
+body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]을 끈 경우 */
 .tile .avatar {
   position: absolute; inset: 0; display: grid; place-items: center; color: #dde;
   font-size: 1.6rem; font-weight: 700;
@@ -1210,7 +1211,7 @@ body.class-t .topbar h1 { color: #fff; font-size: 1rem; }
 body.class-t .topbar .code { color: #7fe0d0; }
 body.class-t .topbar .tb-count, body.class-t .topbar .status { color: #b8c0cc; background: transparent; border-color: #444b56; }
 body.class-t .topbar button:not(.danger):not(.primary), body.class-t .topbar .button { background: #3a404a; color: #e9edf2; border-color: #4a515c; }
-body.class-t .topbar button.on { background: #1f7a5c; border-color: #1f7a5c; color: #fff; }
+body.class-t .topbar button.on:not(.danger):not(.primary) { background: #1f7a5c; border-color: #1f7a5c; color: #fff; }
 body.class-t .tb-center { display: flex; align-items: center; gap: 8px; }
 body.class-t .tb-btn { min-height: 34px; }
 body.class-t .layout-pick { color: #e9edf2; }
@@ -1442,3 +1443,8 @@ table.att.change-table th, table.att.change-table td { text-align: center; white
 .sheet canvas.ink.grab { cursor: grab; touch-action: none; }
 .board-stickers { display: inline-flex; gap: 2px; }
 .board-stickers button { font-size: 1.05rem; padding: 2px 4px; }
+body.class-t .topbar h1 { min-width: 3em; flex-shrink: 1; }
+body.class-t .topbar .code, body.class-t .topbar .tb-count { white-space: nowrap; flex-shrink: 0; }
+body.class-t .topbar .status { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
+body.class-t #mic, body.class-t #cam { min-width: 44px; font-size: 1.15rem; padding: 4px 10px; }
+body.class-t #cam:not(.on) { opacity: 0.55; } /* 카메라 꺼짐 */
