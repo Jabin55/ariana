@@ -1023,11 +1023,12 @@ def test_presentation_whiteboard_and_files(monkeypatch, tmp_path):
         assert state(sw, lambda m: (m["present"] or {}).get("mode") == "board")["present"]["key"] == "wb:1"
         tw.send_json({"t": "present_page", "page": 2})
         assert state(sw, lambda m: m["present"]["pages"] == 2)["present"]["key"] == "wb:2"
-        # 학생은 발표·판서를 조작할 수 없다
+        # 학생은 발표를 조작할 수 없다 (화이트보드에 자기 획을 쓰는 것만 된다)
         sw.send_json({"t": "present_close"})
         sw.send_json({"t": "stroke", "key": "wb:2", "id": "s", "pts": [[0.1, 0.1]]})
         time.sleep(0.2)
-        assert cr.classes[code].present is not None and not cr.classes[code].strokes.get("wb:2")
+        assert cr.classes[code].present is not None
+        assert [(x["id"], x.get("by")) for x in cr.classes[code].strokes.get("wb:2")] == [("s", "2")]
         tw.send_json({"t": "stroke", "key": "wb:2", "id": "w1", "pts": [[0.2, 0.2], [0.4, 0.4]]})
         time.sleep(0.2)
         tw.send_json({"t": "present_close"})
