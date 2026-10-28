@@ -1296,8 +1296,9 @@ def request_groups(include_likes: bool = False) -> list[dict]:
     """과목별 개설 요청: 요청 학생 수 · 학년 · 학교 · 하고 싶은 말 (학생 이름 없이)"""
     def run():
         with db.engine.connect() as c:
+            # 탈퇴한 학생의 신청(작성자 정보 없음)도 통계에 넣는다
             rows = c.execute(select(db.course_requests, db.users.c.school, db.users.c.grade)
-                             .join(db.users, db.users.c.id == db.course_requests.c.user_id)).all()
+                             .outerjoin(db.users, db.users.c.id == db.course_requests.c.user_id)).all()
             likes = dict(c.execute(select(db.course_requests.c.subject, func.count())
                 .select_from(db.course_request_likes.join(db.course_requests,
                     db.course_request_likes.c.request_id == db.course_requests.c.id))

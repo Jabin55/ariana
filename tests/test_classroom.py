@@ -2552,3 +2552,25 @@ def test_old_student_reconsent_asks_birth():
     assert s.post("/api/me/consent", json={"terms": True, "privacy": True, "birth": "2015-01-01"}).status_code == 403
     r = s.post("/api/me/consent", json={"terms": True, "privacy": True, "birth": "2008-05-05"})
     assert r.status_code == 200 and r.json()["birth"] == "2008-05-05" and not r.json()["needs_terms"]
+
+
+def test_withdrawn_student_course_requests_stay_anonymous():
+    """탈퇴해도 희망과목 신청 글과 공감 수는 남고, 작성자·공감한 사람만 알 수 없게 된다"""
+    from app.auth import _purge_user_rows
+    from sqlalchemy import select
+    s1, s2 = student(1), student(2)
+    sub = {"school_year": 2026, "subject": "경제", "term": "1학기", "note": "학생1 입니다. 경제를 배우고 싶어요"}
+    assert s1.post("/api/course-requests", json=sub).status_code == 200
+    rid = s1.get("/api/course-requests/board").json()["requests"][0]["id"]
+    s1.post(f"/api/course-requests/{rid}/like")
+    s2.post(f"/api/course-requests/{rid}/like")
+    uid = s1.get("/api/me").json()["user"]["id"]
+    with db.engine.begin() as c:
+        _purge_user_rows(c, uid)
+    with db.engine.connect() as c:
+        r = c.execute(select(db.course_requests)).first()
+        likes = c.execute(select(db.course_request_likes.c.user_id)).scalars().all()
+    assert r.user_id == 0 and "학생1" not in r.note and r.subject == "경제"
+    assert len(likes) == 2 and uid not in likes
+    board = TestClient(app).get("/api/course-requests/board").json()["requests"]
+    assert board[0]["likes"] == 2
