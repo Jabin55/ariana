@@ -636,3 +636,97 @@ function showSticker(fx, mine) {
   document.body.append(el);
   setTimeout(() => el.remove(), 2600);
 }
+
+/* ───────────────────────── 날짜 입력: 년·월·일 고르기 + 달력 ─────────────────────────
+ * 모든 <input type="date">를 [년▼][월▼][일▼][📅]로 바꿔 보여 준다. 실제 값은 원래 입력칸에 그대로 들어가므로
+ * 다른 코드(input.value 읽기·쓰기, change 이벤트)는 바꿀 필요가 없다.
+ * 빈 칸을 처음 고를 때는 2027년 3월 1일부터 (생년월일 칸은 기본값 없이 최근 연도부터). */
+const DATE_DEFAULT = { y: 2027, m: 3, d: 1 };
+const dateNative = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+
+function enhanceDateInput(input) {
+  if (input.dataset.ymd) return;
+  input.dataset.ymd = "1";
+  const birth = /birth/i.test(input.id || "") || input.min?.startsWith("19");
+  const nowY = new Date().getFullYear();
+  const opt = (v, t) => h("option", { value: v }, t);
+  const ys = h("select", { class: "ymd-y", "aria-label": "년" });
+  const ms = h("select", { class: "ymd-m", "aria-label": "월" }, opt("", "월"), ...Array.from({ length: 12 }, (_, i) => opt(i + 1, `${i + 1}월`)));
+  const ds = h("select", { class: "ymd-d", "aria-label": "일" });
+  const cal = h("button", { type: "button", class: "ymd-cal", title: "달력에서 고르기" }, "📅");
+  const wrap = h("span", { class: "ymd" }, ys, ms, ds, cal);
+  input.before(wrap);
+  wrap.append(input);
+  input.classList.add("ymd-native");
+
+  const fillYears = (keep) => {
+    const lo = birth ? 1920 : Math.min(nowY - 2, keep || nowY);
+    const hi = birth ? nowY : Math.max(2035, keep || 0);
+    const list = [];
+    for (let y = hi; y >= lo; y--) list.push(y);
+    if (!birth) list.reverse(); // 수업 날짜는 가까운 해부터 위로, 생년월일은 최근 해부터
+    ys.replaceChildren(opt("", "년"), ...list.map((y) => opt(y, `${y}년`)));
+  };
+  const fillDays = () => {
+    const y = Number(ys.value) || 2027, m = Number(ms.value) || 1;
+    const last = new Date(y, m, 0).getDate();
+    const cur = ds.value;
+    ds.replaceChildren(opt("", "일"), ...Array.from({ length: last }, (_, i) => opt(i + 1, `${i + 1}일`)));
+    ds.value = Number(cur) > last ? String(last) : cur;
+  };
+  const show = () => { // 입력칸 값 → 세 칸
+    const v = dateNative.get.call(input);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || "");
+    fillYears(m ? Number(m[1]) : null);
+    ys.value = m ? String(Number(m[1])) : "";
+    ms.value = m ? String(Number(m[2])) : "";
+    fillDays();
+    ds.value = m ? String(Number(m[3])) : "";
+    for (const s of [ys, ms, ds]) s.disabled = input.disabled;
+  };
+  const commit = () => { // 세 칸 → 입력칸 (셋 다 골라야 값이 생긴다)
+    const two = (n) => String(n).padStart(2, "0");
+    const v = ys.value && ms.value && ds.value ? `${ys.value}-${two(ms.value)}-${two(ds.value)}` : "";
+    if (v === dateNative.get.call(input)) return;
+    dateNative.set.call(input, v);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  // 빈 칸을 처음 누르면 기본 날짜(2027.3.1)로 시작한다
+  const startDefault = () => {
+    if (birth || dateNative.get.call(input) || ys.value || ms.value || ds.value) return;
+    ys.value = String(DATE_DEFAULT.y); ms.value = String(DATE_DEFAULT.m); fillDays(); ds.value = String(DATE_DEFAULT.d);
+    commit();
+  };
+  for (const s of [ys, ms, ds]) {
+    s.addEventListener("mousedown", startDefault);
+    s.addEventListener("keydown", startDefault);
+    s.addEventListener("change", () => { if (s !== ds) fillDays(); commit(); });
+  }
+  cal.addEventListener("click", () => {
+    if (!birth && !dateNative.get.call(input)) { dateNative.set.call(input, "2027-03-01"); show(); }
+    try { input.showPicker(); } catch { input.focus(); }
+  });
+  input.addEventListener("change", show);
+  input.addEventListener("input", show);
+  // 코드에서 input.value = "…" 로 바꿔도 세 칸이 따라오게
+  Object.defineProperty(input, "value", {
+    configurable: true,
+    get() { return dateNative.get.call(this); },
+    set(v) { dateNative.set.call(this, v); show(); },
+  });
+  show();
+}
+
+function enhanceDates(root) {
+  if (root.matches?.('input[type="date"]')) enhanceDateInput(root);
+  root.querySelectorAll?.('input[type="date"]').forEach(enhanceDateInput);
+}
+if (typeof document !== "undefined") {
+  const startDates = () => {
+    enhanceDates(document.body);
+    new MutationObserver((list) => { for (const r of list) for (const n of r.addedNodes) if (n.nodeType === 1) enhanceDates(n); })
+      .observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.body) startDates(); else document.addEventListener("DOMContentLoaded", startDates);
+}
