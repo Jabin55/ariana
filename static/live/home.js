@@ -117,6 +117,15 @@ function withConsent(view, send) {
 async function showConsent() {
   show("consent-view");
   $("#lead").hidden = true;
+  // 가입 중이 아니면(이미 가입한 회원) 약관이 바뀌어 다시 확인받는 화면: 가입 문구를 숨긴다
+  const joining = !!afterConsent;
+  $("#consent-steps").hidden = !joining;
+  $("#consent-age").hidden = !joining;
+  $("#consent-title").textContent = joining ? "회원가입 약관 동의" : "약관이 바뀌었어요";
+  $("#consent-sub").textContent = joining ? "외솔온닷을 이용하려면 아래 두 가지에 모두 동의해 주세요."
+    : "바뀐 이용약관과 개인정보 수집·이용 내용을 확인하고 동의하면 계속 이용할 수 있어요.";
+  $("#c-cancel").textContent = joining ? "← 이전" : "로그아웃";
+  $("#c-next").textContent = joining ? "동의하고 가입하기" : "동의하고 계속하기";
   for (const id of ["#c-all", "#c-terms", "#c-privacy"]) $(id).checked = false;
   $("#c-next").disabled = true;
   try {

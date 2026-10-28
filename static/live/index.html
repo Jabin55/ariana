@@ -56,9 +56,9 @@
 
     <!-- 회원가입 3단계: 약관 동의 (가입정보를 다 적은 뒤. 동의해야 가입정보를 보낸다) -->
     <section class="card narrow consent-card" id="consent-view" hidden>
-      <ol class="join-steps"><li class="done">회원 유형 선택</li><li class="done">가입정보 입력</li><li class="now">약관 동의</li><li>가입완료</li></ol>
-      <h2 style="margin:6px 0 4px">회원가입 약관 동의</h2>
-      <p class="muted" style="margin:0 0 12px;font-size:0.9rem">외솔온닷을 이용하려면 아래 두 가지에 모두 동의해 주세요.</p>
+      <ol class="join-steps" id="consent-steps"><li class="done">회원 유형 선택</li><li class="done">가입정보 입력</li><li class="now">약관 동의</li><li>가입완료</li></ol>
+      <h2 style="margin:6px 0 4px" id="consent-title">회원가입 약관 동의</h2>
+      <p class="muted" style="margin:0 0 12px;font-size:0.9rem" id="consent-sub">외솔온닷을 이용하려면 아래 두 가지에 모두 동의해 주세요.</p>
       <label class="switch consent-all"><input type="checkbox" id="c-all"> <strong>전체 동의</strong></label>
       <div class="consent-item">
         <label class="switch"><input type="checkbox" id="c-terms" class="c-one"> <span><strong>이용약관</strong> 동의 <span class="req">(필수)</span></span></label>
@@ -68,7 +68,7 @@
         <label class="switch"><input type="checkbox" id="c-privacy" class="c-one"> <span><strong>개인정보 수집·이용</strong> 동의 <span class="req">(필수)</span></span></label>
         <div class="consent-text" id="c-privacy-text">불러오는 중…</div>
       </div>
-      <p class="muted" style="font-size:0.85rem;margin:8px 0 0">학생은 만 14세 이상만 가입할 수 있어요. 생년월일로 연령을 확인합니다.</p>
+      <p class="muted" style="font-size:0.85rem;margin:8px 0 0" id="consent-age">학생은 만 14세 이상만 가입할 수 있어요. 생년월일로 연령을 확인합니다.</p>
       <div class="row" style="margin-top:14px">
         <button type="button" id="c-cancel">← 이전</button>
         <button type="button" class="primary grow" id="c-next" disabled>동의하고 가입하기</button>
