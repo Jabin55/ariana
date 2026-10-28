@@ -2676,3 +2676,39 @@ def test_mirror_setting_toggles_for_everyone():
         sa.send_json({"t": "settings", "mirror": True})  # 학생은 바꿀 수 없다
         tw.send_json({"t": "ping"})
         assert cr.classes[code].settings["mirror"] is False
+
+
+def test_students_draw_on_whiteboard_only_own_strokes():
+    """화이트보드일 때만 학생도 쓸 수 있고, 학생은 자기 획만 지운다. 선생님이 끄면 못 쓴다."""
+    t = teacher()
+    code = create(t)["code"]
+    a, b = student(1), student(2)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa, \
+            b.websocket_connect(f"/ws/live/{code}") as sb:
+        state(tw)
+        k = cr.classes[code]
+        sa.send_json({"t": "stroke", "key": "board:1", "id": "a1", "color": "#d92d20", "size": 3, "pts": [[0.1, 0.1]]})
+        state(sa)
+        assert not k.strokes.get("board:1")  # 아직 화이트보드가 아님
+        tw.send_json({"t": "present_board", "page": 1})
+        key = state(sa, lambda m: m.get("present") and m["present"]["mode"] == "board") and cr.present_key(k)
+        tw.send_json({"t": "stroke", "key": key, "id": "t1", "color": "#222222", "size": 3, "pts": [[0.5, 0.5]]})
+        sa.send_json({"t": "stroke", "key": key, "id": "a1", "color": "#d92d20", "size": 3, "pts": [[0.1, 0.1], [0.2, 0.2]]})
+        sb.send_json({"t": "stroke", "key": key, "id": "a1", "color": "#1d5fd6", "size": 3, "pts": [[0.9, 0.9]]})  # 남의 획에 이어 쓰기
+        sb.send_json({"t": "stroke_del", "key": key, "ids": ["t1", "a1"]})  # 남의 획 지우기
+        tw.send_json({"t": "ping"})
+        time.sleep(0.3)
+        page = {s["id"]: s for s in k.strokes[key]}
+        assert set(page) == {"t1", "a1"} and page["a1"]["by"] == a_id(a) and len(page["a1"]["pts"]) == 2
+        sa.send_json({"t": "stroke_del", "key": key, "ids": ["a1", "t1"]})
+        time.sleep(0.3)
+        assert [s["id"] for s in k.strokes[key]] == ["t1"]  # 자기 획만 지워짐
+        tw.send_json({"t": "settings", "board_draw": False})
+        state(sa, lambda m: m["settings"]["board_draw"] is False)
+        sa.send_json({"t": "stroke", "key": key, "id": "a2", "color": "#d92d20", "size": 3, "pts": [[0.3, 0.3]]})
+        time.sleep(0.3)
+        assert [s["id"] for s in k.strokes[key]] == ["t1"]
+
+
+def a_id(client):
+    return str(client.get("/api/me").json()["user"]["id"])

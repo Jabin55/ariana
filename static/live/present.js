@@ -44,7 +44,7 @@ class Presenter {
     box.append(this.area);
     new ResizeObserver(() => this.layout()).observe(this.area);
     if (opt.canDraw) this.enableDrawing();
-    else if (opt.viewerZoom) this.enableViewerZoom();
+    if (opt.viewerZoom) this.enableViewerZoom();
   }
 
   get key() { return this.view?.key || null; }
@@ -279,7 +279,8 @@ class Presenter {
     const erase = (p) => {
       const list = this.strokes.get(this.key) || [];
       const r = 12 / c.getBoundingClientRect().width; // 지우개 반경 (비율)
-      const hit = list.filter((s) => {
+      const own = this.opt.eraseOwnOnly ? new Set(this.mine.get(this.key) || []) : null; // 학생은 자기 획만 지운다
+      const hit = list.filter((s) => own ? own.has(s.id) : true).filter((s) => {
         if (s.text && s.pts.length) {
           const [x0, y0, x1, y1] = this.textBox(s);
           return p[0] >= x0 - r && p[0] <= x1 + r && p[1] >= y0 - r && p[1] <= y1 + r;
@@ -293,6 +294,8 @@ class Presenter {
     };
     c.addEventListener("pointerdown", (e) => {
       if (!this.key || e.button > 0) return;
+      if (this.opt.mayDraw && !this.opt.mayDraw()) return; // 학생: 선생님이 화이트보드를 열었을 때만
+      if (this.opt.viewerZoom && this.tool.kind === "pan") return; // 학생의 이동은 내 화면 확대 쪽에서
       e.preventDefault();
       c.setPointerCapture(e.pointerId);
       if (this.tool.kind === "pan") { // ✋ 이동: 확대한 자료를 끌어서 옮긴다
@@ -334,7 +337,7 @@ class Presenter {
     const end = () => { if (cur && !cur.eraser && !cur.pan) { clearTimeout(timer); flushPts(); } cur = null; };
     // Ctrl + 마우스 휠로도 확대·축소 (마우스가 있는 곳을 중심으로)
     c.addEventListener("wheel", (e) => {
-      if (!e.ctrlKey || this.view?.mode !== "slides") return;
+      if (this.opt.viewerZoom || !e.ctrlKey || this.view?.mode !== "slides") return;
       e.preventDefault();
       const r = c.getBoundingClientRect();
       this.setZoom(this.zoomZ() * (e.deltaY < 0 ? 1.2 : 1 / 1.2), (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
@@ -415,6 +418,7 @@ class Presenter {
     let drag = null;
     c.addEventListener("pointerdown", (e) => {
       if (!this.ownZoom) return;
+      if (this.opt.mayDraw?.() && this.tool.kind !== "pan") return; // 쓰는 중이면 끌어서 옮기지 않는다
       e.preventDefault();
       c.setPointerCapture(e.pointerId);
       const [x0, y0] = this.zoomXY();

@@ -168,7 +168,8 @@ label.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]을 끈 경우 */
 .tile .avatar {
   position: absolute; inset: 0; display: grid; place-items: center; color: #dde;
-  font-size: 1.6rem; font-weight: 700;
+  font-size: clamp(0.95rem, 2.2vw, 1.5rem); font-weight: 700; padding: 0 10px 22px; text-align: center;
+  word-break: keep-all; overflow-wrap: anywhere; line-height: 1.25; overflow: hidden;
 }
 .tile .label {
   position: absolute; left: 6px; bottom: 6px; right: 6px; display: flex; gap: 4px; align-items: center;

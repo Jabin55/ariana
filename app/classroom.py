@@ -83,6 +83,7 @@ MAX_FILES = 20  # 수업당 올릴 수 있는 파일 수
 MAX_BOARD_PAGES = 50
 MAX_STROKES = 1500  # 한 쪽에 남길 수 있는 획 수
 BOARD_TEXT_LIMIT = 200  # 판서 글자 한 덩이의 최대 글자 수
+STUDENT_MAX_STROKES = 300  # 화이트보드 한 쪽에 학생 한 명이 남길 수 있는 획 수
 MAX_POINTS = 4000  # 한 획의 점 수
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -154,7 +155,7 @@ class Klass:
     activity: dict | None = None
     settings: dict = field(default_factory=lambda: {
         "chat": True, "ai": True, "mic_lock": MIC_LOCK_DEFAULT, "lowbw": LOW_BANDWIDTH_DEFAULT,
-        "mirror": True})  # mirror: 카메라 영상 좌우 반전 (모두의 화면에 같이)
+        "mirror": True, "board_draw": True})  # board_draw: 화이트보드에 학생도 쓸 수 있음  # mirror: 카메라 영상 좌우 반전 (모두의 화면에 같이)
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
     ends_at: float | None = None
@@ -1177,9 +1178,15 @@ def _material_delete(class_id: int, fid: str, path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
-def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
-    """발표·판서 메시지. 처리했으면 True. (상태가 바뀌면 push는 호출한 쪽에서)"""
+def handle_present(k: Klass, conn: Conn, m: dict, student: Student | None = None) -> bool:
+    """발표·판서 메시지. 처리했으면 True. (상태가 바뀌면 push는 호출한 쪽에서)
+    학생(student)은 선생님이 화이트보드를 열었을 때만 자기 획을 쓰고 지울 수 있다."""
     t = m.get("t")
+    if student is not None:
+        if t not in ("stroke", "stroke_del"):
+            return False
+        if not (k.present and k.present["mode"] == "board" and k.settings.get("board_draw", True)):
+            return True  # 지금은 학생이 쓸 수 없다 → 무시
     before = present_key(k)
     if t == "present_open":  # PDF 발표 시작 (쪽 수는 선생님 화면이 PDF를 읽어서 알려 준다)
         f = next((f for f in k.files if f["id"] == m.get("file")), None)
@@ -1234,8 +1241,12 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
         pts = clean_points(m.get("pts"))
         page = k.strokes.setdefault(key, [])
         st = next((x for x in reversed(page) if x["id"] == sid), None)
+        if st is not None and student is not None and st.get("by") != student.id:
+            return True  # 남의 획에 이어 쓸 수 없다
         if st is None:
             if len(page) >= MAX_STROKES:
+                return True
+            if student is not None and sum(1 for x in page if x.get("by") == student.id) >= STUDENT_MAX_STROKES:
                 return True
             color = m.get("color") if isinstance(m.get("color"), str) and COLOR_RE.match(m["color"]) else "#222222"
             size = m.get("size")
@@ -1244,6 +1255,8 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
             text = clean(m.get("text"), BOARD_TEXT_LIMIT) if isinstance(m.get("text"), str) else ""
             if text:  # 글자·이모지 스티커: 점 하나(왼쪽 위)에 글자를 쓴다
                 st["text"] = text
+            if student is not None:
+                st["by"] = student.id  # 학생 획: 그 학생만 지울 수 있다 (선생님은 모두 지울 수 있다)
             page.append(st)
         elif st.get("text"):
             return True  # 글자는 처음 한 번만 보낸다
@@ -1264,6 +1277,10 @@ def handle_present(k: Klass, conn: Conn, m: dict) -> bool:
         if key != before or not isinstance(ids, list):
             return True
         ids = {i for i in ids[:200] if isinstance(i, str)}
+        if student is not None:
+            ids = {x["id"] for x in k.strokes.get(key, []) if x["id"] in ids and x.get("by") == student.id}
+            if not ids:
+                return True
         k.strokes[key] = [x for x in k.strokes.get(key, []) if x["id"] not in ids]
         k.dirty_boards.add(key)
         relay(k, conn, {"t": "stroke_del", "key": key, "ids": sorted(ids)})
@@ -1536,7 +1553,8 @@ async def live_socket(ws: WebSocket, code: str):
             if conn.role == "teacher":
                 handle_teacher(k, conn, msg)
             else:
-                handle_student(k, k.students[conn.sid], msg)
+                if not handle_present(k, conn, msg, k.students[conn.sid]):
+                    handle_student(k, k.students[conn.sid], msg)
             if classes.get(k.code) is not k:
                 break  # 수업 종료됨
             if msg.get("t") not in NO_PUSH:
@@ -1624,7 +1642,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     if handle_present(k, conn, m):
         return
     if t == "settings":
-        for name in ("ai", "mirror"):  # 학생 채팅·데이터 절약 모드는 언제나 켜져 있다
+        for name in ("ai", "mirror", "board_draw"):  # 학생 채팅·데이터 절약 모드는 언제나 켜져 있다
             if name in m:
                 k.settings[name] = bool(m[name])
         if "mic_lock" in m:  # 통제를 바꾸면 남아 있는 마이크 요청은 지운다

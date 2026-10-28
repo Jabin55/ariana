@@ -13,7 +13,35 @@ let textDraft = "";
 const MAX_PEER_VIDEOS = 6;
 let videoSlots = []; // 영상을 받는 친구들
 // 선생님 발표(PDF)·화이트보드: 이때는 자료 화면만 크게 보여 준다(선생님 목소리는 계속 들림)
-const presenter = new Presenter($("#present"), { code: CODE, canDraw: false, viewerZoom: true, send: () => {} });
+// 선생님이 화이트보드를 열면 학생도 펜으로 쓸 수 있다 (자기가 쓴 것만 지울 수 있다)
+const mayDraw = () => S?.present?.mode === "board" && S.settings?.board_draw !== false;
+const presenter = new Presenter($("#present"), { code: CODE, canDraw: true, viewerZoom: true, eraseOwnOnly: true, mayDraw,
+  send: (m) => sock?.send(m, true) });
+const penBar = h("div", { class: "present-bar student-pen", hidden: true });
+$("#present").prepend(penBar);
+let penSig = "";
+function renderPenBar() {
+  const on = mayDraw();
+  presenter.inkCanvas.classList.toggle("drawable", on && presenter.tool.kind !== "pan");
+  presenter.inkCanvas.classList.toggle("grab", !!presenter.ownZoom && (!on || presenter.tool.kind === "pan"));
+  penBar.hidden = !on;
+  const sig = JSON.stringify([on, presenter.tool]);
+  if (sig === penSig) return;
+  penSig = sig;
+  if (!on) { penBar.replaceChildren(); return; }
+  const tool = (kind, color, label, title) => h("button", {
+    class: `small tool ${presenter.tool.kind === kind && (!color || presenter.tool.color === color) ? "on" : ""}`, title,
+    style: color ? `color:${color}` : null,
+    onclick: () => { presenter.tool = { kind, color: color || presenter.tool.color }; renderPenBar(); },
+  }, label);
+  penBar.replaceChildren(
+    h("span", { class: "muted", style: "font-size:0.85rem" }, "✏️ 화이트보드에 같이 쓸 수 있어요"),
+    ...PEN_COLORS.map((c, i) => tool("pen", c, "●", ["검정 펜", "빨강 펜", "파랑 펜", "초록 펜"][i])),
+    tool("hl", "#f5c400", "▮", "형광펜"),
+    tool("eraser", null, "지우개", "내가 쓴 것만 지워져요"),
+    tool("pan", null, "✋", "확대했을 때 끌어서 옮기기"),
+    h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"));
+}
 
 $("#code").textContent = CODE;
 api("/api/me").then(({ user }) => {
@@ -298,6 +326,7 @@ function render() {
   mediaShare.set(S.media);
   $("#present").hidden = !S.present || !!S.media; // 미디어를 다 같이 보는 동안은 문서를 가린다
   presenter.setView(S.present);
+  renderPenBar();
   renderQuestions();
   renderTabs();
   if (!micAllowed() && prefs.mic) setMic(false);

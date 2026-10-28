@@ -776,7 +776,7 @@ function renderPresent() {
   $("#board-btn").classList.toggle("on", v?.mode === "board");
   presenter.setView(v);
   presenter.inkCanvas.classList.toggle("pan", presenter.tool.kind === "pan");
-  const sig = JSON.stringify([v, S.files, showStudents, presenter.tool, presenter.zoomZ()]);
+  const sig = JSON.stringify([v, S.files, showStudents, presenter.tool, presenter.zoomZ(), S.settings.board_draw]);
   if (sig === presentSig) return;
   presentSig = sig;
   const bar = $("#present-bar");
@@ -819,6 +819,9 @@ function renderPresent() {
     h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"),
     h("button", { class: "small", title: "이 쪽 판서 모두 지우기", onclick: () => { if (confirm("이 쪽에 그린 것을 모두 지울까요?")) presenter.clear(); } }, "🗑"),
     h("span", { class: "grow" }),
+    v.mode === "board" ? h("label", { class: "switch small-switch", title: "켜 두면 학생도 화이트보드에 펜으로 쓸 수 있어요 (학생은 자기가 쓴 것만 지울 수 있고, 선생님은 모두 지울 수 있어요)" },
+      h("input", { type: "checkbox", checked: S.settings.board_draw !== false, onchange: (e) => sock.send({ t: "settings", board_draw: e.target.checked }) }),
+      "학생도 쓰기") : null,
     h("label", { class: "switch small-switch", title: "끄면 발표하는 동안 학생 영상을 받지 않아 화면이 넓어지고 데이터도 아껴요" },
       h("input", { type: "checkbox", checked: showStudents, onchange: (e) => {
         showStudents = e.target.checked; store.set("present-show-students", showStudents); renderPresent(); if (mainRoom) renderMain(mainRoom);

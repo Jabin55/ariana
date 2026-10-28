@@ -129,11 +129,6 @@ class LiveSocket {
 
 /* ───────────────────────── 영상 타일 ───────────────────────── */
 
-function shortName(name) {
-  const n = (name || "?").trim();
-  return n.length >= 3 && /^[가-힣]+$/.test(n) ? n.slice(-2) : n.slice(0, 2);
-}
-
 function makeTile() {
   const video = h("video", { autoplay: true, playsinline: true });
   video.muted = true;
@@ -150,7 +145,7 @@ function updateTile(tile, it) {
   video.hidden = !it.track;
   const avatar = tile.querySelector(".avatar");
   avatar.hidden = !!it.track;
-  avatar.textContent = shortName(it.name);
+  avatar.textContent = (it.name || "?").trim(); // 카메라가 꺼져 있으면 이름 전체를 보여 준다
   tile.querySelector(".label span").textContent = `${it.micOff ? "🔇 " : "🎙️ "}${it.name}${it.isLocal ? " (나)" : ""}`;
   tile.querySelector(".flag").textContent = it.flag || "";
   tile.classList.toggle("speaking", !!it.speaking);
