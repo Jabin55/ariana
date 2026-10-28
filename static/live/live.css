@@ -163,6 +163,8 @@ label.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .tile.speaking { outline-color: var(--speaking); }
 .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tile.screen video { object-fit: contain; background: #000; }
+/* 카메라 영상은 거울처럼 좌우 반전해서 보여 준다 (모든 사람 화면에서 같게). 화면 공유는 글자가 뒤집히지 않게 그대로 */
+.tile:not(.screen) video { transform: scaleX(-1); }
 .tile .avatar {
   position: absolute; inset: 0; display: grid; place-items: center; color: #dde;
   font-size: 1.6rem; font-weight: 700;
