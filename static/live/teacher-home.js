@@ -51,7 +51,8 @@ function showTeacher() {
   $("#home-tabs").style.setProperty("--sub-min-width", "784px");
   const want = params.get("tab") === "courses" || params.get("tab") === "history" ? "run" : params.get("tab");
   if (params.get("course")) runCourseId = Number(params.get("course"));
-  const first = canTeach() ? "run" : canHub() ? "hub" : "school";
+  // 교무실에 들어오면 [특강/회의]부터 (볼 수 없는 역할이면 예전처럼)
+  const first = allowed("meet") ? "meet" : canTeach() ? "run" : canHub() ? "hub" : "school";
   showHomeTab(want && document.querySelector(`#home-tabs [data-tab="${want}"]`) && allowed(want) ? want : first);
   if (canTeach()) loadTeacherCourses();
   if (canHub()) loadHub();
