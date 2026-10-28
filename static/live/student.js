@@ -38,7 +38,7 @@ function renderPenBar() {
     h("span", { class: "muted", style: "font-size:0.85rem" }, "✏️ 화이트보드에 같이 쓸 수 있어요"),
     ...PEN_COLORS.map((c, i) => tool("pen", c, "●", ["검정 펜", "빨강 펜", "파랑 펜", "초록 펜"][i])),
     tool("hl", "#f5c400", "▮", "형광펜"),
-    tool("eraser", null, "지우개", "내가 쓴 것만 지워져요"),
+    tool("eraser", null, "🧽", "지우개 (내가 쓴 것만 지워져요)"),
     tool("pan", null, "✋", "확대했을 때 끌어서 옮기기"),
     h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"));
 }

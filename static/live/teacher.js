@@ -804,7 +804,7 @@ function renderPresent() {
     h("span", { class: "sep" }),
     ...PEN_COLORS.map((c, i) => tool("pen", c, "●", ["검정 펜", "빨강 펜", "파랑 펜", "초록 펜"][i])),
     tool("hl", "#f5c400", "▮", "형광펜"),
-    tool("eraser", null, "지우개", "지우개 (선을 문지르면 지워져요)"),
+    tool("eraser", null, "🧽", "지우개 (선을 문지르면 지워져요)"),
     tool("text", null, "가", "글자 쓰기 (누른 곳에 입력 · Enter로 올리기, Shift+Enter 줄바꿈) — 지금 고른 펜 색으로 써져요"),
     h("span", { class: "sticker-wrap" },
       h("button", { class: `small tool ${presenter.tool.kind === "sticker" ? "on" : ""}`, title: "이모지 스티커 붙이기",
@@ -834,8 +834,8 @@ function renderPresent() {
     h("label", { class: "switch small-switch", title: "끄면 발표하는 동안 학생 영상을 받지 않아 화면이 넓어지고 데이터도 아껴요" },
       h("input", { type: "checkbox", checked: showStudents, onchange: (e) => {
         showStudents = e.target.checked; store.set("present-show-students", showStudents); renderPresent(); if (mainRoom) renderMain(mainRoom);
-      } }), "학생 영상 보기"),
-    h("button", { class: "small", onclick: openFiles }, "📄 자료"),
+      } }), "영상 보기"),
+    h("button", { class: "small", title: "발표 자료 (올리기·고르기)", onclick: openFiles }, "📄"),
     h("button", { class: "small danger", onclick: () => sock.send({ t: "present_close" }) }, "발표 끝내기")].filter(Boolean));
 }
 

@@ -1462,3 +1462,11 @@ body.class-t .present-bar button:disabled { opacity: 0.45; }
 .storage-meter .sm-bar i { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
 .storage-meter.warn .sm-bar i { background: #e0a100; }
 .storage-meter.danger .sm-bar i { background: var(--danger); }
+/* 수업 화면 발표 막대: 한 줄에 들어가게 촘촘히 */
+body.class-t .present-bar { gap: 3px; }
+body.class-t .present-bar .pageno { min-width: 2.9em; white-space: nowrap; }
+body.class-t .present-bar .sep { margin: 0 2px; }
+body.class-t .present-bar .tool { min-width: 30px; }
+body.class-t .present-bar button.small { padding: 3px 6px; min-width: 0; }
+body.class-t .present-bar { flex-wrap: nowrap; overflow-x: auto; } /* 아주 좁은 화면에서는 옆으로 밀어서 본다 */
+body.class-t .present-bar .small-switch { white-space: nowrap; }
