@@ -2536,3 +2536,19 @@ def test_teacher_with_courses_withdraws_but_name_stays(monkeypatch):
     again = TestClient(app)
     google_login(again, "teacher@gmail.com")
     assert again.get("/api/me").json()["user"]["id"] != tid
+
+
+def test_old_student_reconsent_asks_birth():
+    """생년월일 없이 예전에 가입한 학생이 바뀐 약관에 다시 동의할 때 생년월일을 함께 받는다"""
+    from sqlalchemy import update
+    s = student(7)
+    uid = s.get("/api/me").json()["user"]["id"]
+    with db.engine.begin() as c:
+        c.execute(update(db.users).where(db.users.c.id == uid).values(birth="", terms_version="old"))
+    me = s.get("/api/me").json()["user"]
+    assert me["needs_terms"] and me["birth"] == ""
+    r = s.post("/api/me/consent", json={"terms": True, "privacy": True})
+    assert r.status_code == 400 and r.json()["detail"] == "생년월일을 입력해 주세요."
+    assert s.post("/api/me/consent", json={"terms": True, "privacy": True, "birth": "2015-01-01"}).status_code == 403
+    r = s.post("/api/me/consent", json={"terms": True, "privacy": True, "birth": "2008-05-05"})
+    assert r.status_code == 200 and r.json()["birth"] == "2008-05-05" and not r.json()["needs_terms"]

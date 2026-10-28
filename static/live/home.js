@@ -126,6 +126,11 @@ async function showConsent() {
     : "바뀐 이용약관과 개인정보 수집·이용 내용을 확인하고 동의하면 계속 이용할 수 있어요.";
   $("#c-cancel").textContent = joining ? "← 이전" : "로그아웃";
   $("#c-next").textContent = joining ? "동의하고 가입하기" : "동의하고 계속하기";
+  // 생년월일을 받기 전에 가입한 학생: 다시 동의할 때 생년월일을 함께 받는다 (만 14세 이상 확인)
+  const askBirth = !joining && ME.role === "student" && !ME.birth;
+  $("#c-birth-wrap").hidden = !askBirth;
+  $("#c-birth").required = askBirth;
+  $("#c-birth").max = new Date().toISOString().slice(0, 10);
   for (const id of ["#c-all", "#c-terms", "#c-privacy"]) $(id).checked = false;
   $("#c-next").disabled = true;
   try {
@@ -155,9 +160,14 @@ $("#c-cancel").addEventListener("click", async () => {
 });
 $("#c-next").addEventListener("click", async () => {
   $("#consent-error").textContent = "";
+  if (!$("#c-birth-wrap").hidden && !$("#c-birth").value) {
+    $("#consent-error").textContent = "생년월일을 입력해 주세요.";
+    $("#c-birth").focus();
+    return;
+  }
   try {
     await api("/api/me/consent", { terms: $("#c-terms").checked, privacy: $("#c-privacy").checked,
-      birth: ME.role === "student" ? $("#p-student-birth").value : "" });
+      birth: ME.role === "student" ? ($("#c-birth-wrap").hidden ? $("#p-student-birth").value : $("#c-birth").value) : "" });
     ME.needs_terms = false;
     const next = afterConsent;
     afterConsent = null;

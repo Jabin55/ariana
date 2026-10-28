@@ -46,6 +46,8 @@ def today_kst() -> str:
 
 
 def student_age(birth: str) -> int:
+    if not birth:
+        raise HTTPException(400, "생년월일을 입력해 주세요.")
     try:
         born = date.fromisoformat(birth)
     except ValueError:
