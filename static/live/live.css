@@ -1442,8 +1442,8 @@ table.att.change-table th, table.att.change-table td { text-align: center; white
 .viewer-zoom button:disabled { opacity: 0.4; cursor: default; }
 .viewer-zoom .vz-label { min-width: 3em; text-align: center; font-variant-numeric: tabular-nums; }
 .sheet canvas.ink.grab { cursor: grab; touch-action: none; }
-.board-stickers { display: inline-flex; gap: 2px; }
-.board-stickers button { font-size: 1.05rem; padding: 2px 4px; }
+.board-stickers { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.board-stickers button { font-size: 1.3rem; padding: 4px 0; color: inherit; }
 body.class-t .topbar h1 { min-width: 3em; flex-shrink: 1; }
 body.class-t .topbar .code, body.class-t .topbar .tb-count { white-space: nowrap; flex-shrink: 0; }
 body.class-t .topbar .status { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
@@ -1453,3 +1453,4 @@ body.class-t #cam:not(.on) { opacity: 0.55; } /* 카메라 꺼짐 */
 body.class-t .present-bar button:not(.danger):not(.primary) { color: #1f2328; }
 body.class-t .present-bar button:disabled { opacity: 0.45; }
 .media-bar button:not(.primary):not(.danger) { color: #1f2328; } /* 어두운 막대 위 흰 버튼: 글씨는 검정 */
+#board-sticker-pop { top: calc(100% + 8px); bottom: auto; } /* 화이트보드 이모지: 위로 뜨면 가려져서 아래로 */
