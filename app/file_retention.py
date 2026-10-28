@@ -1,9 +1,10 @@
 """수업 자료(PDF)와 과제 제출 파일 자동 삭제.
 
-- 과목(강좌) 수업의 발표 자료(PDF)와 그 위 판서: 과목 끝나는 날(end_date)이 지나면 바로 (서버 공간 절약)
-- 그 과목 과제에 학생이 낸 파일: 과목이 끝나고 365일이 지나면 (점수·피드백·글 제출은 남긴다)
-- 과목 없이 연 수업(특강·회의): 회의를 끝내면 바로 발표 자료와 판서(화이트보드 포함).
-  [수업 종료]를 누르지 않고 닫았으면, 다시 이어서 열 수 있는 시간(24시간)이 지나면
+- 발표 자료(PDF) 파일: 과목 수업은 과목 끝나는 날(end_date)이 지나면 바로, 특강·회의는 끝내면 바로 (서버 공간 절약)
+  [수업 종료]를 누르지 않고 닫은 회의는 다시 이어서 열 수 있는 시간(24시간)이 지나면.
+  파일 내용만 지우고 공유한 기록(파일명)은 남긴다.
+- 판서·화이트보드: 학생 복습용으로 남긴다. 과목이 끝나고(특강·회의는 연 날부터) 365일이 지나면 지운다
+- 과제에 학생이 낸 파일: 과목이 끝나고 365일이 지나면 (점수·피드백·글 제출은 남긴다)
 탈퇴 학생의 분리 보관 증빙(evidence)은 따로 정한 보존 기간을 따른다.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from datetime import date, timedelta
 
@@ -19,9 +21,32 @@ from sqlalchemy import and_, delete, or_, select, update
 from app import db
 from app.wipe import wipe
 
-KEEP_DAYS = 365  # 과제 제출 파일, 과목 없는 수업의 자료
-MATERIAL_KEEP_DAYS = 0  # 과목 수업의 발표 자료(PDF)·판서: 과목이 끝나면 바로
+KEEP_DAYS = 365  # 판서·화이트보드, 과제 제출 파일
+MATERIAL_KEEP_DAYS = 0  # 과목 수업의 발표 자료(PDF): 과목이 끝나면 바로
 log = logging.getLogger(__name__)
+_MEDIABOX = re.compile(rb"/MediaBox\s*\[\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\]")
+
+
+def pdf_ratio(path) -> float | None:
+    """PDF 첫 쪽의 가로/세로 비율 (MediaBox). 못 읽으면 None"""
+    try:
+        with open(path, "rb") as f:
+            hit = _MEDIABOX.search(f.read(4 * 1024 * 1024))
+        if not hit:
+            return None
+        x0, y0, x1, y1 = (float(v) for v in hit.groups())
+        w, h = abs(x1 - x0), abs(y1 - y0)
+        return round(w / h, 4) if w > 0 and h > 0 else None
+    except (OSError, ValueError):
+        return None
+
+
+def _mark_deleted(c, class_id: int, fid: str) -> None:
+    """공유한 기록은 남기고 파기 표시. 남은 판서를 같은 모양으로 보이게 쪽 비율도 적어 둔다"""
+    from app.classroom import SLIDES_DIR
+
+    ratio = pdf_ratio(SLIDES_DIR / str(class_id) / f"{fid}.pdf")
+    c.execute(update(db.materials).where(db.materials.c.id == fid).values(deleted_at=time.time(), ratio=ratio))
 
 
 def purge_expired_files(today: date | None = None) -> dict:
@@ -41,13 +66,14 @@ def purge_expired_files(today: date | None = None) -> dict:
         meeting_done = and_(cl.course_id.is_(None),
                             or_(cl.ended_at.isnot(None), cl.created_at < time.time() - CLASS_REVIVE_LIMIT))
         old_classes = select(cl.id).where(or_(cl.course_id.in_(ended or [-1]), meeting_done))
-        # 특강·회의는 화이트보드 판서도 함께 지운다
-        c.execute(delete(db.boards).where(db.boards.c.class_id.in_(select(cl.id).where(meeting_done))))
         mats = c.execute(select(m.id, m.class_id).where(m.class_id.in_(old_classes), m.deleted_at.is_(None))).all()
-        for x in mats:
-            c.execute(delete(db.boards).where(db.boards.c.class_id == x.class_id, db.boards.c.key.like(f"{x.id}:%")))
+        # 판서·화이트보드: 과목이 끝나고 365일, 과목 없는 수업은 연 날부터 365일이 지나면 지운다
+        old_boards = select(cl.id).where(or_(cl.course_id.in_(done or [-1]),
+                                             and_(cl.course_id.is_(None), cl.created_at < time.time() - KEEP_DAYS * 86400)))
+        c.execute(delete(db.boards).where(db.boards.c.class_id.in_(old_boards)))
         # 공유한 기록(파일명·쪽수)은 남기고 파기 표시만 한다. 파일 내용은 아래에서 복구할 수 없게 지운다
-        c.execute(update(db.materials).where(m.id.in_([x.id for x in mats] or ["-"])).values(deleted_at=time.time()))
+        for x in mats:
+            _mark_deleted(c, x.class_id, x.id)
         removed_materials = [(x.class_id, x.id) for x in mats]
         # 과제 제출 파일
         a, s, f = db.assignments.c, db.submissions.c, db.submission_files.c
@@ -64,14 +90,14 @@ def purge_expired_files(today: date | None = None) -> dict:
 
 
 def purge_meeting(class_id: int) -> int:
-    """특강·회의를 끝낸 직후: 그 회의의 발표 자료(PDF)와 판서를 바로 지운다."""
+    """특강·회의를 끝낸 직후: 그 회의의 발표 자료(PDF) 파일을 바로 지운다. (판서·화이트보드는 복습용으로 남긴다)"""
     from app.classroom import SLIDES_DIR
 
     m = db.materials.c
     with db.engine.begin() as c:
         mats = [r.id for r in c.execute(select(m.id).where(m.class_id == class_id, m.deleted_at.is_(None)))]
-        c.execute(delete(db.boards).where(db.boards.c.class_id == class_id))
-        c.execute(update(db.materials).where(m.id.in_(mats or ["-"])).values(deleted_at=time.time()))  # 기록은 남긴다
+        for fid in mats:
+            _mark_deleted(c, class_id, fid)  # 기록은 남긴다
     for fid in mats:
         wipe(SLIDES_DIR / str(class_id) / f"{fid}.pdf")
     return len(mats)

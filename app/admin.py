@@ -654,7 +654,7 @@ def _storage_report() -> dict:
             b, n = _dir_size(d)
             media, media_n = media + b, media_n + n
     parts = [
-        ("수업 자료(PDF)·판서", slides - media, slides_n - media_n, "과목이 끝나면 바로 삭제"),
+        ("수업 자료(PDF)", slides - media, slides_n - media_n, "과목·회의가 끝나면 바로 삭제 (판서는 DB에 365일)"),
         ("미디어 공유(동영상·음악)", media, media_n, "수업을 끝내면 바로 삭제"),
         ("과제 제출 파일", *_dir_size(FILES_DIR / "assignments"), "과목이 끝나고 365일 뒤 자동 삭제"),
         ("공지 첨부 파일", *_dir_size(FILES_DIR / "notices"), ""),

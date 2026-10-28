@@ -42,6 +42,11 @@ async function showViewer() {
 
   // 볼 것: PDF 자료들 + 화이트보드
   const items = data.files.map((f) => ({ mode: "slides", file: f.id, name: f.name, pages: f.pages }));
+  // 파기된 PDF 위 판서: 자료 없이 흰 바탕에 판서만 다시 본다 (복습용)
+  for (const f of data.removed || []) {
+    const inkPages = Object.keys(data.boards).filter((k) => k.startsWith(`${f.id}:`)).map((k) => Number(k.split(":")[1]));
+    if (inkPages.length) items.push({ mode: "ink", file: f.id, name: `${f.name} 판서`, ratio: f.ratio, pages: Math.max(f.pages || 0, ...inkPages) });
+  }
   if (data.board_pages) items.push({ mode: "board", name: "화이트보드", pages: data.board_pages });
   // 공유했지만 파기한 자료는 이름만 남는다
   const removedNote = (data.removed || []).length ? h("div", { class: "muted", style: "font-size:0.85rem;margin-top:8px" },
@@ -60,7 +65,8 @@ async function showViewer() {
     if (it.mode === "slides" && !it.pages) it.pages = await presenter.pageCount(it.file).catch(() => 1);
     page = Math.min(Math.max(1, p), it.pages || 1);
     const key = it.mode === "board" ? `wb:${page}` : `${it.file}:${page}`;
-    await presenter.setView({ mode: it.mode, file: it.file, page, pages: it.pages, key });
+    // 'ink'(파기된 자료의 판서)는 흰 바탕(화이트보드 모양)에 판서만 그린다
+    await presenter.setView({ mode: it.mode === "ink" ? "board" : it.mode, file: it.file, page, pages: it.pages, key, ratio: it.ratio });
     presenter.redrawInk();
     render();
   }
@@ -69,7 +75,7 @@ async function showViewer() {
     const it = items[cur];
     $("#m-items").replaceChildren(...items.map((x, i) => h("button", {
       class: `small ${i === cur ? "primary" : ""}`, onclick: () => open(i),
-    }, x.mode === "board" ? "🖊️ 화이트보드" : `📄 ${x.name}`)));
+    }, x.mode === "board" ? "🖊️ 화이트보드" : x.mode === "ink" ? `🖊️ ${x.name}` : `📄 ${x.name}`)));
     const inked = (k) => (data.boards[k] || []).length > 0;
     $("#m-bar").replaceChildren(...[
       h("button", { class: "small", disabled: page <= 1, onclick: () => open(cur, page - 1), title: "이전 쪽 (←)" }, "◀"),

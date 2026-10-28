@@ -1837,11 +1837,8 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
                 send(c, {"t": "ended"})
         close_livekit_rooms(k)
         classes.pop(k.code, None)
-        meeting = not k.course_id  # 특강·회의: 자료·판서를 남기지 않고 바로 지운다
-        if meeting:
-            k.dirty_boards.clear()  # 지울 판서는 저장하지 않는다
-        else:
-            asyncio.get_running_loop().create_task(save_boards(k))  # 과목 수업은 자료·판서를 남겨 둔다(지난 수업 자료)
+        meeting = not k.course_id  # 특강·회의: PDF 파일은 바로 지운다 (판서·화이트보드는 복습용으로 남김)
+        asyncio.get_running_loop().create_task(save_boards(k))  # 판서는 남겨 둔다(지난 수업 자료)
         class_id = k.db_id
 
         def run():

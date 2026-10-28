@@ -384,6 +384,7 @@ materials = Table(
     Column("size", Integer, nullable=False, default=0),
     Column("created_at", Float, nullable=False),
     Column("deleted_at", Float),  # 파일을 파기한 시각: 공유한 기록(파일명)은 남기고 내용만 지운다
+    Column("ratio", Float),  # 쪽의 가로/세로 비율 (파기 직전에 기록: 남은 판서를 같은 모양으로 보여 주려고)
 )
 
 boards = Table(
@@ -464,6 +465,7 @@ def init() -> None:
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
              ("materials", "deleted_at", "FLOAT"),
+             ("materials", "ratio", "FLOAT"),
              ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),
              ("activities", "points", "FLOAT NOT NULL DEFAULT 1"),
              ("classes", "course_id", "INTEGER"),

@@ -2426,7 +2426,7 @@ def test_admin_fixes_names(monkeypatch):
 
 
 def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
-    """수업 자료(PDF)·판서는 과목이 끝나면 바로, 과제 제출 파일은 1년이 지나면 지운다 (점수·피드백은 남는다)"""
+    """수업 자료(PDF) 파일은 과목이 끝나면 바로, 판서와 과제 제출 파일은 1년이 지나면 지운다 (점수·피드백은 남는다)"""
     import app.assignments as asg
     from datetime import date
     from app import classroom as cr_mod
@@ -2462,6 +2462,8 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
     assert purge_expired_files(date(2024, 7, 20)) == {"materials": 0, "submission_files": 0}
     assert purge_expired_files(date(2024, 7, 21)) == {"materials": 1, "submission_files": 0}
     assert asg.file_path(ids["old"][1], "fold").exists()
+    with db.engine.connect() as c:
+        assert sorted(r.key for r in c.execute(select(db.boards))) == ["mnew:1", "mold:1"]  # 판서는 남는다
     assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0}
     assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1}
     assert not (tmp_path / "slides" / str(ids["old"][0]) / "mold.pdf").exists()
@@ -2741,7 +2743,7 @@ def test_pdf_upload_limit_is_2mb():
 
 
 def test_meeting_materials_deleted_when_meeting_ends(monkeypatch, tmp_path):
-    """과목 없이 연 특강·회의는 끝내면 발표 자료(PDF) 내용과 판서를 바로 지운다(회의·공유 기록은 남음). 끝내지 않고 닫은 회의도 하루 뒤 정리."""
+    """과목 없이 연 특강·회의는 끝내면 발표 자료(PDF) 파일을 바로 지운다(회의·공유 기록과 판서는 남음). 끝내지 않고 닫은 회의도 하루 뒤 정리."""
     from app.file_retention import purge_expired_files
     from sqlalchemy import select
     monkeypatch.setattr(cr, "SLIDES_DIR", tmp_path / "slides")
@@ -2766,7 +2768,7 @@ def test_meeting_materials_deleted_when_meeting_ends(monkeypatch, tmp_path):
     with db.engine.connect() as conn:
         row = conn.execute(select(db.materials).where(db.materials.c.class_id == cid)).first()
         assert row.name == "a.pdf" and row.deleted_at is not None  # 공유한 기록은 남고 파기 표시만
-        assert conn.execute(select(db.boards).where(db.boards.c.class_id == cid)).first() is None
+        assert conn.execute(select(db.boards).where(db.boards.c.class_id == cid)).first() is not None  # 판서는 복습용으로 남음
     # 끝내지 않고 닫은 회의: 하루가 지나면 정기 정리에서 지운다
     now = time.time()
     with db.engine.begin() as conn:

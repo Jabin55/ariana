@@ -65,7 +65,7 @@ class Presenter {
     this.zoomBadge?.();
     const seq = ++this.renderSeq;
     if (view.mode === "board") {
-      this.pageSize = { w: 1600, h: 1600 / BOARD_RATIO };
+      this.pageSize = { w: 1600, h: 1600 / (view.ratio || BOARD_RATIO) }; // ratio: 파기된 자료의 판서를 원래 종이 모양으로
       this.loading.hidden = true;
       this.layout();
       return;

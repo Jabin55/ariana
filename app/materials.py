@@ -105,7 +105,8 @@ async def class_materials(class_id: int, request: Request):
                              .order_by(db.materials.c.created_at)).all()
             files = [{"id": m.id, "name": m.name, "pages": m.pages} for m in rows if m.deleted_at is None]
             # 공유했지만 파기한 자료: 파일명과 파기 시각만 (내용은 볼 수 없다)
-            removed = [{"name": m.name, "deleted_at": m.deleted_at} for m in rows if m.deleted_at is not None]
+            removed = [{"id": m.id, "name": m.name, "pages": m.pages, "ratio": m.ratio, "deleted_at": m.deleted_at}
+                       for m in rows if m.deleted_at is not None]
             boards = {b.key: json.loads(b.strokes) for b in c.execute(
                 select(db.boards).where(db.boards.c.class_id == class_id))}
             return r, titles, files, removed, boards
