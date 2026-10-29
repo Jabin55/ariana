@@ -38,7 +38,7 @@
     </header>
 
     <div class="workspace">
-      <!-- 왼쪽 도구: 화면공유 · 문서공유 · 미디어공유 · 화이트보드 · 설문/퀴즈 · 스티커 -->
+      <!-- 왼쪽 도구: 화면공유 · 문서공유 · 미디어공유 · 화이트보드 · 설문/퀴즈 · 모둠 · 스티커 -->
       <nav class="rail" aria-label="수업 도구">
         <div class="rail-clock" id="class-clock" title="수업을 연 뒤 지난 시간">00:00:00</div>
         <button class="rail-btn" id="screen" title="내 컴퓨터 화면이나 창을 학생들에게 보여 주기"><span class="ri">🖥️</span><span class="rl">화면공유</span></button>
@@ -46,6 +46,7 @@
         <button class="rail-btn" id="media-btn" title="동영상·음악 파일이나 유튜브 영상을 다 같이 보기"><span class="ri">🎬</span><span class="rl">미디어공유</span></button>
         <button class="rail-btn" id="board-btn" title="빈 화이트보드에 그리며 설명"><span class="ri">🖊️</span><span class="rl">화이트보드</span></button>
         <button class="rail-btn" id="quiz-btn" title="설문(투표)이나 퀴즈 내기"><span class="ri">📊</span><span class="rl">설문/퀴즈</span></button>
+        <button class="rail-btn" id="group-btn" title="모둠을 나누고 모둠활동 시작"><span class="ri">👥</span><span class="rl">모둠</span></button>
         <button class="rail-btn" id="sticker-btn" title="학생에게 칭찬 스티커 보내기"><span class="ri">🏅</span><span class="rl">스티커</span></button>
       </nav>
 
@@ -85,16 +86,9 @@
       </main>
 
       <aside class="sidebar">
-        <nav class="tabs" id="tabs">
-          <button data-tab="people" class="active">참여자·채팅 <span class="badge" id="hand-badge" hidden></span></button>
-          <button data-tab="activity">설문/퀴즈</button>
-          <button data-tab="chat" hidden>채팅 <span class="badge" id="chat-badge" hidden></span></button>
-          <button data-tab="groups">모둠</button>
-        </nav>
-
         <!-- 참여자 목록 (위) -->
         <section class="panel people-panel" data-panel="people">
-          <div class="panel-h"><strong>참여자 목록</strong> <span class="muted" id="people-count"></span></div>
+          <div class="panel-h"><strong>참여자</strong> <span class="muted" id="people-count"></span> <span class="badge" id="hand-badge" hidden></span></div>
           <div class="box sharebox">
             <span class="muted" id="share-label">입장 코드</span>
             <span class="big" id="share-code"></span>
@@ -119,8 +113,15 @@
           </form>
         </section>
 
-        <!-- 설문/퀴즈 -->
-        <section class="panel" data-panel="activity" hidden>
+      </aside>
+    </div>
+    <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>
+    <input type="file" id="media-input" accept="video/mp4,video/webm,video/quicktime,.m4v,audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a" hidden>
+  </div>
+
+  <div class="overlay tool-dlg" id="quiz-dlg" hidden>
+    <div class="card dlg-wide">
+      <div class="row"><h2 class="grow" style="margin:0">📊 설문/퀴즈</h2><button class="small" type="button" data-close>닫기</button></div>
           <div id="activity-current"></div>
           <form class="box" id="act-form">
             <h4>새 활동 보내기</h4>
@@ -135,10 +136,11 @@
             <button class="primary" type="submit">학생들에게 보내기</button>
           </form>
           <a id="csv-link" class="muted" style="font-size:0.9rem">📥 지금까지 활동 결과 내려받기 (엑셀용 CSV)</a>
-        </section>
-
-        <!-- 모둠 -->
-        <section class="panel" data-panel="groups" hidden>
+        </div>
+  </div>
+  <div class="overlay tool-dlg" id="group-dlg" hidden>
+    <div class="card dlg-wide">
+      <div class="row"><h2 class="grow" style="margin:0">👥 모둠</h2><button class="small" type="button" data-close>닫기</button></div>
           <div class="box">
             <h4>모둠 나누기</h4>
             <div class="row">
@@ -150,13 +152,8 @@
             <button class="primary big" id="bo-start" style="width:100%;margin-top:8px">▶ 모둠활동 시작</button>
           </div>
           <div class="group-edit" id="group-edit"></div>
-        </section>
-      </aside>
-    </div>
-    <input type="file" id="file-input" accept=".pdf,application/pdf,.ppt,.pptx" hidden>
-    <input type="file" id="media-input" accept="video/mp4,video/webm,video/quicktime,.m4v,audio/mpeg,audio/mp4,audio/wav,audio/ogg,.mp3,.m4a" hidden>
+        </div>
   </div>
-
   <div class="overlay" id="prejoin">
     <form class="card" id="prejoin-form">
       <h2 style="margin:0">수업 시작</h2>

@@ -10,8 +10,6 @@ let S = null;
 let sock = null;
 let mainRoom = null;
 const prefs = { cam: true, mic: true, screen: false };
-let activeTab = "people";
-let unreadChat = 0;
 const studentLink = `${location.origin}/live?c=${CODE}`;
 
 // 모둠 관찰: 모둠마다 별도의 화상 연결을 연다
@@ -1285,11 +1283,6 @@ function addChat(m, live) {
   }
   log.append(bubble);
   if (stick || m.role === "teacher") log.scrollTop = log.scrollHeight;
-  if (live && activeTab !== "people" && m.role !== "teacher") {
-    unreadChat++;
-    $("#chat-badge").textContent = unreadChat;
-    $("#chat-badge").hidden = false;
-  }
 }
 
 $("#chatform").addEventListener("submit", (e) => {
@@ -1404,6 +1397,7 @@ $("#bo-plan").addEventListener("click", () => {
 });
 $("#bo-start").addEventListener("click", () => {
   if (!S.breakout) sock.send({ t: "breakout_start", ...groupPlan() });
+  $("#group-dlg").hidden = true;
 });
 
 /* ───── 탭·기타 ───── */
@@ -1416,17 +1410,16 @@ setInterval(() => {
   $("#class-clock").textContent = `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}`;
 }, 1000);
 
+// 오른쪽에는 참여자·채팅만 늘 보이고, 설문/퀴즈·모둠은 왼쪽 버튼으로 여는 팝업이다
 function showTab(name) {
-  if (name === "chat") name = "people"; // 채팅은 참여자 목록 아래에 늘 함께 보인다
-  activeTab = name;
-  for (const b of $("#tabs").children) b.classList.toggle("active", b.dataset.tab === name);
-  for (const p of document.querySelectorAll("[data-panel]")) p.hidden = !(p.dataset.panel === name || (name === "people" && p.dataset.panel === "chat"));
-  if (name === "people") { unreadChat = 0; $("#chat-badge").hidden = true; $("#chatlog").scrollTop = $("#chatlog").scrollHeight; }
+  const id = { activity: "quiz-dlg", groups: "group-dlg" }[name];
+  if (!id) return;
+  for (const d of document.querySelectorAll(".tool-dlg")) d.hidden = d.id !== id;
 }
-$("#tabs").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-tab]");
-  if (b) showTab(b.dataset.tab);
-});
+for (const d of document.querySelectorAll(".tool-dlg")) {
+  d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.hidden = true; });
+}
+$("#group-btn").addEventListener("click", () => showTab("groups"));
 
 $("#copy-link").addEventListener("click", async () => {
   try {

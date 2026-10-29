@@ -1484,3 +1484,7 @@ body.class-t .sharebox #share-url { display: none; }
 .ymd .ymd-m, .ymd .ymd-d, .ymd .ymd-h, .ymd .ymd-min, .ymd .ymd-ap { min-width: 64px; }
 .ymd .ymd-cal { padding: 4px 8px; min-height: 0; background: transparent; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .ymd input.ymd-native { position: absolute; left: 0; bottom: 0; width: 1px !important; height: 1px; opacity: 0; pointer-events: none; padding: 0; border: 0; }
+
+/* 설문/퀴즈·모둠 팝업 (왼쪽 버튼으로 연다) */
+.overlay .card.dlg-wide { max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; }
+.tool-dlg .box { margin: 0; }
