@@ -2799,7 +2799,7 @@ def test_access_logs_paging(monkeypatch):
 def test_subject_groups_order_and_old_names_migrated():
     from app import subjects
     assert subjects.GROUPS == ["국어", "수학", "영어", "사회", "과학", "예술", "체육", "기술·가정/정보", "제2외국어/한문", "교양",
-                               "경영·금융", "보건·복지"]
+                               "경영·금융", "보건·복지", "정보·통신"]
     by = {x["name"]: x for x in subjects.SUBJECTS}
     assert (by["노동 인권과 산업 안전 보건"]["group"], by["노동 인권과 산업 안전 보건"]["type"]) == ("경영·금융", "전문 공통")
     assert (by["보건 간호"]["group"], by["보건 간호"]["type"]) == ("보건·복지", "전공일반선택")
