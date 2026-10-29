@@ -624,7 +624,8 @@ async function stopBroadcast() {
 function renderBroadcast() {
   const btn = $("#bo-voice");
   btn.classList.toggle("solid", !!broadcast);
-  btn.textContent = broadcast ? "🔴 모든 모둠에 말하는 중 (끄기)" : "📢 모든 모둠에 말하기";
+  btn.textContent = broadcast ? "🔴 모든 모둠에 말하는 중" : "📢 모든 모둠에 말하기";
+  btn.title = broadcast ? "누르면 그만 말해요" : "모든 모둠에 동시에 말하기";
   for (const gid of monitors.keys()) renderMonitor(gid);
 }
 $("#bo-voice").addEventListener("click", () => (broadcast ? stopBroadcast() : startBroadcast()));

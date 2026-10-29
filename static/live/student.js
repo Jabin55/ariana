@@ -367,7 +367,10 @@ function renderControls() {
   hand.textContent = S.me.hand ? "✋ 손 내리기" : "✋ 손 들기";
   const inGroup = S.room !== "main";
   $("#screen").hidden = false; // 전체 수업·모둠 어디서나 화면 공유(발표) 가능
-  $("#screen").disabled = !connected;
+  // 아이패드·아이폰·대부분의 휴대폰 브라우저는 화면 공유를 지원하지 않는다 → 버튼을 끄고 이유를 알려 준다
+  const canShare = !!navigator.mediaDevices?.getDisplayMedia;
+  $("#screen").disabled = !connected || !canShare;
+  $("#screen").title = canShare ? "내 화면 공유하기" : "이 기기(아이패드·휴대폰)에서는 화면 공유가 안 돼요. 컴퓨터로 들어와 주세요.";
   $("#screen").classList.toggle("on", !!prefs.screen);
   $("#help").hidden = !inGroup;
   $("#help").classList.toggle("on", S.me.help);
@@ -542,7 +545,7 @@ async function setScreen(on) {
     await lp.setScreenShareEnabled(on, capture, publish);
     prefs.screen = on;
   } catch (err) {
-    if (err?.name !== "NotAllowedError") toast("화면 공유를 시작하지 못했어요. 휴대폰에서는 지원되지 않을 수 있어요.");
+    if (err?.name !== "NotAllowedError") toast("화면 공유를 시작하지 못했어요. 아이패드·휴대폰에서는 지원되지 않아요. 컴퓨터로 들어와 주세요.", 6000);
   }
   renderControls();
 }

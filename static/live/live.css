@@ -1515,3 +1515,9 @@ body.class-t .sharebox #share-url { display: none; }
 
 #quiz-dlg .dlg-drag { cursor: move; user-select: none; touch-action: none; }
 body.class-t .monitor-head #bo-edit { color: var(--text); } /* 어두운 모둠 화면 위 흰 버튼: 글씨는 검게 */
+
+/* 모둠 활동 머리줄: 한 줄로 위에 붙여 영상 칸을 넓게 */
+body.class-t .monitor-head { flex-wrap: nowrap; gap: 8px; margin: -4px 0 0; }
+body.class-t .monitor-head .timer { font-size: 0.95rem; white-space: nowrap; }
+body.class-t .monitor-head strong { white-space: nowrap; }
+body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white-space: nowrap; }
