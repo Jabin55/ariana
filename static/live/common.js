@@ -466,9 +466,9 @@ function cameraOptions(lowbw, role) {
     return [{ resolution: { ...VideoPresets.h360.resolution, frameRate: 15 } },
       { videoEncoding: { maxBitrate: 300_000, maxFramerate: 15 }, simulcast: true, videoSimulcastLayers: [VideoPresets.h180] }];
   }
-  // 학생(모둠 활동): 180p·15fps·최대 120kbps 한 층
-  return [{ resolution: { ...VideoPresets.h180.resolution, frameRate: 15 } },
-    { videoEncoding: { maxBitrate: 120_000, maxFramerate: 15 }, simulcast: false }];
+  // 학생: 360p·15fps·최대 250kbps (+ 작은 칸용 180p 층 — 작게 보는 사람은 이 층만 받아 데이터를 아낀다)
+  return [{ resolution: { ...VideoPresets.h360.resolution, frameRate: 15 } },
+    { videoEncoding: { maxBitrate: 250_000, maxFramerate: 15 }, simulcast: true, videoSimulcastLayers: [VideoPresets.h180] }];
 }
 
 /** 화면 공유 [캡처 옵션, 전송 옵션]. 저대역폭 모드면 720p·초당 5장(슬라이드에 충분)·최대 500kbps. */
