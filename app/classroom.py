@@ -47,7 +47,7 @@ LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
 
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 헷갈리는 0/O, 1/I 제외
 MAX_STUDENTS = 60
-MAX_GROUPS = 12
+MAX_GROUPS = 6  # 모둠은 최대 6개
 MAX_CHAT = 300  # 수업당 보관하는 채팅 수
 CHAT_INTERVAL = 0.8  # 학생 채팅 최소 간격(초)
 CLASS_REVIVE_LIMIT = 24 * 3600  # 서버 재시작 뒤 이 시간 안에 만든 수업은 같은 코드로 이어진다

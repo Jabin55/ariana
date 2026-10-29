@@ -3031,3 +3031,15 @@ def test_regroup_during_breakout_and_late_joiner():
             target = "g1" if lst["room"] == "g2" else "g2"
             tw.send_json({"t": "breakout_assign", "target": lst["me"]["id"], "group": target})
             assert state(sl, lambda m: m["room"] == target)
+
+
+def test_group_count_limited_to_six():
+    """모둠은 최대 6개까지만 만든다"""
+    t = teacher()
+    code = create(t)["code"]
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        tw.send_json({"t": "breakout_setup", "n": 9})
+        assert len(state(tw, lambda m: m["groups"])["groups"]) == 6
+        tw.send_json({"t": "breakout_plan", "n": 12})
+        tw.send_json({"t": "breakout_setup", "n": 3})
+        assert len(state(tw, lambda m: len(m["groups"]) == 3)["groups"]) == 3

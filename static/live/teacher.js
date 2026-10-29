@@ -1479,7 +1479,9 @@ function renderGroups() {
 
 /** 모둠 수 */
 function groupPlan() {
-  return { n: Math.min(12, Math.max(1, Number($("#bo-n").value) || 4)) };
+  const want = Number($("#bo-n").value) || 4;
+  if (want > 6) { $("#bo-n").value = 6; toast("모둠은 최대 6개까지 만들 수 있어요."); }
+  return { n: Math.min(6, Math.max(1, want)) };
 }
 
 $("#bo-setup").addEventListener("click", () => {
