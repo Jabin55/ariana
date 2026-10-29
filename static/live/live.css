@@ -1527,3 +1527,6 @@ body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white
 .mic-ico { position: relative; display: inline-block; }
 .mic-ico.off { opacity: 0.55; }
 .mic-ico.off::after { content: ""; position: absolute; left: -2px; right: -2px; top: 50%; border-top: 2px solid #e5484d; transform: rotate(-35deg); }
+
+/* 어두운 화면 위 이모티콘: 밝은 동그라미에 올려 잘 보이게 */
+.ico-chip { display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 50%; background: #ffffff; font-size: 0.9em; vertical-align: middle; margin-right: 2px; }
