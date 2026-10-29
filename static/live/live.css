@@ -242,7 +242,7 @@ body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]�
 .options button.chosen { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .options button.correct { outline: 3px solid var(--ok); }
 .bars { display: grid; gap: 0; }
-.bar { display: grid; grid-template-columns: 1.4em minmax(4em, 1fr) minmax(80px, 1.6fr) 7.2em; align-items: center; gap: 10px; padding: 8px 4px; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
+.bar { display: grid; grid-template-columns: 1.4em minmax(6em, 2.4fr) minmax(56px, 1fr) 7.2em; /* 보기 글이 길어도 두 줄 안쪽으로: 막대는 좁게 */ align-items: center; gap: 10px; padding: 8px 4px; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
 .bar:last-child { border-bottom: 0; }
 .bar .mark { color: var(--brand-warm); font-weight: 900; font-size: 1.15rem; text-align: center; }
 .bar .name { min-width: 0; overflow-wrap: anywhere; }
@@ -1497,6 +1497,11 @@ body.class-t .sharebox #share-url { display: none; }
 /* 설문/퀴즈·모둠 팝업 (왼쪽 버튼으로 연다) */
 .overlay .card.dlg-wide { max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; }
 .tool-dlg .box { margin: 0; }
+/* 설문/퀴즈 창: 화면 오른쪽에 띄우고 뒤를 가리지 않아, 퀴즈를 내면서도 학생 표정이 보인다 */
+#quiz-dlg { background: transparent; pointer-events: none; justify-items: end; align-items: start; padding: 64px 16px 16px; }
+#quiz-dlg .card.dlg-wide { pointer-events: auto; max-width: 680px; width: min(680px, 46vw); min-width: 420px;
+  max-height: calc(100vh - 80px); box-shadow: 0 12px 40px #0006; }
+@media (max-width: 900px) { #quiz-dlg { justify-items: center; } #quiz-dlg .card.dlg-wide { width: 100%; min-width: 0; } }
 
 /* 참여자 탭: 모두 영상·모두 음소거·모두 손 내리기를 한 줄에 */
 .people-tools { flex-wrap: nowrap; gap: 6px; }
