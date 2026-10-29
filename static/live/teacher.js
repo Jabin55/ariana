@@ -1468,10 +1468,6 @@ function renderGroups() {
         : h("span", { class: "muted", style: "font-size:0.85rem" }, "비어 있어요"))));
   }
   box.append(board);
-  if (S.breakout) {
-    box.prepend(h("p", { class: "banner", style: "margin:0 0 8px;font-size:0.88rem" },
-      "모둠 활동 중이에요. 여기서 바꾸면 학생이 바로 그 모둠 방으로 옮겨져요. 새로 들어온 학생은 인원이 적은 모둠에 먼저 들어가요."));
-  }
   if (none.length && !S.breakout) {
     box.append(h("p", { class: "muted", style: "font-size:0.85rem;margin:6px 0 0" }, "미배정 학생은 시작할 때 인원이 적은 모둠으로 들어가요."));
   }
