@@ -164,8 +164,8 @@ class Klass:
     listening: list[str] = field(default_factory=list)  # 선생님이 듣고 있는 모둠
     talking: str | None = None  # 선생님이 말하고 있는 모둠
     broadcasting: bool = False  # 선생님이 모든 방에 동시에 말하는 중
-    # 학생 화면 구성: teacher(선생님 크게) grid(모두 나열) debate(토론: 학생 둘 크게 나란히)
-    layout: dict = field(default_factory=lambda: {"mode": "teacher", "pair": []})
+    # 학생 화면 구성: teacher(선생님 크게) grid(모두 보기, 처음 기본값) debate(토론: 학생 둘 크게 나란히)
+    layout: dict = field(default_factory=lambda: {"mode": "grid", "pair": []})
     roster: list = field(default_factory=list)  # 강좌 수업: 수강 확정 학생 명단 [{id, name, school}] (안 들어온 학생도 보이게)
     recording: bool = False  # 선생님이 수업을 녹화하는 중 (학생 화면에 표시)
     events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)

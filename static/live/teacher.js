@@ -223,8 +223,8 @@ function renderMain(room) {
   const sc = screenItem(room, lp);
   prefs.screen = !!lp.getTrackPublication(Track.Source.ScreenShare);
   const presenting = !!S?.present;
-  // 선생님이 고른 화면 구성을 선생님 화면에도 똑같이: teacher(선생님 크게) grid(모두 나열) debate(학생 둘 나란히)
-  const mode = S?.layout?.mode || "teacher";
+  // 선생님이 고른 화면 구성을 선생님 화면에도 똑같이: teacher(선생님 크게) grid(모두 보기) debate(학생 둘 나란히)
+  const mode = S?.layout?.mode || "grid";
   const pair = mode === "debate" ? (S.layout.pair || []).map((id) => `s-${id}`) : [];
   const duo = pair.map((id) => room.remoteParticipants.get(id)).filter(Boolean).map((p) => cameraItem(room, p, { flag: "🗣️" }));
   const me = cameraItem(room, lp, { name: "선생님 (나)" });
@@ -1112,10 +1112,10 @@ $("#set-ai").addEventListener("change", (e) => sock.send({ t: "settings", ai: e.
 $("#mirror-btn").addEventListener("click", () => sock.send({ t: "settings", mirror: S?.settings.mirror === false }));
 $("#mute-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "mute", target: "all" }); toast("모든 학생의 마이크를 껐어요."); });
 
-/* ───── 학생 화면 구성: 선생님 크게 / 모두 나열 / 토론(학생 둘) ───── */
+/* ───── 학생 화면 구성: 모두 보기 / 선생님 크게 / 토론(학생 둘) ───── */
 
 function renderLayout() {
-  const mode = S.layout?.mode || "teacher";
+  const mode = S.layout?.mode || "grid";
   if (document.activeElement !== $("#layout-sel")) $("#layout-sel").value = mode;
   const debating = $("#layout-sel").value === "debate";
   $("#debate-bar").hidden = !debating;

@@ -266,8 +266,8 @@ function renderMedia(room) {
     grid.classList.add("big");
     syncTiles(grid, items);
   } else {
-    // 선생님이 고른 화면 구성: teacher(선생님 크게) grid(모두 나열) debate(토론: 학생 둘 나란히)
-    const mode = S?.layout?.mode || "teacher";
+    // 선생님이 고른 화면 구성: teacher(선생님 크게) grid(모두 보기) debate(토론: 학생 둘 나란히)
+    const mode = S?.layout?.mode || "grid";
     // 크게 보일 공유 화면: 선생님 화면이 먼저, 없으면 다른 친구의 공유 화면 (내 공유 화면은 겹쳐 보이지 않게 빼고)
     const sharer = teacher && screenItem(room, teacher) ? teacher
       : people.find((p) => !isTeacher(p) && p !== room.localParticipant && screenItem(room, p));
@@ -282,15 +282,16 @@ function renderMedia(room) {
       stageItems.push(sc, cameraItem(room, sharer, { pip: true, name: sharer.name || sharer.identity }));
     } else if (teacher && (mode === "teacher" || sc)) {
       if (sc) stageItems.push(sc, cameraItem(room, sharer, { pip: true, name: sharer === teacher ? "선생님" : sharer.name }));
-      else stageItems.push(cameraItem(room, teacher, { name: "선생님" }));
+      else stageItems.push(cameraItem(room, teacher, { name: "선생님" }),
+        cameraItem(room, room.localParticipant, { pip: true, flag: S?.me?.hand ? "✋" : "" })); // 내 얼굴은 선생님 영상 오른쪽 아래에 작게 겹쳐서
     }
     stage.hidden = !stageItems.length && mode === "grid";
     stage.classList.toggle("duo", mode === "debate" && stageItems.length === 2);
     grid.classList.toggle("big", mode === "grid");
     syncTiles(stage, stageItems);
     $("#stage-empty").hidden = stageItems.length > 0 || mode === "grid";
-    if (mode === "teacher" && !sc) { // 선생님만 크게: 친구 영상은 받지 않고 내 화면만 작게
-      syncTiles(grid, [cameraItem(room, room.localParticipant, { flag: S?.me?.hand ? "✋" : "" })]);
+    if (mode === "teacher" && !sc) { // 선생님만 크게: 친구 영상은 받지 않고, 내 얼굴은 선생님 영상 위에 작게(위에서 넣음)
+      syncTiles(grid, teacher ? [] : [cameraItem(room, room.localParticipant, { flag: S?.me?.hand ? "✋" : "" })]);
       $("#sound").hidden = room.canPlaybackAudio;
       renderControls();
       return;
