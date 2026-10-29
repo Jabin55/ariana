@@ -100,7 +100,7 @@ async function courseForm(c, done) {
 
   /* ───── 2. 수업 개설 정보 ───── */
   // 수업명은 교육과정 문서상의 과목명 그대로 쓴다 (따로 적지 않음)
-  const sdl = h("datalist", { id: `${dlId}-s` }, koSort(meta.subjects, (x) => x.name).map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}${x.special ? " · 특목고" : ""}`)));
+  const sdl = h("datalist", { id: `${dlId}-s` }, koSort(meta.subjects, (x) => x.name).map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}${x.special ? " *" : ""}`)));
   const subject = h("input", { value: c.subject || c.title || "", maxlength: 60, required: true, list: sdl.id, autocomplete: "off", placeholder: "과목명을 입력해 검색 (예: 법과 사회)" });
   const custom = h("input", { type: "checkbox", checked: c.custom_subject });
   const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)", true)); // 교과(군)은 교육과정 순서 그대로
@@ -118,7 +118,7 @@ async function courseForm(c, done) {
         subject.value = x.name;
         subject.dispatchEvent(new Event("input"));
         browse.hidden = true;
-      }, title: x.special ? "특수 목적 고등학교 과목 (교육과정 총론 <표 6>)" : null }, x.name, x.special ? h("small", { class: "muted" }, " 특목고") : null)))) : null;
+      }, title: x.special ? "특수 목적 고등학교 과목 (교육과정 총론 <표 6>)" : null }, x.special ? `${x.name}*` : x.name)))) : null;
     }));
   };
   browseGroup.addEventListener("change", drawBrowse);
