@@ -273,12 +273,12 @@ def subject_values(v: dict, cur=None) -> dict:
             raise HTTPException(400, f"'{title}'은(는) 2022 개정 교육과정 과목 목록에 없어요. 목록에서 고르거나 '고시외 과목'에 체크해 주세요.")
         out["subject"] = title
         if found and not custom:  # 목록 과목이면 교과(군)·교과·과목 구분은 목록대로
-            out.update(subject_group=found["group"], subject_area=found["area"], subject_type=found["type"])
+            out.update(subject_group=found["group"], subject_area=found["area"], subject_type=found["kind"])
         else:
             if get("subject_group") and get("subject_group") not in subjects.GROUPS:
                 raise HTTPException(400, "교과(군)를 목록에서 골라 주세요.")
             if get("subject_type") and get("subject_type") not in subjects.TYPES:
-                raise HTTPException(400, "과목 구분(일반선택·진로선택·융합선택)을 골라 주세요.")
+                raise HTTPException(400, "과목 구분(일반선택·진로선택·전문교과)을 골라 주세요.")
             for k in ("subject_group", "subject_area", "subject_type"):
                 if k in v and v[k] is not None:
                     out[k] = v[k].strip()
@@ -364,7 +364,7 @@ async def hub_teacher_list(hub_id: int, request: Request):
 async def subject_list():
     """강좌 개설 화면: 2022 개정 교육과정 과목 (검색해서 고른다)"""
     return {"subjects": subjects.SUBJECTS, "groups": subjects.GROUPS, "areas": subjects.AREAS,
-            "types": subjects.TYPES, "terms": subjects.TERMS, "delivery": subjects.DELIVERY, "achievements": subjects.ACHIEVEMENTS,
+            "types": subjects.TYPES, "browse_types": subjects.BROWSE_TYPES, "terms": subjects.TERMS, "delivery": subjects.DELIVERY, "achievements": subjects.ACHIEVEMENTS,
             "offices": subjects.OFFICES, "hours_per_credit": subjects.HOURS_PER_CREDIT}
 
 

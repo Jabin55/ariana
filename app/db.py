@@ -583,6 +583,12 @@ def init() -> None:
         old = courses.c.subject_group == "기술·가정/정보/제2외국어/한문/교양"
         for group, areas in (("기술·가정/정보", ("기술·가정", "정보")), ("제2외국어/한문", ("제2외국어", "한문")), ("교양", ("교양",))):
             c.execute(update(courses).where(old, courses.c.subject_area.in_(areas)).values(subject_group=group))
+    # 과목 구분은 일반선택·진로선택·전문교과 셋으로 (융합선택·교양 → 진로선택, 전문 교과 세부 구분 → 전문교과)
+    from app.subjects import VOCATIONAL_GROUPS
+    with engine.begin() as c:
+        c.execute(update(courses).where(courses.c.subject_group.in_(VOCATIONAL_GROUPS)).values(subject_type="전문교과"))
+        c.execute(update(courses).where(courses.c.subject_group == "교양", courses.c.subject_type != "").values(subject_type="진로선택"))
+        c.execute(update(courses).where(courses.c.subject_type == "융합선택").values(subject_type="진로선택"))
 
 
 async def run(fn, *args):

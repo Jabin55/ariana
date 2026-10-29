@@ -112,7 +112,7 @@ async function courseForm(c, done) {
   const browseList = h("div", { class: "subject-list" });
   const drawBrowse = () => {
     const list = meta.subjects.filter((x) => x.group === browseGroup.value);
-    browseList.replaceChildren(...meta.types.map((t) => {
+    browseList.replaceChildren(...(meta.browse_types || meta.types).map((t) => { // 찾기는 교육과정 표의 분류대로
       const items = list.filter((x) => x.type === t);
       return items.length ? h("div", {}, h("b", {}, t), h("div", { class: "row" }, koSort(items, (x) => x.name).map((x) => h("button", { type: "button", class: "small", onclick: () => {
         subject.value = x.name;
@@ -155,7 +155,7 @@ async function courseForm(c, done) {
     if (found) {
       group.value = found.group;
       area.value = found.area;
-      type.value = found.type;
+      type.value = found.kind || found.type; // 과목 구분은 일반선택·진로선택·전문교과 셋으로
       credits.value = found.credits;
       achievement.value = found.achievement;
       credits.dispatchEvent(new Event("input"));

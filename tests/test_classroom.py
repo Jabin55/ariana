@@ -1752,7 +1752,7 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     assert c["co_teachers"] == [{"id": asst_id, "name": "이보조"}] and c["lead"]
     # 고시외 과목은 직접 적는다
     r = prof.post("/api/courses", json={**course, "title": "울산 지역사 탐구", "custom_subject": True,
-                                        "subject_group": "사회", "subject_area": "역사", "subject_type": "융합선택"})
+                                        "subject_group": "사회", "subject_area": "역사", "subject_type": "진로선택"})
     assert r.status_code == 200, r.text
     assert prof.post(f"/api/courses/{r.json()['id']}", json={"archived": True}).status_code == 200
 
@@ -2827,3 +2827,21 @@ def test_special_purpose_subjects_from_table6():
     assert by["베트남어 독해와 작문Ⅱ"]["area"] == "제2외국어" and by["전공 기초 아랍어"]["special"]
     assert not by["심화 독일어"]["special"] and not by["중국 문화"]["special"]  # 보통 교과에도 있는 과목
     assert by["고급 물리학"]["achievement"] == "5"
+
+
+
+def test_course_subject_type_is_three_kinds():
+    """과목 찾기는 교육과정 표대로, 과목 구분(저장)은 일반선택·진로선택·전문교과 셋"""
+    from app import subjects
+    by = {x["name"]: x for x in subjects.SUBJECTS}
+    assert subjects.TYPES == ["일반선택", "진로선택", "전문교과"]
+    assert [by[n]["kind"] for n in ("문학", "기하", "매체 의사소통", "진로와 직업", "논술", "고급 미적분", "상업 경제", "총무")] == [
+        "일반선택", "진로선택", "진로선택", "진로선택", "진로선택", "진로선택", "전문교과", "전문교과"]
+    assert by["매체 의사소통"]["type"] == "융합선택"  # 찾기 분류는 그대로
+    t = teacher()
+    cid = t.post("/api/courses", json={**COURSE, "subject": "매체 의사소통"}).json()["id"]
+    assert t.get("/api/courses/mine").json()["courses"][0]["subject_type"] == "진로선택"
+    with db.engine.begin() as c:
+        c.execute(db.courses.update().where(db.courses.c.id == cid).values(subject_type="융합선택"))
+    db.init()  # 예전 값은 서버가 켜질 때 정리
+    assert t.get("/api/courses/mine").json()["courses"][0]["subject_type"] == "진로선택"

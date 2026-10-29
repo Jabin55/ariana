@@ -161,7 +161,8 @@ for (_g, _a, _k), _names in _SPECIAL.items():
 
 GROUPS = list(_DATA)  # 교과(군): 국어·수학·영어·사회·과학·예술·체육·기술·가정/정보·제2외국어/한문·교양
 AREAS = [area for areas in _DATA.values() for area in areas]  # 교과(영역)
-TYPES = ["일반선택", "진로선택", "융합선택", "전문 공통", "전공일반선택", "전공실무선택"]  # 과목 구분(편성). 뒤 셋은 전문 교과
+BROWSE_TYPES = ["일반선택", "진로선택", "융합선택", "전문 공통", "전공일반선택", "전공실무선택"]  # 과목 찾기 분류(교육과정 표대로)
+TYPES = ["일반선택", "진로선택", "전문교과"]  # 과목 개설 때 저장하는 '과목 구분'
 TERMS = ["1학기", "여름학기", "2학기", "겨울학기"]
 DELIVERY = ["실시간 온라인", "온·오프라인 병행"]  # 운영방식
 ACHIEVEMENTS = {"5": "5단계 (A~E)", "3": "3단계 (A~C)", "P": "P/F"}
@@ -188,8 +189,20 @@ def default_achievement(group: str, area: str, kind: str, name: str = "") -> str
     return "5"
 
 
+VOCATIONAL_GROUPS = GROUPS[GROUPS.index("교양") + 1:]  # 교양 다음부터는 전문 교과
+
+
+def course_type(group: str, kind: str) -> str:
+    """과목 개설의 '과목 구분': 전문 교과 → 전문교과, 교양·진로선택·융합선택 → 진로선택, 일반선택 → 일반선택"""
+    if group in VOCATIONAL_GROUPS:
+        return "전문교과"
+    if group == "교양" or kind != "일반선택":
+        return "진로선택"
+    return "일반선택"
+
+
 SUBJECTS = [
-    {"name": name, "group": group, "area": area, "type": kind,
+    {"name": name, "group": group, "area": area, "type": kind, "kind": course_type(group, kind),
      "credits": default_credits(group), "achievement": default_achievement(group, area, kind, name),
      "special": name in SPECIAL_PURPOSE}
     for group, areas in _DATA.items() for area, kinds in areas.items()
