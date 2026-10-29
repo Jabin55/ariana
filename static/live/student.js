@@ -45,7 +45,8 @@ function renderPenBar() {
 
 $("#code").textContent = CODE;
 api("/api/me").then(({ user }) => {
-  if (!user || (user.role !== "student" && !user.is_admin) || user.needs_profile) location.replace(`/live?c=${CODE}`);
+  // 다른 선생님도 특강·회의에는 참가자로 들어온다 (강좌 수업이면 서버가 막는다)
+  if (!user || (user.role !== "student" && user.role !== "teacher" && !user.is_admin) || user.needs_profile) location.replace(`/live?c=${CODE}`);
   else $("#prejoin-name").textContent = `${user.display} 이름으로 들어가요.`;
 }).catch(() => {});
 

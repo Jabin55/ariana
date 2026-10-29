@@ -2960,3 +2960,16 @@ def test_role_change_form_requests_name_gender_school_changes(monkeypatch):
     assert admin.post(f"/api/admin/profile-changes/{change['user_id']}", json={"action": "approve"}).status_code == 200
     assert me()["name"] == "김다른"
     assert not any(x.get("change_only") for x in admin.get("/api/staff/applications?role=instructor").json()["applications"])
+
+
+def test_other_teacher_joins_meeting_by_code():
+    """특강·회의는 다른 선생님도 입장 코드로 참가자로 들어온다. 강좌 수업은 코드를 알아도 못 들어온다."""
+    t, other = teacher(), teacher("other@gmail.com")
+    code = create(t)["code"]
+    r = other.post(f"/api/live/classes/{code}/join")
+    assert r.status_code == 200 and "student_id" in r.json(), r.text
+    assert other.get("/api/me").json()["user"]["role"] == "teacher"
+    with t.websocket_connect(f"/ws/live/{code}") as tw, other.websocket_connect(f"/ws/live/{code}") as ow:
+        me = state(ow, lambda m: m.get("me"))
+        assert me["me"]["name"] == "박선생"
+        assert state(tw, lambda m: any(s["online"] for s in m["students"]))
