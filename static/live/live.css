@@ -264,11 +264,17 @@ body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]�
 .options button { text-align: left; padding: 10px 12px; white-space: normal; }
 .options button.chosen { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .options button.correct { outline: 3px solid var(--ok); }
-.bars { display: grid; gap: 6px; }
-.bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 0.9rem; }
-.bar .track { grid-column: 1 / -1; height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
-.bar .fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.3s; }
-.bar.correct .name::after { content: " ✓ 정답"; color: var(--ok); font-weight: 700; }
+.bars { display: grid; gap: 0; }
+.bar { display: grid; grid-template-columns: 1.4em minmax(4em, 1fr) minmax(80px, 1.6fr) 7.2em; align-items: center; gap: 10px; padding: 8px 4px; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
+.bar:last-child { border-bottom: 0; }
+.bar .mark { color: var(--brand-warm); font-weight: 900; font-size: 1.15rem; text-align: center; }
+.bar .name { min-width: 0; overflow-wrap: anywhere; }
+.bar .track { height: 12px; border-radius: 3px; background: #d6d9de; overflow: hidden; }
+.bar .fill { height: 100%; transition: width 0.3s; }
+.bar .num { font-size: 0.85rem; color: var(--muted); white-space: nowrap; text-align: right; }
+.bar.correct .name { font-weight: 700; }
+.bar.none { --opt: #9aa1ab; }
+.bar.none .name { color: var(--muted); }
 .texts { display: grid; gap: 4px; max-height: 240px; overflow: auto; }
 .texts div { background: var(--surface-2); border-radius: 8px; padding: 4px 8px; font-size: 0.9rem; }
 

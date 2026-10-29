@@ -503,13 +503,18 @@ def activity_counts(a: dict) -> list[int]:
     return counts
 
 
+def activity_noanswer(k: Klass, a: dict) -> int:
+    """지금 교실에 있는데 아직 답하지 않은 학생 수 (결과의 '무응답')"""
+    return sum(1 for sid, st in k.students.items() if st.online and sid not in a["responses"])
+
+
 def activity_for_teacher(k: Klass, a: dict | None) -> dict | None:
     if not a:
         return None
     return {
         "id": a["id"], "kind": a["kind"], "prompt": a["prompt"], "options": a["options"],
         "correct": a["correct"], "open": a["open"], "reveal": a["reveal"],
-        "counts": activity_counts(a), "total": len(a["responses"]),
+        "counts": activity_counts(a), "total": len(a["responses"]), "noanswer": activity_noanswer(k, a),
         "responses": [
             {"sid": sid, "name": k.students[sid].name if sid in k.students else "(나감)", "value": v}
             for sid, v in a["responses"].items()
@@ -517,7 +522,7 @@ def activity_for_teacher(k: Klass, a: dict | None) -> dict | None:
     }
 
 
-def activity_for_student(a: dict | None, sid: str) -> dict | None:
+def activity_for_student(k: Klass, a: dict | None, sid: str) -> dict | None:
     if not a:
         return None
     view = {
@@ -528,6 +533,7 @@ def activity_for_student(a: dict | None, sid: str) -> dict | None:
         view["correct"] = a["correct"]
         view["counts"] = activity_counts(a)
         view["total"] = len(a["responses"])
+        view["noanswer"] = activity_noanswer(k, a)
         if a["kind"] == "text":
             view["texts"] = [v for v in a["responses"].values() if isinstance(v, str)]
     return view
@@ -584,7 +590,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "teacher_broadcast": k.broadcasting,
         "recording": k.recording,
         "layout": layout_for(k),
-        "activity": activity_for_student(k.activity, s.id),
+        "activity": activity_for_student(k, k.activity, s.id),
         "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
         "media": k.media if room == "main" else None,
         "announce": k.announce,

@@ -385,14 +385,21 @@ class AIChat {
 /* ───────────────────────── 활동 결과 막대 ───────────────────────── */
 
 function resultBars(a) {
-  const total = a.total || 0;
-  return h("div", { class: "bars" }, a.options.map((opt, i) => {
-    const n = a.counts?.[i] || 0;
-    const pct = total ? Math.round((n / total) * 100) : 0;
-    return h("div", { class: `bar ${oxClass(a, i)} ${a.correct === i ? "correct" : ""}` }, // 막대 색 = 보기 칸 색
-      h("span", { class: "name" }, a.kind === "ox" ? null : h("b", { class: "bar-no" }, i + 1), opt), h("span", { class: "muted" }, `${n}명 (${pct}%)`),
-      h("div", { class: "track" }, h("div", { class: "fill", style: `width:${pct}%` })));
-  }));
+  // 한 줄: [정답 표시] 보기 · 막대 · "n명 / p%" — 맨 아래에 무응답(교실에 있지만 아직 안 낸 학생)
+  const none = a.noanswer || 0;
+  const all = (a.total || 0) + none;
+  const row = (cls, mark, label, n) => {
+    const pct = all ? Math.round((n / all) * 100) : 0;
+    return h("div", { class: `bar ${cls}` },
+      h("span", { class: "mark" }, mark ? "✓" : ""),
+      h("span", { class: "name" }, label),
+      h("div", { class: "track" }, h("div", { class: "fill", style: `width:${pct}%` })),
+      h("span", { class: "num" }, `${n}명 / ${pct}%`));
+  };
+  return h("div", { class: "bars" },
+    a.options.map((opt, i) => row(`${oxClass(a, i)} ${a.correct === i ? "correct" : ""}`, a.correct === i,
+      [a.kind === "ox" ? null : h("b", { class: "bar-no" }, i + 1), opt], a.counts?.[i] || 0)),
+    row("none", false, "무응답", none));
 }
 
 /** OX 퀴즈 버튼 그림: 0 → 파란 동그라미, 1 → 빨간 엑스 */
@@ -405,12 +412,12 @@ function oxIcon(i) {
   return span;
 }
 const oxClass = (a, i) => (a.kind === "ox" ? (i === 0 ? "ox-o" : "ox-x") : `c${i % 8}`);
-/** 보기 칸 묶음의 class: OX는 그림 두 칸, 객관식·투표는 번호마다 색이 다른 칸 */
+/** 보기 칸 묶음의 class: OX는 그림 두 칸, 객관식·설문은 번호마다 색이 다른 칸 */
 const optsClass = (a) => `options ${a.kind === "ox" ? "ox" : "colored"}`;
 /** 보기 버튼 안: OX는 그림, 나머지는 오른쪽 위 번호 + 가운데 글 */
 const optBody = (a, i, opt) => (a.kind === "ox" ? oxIcon(i) : [h("span", { class: "opt-no" }, i + 1), h("span", { class: "opt-text" }, opt)]);
 
-const KIND_NAMES = { ox: "OX 퀴즈", choice: "객관식", poll: "투표", text: "주관식" };
+const KIND_NAMES = { ox: "OX 퀴즈", choice: "객관식", poll: "설문", text: "주관식" };
 
 /** 선생님 화면용: 결과를 공개했을 때 학생 화면에 보이는 모습 (이름 없이, 정답 표시·막대그래프) */
 function revealPreview(a) {

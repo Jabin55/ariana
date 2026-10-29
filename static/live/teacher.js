@@ -1143,7 +1143,7 @@ $("#debate-apply").addEventListener("click", () => {
 });
 $("#lower-all").addEventListener("click", () => sock.send({ t: "lower_hand", target: "all" }));
 
-/* ───── 퀴즈·투표 ───── */
+/* ───── 퀴즈·설문 ───── */
 
 let actKind = "ox";
 let actSig = "";
