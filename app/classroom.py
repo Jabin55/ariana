@@ -154,7 +154,8 @@ class Klass:
     questions: list[dict] = field(default_factory=list)
     activity: dict | None = None
     settings: dict = field(default_factory=lambda: {
-        "chat": True, "ai": True, "mic_lock": MIC_LOCK_DEFAULT, "lowbw": LOW_BANDWIDTH_DEFAULT,
+        "chat": True, "ai": False,  # AI 조교: 선생님이 켜야 학생 화면에 보인다
+        "mic_lock": MIC_LOCK_DEFAULT, "lowbw": LOW_BANDWIDTH_DEFAULT,
         "mirror": True, "board_draw": True})  # board_draw: 화이트보드에 학생도 쓸 수 있음  # mirror: 카메라 영상 좌우 반전 (모두의 화면에 같이)
     groups: list[dict] = field(default_factory=list)  # [{id, name}]
     breakout: bool = False
