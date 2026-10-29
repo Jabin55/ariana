@@ -1531,3 +1531,4 @@ body.class-t .sharebox #share-url { display: none; }
 /* 참여자 탭: 모두 영상·모두 음소거·모두 손 내리기를 한 줄에 */
 .people-tools { flex-wrap: nowrap; gap: 6px; }
 .people-tools button { flex: 1 1 0; min-width: 0; padding: 6px 4px; font-size: 0.85rem; white-space: nowrap; }
+.change-note { font-size: 0.8rem; color: var(--brand-warm); margin-top: 2px; white-space: nowrap; }

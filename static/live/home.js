@@ -594,7 +594,7 @@ $("#withdraw").addEventListener("submit", async (e) => {
 
 const ROLE_NAME = { coordinator: "관리교사", instructor: "강의교사", participant: "관리교사" };
 const MEMBER_STATUS = {
-  pending: ["pending", "승인 대기"], approved: ["approved", "활동 중"], scheduled: ["pending", "활동 시작 전"],
+  pending: ["pending", "승인 대기"], change: ["pending", "변경 승인 대기"], approved: ["approved", "활동 중"], scheduled: ["pending", "활동 시작 전"],
   expired: ["rejected", "기간 끝남"], rejected: ["rejected", "거절됨"], revoked: ["rejected", "해제됨"],
 };
 const period = (x) => (x.valid_from || x.valid_until ? `${fmtDate(x.valid_from) || "제한 없음"} ~ ${fmtDate(x.valid_until) || "제한 없음"}` : "");
@@ -1012,6 +1012,7 @@ function applicantInfo(x) {
 }
 
 function staffCard(x, today, reload) {
+  if (x.change_only) return profileChangeCard(x, reload);
   const isCoord = x.role === "coordinator";
   const named = x.role !== "instructor"; // 관리교사: 거점학교명 / 참여학교 담당교사: 소속 학교를 고쳐 승인할 수 있다
   const decide = async (body) => {
@@ -1054,6 +1055,26 @@ function staffCard(x, today, reload) {
         active ? h("button", { class: "danger", onclick: () => {
           if (confirm(`${x.name}의 권한을 해제할까요? 수업 기록은 남아요.`)) decide({ action: "revoke", note: note.value });
         } }, "권한 해제") : null)));
+}
+
+/** 권한은 그대로 두고 이름·성별·소속만 바꾸는 신청: 한꺼번에 승인·거절 */
+function profileChangeCard(x, reload) {
+  const FIELD = { name: "이름", gender: "성별", school: "소속" };
+  const go = async (action) => {
+    if (!confirm(`${x.name}님의 변경 신청을 ${action === "approve" ? "승인" : "거절"}할까요?`)) return;
+    try {
+      await api(`/api/admin/profile-changes/${x.user_id}`, { action, note: "" });
+      toast(action === "approve" ? "변경을 승인했어요." : "변경을 거절했어요.");
+      reload();
+    } catch (err) { toast(err.message); }
+  };
+  return h("div", { class: "box", style: "margin-bottom:10px" },
+    h("div", { class: "row" }, h("strong", {}, x.name), statusBadge(x.status), h("span", { class: "muted" }, `${STAFF_ROLE[x.role] || x.role} ${x.hub || ""}`)),
+    h("div", { class: "muted", style: "font-size:0.9rem" }, "권한(가입 유형·학교)은 그대로이고, 아래 내용만 바꿔 달라는 신청이에요."),
+    x.changes.map((c) => h("div", {}, `${FIELD[c.field] || c.field}: ${c.old || "(없음)"} → `, h("strong", {}, c.new))),
+    h("div", { class: "row" },
+      h("button", { class: "primary", onclick: () => go("approve") }, "승인"),
+      h("button", { class: "danger", onclick: () => go("reject") }, "거절")));
 }
 
 /* ───── 교사 목록: 수강생 관리처럼 위에 검색 칸, 아래에 목록 (줄의 '관리'를 누르면 승인 칸) ───── */
@@ -1104,7 +1125,7 @@ function staffBoard(id, list, today, reload, title) {
   function draw() {
     const rows = filtered();
     const decide = async (action) => {
-      const picked = rows.filter((x) => st.pick.has(x.id) && x.status === "pending");
+      const picked = rows.filter((x) => st.pick.has(x.id) && (x.status === "pending" || x.change_only));
       if (!picked.length) { toast("승인 대기인 신청을 먼저 체크해 주세요."); return; }
       // 강의교사는 끝나는 날이 꼭 있어야 한다 → 신청서의 희망 기간으로 승인 (다르게 정하려면 '관리'에서 한 명씩)
       const noEnd = action === "approve" ? picked.filter((x) => x.role === "instructor" && !x.wish_until) : [];
@@ -1112,6 +1133,10 @@ function staffBoard(id, list, today, reload, title) {
         (action === "approve" ? "\n학교 변경 요청은 기존 활동 기간을 유지합니다." : ""))) return;
       let ok = 0;
       for (const x of picked) {
+        if (x.change_only) { // 권한은 그대로, 함께 신청한 이름·성별·소속만
+          try { await api(`/api/admin/profile-changes/${x.user_id}`, { action, note: "" }); ok++; } catch (err) { toast(err.message); }
+          continue;
+        }
         if (noEnd.includes(x)) continue;
         const body = action === "approve"
           ? { action, hub_name: x.hub,
@@ -1129,6 +1154,10 @@ function staffBoard(id, list, today, reload, title) {
       result.querySelectorAll("tbody input.pick").forEach((c) => { c.checked = e.target.checked; });
     } });
     const hubApproval = id === "hub";
+    // 함께 신청한 이름·성별·소속 변경: 신청을 승인하면 같이 바뀐다
+    const FIELD = { name: "이름", gender: "성별", school: "소속" };
+    const changeNote = (x) => (x.changes || []).map((c) => h("div", { class: "change-note" },
+      `${FIELD[c.field] || c.field} 변경: ${c.old || "(없음)"} → ${c.new}`));
     const COLS = hubApproval ? 7 : 11;
     const trs = rows.flatMap((x, i) => {
       const open = st.open.has(x.id);
@@ -1142,7 +1171,7 @@ function staffBoard(id, list, today, reload, title) {
         h("td", {}, day(x.requested_at)),
         h("td", {}, x.affiliation || "-"),
         h("td", {}, x.position || "-"),
-        h("td", {}, h("button", { class: "link-btn name-btn", onclick: toggle }, `${open ? "▾" : "▸"} ${x.name}`)),
+        h("td", {}, h("button", { class: "link-btn name-btn", onclick: toggle }, `${open ? "▾" : "▸"} ${x.name}`), changeNote(x)),
         h("td", {}, x.contact || x.contact_email || x.email || "-"),
         h("td", {}, h("span", { class: `status ${cls}` }, label), " ",
           h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")))
@@ -1151,7 +1180,7 @@ function staffBoard(id, list, today, reload, title) {
         h("td", { class: "num" }, rows.length - i),
         h("td", {}, STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (보조)" : "")),
         h("td", {}, h("button", { class: "link-btn name-btn", onclick: toggle },
-          `${open ? "▾" : "▸"} ${x.name}`)),
+          `${open ? "▾" : "▸"} ${x.name}`), changeNote(x)),
         h("td", {}, x.hub || "-"), h("td", {}, x.affiliation || "-"),
         h("td", {}, x.birth ? x.birth.replaceAll("-", ".") : "-"),
         h("td", { class: "contact-cell" }, x.contact_email || x.email, h("br"), h("span", { class: "muted" }, x.contact || "-")),
@@ -1175,7 +1204,7 @@ function staffBoard(id, list, today, reload, title) {
           : h("tr", {}, h("td", { colspan: COLS, class: "muted", style: "text-align:center;padding:24px" }, list.length ? "조건에 맞는 신청이 없어요." : "아직 신청이 없어요."))))));
   }
 
-  const pending = list.filter((x) => x.status === "pending").length;
+  const pending = list.filter((x) => x.status === "pending" || x.change_only).length;
   box.append(
     h("h2", { style: "margin:8px 0 6px" }, title, pending ? h("span", { class: "status pending", style: "margin-left:8px;font-size:0.85rem" }, `승인 대기 ${pending}`) : null),
     h("div", { class: "search-form" },
@@ -1249,22 +1278,12 @@ async function bannersEditor(reload) {
 
 async function loadAdmin() {
   const selected = adminSub;
-  const tabs = [["approve", "교사 승인"], ["school", "소속 변경 승인"], ["name", "이름 변경 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속 기록"], ["storage", "서버 용량"]];
+  const tabs = [["approve", "교사 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속 기록"], ["storage", "서버 용량"]];
   $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, label]) => h("button", {
     type: "button", class: adminSub === key ? "active" : "", onclick: () => { adminSub = key; loadAdmin(); }
   }, label)));
   const box = $("#admin-list");
   fill(box, h("p", { class: "muted" }, "불러오는 중…"));
-  if (selected === "school") {
-    const board = await profileChangeBoard("school");
-    if (adminSub === selected) fill(box, h("h2", {}, "소속 변경 승인"), board);
-    return;
-  }
-  if (selected === "name") {
-    const board = await profileChangeBoard("name");
-    if (adminSub === selected) fill(box, h("h2", {}, "이름 변경 승인"), board, nameFixer());
-    return;
-  }
   if (selected === "storage") {
     try { const box2 = await storageBoard(); if (adminSub === selected) fill(box, box2); }
     catch (err) { if (adminSub === selected) fill(box, h("p", { class: "error" }, err.message)); }
@@ -1287,8 +1306,15 @@ async function loadAdmin() {
   co.applications.forEach((x) => { x.role = "coordinator"; });
   pa.applications.forEach((x) => { x.role = "participant"; });
   ins.applications.forEach((x) => { x.role = "instructor"; });
-  const list = [...co.applications, ...pa.applications, ...ins.applications];
-  const pending = list.filter((x) => x.status === "pending").length;
+  const seen = new Set(); // 이름·소속만 바꾸는 신청은 한 사람당 한 줄
+  const list = [...co.applications, ...pa.applications, ...ins.applications].filter((x) => {
+    if (!x.change_only) return true;
+    if (seen.has(x.user_id)) return false;
+    seen.add(x.user_id);
+    x.id = `change-${x.user_id}`; // 활동 중인 같은 권한 줄과 체크·펼치기가 겹치지 않게
+    return true;
+  });
+  const pending = list.filter((x) => x.status === "pending" || x.change_only).length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
   fill(box, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
@@ -1358,90 +1384,6 @@ function accessLogBoard() {
   return h("div", {}, h("h2", {}, "접속 기록"),
     h("p", { class: "muted" }, "교사·관리자가 학생 정보를 조회·내려받기·수정·삭제한 기록입니다. 365일 보관 후 자동 삭제됩니다."),
     h("div", { class: "row" }, q, action, days, per, h("button", { type: "button", class: "small", onclick: () => { page = 1; load(); } }, "검색")), out);
-}
-
-async function profileChangeBoard(field) {
-  try {
-    const { requests } = await api(`/api/admin/change-requests?field=${field}`);
-    if (field === "name") return nameChangeTable(requests);
-    const pending = requests.filter((r) => r.status === "pending");
-    return pending.length ? pending.map((r) => h("div", { class: "card", style: "margin:10px 0" },
-      h("strong", {}, `${r.name} (${r.email})`),
-      h("p", {}, `${r.old_value || "-"} → ${r.new_value}`),
-      h("div", { class: "row" }, ["approve", "reject"].map((action) => h("button", {
-        type: "button", class: action === "approve" ? "primary" : "small", onclick: async () => {
-          if (action === "approve" && !confirm(`${r.name}님의 ${field === "name" ? "이름" : "소속"} 변경을 승인할까요?`)) return;
-          const note = action === "reject" ? prompt("반려 사유를 입력하세요.", "") : "";
-          if (note === null) return;
-          try {
-            await api(`/api/admin/change-requests/${r.id}`, { action, note });
-            toast(action === "approve" ? "변경을 승인했어요." : "변경을 반려했어요.");
-            loadAdmin();
-          } catch (e) { toast(e.message); }
-        }
-      }, action === "approve" ? "승인" : "반려")))))
-      : h("p", { class: "muted" }, "승인 대기 중인 신청이 없어요.");
-  } catch (e) { return h("p", { class: "error" }, e.message); }
-}
-
-async function decideChange(r, field, action) {
-  if (action === "approve" && !confirm(`${r.name}님의 ${field === "name" ? "이름" : "소속"} 변경을 승인할까요?`)) return;
-  const note = action === "reject" ? prompt("반려 사유를 입력하세요.", "") : "";
-  if (note === null) return;
-  try {
-    await api(`/api/admin/change-requests/${r.id}`, { action, note });
-    toast(action === "approve" ? "변경을 승인했어요." : "변경을 반려했어요.");
-    loadAdmin();
-  } catch (e) { toast(e.message); }
-}
-
-/** 이름 변경 승인: 표 (대기 중인 신청은 상태 칸에서 바로 승인·반려) */
-function nameChangeTable(requests) {
-  if (!requests.length) return h("p", { class: "muted" }, "이름 변경 신청이 없어요.");
-  const day = (t) => (t ? new Date(t * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "");
-  const KIND = { student: "학생" };
-  const STATE = { approved: "승인", rejected: "반려" };
-  const gv = (r, v) => (r.field === "gender" ? `${v || "-"} (성별)` : v || "-"); // 성별 변경도 이 표에서 승인
-  const state = (r) => r.status === "pending"
-    ? h("div", { class: "change-actions" },
-      h("button", { type: "button", class: "primary small", onclick: () => decideChange(r, "name", "approve") }, "승인"),
-      h("button", { type: "button", class: "small", onclick: () => decideChange(r, "name", "reject") }, "반려"))
-    : h("span", { title: r.note || "" }, STATE[r.status] || r.status);
-  return h("div", { class: "table-wrap" }, h("table", { class: "att change-table" },
-    h("thead", {}, h("tr", {}, ["번호", "신청일", "회원 구분", "소속", "변경 전 이름", "변경 후 이름", "상태"].map((t) => h("th", {}, t)))),
-    h("tbody", {}, requests.map((r, i) => h("tr", {},
-      h("td", {}, requests.length - i), h("td", {}, day(r.requested_at)), h("td", {}, KIND[r.role] || "교사"),
-      h("td", {}, r.school || "-"), h("td", {}, gv(r, r.old_value)), h("td", {}, gv(r, r.new_value)), h("td", {}, state(r)))))));
-}
-
-/** 전체 관리자: 다른 사람의 이름 고치기 (가입 뒤에는 본인이 이름을 못 바꾼다 — 오타 등) */
-function nameFixer() {
-  const q = h("input", { placeholder: "이름 또는 이메일", maxlength: 60 });
-  const result = h("div");
-  const find = async () => {
-    if (!q.value.trim()) { q.focus(); return; }
-    let users;
-    try { ({ users } = await api(`/api/admin/users?q=${encodeURIComponent(q.value.trim())}`)); } catch (err) { toast(err.message); return; }
-    if (!users.length) { fill(result, h("p", { class: "muted" }, "찾는 회원이 없어요.")); return; }
-    fill(result, h("div", { class: "table-wrap" }, h("table", { class: "att" },
-      h("thead", {}, h("tr", {}, ["구분", "이름", "이메일", "소속", ""].map((t) => h("th", {}, t)))),
-      h("tbody", {}, users.map((x) => {
-        const name = h("input", { value: x.name, maxlength: 30, style: "width:9em" });
-        const where = [x.school, x.grade ? `${x.grade}학년 ${x.class_no || ""}반 ${x.number || ""}번` : ""].filter(Boolean).join(" · ");
-        return h("tr", {}, h("td", {}, x.role), h("td", {}, name), h("td", {}, x.email), h("td", {}, where || "-"),
-          h("td", {}, h("button", { class: "small primary", onclick: async () => {
-            const v = name.value.trim();
-            if (!v || v === x.name) return;
-            if (!confirm(`이름을 '${x.name || "(없음)"}' → '${v}'(으)로 고칠까요?`)) return;
-            try { await api(`/api/admin/users/${x.id}/name`, { name: v }); x.name = v; toast("이름을 고쳤어요."); } catch (err) { toast(err.message); }
-          } }, "저장")));
-      })))));
-  };
-  q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
-  return h("section", { class: "box", style: "margin-top:24px" },
-    h("h3", { style: "margin:0 0 8px" }, "✏️ 회원 이름 고치기"),
-    h("div", { class: "row" }, q, h("button", { class: "primary", onclick: find }, "검색")),
-    result);
 }
 
 /* 수업 기록 (출결·채점·질문) — 그릴 자리는 detailEl() */

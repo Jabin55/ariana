@@ -2940,10 +2940,23 @@ def test_role_change_form_requests_name_gender_school_changes(monkeypatch):
     reqs = {x["field"]: x for x in g.get("/api/me/change-requests").json()["requests"]}
     assert {k: (v["old_value"], v["new_value"]) for k, v in reqs.items()} == {
         "name": ("김선생", "김새이름"), "gender": ("남", "여"), "school": ("가나고등학교", "다라고등학교")}
+    # 교사 승인 표: 신청 줄에 함께 신청한 변경이 보이고, 신청을 승인하면 한꺼번에 바뀐다
     admin = login("admin@gmail.com", name="관리자", school=SCHOOL)
-    board = admin.get("/api/admin/change-requests?field=name").json()["requests"]
-    assert sorted(x["field"] for x in board) == ["gender", "name"]  # 이름 변경 승인 표에서 성별도 함께
-    for x in board:
-        assert admin.post(f"/api/admin/change-requests/{x['id']}", json={"action": "approve"}).status_code == 200
-    assert admin.post(f"/api/admin/change-requests/{reqs['school']['id']}", json={"action": "approve"}).status_code == 200
+    apps = admin.get("/api/staff/applications?role=instructor").json()["applications"]
+    row = next(x for x in apps if x["name"] == "김선생")
+    assert sorted(c["field"] for c in row["changes"]) == ["gender", "name", "school"]
+    r = admin.post(f"/api/staff/{row['id']}", json={"action": "approve", "valid_from": "2026-03-01", "valid_until": "2099-02-28"})
+    assert r.status_code == 200, r.text
     assert (me()["name"], me()["gender"], me()["school"]) == ("김새이름", "여", "다라고등학교")
+    assert all(x["status"] == "approved" for x in g.get("/api/me/change-requests").json()["requests"])
+    # 활동 중에 이름만 바꾸기: 같은 유형으로 변경 신청 → 권한은 그대로, 교사 승인 표에 '변경 승인 대기'
+    r = staff_apply(g, {**form, "name": "김다른", "gender": "여", "affiliation": "다라고등학교",
+                        "profile_change": True, "replace_membership_id": row["id"]})
+    assert r.status_code == 200, r.text
+    apps = admin.get("/api/staff/applications?role=instructor").json()["applications"]
+    change = next(x for x in apps if x.get("change_only"))
+    assert change["status"] == "change" and [c["field"] for c in change["changes"]] == ["name"]
+    assert next(x for x in apps if x["id"] == row["id"] and not x.get("change_only"))["status"] == "approved"
+    assert admin.post(f"/api/admin/profile-changes/{change['user_id']}", json={"action": "approve"}).status_code == 200
+    assert me()["name"] == "김다른"
+    assert not any(x.get("change_only") for x in admin.get("/api/staff/applications?role=instructor").json()["applications"])

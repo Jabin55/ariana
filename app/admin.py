@@ -230,8 +230,10 @@ async def apply(req: ApplyReq, request: Request):
                 if req.role == "coordinator":
                     values["hub_id"] = None
             if row and membership_status(dict(row._mapping)) in ("approved", "scheduled"):
-                if replacing:
+                # 같은 유형·학교로 이름·성별·소속만 바꾸는 신청: 권한은 그대로 두고 변경 내용만 승인 대기로 남긴다
+                if replacing and not (replacing.id == row.id and changes):
                     raise HTTPException(409, "이미 활동 중인 유형·학교예요.")
+                values["replace_membership_id"] = None
                 # 지금 활동 중(또는 시작 전)이면 연락처 등만 고친다. 기간이 끝났으면 아래에서 다시 '승인 대기'로.
                 # 참여 형태(주강사·보조교사)는 승인받은 그대로 둔다 (바꾸려면 다시 승인받아야 함)
                 values.pop("kind")
@@ -276,9 +278,14 @@ async def applications(role: str, request: Request):
             names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
             replaced_ids = {r.replace_membership_id for r in rows if r.replace_membership_id}
             replaced = {r.id: r for r in c.execute(select(db.memberships).where(m.id.in_(replaced_ids))).all()} if replaced_ids else {}
-            return rows, names, replaced
+            pq = db.profile_change_requests.c
+            changes: dict[int, list] = {}
+            for r in c.execute(select(db.profile_change_requests).where(
+                    pq.status == "pending", pq.user_id.in_({r.user_id for r in rows} or {-1}))).all():
+                changes.setdefault(r.user_id, []).append({"field": r.field, "old": r.old_value, "new": r.new_value, "at": r.requested_at})
+            return rows, names, replaced, changes
 
-    rows, names, replaced = await db.run(run)
+    rows, names, replaced, changes = await db.run(run)
     out = []
     for r in rows:
         x = dict(r._mapping)
@@ -295,7 +302,18 @@ async def applications(role: str, request: Request):
                     "department": x["department"], "license": x["license"],
                     "contact_email": x["email"], "birth": x["birth"] or "", "gender": x["gender"] or "",
                     "position": x["position"] or "",
+                    # 대기 중인 신청이면 함께 들어온 이름·성별·소속 변경 (승인하면 같이 바뀐다)
+                    "changes": changes.get(x["user_id"], []) if membership_status(x) == "pending" else [],
                     "requested_at": x["requested_at"]})
+    # 권한은 그대로이고 이름·성별·소속만 바꾸는 신청: 활동 중인 줄을 '변경 승인 대기'로 한 번 더 보여 준다 (전체 관리자)
+    if u["is_admin"]:
+        waiting = {x["user_id"] for x in out if x["status"] == "pending"}
+        for x in list(out):
+            uid = x["user_id"]
+            if uid in changes and uid not in waiting and x["status"] in ("approved", "scheduled"):
+                waiting.add(uid)
+                out.insert(0, {**x, "status": "change", "change_only": True, "changes": changes[uid],
+                               "requested_at": max(c["at"] for c in changes[uid])})
     return {"applications": out, "today": today_kst()}
 
 
@@ -372,6 +390,8 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
                 if not remaining_manager:
                     c.execute(update(db.users).where(db.users.c.id == row.user_id)
                               .values(school=row.affiliation))
+            if req.action in ("approve", "reject") and row.status == "pending":
+                settle_profile_changes(c, row.user_id, req.action, u["id"])
             if req.action == "revoke" and row.role in ("coordinator", "participant"):
                 remaining_manager = c.execute(select(m.id).where(
                     m.user_id == row.user_id, m.role.in_(["coordinator", "participant"]),
@@ -388,6 +408,50 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
     target_uid = await db.run(run)
     from app.classroom import refresh_user_connections
     await refresh_user_connections(target_uid)
+    return {"ok": True}
+
+
+def settle_profile_changes(c, user_id: int, action: str, by: int) -> None:
+    """가입 유형 변경 신청에 함께 들어온 이름·성별·소속 변경을 그 신청의 승인·거절과 함께 처리한다.
+    소속은 신청 승인 때 담당 학교·소속 기관으로 이미 바뀌므로 상태만 정리한다."""
+    q = db.profile_change_requests.c
+    rows = c.execute(select(db.profile_change_requests).where(q.user_id == user_id, q.status == "pending")).all()
+    target = c.execute(select(db.users).where(db.users.c.id == user_id)).first()
+    for r in rows:
+        ok = action == "approve" and target is not None
+        if ok and r.field in ("name", "gender") and (getattr(target, r.field) or "").strip() == r.old_value:
+            if r.field == "gender" and r.new_value not in ("남", "여"):
+                ok = False
+            else:
+                values = {r.field: r.new_value, **({"name_locked": 1} if r.field == "name" else {})}
+                c.execute(update(db.users).where(db.users.c.id == user_id).values(**values))
+                if r.field == "name" and r.old_value:
+                    c.execute(update(db.courses).where(db.courses.c.teacher_id == user_id,
+                        db.courses.c.instructor == r.old_value).values(instructor=r.new_value))
+        c.execute(update(db.profile_change_requests).where(q.id == r.id).values(
+            status="approved" if ok else "rejected", decided_at=time.time(), decided_by=by,
+            note="" if ok else "가입 유형 변경 신청과 함께 처리"))
+
+
+class ProfileChangeDecision(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = Field(default="", max_length=300)
+
+
+@router.post("/api/admin/profile-changes/{user_id}")
+async def decide_profile_changes(user_id: int, req: ProfileChangeDecision, request: Request):
+    """교사 승인 표에서: 권한은 그대로 두고 함께 신청한 이름·성별·소속 변경만 한꺼번에 승인·거절"""
+    u = await login_required(request)
+    if not u["is_admin"]:
+        raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+
+    def run():
+        with db.engine.begin() as c:
+            settle_profile_changes(c, user_id, req.action, u["id"])
+
+    await db.run(run)
+    from app.classroom import refresh_user_connections
+    await refresh_user_connections(user_id)
     return {"ok": True}
 
 
@@ -411,11 +475,6 @@ async def profile_change_requests(request: Request, field: str = Query(pattern="
                      "role": r.role, "school": r.school or "", "note": r.note} for r in rows]
 
     return {"requests": await db.run(run)}
-
-
-class ProfileChangeDecision(BaseModel):
-    action: str = Field(pattern="^(approve|reject)$")
-    note: str = Field(default="", max_length=300)
 
 
 @router.post("/api/admin/change-requests/{change_id}")
