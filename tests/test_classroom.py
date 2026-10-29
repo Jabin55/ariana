@@ -1747,12 +1747,12 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     cid = r.json()["id"]
     assert coord.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"}).status_code == 200
     c = prof.get("/api/courses/mine").json()["courses"][0]
-    assert (c["subject_group"], c["subject_area"], c["subject_type"]) == ("사회(역사/도덕 포함)", "사회", "진로선택")
+    assert (c["subject_group"], c["subject_area"], c["subject_type"]) == ("사회", "사회", "진로선택")
     assert c["credits"] == 3 and c["hours"] == 48 and c["achievement_text"] == "5단계 (A~E)" and c["recruit"] == "open"
     assert c["co_teachers"] == [{"id": asst_id, "name": "이보조"}] and c["lead"]
     # 고시외 과목은 직접 적는다
     r = prof.post("/api/courses", json={**course, "title": "울산 지역사 탐구", "custom_subject": True,
-                                        "subject_group": "사회(역사/도덕 포함)", "subject_area": "역사", "subject_type": "융합선택"})
+                                        "subject_group": "사회", "subject_area": "역사", "subject_type": "융합선택"})
     assert r.status_code == 200, r.text
     assert prof.post(f"/api/courses/{r.json()['id']}", json={"archived": True}).status_code == 200
 
@@ -2794,3 +2794,17 @@ def test_access_logs_paging(monkeypatch):
     d = admin.get("/api/admin/access-logs?q=항목&size=50&page=2").json()
     assert (len(d["logs"]), d["logs"][0]["what"]) == (15, "항목50")
     assert admin.get("/api/admin/access-logs?size=7").json()["size"] == 30  # 30·50·100만
+
+
+def test_subject_groups_order_and_old_names_migrated():
+    from app import subjects
+    assert subjects.GROUPS == ["국어", "수학", "영어", "사회", "과학", "예술", "체육", "기술·가정/정보", "제2외국어/한문", "교양"]
+    with db.engine.begin() as c:
+        ids = [c.execute(db.courses.insert().values(teacher_id=1, title=t, instructor="t", start_date="2027-03-02", end_date="2027-07-20",
+                          subject_group=g, subject_area=a, open=1, archived=0, created_at=time.time())).inserted_primary_key[0]
+               for t, g, a in (("정치", "사회(역사/도덕 포함)", "사회"), ("정보", "기술·가정/정보/제2외국어/한문/교양", "정보"),
+                               ("한문", "기술·가정/정보/제2외국어/한문/교양", "한문"), ("논술", "기술·가정/정보/제2외국어/한문/교양", "교양"))]
+    db.init()
+    with db.engine.connect() as c:
+        got = [c.execute(db.courses.select().where(db.courses.c.id == i)).first().subject_group for i in ids]
+    assert got == ["사회", "기술·가정/정보", "제2외국어/한문", "교양"]

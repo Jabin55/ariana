@@ -13,8 +13,8 @@ async function courseForm(c, done) {
   const isNew = !c;
   c = c || {};
   const year = new Date(Date.now() + 9 * 3600 * 1000).getUTCFullYear();
-  const opt = (list, cur, first) => [first ? h("option", { value: "" }, first) : null,
-    ...koSort(list, (x) => (Array.isArray(x) ? x[1] : x)).map((x) => (Array.isArray(x) ? h("option", { value: x[0], selected: x[0] === cur }, x[1])
+  const opt = (list, cur, first, keepOrder = false) => [first ? h("option", { value: "" }, first) : null,
+    ...(keepOrder ? list : koSort(list, (x) => (Array.isArray(x) ? x[1] : x))).map((x) => (Array.isArray(x) ? h("option", { value: x[0], selected: x[0] === cur }, x[1])
       : h("option", { value: x, selected: x === cur }, x)))];
   const row = (label, ...cells) => h("div", { class: "wz-row" }, h("div", { class: "wz-label" }, label), h("div", { class: "wz-cell" }, ...cells));
   const toggle = (checked, on = "공개", off = "비공개") => {
@@ -103,12 +103,12 @@ async function courseForm(c, done) {
   const sdl = h("datalist", { id: `${dlId}-s` }, koSort(meta.subjects, (x) => x.name).map((x) => h("option", { value: x.name }, `${x.area} · ${x.type}`)));
   const subject = h("input", { value: c.subject || c.title || "", maxlength: 60, required: true, list: sdl.id, autocomplete: "off", placeholder: "과목명을 입력해 검색 (예: 법과 사회)" });
   const custom = h("input", { type: "checkbox", checked: c.custom_subject });
-  const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)"));
+  const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)", true)); // 교과(군)은 교육과정 순서 그대로
   const area = h("select", { required: true }, opt(meta.areas, c.subject_area, "교과"));
   const type = h("select", { required: true }, opt(meta.types, c.subject_type, "과목 구분"));
   // '찾기': 교과(군)을 고르면 과목이 버튼으로 나온다
   const browse = h("div", { class: "subject-browse", hidden: true });
-  const browseGroup = h("select", {}, opt(meta.groups, c.subject_group || koSort(meta.groups)[0]));
+  const browseGroup = h("select", {}, opt(meta.groups, c.subject_group || meta.groups[0], null, true));
   const browseList = h("div", { class: "subject-list" });
   const drawBrowse = () => {
     const list = meta.subjects.filter((x) => x.group === browseGroup.value);

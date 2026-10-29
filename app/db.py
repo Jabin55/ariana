@@ -577,6 +577,12 @@ def init() -> None:
     with engine.begin() as c:
         c.execute(update(attendance).where(attendance.c.left_at.is_(None))
                   .values(left_at=attendance.c.last_seen, left_reason="server"))
+    # 교과(군) 이름이 바뀌었다: '사회(역사/도덕 포함)' → '사회', 한데 묶였던 군을 셋으로 나눔
+    with engine.begin() as c:
+        c.execute(update(courses).where(courses.c.subject_group == "사회(역사/도덕 포함)").values(subject_group="사회"))
+        old = courses.c.subject_group == "기술·가정/정보/제2외국어/한문/교양"
+        for group, areas in (("기술·가정/정보", ("기술·가정", "정보")), ("제2외국어/한문", ("제2외국어", "한문")), ("교양", ("교양",))):
+            c.execute(update(courses).where(old, courses.c.subject_area.in_(areas)).values(subject_group=group))
 
 
 async def run(fn, *args):
