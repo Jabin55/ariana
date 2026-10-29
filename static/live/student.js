@@ -437,10 +437,11 @@ function renderActivity() {
   } else {
     const opts = h("div", { class: `options ${a.kind === "ox" ? "ox" : ""}` }, a.options.map((opt, i) =>
       h("button", {
-        class: [a.mine === i ? "chosen" : "", a.reveal && a.correct === i ? "correct" : ""].join(" "),
+        class: [oxClass(a, i), a.mine === i ? "chosen" : "", a.reveal && a.correct === i ? "correct" : ""].join(" "),
+        "aria-label": opt,
         disabled: !a.open,
         onclick: () => sock.send({ t: "answer", id: a.id, value: i }),
-      }, a.kind === "ox" ? opt : `${i + 1}. ${opt}`)));
+      }, a.kind === "ox" ? oxIcon(i) : `${i + 1}. ${opt}`)));
     card.append(opts);
     if (a.mine === null || a.mine === undefined) {
       if (a.open) card.append(h("div", { class: "muted" }, "답을 골라 주세요. 마감 전까지 바꿀 수 있어요."));

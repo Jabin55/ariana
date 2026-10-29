@@ -395,6 +395,17 @@ function resultBars(a) {
   }));
 }
 
+/** OX 퀴즈 버튼 그림: 0 → 파란 동그라미, 1 → 빨간 엑스 */
+function oxIcon(i) {
+  const svg = i === 0
+    ? '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="34" fill="none" stroke="#4a8cf0" stroke-width="16"/></svg>'
+    : '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M20 20L80 80M80 20L20 80" stroke="#ff5f4c" stroke-width="16" stroke-linecap="round"/></svg>';
+  const span = h("span", { class: "ox-ico", title: i === 0 ? "O" : "X" });
+  span.innerHTML = svg;
+  return span;
+}
+const oxClass = (a, i) => (a.kind === "ox" ? (i === 0 ? "ox-o" : "ox-x") : "");
+
 const KIND_NAMES = { ox: "OX 퀴즈", choice: "객관식", poll: "투표", text: "주관식" };
 
 /** 선생님 화면용: 결과를 공개했을 때 학생 화면에 보이는 모습 (이름 없이, 정답 표시·막대그래프) */
@@ -408,7 +419,7 @@ function revealPreview(a) {
       h("div", { class: "texts" }, texts.map((t) => h("div", {}, t))));
   } else {
     card.append(h("div", { class: `options ${a.kind === "ox" ? "ox" : ""}` }, a.options.map((opt, i) =>
-      h("button", { class: a.correct === i ? "correct" : "", disabled: true }, a.kind === "ox" ? opt : `${i + 1}. ${opt}`))));
+      h("button", { class: [oxClass(a, i), a.correct === i ? "correct" : ""].join(" "), disabled: true, "aria-label": opt }, a.kind === "ox" ? oxIcon(i) : `${i + 1}. ${opt}`))));
     if (a.correct !== null && a.correct !== undefined) {
       card.append(h("div", { class: "muted", style: "font-size:0.85rem" }, "정답을 맞힌 학생에게는 '⭕ 정답이에요!', 틀린 학생에게는 '❌ 아쉬워요'가 보여요."));
     }

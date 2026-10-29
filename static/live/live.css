@@ -226,7 +226,15 @@ body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]�
 .activity .kind { font-size: 0.75rem; color: var(--accent); font-weight: 700; }
 .options { display: grid; gap: 6px; }
 .options.ox { grid-template-columns: 1fr 1fr; }
-.options.ox button { font-size: 2rem; padding: 12px; }
+.options.ox { gap: 10px; max-width: 360px; width: 100%; justify-self: center; }
+.options.ox button { display: grid; place-items: center; padding: 14px; aspect-ratio: 4 / 3; border-radius: 10px; background: #f2f2f2; opacity: 1; transition: transform .12s, background .12s; }
+.options.ox button.ox-o { border: 1.5px solid #a9c8f7; }
+.options.ox button.ox-x { border: 1.5px solid #f7a99f; }
+.options.ox button:not(:disabled):hover { transform: translateY(-2px); }
+.options.ox button.ox-o.chosen { background: #e3eefe; border: 3px solid #4a8cf0; }
+.options.ox button.ox-x.chosen { background: #ffe7e3; border: 3px solid #ff5f4c; }
+.ox-ico { display: block; width: 62%; max-width: 110px; }
+.ox-ico svg { display: block; width: 100%; height: auto; }
 .options button { text-align: left; padding: 10px 12px; white-space: normal; }
 .options button.chosen { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .options button.correct { outline: 3px solid var(--ok); }
