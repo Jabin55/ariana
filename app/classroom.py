@@ -1116,10 +1116,10 @@ async def upload_media(code: str, request: Request, name: str = Query(default="�
 
 @router.get("/api/live/classes/{code}/media/{fid}")
 async def get_media(code: str, fid: str, request: Request):
-    """이 수업의 선생님과 들어온 학생만 본다 (구간 요청을 지원해 원하는 곳부터 재생)."""
+    """이 수업의 선생님과 들어온 참가자만 본다 (구간 요청을 지원해 원하는 곳부터 재생)."""
     u = await require_user(request)
     k = await get_class(code)
-    if not (await is_class_teacher(k, u) or ((u["role"] == "student" or u["is_admin"]) and str(u["id"]) in k.students)):
+    if not (await is_class_teacher(k, u) or str(u["id"]) in k.students):
         raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
     f = next((x for x in k.media_files if x["id"] == fid), None)
     path = media_dir(k) / f"{fid}{f['ext']}" if f else None
@@ -1130,10 +1130,10 @@ async def get_media(code: str, fid: str, request: Request):
 
 @router.get("/api/live/classes/{code}/files/{fid}")
 async def download_file(code: str, fid: str, request: Request):
-    """이 수업의 선생님과 들어온 학생만 받을 수 있다."""
+    """이 수업의 선생님과 들어온 참가자(학생, 특강·회의에 들어온 다른 선생님)만 받을 수 있다."""
     u = await require_user(request)
     k = await get_class(code)
-    ok = await is_class_teacher(k, u) or ((u["role"] == "student" or u["is_admin"]) and str(u["id"]) in k.students)
+    ok = await is_class_teacher(k, u) or str(u["id"]) in k.students
     if not ok:
         raise HTTPException(403, "이 수업에 들어온 사람만 볼 수 있어요.")
     if not any(f["id"] == fid for f in k.files):

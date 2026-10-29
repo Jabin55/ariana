@@ -2973,6 +2973,10 @@ def test_other_teacher_joins_meeting_by_code():
         me = state(ow, lambda m: m.get("me"))
         assert me["me"]["name"] == "박선생"
         assert state(tw, lambda m: any(s["online"] for s in m["students"]))
+    # 회의에서 공유한 문서(PDF)도 참가한 선생님이 받을 수 있다
+    fid = t.post(f"/api/live/classes/{code}/files?name=a.pdf", content=b"%PDF-1.4\nsmall").json()["id"]
+    assert other.get(f"/api/live/classes/{code}/files/{fid}").status_code == 200
+    assert teacher("third@gmail.com").get(f"/api/live/classes/{code}/files/{fid}").status_code == 403  # 안 들어온 사람은 못 받음
 
 
 def test_regroup_during_breakout_and_late_joiner():
