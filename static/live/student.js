@@ -416,7 +416,7 @@ function renderActivity() {
   if (!a) return;
 
   const card = h("section", { class: "activity", "aria-live": "polite" },
-    h("div", { class: "kind" }, `${KIND_NAMES[a.kind]}${a.open ? "" : " · 마감됨"}`),
+    h("div", { class: "kind" }, `${kindName(a)}${a.open ? "" : " · 마감됨"}`),
     h("h3", {}, a.prompt));
 
   if (a.kind === "text") {
@@ -435,16 +435,26 @@ function renderActivity() {
         h("div", { class: "texts" }, a.texts.map((t) => h("div", {}, t))));
     }
   } else {
-    const chosen = a.mine !== null && a.mine !== undefined;
+    const mine = [].concat(a.mine ?? []); // 여러 개 고르는 설문은 목록, 나머지는 번호 하나
+    const chosen = mine.length > 0;
+    const pick = (i) => {
+      if (!a.multi) { sock.send({ t: "answer", id: a.id, value: i }); return; }
+      const next = mine.includes(i) ? mine.filter((x) => x !== i) : [...mine, i]; // 눌러서 넣고 빼기
+      mine.splice(0, mine.length, ...next); // 화면이 새로 그려지기 전에 빨리 두 번 눌러도 앞의 선택을 잃지 않게
+      sock.send({ t: "answer", id: a.id, value: next });
+    };
     const opts = h("div", { class: `${optsClass(a)}${chosen ? " has-chosen" : ""}` }, a.options.map((opt, i) =>
       h("button", {
-        class: [oxClass(a, i), a.mine === i ? "chosen" : "", a.reveal && a.correct === i ? "correct" : ""].join(" "),
+        class: [oxClass(a, i), mine.includes(i) ? "chosen" : "", a.reveal && a.correct === i ? "correct" : ""].join(" "),
         "aria-label": `${i + 1}. ${opt}`,
         disabled: !a.open,
-        onclick: () => sock.send({ t: "answer", id: a.id, value: i }),
+        "aria-pressed": a.multi ? String(mine.includes(i)) : null,
+        onclick: () => pick(i),
       }, optBody(a, i, opt))));
     card.append(opts);
-    if (a.mine === null || a.mine === undefined) {
+    if (a.multi && a.open) {
+      card.append(h("div", { class: "muted" }, "여러 개 고를 수 있어요. 다시 누르면 빠져요. 마감 전까지 바꿀 수 있어요."));
+    } else if (!chosen) {
       if (a.open) card.append(h("div", { class: "muted" }, "답을 골라 주세요. 마감 전까지 바꿀 수 있어요."));
     } else if (a.reveal && a.correct !== null && a.correct !== undefined) {
       card.append(h("div", { style: "font-weight:700" }, a.mine === a.correct ? "⭕ 정답이에요!" : "❌ 아쉬워요. 다시 생각해 볼까요?"));

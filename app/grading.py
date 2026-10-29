@@ -59,6 +59,8 @@ def shown(a: dict, value) -> str:
         return ""
     if isinstance(value, int) and a["options"] and value < len(a["options"]):
         return a["options"][value]
+    if isinstance(value, list):  # 여러 개 고른 설문
+        return ", ".join(shown(a, x) for x in value)
     return str(value)
 
 

@@ -86,16 +86,19 @@
       </main>
 
       <aside class="sidebar">
+        <nav class="tabs" id="tabs">
+          <button data-tab="people" class="active">참여자 <span class="badge" id="hand-badge" hidden></span></button>
+          <button data-tab="chat">채팅 <span class="badge" id="chat-badge" hidden></span></button>
+        </nav>
         <!-- 참여자 목록 (위) -->
         <section class="panel people-panel" data-panel="people">
-          <div class="panel-h"><strong>참여자</strong> <span class="muted" id="people-count"></span> <span class="badge" id="hand-badge" hidden></span></div>
+          <div class="panel-h"><strong>참여자</strong> <span class="muted" id="people-count"></span></div>
           <div class="box sharebox">
             <span class="muted" id="share-label">입장 코드</span>
             <span class="big" id="share-code"></span>
             <span class="muted" id="share-url" style="font-size:0.85rem"></span>
           </div>
           <div class="row people-tools">
-            <label class="switch" title="학생 화면의 AI 조교 탭"><input type="checkbox" id="set-ai"> AI 조교</label>
             <button id="mute-all" title="모든 학생 마이크 끄기 (학생이 다시 켤 수 있어요)">🔇 모두 음소거</button>
             <button id="lower-all">✋ 손 모두 내리기</button>
           </div>
@@ -103,8 +106,9 @@
         </section>
 
         <!-- 채팅 (아래) -->
-        <section class="panel chatlike chat-panel" data-panel="chat">
-          <div class="panel-h"><strong>채팅</strong></div>
+        <section class="panel chatlike chat-panel" data-panel="chat" hidden>
+          <div class="panel-h row"><strong class="grow">채팅</strong>
+            <label class="switch" title="학생 화면에 AI 조교 탭을 보여 줄지"><input type="checkbox" id="set-ai"> AI 조교</label></div>
           <div class="chatlog" id="chatlog"></div>
           <form class="chatform" id="chatform">
             <select id="chat-scope" title="보낼 곳"></select>

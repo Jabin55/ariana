@@ -535,12 +535,13 @@ async def results_csv(class_id: int, request: Request):
         acts.append(current)
     elif current:  # 아직 저장되지 않은 최신 응답으로 바꿔 보여 준다
         acts = [current if a["id"] == current["db_id"] else a for a in acts]
-    kinds = {"ox": "OX", "choice": "객관식", "poll": "투표", "text": "주관식"}
+    kinds = {"ox": "OX", "choice": "객관식", "poll": "설문", "text": "주관식"}
     rows = [["활동 번호", "유형", "문제", "학번", "이름", "응답", "정답 여부"]]
     for i, a in enumerate(acts, 1):
         for uid, v in a["responses"].items():
             u = names.get(int(uid))
-            shown = a["options"][v] if isinstance(v, int) and v < len(a["options"]) else v
+            pick = lambda x: a["options"][x] if isinstance(x, int) and x < len(a["options"]) else x  # noqa: E731
+            shown = ", ".join(str(pick(x)) for x in v) if isinstance(v, list) else pick(v)  # 여러 개 고른 설문은 "보기1, 보기2"
             ok = "" if a["correct"] is None else ("O" if v == a["correct"] else "X")
             rows.append([i, kinds.get(a["kind"], a["kind"]), a["prompt"],
                          student_no(u) if u else "", (u["name"] or u["google_name"]) if u else "(알 수 없음)", shown, ok])

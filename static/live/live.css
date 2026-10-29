@@ -1273,8 +1273,8 @@ body.class-t .mainarea .muted { color: #9aa4b2; }
 body.class-t .mainarea .tile { background: #2b313b; }
 body.class-t .monitor-head { color: #e9edf2; }
 body.class-t .sidebar { background: #fff; }
-body.class-t .people-panel { flex: 1 1 55%; }
-body.class-t .chat-panel { flex: 1 1 45%; border-top: 6px solid #eef0f3; }
+body.class-t .people-panel { flex: 1 1 auto; }
+body.class-t .chat-panel { flex: 1 1 auto; }
 body.class-t .panel-h { display: flex; align-items: center; gap: 6px; padding: 2px 2px 6px; border-bottom: 1px solid var(--border); }
 body.class-t .chat-panel .panel-h { padding: 10px 12px 8px; }
 body.class-t .sharebox { padding: 8px; }

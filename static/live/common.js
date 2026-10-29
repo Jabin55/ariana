@@ -418,11 +418,12 @@ const optsClass = (a) => `options ${a.kind === "ox" ? "ox" : "colored"}`;
 const optBody = (a, i, opt) => (a.kind === "ox" ? oxIcon(i) : [h("span", { class: "opt-no" }, i + 1), h("span", { class: "opt-text" }, opt)]);
 
 const KIND_NAMES = { ox: "OX 퀴즈", choice: "객관식", poll: "설문", text: "주관식" };
+const kindName = (a) => KIND_NAMES[a.kind] + (a.multi ? " (여러 개 고르기)" : "");
 
 /** 선생님 화면용: 결과를 공개했을 때 학생 화면에 보이는 모습 (이름 없이, 정답 표시·막대그래프) */
 function revealPreview(a) {
   const card = h("section", { class: "activity preview" },
-    h("div", { class: "kind" }, `${KIND_NAMES[a.kind]}${a.open ? "" : " · 마감됨"}`),
+    h("div", { class: "kind" }, `${kindName(a)}${a.open ? "" : " · 마감됨"}`),
     h("h3", {}, a.prompt));
   if (a.kind === "text") {
     const texts = (a.responses || []).map((r) => r.value);

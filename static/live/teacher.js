@@ -1171,6 +1171,11 @@ function renderActForm() {
   box.append(rows, h("div", { class: "row" },
     h("button", { type: "button", class: "small", onclick: () => { if (rows.children.length < 8) addRow(); } }, "+ 보기 추가"),
     actKind === "choice" ? h("span", { class: "muted", style: "font-size:0.85rem" }, "동그라미를 눌러 정답 표시(선택)") : null));
+  if (actKind === "poll") {
+    box.append(h("div", { class: "row" }, "응답:",
+      h("label", { class: "switch" }, h("input", { type: "radio", name: "poll-multi", value: "0", checked: true }), "1개만 고르기"),
+      h("label", { class: "switch" }, h("input", { type: "radio", name: "poll-multi", value: "1" }), "여러 개 고르기")));
+  }
 }
 
 $("#kind-picker").addEventListener("click", (e) => {
@@ -1195,6 +1200,7 @@ $("#act-form").addEventListener("submit", (e) => {
     msg.options = filled.map((r) => r.querySelector(".opt").value.trim());
     const ci = filled.findIndex((r) => r.querySelector("input[type=radio]")?.checked);
     msg.correct = ci >= 0 ? ci : null;
+    if (actKind === "poll") msg.multi = document.querySelector("input[name=poll-multi]:checked")?.value === "1";
   }
   if (S.activity?.open && !confirm("진행 중인 활동을 끝내고 새 활동을 보낼까요?")) return;
   if (sock.send(msg)) {
@@ -1217,9 +1223,10 @@ function renderActivity() {
   $("#act-form").hidden = !!a; // 지금 활동을 '끝내기' 해야 새 활동을 보낼 수 있다
   if (!a) return;
 
-  const answerText = (r) => (a.kind === "text" ? r.value : (a.options[r.value] ?? "?"));
+  const answerText = (r) => (a.kind === "text" ? r.value
+    : [].concat(r.value).map((v) => a.options[v] ?? "?").join(", ")); // 여러 개 고른 설문은 쉼표로
   const card = h("section", { class: "activity" },
-    h("div", { class: "kind" }, `${KIND_NAMES[a.kind]} · ${a.open ? "진행 중" : "마감"}${a.reveal ? " · 결과 공개 중" : ""}`),
+    h("div", { class: "kind" }, `${kindName(a)} · ${a.open ? "진행 중" : "마감"}${a.reveal ? " · 결과 공개 중" : ""}`),
     h("h3", {}, a.prompt),
     h("div", { class: "muted" }, `응답 ${a.total}명 / 접속 ${online}명`),
     a.kind === "text"
@@ -1284,6 +1291,11 @@ function addChat(m, live) {
   }
   log.append(bubble);
   if (stick || m.role === "teacher") log.scrollTop = log.scrollHeight;
+  if (live && activeTab !== "chat" && m.role !== "teacher") { // 참여자 탭을 보는 동안 온 채팅 수
+    unreadChat++;
+    $("#chat-badge").textContent = unreadChat;
+    $("#chat-badge").hidden = false;
+  }
 }
 
 $("#chatform").addEventListener("submit", (e) => {
@@ -1411,12 +1423,24 @@ setInterval(() => {
   $("#class-clock").textContent = `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}`;
 }, 1000);
 
-// 오른쪽에는 참여자·채팅만 늘 보이고, 설문/퀴즈·모둠은 왼쪽 버튼으로 여는 팝업이다
+// 오른쪽 바는 [참여자]·[채팅] 탭, 설문/퀴즈·모둠은 왼쪽 버튼으로 여는 팝업이다
+let activeTab = "people";
+let unreadChat = 0;
 function showTab(name) {
   const id = { activity: "quiz-dlg", groups: "group-dlg" }[name];
-  if (!id) return;
-  for (const d of document.querySelectorAll(".tool-dlg")) d.hidden = d.id !== id;
+  if (id) {
+    for (const d of document.querySelectorAll(".tool-dlg")) d.hidden = d.id !== id;
+    return;
+  }
+  activeTab = name;
+  for (const b of $("#tabs").children) b.classList.toggle("active", b.dataset.tab === name);
+  for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== name;
+  if (name === "chat") { unreadChat = 0; $("#chat-badge").hidden = true; $("#chatlog").scrollTop = $("#chatlog").scrollHeight; }
 }
+$("#tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) showTab(b.dataset.tab);
+});
 for (const d of document.querySelectorAll(".tool-dlg")) {
   d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.hidden = true; });
 }

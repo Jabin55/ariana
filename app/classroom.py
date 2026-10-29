@@ -498,8 +498,9 @@ def save_activity(k: Klass, a: dict | None) -> None:
 def activity_counts(a: dict) -> list[int]:
     counts = [0] * len(a["options"])
     for v in a["responses"].values():
-        if isinstance(v, int) and 0 <= v < len(counts):
-            counts[v] += 1
+        for x in (v if isinstance(v, list) else [v]):  # 여러 개 고르는 설문은 값이 목록
+            if isinstance(x, int) and 0 <= x < len(counts):
+                counts[x] += 1
     return counts
 
 
@@ -512,7 +513,7 @@ def activity_for_teacher(k: Klass, a: dict | None) -> dict | None:
     if not a:
         return None
     return {
-        "id": a["id"], "kind": a["kind"], "prompt": a["prompt"], "options": a["options"],
+        "id": a["id"], "kind": a["kind"], "prompt": a["prompt"], "options": a["options"], "multi": a.get("multi", False),
         "correct": a["correct"], "open": a["open"], "reveal": a["reveal"],
         "counts": activity_counts(a), "total": len(a["responses"]), "noanswer": activity_noanswer(k, a),
         "responses": [
@@ -526,7 +527,7 @@ def activity_for_student(k: Klass, a: dict | None, sid: str) -> dict | None:
     if not a:
         return None
     view = {
-        "id": a["id"], "kind": a["kind"], "prompt": a["prompt"], "options": a["options"],
+        "id": a["id"], "kind": a["kind"], "prompt": a["prompt"], "options": a["options"], "multi": a.get("multi", False),
         "open": a["open"], "reveal": a["reveal"], "mine": a["responses"].get(sid),
     }
     if a["reveal"]:
@@ -1640,6 +1641,13 @@ def handle_student(k: Klass, s: Student, m: dict) -> None:
             v = clean(v, 300)
             if not v:
                 return
+        elif a.get("multi"):  # 여러 개 고르기: 고른 번호 목록, 다 지우면 무응답
+            if not isinstance(v, list) or not all(isinstance(x, int) and 0 <= x < len(a["options"]) for x in v):
+                return
+            v = sorted(set(v))
+            if not v:
+                a["responses"].pop(s.id, None)
+                return
         elif not (isinstance(v, int) and 0 <= v < len(a["options"])):
             return
         a["responses"][s.id] = v
@@ -1930,4 +1938,5 @@ def start_activity(k: Klass, m: dict) -> None:
         correct = None
     save_activity(k, k.activity)
     k.activity = {"id": k.next_id(), "kind": kind, "prompt": prompt or "질문", "options": options,
-                  "correct": correct, "open": True, "reveal": False, "responses": {}, "created": time.time()}
+                  "correct": correct, "open": True, "reveal": False, "responses": {}, "created": time.time(),
+                  "multi": kind == "poll" and m.get("multi") is True}

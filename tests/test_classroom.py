@@ -267,6 +267,44 @@ def test_quiz_flow_and_results_saved():
     assert teacher("other@gmail.com").get(f"/api/live/history/{cid}/results.csv").status_code == 404
 
 
+def test_multi_select_poll():
+    t = teacher()
+    c = create(t)
+    code, cid = c["code"], c["class_id"]
+    a, b = student(1), student(2)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, \
+         a.websocket_connect(f"/ws/live/{code}") as sa, \
+         b.websocket_connect(f"/ws/live/{code}"):
+        tw.send_json({"t": "activity_start", "kind": "poll", "prompt": "좋아하는 과목은?",
+                      "options": ["국어", "수학", "영어"], "multi": True})
+        act = state(sa, lambda m: m["activity"])["activity"]
+        assert act["multi"] is True
+        sa.send_json({"t": "answer", "id": act["id"], "value": 1})  # 하나짜리 값은 받지 않는다
+        sa.send_json({"t": "answer", "id": act["id"], "value": [2, 0, 2, 9]})  # 범위 밖이 섞이면 무시
+        sa.send_json({"t": "answer", "id": act["id"], "value": [2, 0]})
+        ts = state(tw, lambda m: m["activity"] and m["activity"]["total"] == 1)
+        assert ts["activity"]["counts"] == [1, 0, 1] and ts["activity"]["noanswer"] == 1
+        assert state(sa, lambda m: m["activity"]["mine"] == [0, 2])
+        sa.send_json({"t": "answer", "id": act["id"], "value": []})  # 다 빼면 무응답
+        assert state(tw, lambda m: m["activity"]["total"] == 0 and m["activity"]["noanswer"] == 2)
+        sa.send_json({"t": "answer", "id": act["id"], "value": [0, 1]})
+        state(tw, lambda m: m["activity"]["total"] == 1)
+        tw.send_json({"t": "activity_clear"})
+        state(sa, lambda m: m["activity"] is None)
+        # 기본은 하나만 고르기
+        tw.send_json({"t": "activity_start", "kind": "poll", "prompt": "한 개", "options": ["가", "나"]})
+        act = state(sa, lambda m: m["activity"])["activity"]
+        assert act["multi"] is False
+        sa.send_json({"t": "answer", "id": act["id"], "value": [0, 1]})
+        sa.send_json({"t": "answer", "id": act["id"], "value": 1})
+        assert state(tw, lambda m: m["activity"] and m["activity"]["counts"] == [0, 1])
+        tw.send_json({"t": "activity_clear"})
+        state(sa, lambda m: m["activity"] is None)
+    time.sleep(0.3)
+    body = t.get(f"/api/live/history/{cid}/results.csv").text
+    assert '"국어, 수학"' in body and "설문" in body
+
+
 def test_breakout_tokens_chat_and_broadcast():
     t = teacher()
     code = create(t)["code"]
