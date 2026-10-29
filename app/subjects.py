@@ -14,7 +14,8 @@ _DATA: dict[str, dict[str, dict[str, list[str]]]] = {
         "융합선택": ["독서 토론과 글쓰기", "매체 의사소통", "언어생활 탐구"]}},
     "수학": {"수학": {
         "일반선택": ["대수", "미적분Ⅰ", "확률과 통계"],
-        "진로선택": ["기하", "미적분Ⅱ", "경제 수학", "인공지능 수학", "직무 수학"],
+        "진로선택": ["기하", "미적분Ⅱ", "경제 수학", "인공지능 수학", "직무 수학",
+                    "전문 수학", "이산 수학", "고급 기하", "고급 대수", "고급 미적분"],  # 뒤 다섯: 특목고(과학 계열) <표 6>
         "융합선택": ["수학과 문화", "실용 통계", "수학과제 탐구"]}},
     "영어": {"영어": {
         "일반선택": ["영어Ⅰ", "영어Ⅱ", "영어 독해와 작문"],
@@ -36,8 +37,10 @@ _DATA: dict[str, dict[str, dict[str, list[str]]]] = {
     "과학": {"과학": {
         "일반선택": ["물리학", "화학", "생명과학", "지구과학"],
         "진로선택": ["역학과 에너지", "전자기와 양자", "물질과 에너지", "화학 반응의 세계",
-                    "세포와 물질대사", "생물의 유전", "지구시스템과학", "행성우주과학"],
-        "융합선택": ["과학의 역사와 문화", "기후변화와 환경생태", "융합과학 탐구"]}},
+                    "세포와 물질대사", "생물의 유전", "지구시스템과학", "행성우주과학",
+                    "고급 물리학", "고급 화학", "고급 생명과학", "고급 지구과학", "과학과제 연구"],  # 뒤 다섯: 특목고 <표 6>
+        "융합선택": ["과학의 역사와 문화", "기후변화와 환경생태", "융합과학 탐구",
+                    "물리학 실험", "화학 실험", "생명과학 실험", "지구과학 실험"]}},  # 뒤 넷: 특목고 <표 6>
     "예술": {
         "음악": {
             "일반선택": ["음악"],
@@ -99,8 +102,16 @@ def default_credits(group: str) -> int:
     return 3 if group in ("체육", "예술") else 4
 
 
-def default_achievement(group: str, area: str, kind: str) -> str:
-    """성취도 기본값: 교양은 P/F, 체육·예술·융합선택은 3단계, 그 밖은 5단계 (강사가 바꿀 수 있음)"""
+# 특수 목적 고등학교 선택 과목 (교육과정 총론 <표 6>): 성취도 5단계
+SPECIAL_PURPOSE = {"전문 수학", "이산 수학", "고급 기하", "고급 대수", "고급 미적분",
+                   "고급 물리학", "고급 화학", "고급 생명과학", "고급 지구과학", "과학과제 연구",
+                   "물리학 실험", "화학 실험", "생명과학 실험", "지구과학 실험"}
+
+
+def default_achievement(group: str, area: str, kind: str, name: str = "") -> str:
+    """성취도 기본값: 교양은 P/F, 체육·예술·융합선택은 3단계, 그 밖은 5단계 (특목고 과목은 5단계, 강사가 바꿀 수 있음)"""
+    if name in SPECIAL_PURPOSE:
+        return "5"
     if area == "교양":
         return "P"
     if group in ("체육", "예술") or kind == "융합선택":
@@ -110,7 +121,8 @@ def default_achievement(group: str, area: str, kind: str) -> str:
 
 SUBJECTS = [
     {"name": name, "group": group, "area": area, "type": kind,
-     "credits": default_credits(group), "achievement": default_achievement(group, area, kind)}
+     "credits": default_credits(group), "achievement": default_achievement(group, area, kind, name),
+     "special": name in SPECIAL_PURPOSE}
     for group, areas in _DATA.items() for area, kinds in areas.items()
     for kind, names in kinds.items() for name in names
 ]
