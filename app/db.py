@@ -275,6 +275,7 @@ courses = Table(
     Column("credits", Integer),  # 학점
     Column("hours", Integer),  # 수업 시수 (학점 × 16)
     Column("achievement", String(2), nullable=False, default=""),  # 성취도: 5(A~E) 3(A~C) P(P/F)
+    Column("rank_grade", String(4), nullable=False, default=""),  # 석차 등급: 산출·미산출 (비면 성취도로 정함)
     Column("capacity", Integer),  # 수강 인원 (비면 제한 없음)
     Column("recruit_start", String(10), nullable=False, default=""),  # 모집 기간 (비면 제한 없음)
     Column("recruit_end", String(10), nullable=False, default=""),
@@ -500,6 +501,7 @@ def init() -> None:
              ("courses", "credits", "INTEGER"),
              ("courses", "hours", "INTEGER"),
              ("courses", "achievement", "VARCHAR(2) NOT NULL DEFAULT ''"),
+             ("courses", "rank_grade", "VARCHAR(4) NOT NULL DEFAULT ''"),
              ("courses", "capacity", "INTEGER"),
              ("courses", "recruit_start", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("courses", "recruit_end", "VARCHAR(10) NOT NULL DEFAULT ''"),

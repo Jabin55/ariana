@@ -128,6 +128,9 @@ async function courseForm(c, done) {
   const terms = meta.terms.map((t) => h("label", { class: "switch" }, h("input", { type: "radio", name: termName, value: t, checked: (c.term || meta.terms[0]) === t }), ` ${t}`));
   const credits = h("input", { type: "number", min: 1, max: 10, value: c.credits || 4, required: true, style: "width:5em" });
   const achievement = h("select", { required: true }, opt(Object.entries(meta.achievements), c.achievement, "성취도를 고르세요"));
+  // 석차 등급: 기본은 미산출, 선생님이 고르고 언제든 고칠 수 있다
+  const rank = h("select", { required: true },
+    ["산출", "미산출"].map((x) => h("option", { value: x, selected: (c.rank_grade || "미산출") === x }, x)));
   const grades = [1, 2, 3].map((g) => h("input", { type: "checkbox", value: g, checked: (c.grades || []).includes(g) }));
   const capacity = h("input", { type: "number", min: 1, max: 500, value: c.capacity || "", required: true, style: "width:6em", placeholder: "예: 20" });
   const rStart = h("input", { type: "date", value: c.recruit_start || "", required: true });
@@ -139,6 +142,10 @@ async function courseForm(c, done) {
   const desc = h("textarea", { rows: 5, maxlength: 3000, placeholder: "수업 목표, 진행 방식, 준비물, 이런 학생에게 추천 등" });
   desc.value = c.description || "";
   const file = h("input", { type: "file", accept: ".pdf,.hwp,.hwpx,.docx,.doc" });
+  file.addEventListener("change", () => { // 수업계획서는 5MB까지 (서버와 같게)
+    const f = file.files[0];
+    if (f && f.size > 5 * 1024 * 1024) { alert(`수업계획서 파일이 너무 커요 (${(f.size / 1024 / 1024).toFixed(1)}MB). 5MB 이하로 올려 주세요.`); file.value = ""; }
+  });
 
   // 수업 시수: 학점 × 16시간 (예: 3학점 → 48시간)
   const hoursText = h("strong", {}, "");
@@ -175,7 +182,7 @@ async function courseForm(c, done) {
     h("div", { class: "wz-table two" },
       row("교과(군)", group), row("교과 영역", area),
       row("과목 선택 구분", type), row("학년도", schoolYear),
-      row("학점", credits), row("수업 시수", hoursText), row("성취도", achievement)),
+      row("학점", credits), row("수업 시수", hoursText), row("성취도", achievement), row("등급", rank)),
     h("div", { class: "wz-table" },
       row("수업 학기", h("div", { class: "row" }, terms)),
       row("대상 학년", h("div", { class: "row" }, grades.map((x) => h("label", { class: "switch" }, x, ` ${x.value}학년`)),
@@ -185,7 +192,7 @@ async function courseForm(c, done) {
       row("평가 비율", h("div", { class: "row" }, "지필", exam, "% · 수행", perf, "%")),
       row("수업 소개", desc),
       row("수업계획서", file, c.syllabus ? h("span", { class: "muted", style: "font-size:0.85rem" }, `지금 파일: ${c.syllabus.name} (새로 고르면 바뀌어요)`)
-        : h("span", { class: "muted", style: "font-size:0.85rem" }, "PDF·한글·워드, 20MB까지"))));
+        : h("span", { class: "muted", style: "font-size:0.85rem" }, "PDF·한글·워드, 5MB까지"))));
 
   /* ───── 3. 회차 정보 ───── */
   const hours = h("input", { type: "number", min: 1, max: 400, value: c.hours || (c.credits || 4) * meta.hours_per_credit, required: true, style: "width:6em" });
@@ -301,7 +308,7 @@ async function courseForm(c, done) {
       title: subject.value.trim(), subject: subject.value.trim(), custom_subject: custom.checked,
       subject_group: group.value, subject_area: area.value, subject_type: type.value,
       school_year: Number(schoolYear.value), term: form.querySelector(`input[name="${termName}"]:checked`)?.value || meta.terms[0],
-      credits: Number(credits.value), hours: Number(hours.value), achievement: achievement.value,
+      credits: Number(credits.value), hours: Number(hours.value), achievement: achievement.value, rank_grade: rank.value,
       grades: grades.filter((x) => x.checked).map((x) => Number(x.value)), capacity: Number(capacity.value),
       recruit_start: rStart.value, recruit_start_time: rStartT.value, recruit_end: rEnd.value, recruit_end_time: rEndT.value,
       start_date: start.value, end_date: end.value, exam_ratio: Number(exam.value), perf_ratio: Number(perf.value),
@@ -354,6 +361,7 @@ function courseFacts(c) {
   if (c.class_days?.length) rows.push(["수업 시간", `매주 ${c.class_days.map((d) => DAYS[d]).join("·")} ${c.class_start || ""}~${c.class_end || ""}`]);
   if (c.sessions?.length) rows.push(["회차", `${c.sessions.length}회 (${fmtDate(c.sessions[0].date)} ~ ${fmtDate(c.sessions[c.sessions.length - 1].date)})`]);
   if (c.achievement_text) rows.push(["성취도", c.achievement_text]);
+  if (c.rank_grade) rows.push(["등급", c.rank_grade]);
   if (c.exam_ratio != null && c.perf_ratio != null) rows.push(["평가", `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%`]);
   if (c.recruit_start || c.recruit_end) {
     rows.push(["모집 기간", `${fmtDate(c.recruit_start)} ${c.recruit_start_time || ""} ~ ${fmtDate(c.recruit_end)} ${c.recruit_end_time || ""}`]);

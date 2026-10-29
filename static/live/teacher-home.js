@@ -727,7 +727,7 @@ function hubCourseApprove(ov) {
       ["학점", c.credits ? `${c.credits}학점` : "-"], ["강의교사", c.instructor || "-"],
       ["수강 인원", capacityOf(c)], ["거점학교", c.hub_school || "-"],
       ["대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", ")],
-      ["성취도", c.achievement_text || "-"], ["평가방식", evaluation], ["수업시간", classTime]];
+      ["성취도", c.achievement_text || "-"], ["등급", c.rank_grade || "-"], ["평가방식", evaluation], ["수업시간", classTime]];
     if (c.subject && c.subject !== c.title) facts.push(["과목", c.subject]);
     if (c.subject_area || c.subject_type) facts.push(["교과 상세", [c.subject_area,
       c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")]);

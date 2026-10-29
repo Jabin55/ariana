@@ -2845,3 +2845,23 @@ def test_course_subject_type_is_three_kinds():
         c.execute(db.courses.update().where(db.courses.c.id == cid).values(subject_type="융합선택"))
     db.init()  # 예전 값은 서버가 켜질 때 정리
     assert t.get("/api/courses/mine").json()["courses"][0]["subject_type"] == "진로선택"
+
+
+def test_course_rank_grade_default_and_edit():
+    """등급(석차 등급)은 기본 미산출, 개설 때 고르거나 나중에 고칠 수 있다"""
+    t = teacher()
+    cid = t.post("/api/courses", json={**COURSE, "subject": "문학", "achievement": "5"}).json()["id"]
+    mine = lambda: next(c for c in t.get("/api/courses/mine").json()["courses"] if c["id"] == cid)
+    assert mine()["rank_grade"] == "미산출"
+    assert t.post(f"/api/courses/{cid}", json={"rank_grade": "산출"}).status_code == 200
+    assert mine()["rank_grade"] == "산출"
+    assert t.post(f"/api/courses/{cid}", json={"rank_grade": "모름"}).status_code == 422
+
+
+def test_syllabus_limit_is_5mb():
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    big = b"%PDF-1.4\n" + b"0" * (5 * 1024 * 1024)
+    r = t.post(f"/api/courses/{cid}/syllabus?name=plan.pdf", content=big)
+    assert r.status_code == 413 and "5MB" in r.json()["detail"]
+    assert t.post(f"/api/courses/{cid}/syllabus?name=plan.pdf", content=b"%PDF-1.4\nsmall").status_code == 200

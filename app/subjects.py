@@ -189,6 +189,14 @@ def default_achievement(group: str, area: str, kind: str, name: str = "") -> str
     return "5"
 
 
+RANK_GRADES = ["산출", "미산출"]  # 석차 등급
+
+
+def default_rank(achievement: str = "") -> str:
+    """등급 기본값: 미산출 (강사가 '산출'로 바꿀 수 있음)"""
+    return "미산출"
+
+
 VOCATIONAL_GROUPS = GROUPS[GROUPS.index("교양") + 1:]  # 교양 다음부터는 전문 교과
 
 
@@ -208,3 +216,5 @@ SUBJECTS = [
     for group, areas in _DATA.items() for area, kinds in areas.items()
     for kind, names in kinds.items() for name in names
 ]
+for _s in SUBJECTS:
+    _s["rank"] = default_rank(_s["achievement"])

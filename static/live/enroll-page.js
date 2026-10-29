@@ -31,6 +31,7 @@
         ["인원", c.capacity ? `${c.capacity}명` : "제한 없음"],
         ["거점학교", c.hub_school || "-"],
         ["성취도", c.achievement_text || "-"],
+        ["등급", c.rank_grade || "-"],
         ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
       ];
       const status = { approved: "수강 확정", pending: "승인 대기", rejected: "신청 반려" }[c.status] || "";

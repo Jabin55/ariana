@@ -123,6 +123,7 @@ def subject_info(r) -> dict:
             "custom_subject": bool(r.custom_subject), "school_year": r.school_year, "term": r.term,
             "credits": r.credits, "hours": r.hours, "achievement": r.achievement, "delivery": r.delivery or subjects.DELIVERY[0],
             "achievement_text": subjects.ACHIEVEMENTS.get(r.achievement, ""), "capacity": r.capacity,
+            "rank_grade": r.rank_grade or subjects.default_rank(r.achievement),
             "recruit_start": r.recruit_start, "recruit_end": r.recruit_end, "recruit": recruit_state(r),
             "exam_ratio": r.exam_ratio, "perf_ratio": r.perf_ratio,
             "syllabus": {"name": r.syllabus_name, "url": f"/api/courses/{r.id}/syllabus"} if r.syllabus_id else None,
@@ -204,6 +205,7 @@ class CourseReq(BaseModel):
     delivery: str = Field(default="", max_length=20)  # 운영방식
     credits: int | None = Field(default=None, ge=1, le=10)
     achievement: str = Field(default="", pattern="^(5|3|P)?$")
+    rank_grade: str = Field(default="", pattern="^(산출|미산출)?$")  # 석차 등급
     capacity: int | None = Field(default=None, ge=1, le=500)
     recruit_start: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
     recruit_end: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")
@@ -227,7 +229,7 @@ class CourseReq(BaseModel):
 
 
 SUBJECT_KEYS = ("custom_subject", "subject_group", "subject_area", "subject_type", "school_year", "term", "delivery", "credits",
-                "achievement", "capacity", "recruit_start", "recruit_end", "exam_ratio", "perf_ratio", "team_teaching",
+                "achievement", "rank_grade", "capacity", "recruit_start", "recruit_end", "exam_ratio", "perf_ratio", "team_teaching",
                 "subject", "schools", "contact_email", "contact_phone", "show_email", "show_phone",
                 "recruit_start_time", "recruit_end_time", "class_days", "class_start", "class_end", "hours", "sessions")
 
@@ -289,7 +291,7 @@ def subject_values(v: dict, cur=None) -> dict:
         if v["delivery"] not in subjects.DELIVERY:
             raise HTTPException(400, "운영방식을 골라 주세요.")
         out["delivery"] = v["delivery"]
-    for k in ("school_year", "term", "achievement", "capacity", "exam_ratio", "perf_ratio"):
+    for k in ("school_year", "term", "achievement", "rank_grade", "capacity", "exam_ratio", "perf_ratio"):
         if k in v and v[k] is not None:
             out[k] = v[k]
     if v.get("credits") is not None:
@@ -482,6 +484,7 @@ class CourseUpdate(BaseModel):
     delivery: str | None = Field(default=None, max_length=20)
     credits: int | None = Field(default=None, ge=1, le=10)
     achievement: str | None = Field(default=None, pattern="^(5|3|P)?$")
+    rank_grade: str | None = Field(default=None, pattern="^(산출|미산출)?$")  # 석차 등급
     capacity: int | None = Field(default=None, ge=0, le=500)  # 0: 제한 없음
     recruit_start: str | None = Field(default=None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
     recruit_end: str | None = Field(default=None, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
@@ -582,7 +585,7 @@ async def update_course(course_id: int, req: CourseUpdate, request: Request):
 
 # ───────────────────────── 수업계획서 파일 ─────────────────────────
 
-SYLLABUS_MAX = 20 * 1024 * 1024
+SYLLABUS_MAX = 5 * 1024 * 1024  # 수업계획서 파일 5MB까지
 SYLLABUS_TYPES = {".pdf": "application/pdf", ".hwp": "application/x-hwp", ".hwpx": "application/haansofthwpx",
                   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                   ".doc": "application/msword"}
@@ -605,7 +608,7 @@ async def upload_syllabus(course_id: int, request: Request, name: str = Query(de
     async for chunk in request.stream():
         data += chunk
         if len(data) > SYLLABUS_MAX:
-            raise HTTPException(413, "파일이 너무 커요. 20MB 이하로 올려 주세요.")
+            raise HTTPException(413, "수업계획서 파일이 너무 커요. 5MB 이하로 올려 주세요.")
     if not data:
         raise HTTPException(400, "빈 파일이에요.")
     fid = uuid.uuid4().hex[:12]
