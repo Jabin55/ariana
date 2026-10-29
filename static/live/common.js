@@ -146,7 +146,8 @@ function updateTile(tile, it) {
   const avatar = tile.querySelector(".avatar");
   avatar.hidden = !!it.track;
   avatar.textContent = (it.name || "?").trim(); // 카메라가 꺼져 있으면 이름 전체를 보여 준다
-  tile.querySelector(".label span").textContent = `${it.micOff ? "🔇 " : "🎙️ "}${it.name}${it.isLocal ? " (나)" : ""}`;
+  // 마이크 꺼짐은 스피커(🔇)가 아니라 마이크에 빨간 빗금으로 보여 준다
+  tile.querySelector(".label span").replaceChildren(micIcon(!it.micOff), ` ${it.name}${it.isLocal ? " (나)" : ""}`);
   tile.querySelector(".flag").textContent = it.flag || "";
   tile.classList.toggle("speaking", !!it.speaking);
   tile.classList.toggle("screen", !!it.screen);
@@ -169,6 +170,9 @@ function syncTiles(container, items) {
     t.remove();
   }
 }
+
+/** 마이크 아이콘: 켜짐 🎤, 꺼짐 🎤에 빨간 빗금 */
+function micIcon(on) { return h("span", { class: `mic-ico${on ? "" : " off"}`, "aria-label": on ? "마이크 켜짐" : "마이크 꺼짐" }, "🎤"); }
 
 function isTeacher(p) { return p.attributes?.role === "teacher" || p.identity === "teacher"; }
 

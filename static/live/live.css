@@ -1521,3 +1521,8 @@ body.class-t .monitor-head { flex-wrap: nowrap; gap: 8px; margin: -4px 0 0; }
 body.class-t .monitor-head .timer { font-size: 0.95rem; white-space: nowrap; }
 body.class-t .monitor-head strong { white-space: nowrap; }
 body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white-space: nowrap; }
+
+/* 마이크 꺼짐: 마이크 그림에 빨간 빗금 (스피커 그림과 헷갈리지 않게) */
+.mic-ico { position: relative; display: inline-block; }
+.mic-ico.off { opacity: 0.55; }
+.mic-ico.off::after { content: ""; position: absolute; left: -2px; right: -2px; top: 50%; border-top: 2px solid #e5484d; transform: rotate(-35deg); }

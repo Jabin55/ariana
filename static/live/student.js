@@ -347,7 +347,7 @@ function render() {
 function renderControls() {
   const connected = media.room?.state === "connected";
   const mic = $("#mic");
-  mic.textContent = prefs.mic ? "🎤 마이크 켜짐" : "🔇 마이크 꺼짐";
+  mic.replaceChildren(micIcon(prefs.mic), prefs.mic ? " 마이크 켜짐" : " 마이크 꺼짐");
   mic.classList.toggle("on", prefs.mic);
   mic.disabled = !connected;
   if (S && !micAllowed()) {

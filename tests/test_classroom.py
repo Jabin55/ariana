@@ -2999,6 +2999,12 @@ def test_other_teacher_joins_meeting_by_code():
         me = state(ow, lambda m: m.get("me"))
         assert me["me"]["name"] == "박선생"
         assert state(tw, lambda m: any(s["online"] for s in m["students"]))
+    # 참가한 선생님도 학생처럼 화면 공유 권한을 받는다
+    import jwt
+    tok = other.post(f"/api/live/classes/{code}/token", json={"room": "main"})
+    assert tok.status_code == 200, tok.text
+    grants = jwt.decode(tok.json()["token"], options={"verify_signature": False})["video"]
+    assert "screen_share" in grants["canPublishSources"] and grants["canPublish"]
     # 회의에서 공유한 문서(PDF)도 참가한 선생님이 받을 수 있다
     fid = t.post(f"/api/live/classes/{code}/files?name=a.pdf", content=b"%PDF-1.4\nsmall").json()["id"]
     assert other.get(f"/api/live/classes/{code}/files/{fid}").status_code == 200

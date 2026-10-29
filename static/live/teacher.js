@@ -256,7 +256,7 @@ function renderMain(room) {
 
 function renderControls() {
   const ok = mainRoom?.state === "connected";
-  $("#mic").textContent = prefs.mic ? "🎤" : "🔇";
+  $("#mic").replaceChildren(micIcon(prefs.mic));
   $("#mic").title = prefs.mic ? "내 마이크 켜짐 (누르면 꺼져요)" : "내 마이크 꺼짐 (누르면 켜져요)";
   $("#mic").classList.toggle("on", prefs.mic);
   $("#cam").textContent = "📷";
@@ -1172,7 +1172,7 @@ function renderPeople() {
     h("span", { class: "dot", title: "아직 안 들어옴" }), h("span", {}, `${s.name} `, h("span", { class: "muted", style: "font-size:0.8rem" },
       mixed && s.school ? `${s.school} · ` : "", "미접속"))) : h("div", { class: `person ${s.hand || s.mic_req ? "hand" : ""}` },
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
-    h("span", {}, s.mic_req ? h("span", { title: "마이크를 켜 달라고 요청했어요 — 🔇를 누르면 켜져요" }, "🎙️ ") : null,
+    h("span", {}, s.mic_req ? h("span", { title: "마이크를 켜 달라고 요청했어요 — 옆의 마이크 버튼을 누르면 켜져요" }, "🎙️ ") : null,
       s.hand ? h("span", { title: "할 말이 있어요" }, "✋ ") : null, `${s.name} `,
       s.stickers ? h("span", { class: "sticker-count", title: "받은 칭찬 스티커" }, `⭐${s.stickers} `) : null, h("span", { class: "muted", style: "font-size:0.8rem" },
       mixed && s.school ? `${s.school} · ` : "", roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
