@@ -117,8 +117,9 @@ async def apply(req: ApplyReq, request: Request):
         what = "소속 학교" if req.role == "coordinator" else "근무 중인 참여학교"
         if not hub_name:
             raise HTTPException(400, f"{what}를 골라 주세요.")
-        schools = await db.run(get_schools)  # 울산 시내 학교 목록에서만
-        if schools and hub_name not in schools:
+        schools = await db.run(get_schools)  # 학교 목록(울산) + 교육청별 고등학교 목록에서
+        from app.subjects import ALL_SCHOOLS
+        if schools and hub_name not in schools and hub_name not in ALL_SCHOOLS:
             raise HTTPException(400, f"{what}는 목록에 있는 학교 중에서 골라 주세요.")
         if req.affil_type not in ("", "school"):
             raise HTTPException(400, "관리교사는 근무 중인 학교에 소속되어 있어야 해요.")
@@ -141,11 +142,11 @@ async def apply(req: ApplyReq, request: Request):
     if req.role == "instructor":
         # 강의교사: 거점학교를 정하지 않는다 (여러 거점학교에서 강의할 수 있다).
         # 가입은 전체 관리자가 승인하고, 과목을 열 때 고른 거점학교의 관리교사가 과목 개설을 승인한다.
-        if not (req.wish_from and req.wish_until):
-            raise HTTPException(400, "희망 기간(시작일·종료일)을 적어 주세요.")
-        check_dates(req.wish_from, req.wish_until, "희망 기간")
-        if req.wish_until < today_kst():
-            raise HTTPException(400, "희망 기간이 이미 지났어요.")
+        # 희망 기간은 이제 받지 않는다 (예전 신청서처럼 보내 오면 확인만)
+        if req.wish_from and req.wish_until:
+            check_dates(req.wish_from, req.wish_until, "희망 기간")
+            if req.wish_until < today_kst():
+                raise HTTPException(400, "희망 기간이 이미 지났어요.")
     now = time.time()
 
     def run():

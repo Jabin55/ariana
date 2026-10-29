@@ -189,14 +189,11 @@
             <option value="other">기타 (연구소·기관 등)</option>
           </select></label>
         <label id="a-office-wrap"><span>소속 교육청 <b class="required-mark" aria-hidden="true">*</b></span><select id="a-office"></select></label>
-        <label id="a-aff-wrap"><span><span id="a-aff-label">소속 학교</span> <b class="required-mark" id="a-aff-required" aria-hidden="true">*</b></span><input id="a-aff" maxlength="60"></label>
+        <label id="a-aff-wrap"><span><span id="a-aff-label">소속 학교</span> <b class="required-mark" id="a-aff-required" aria-hidden="true">*</b></span><input id="a-aff" maxlength="60"><select id="a-aff-pick" hidden></select></label>
         <label id="a-dept-wrap" hidden><span>학과 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-dept" maxlength="60" placeholder="예: 사회과교육과"></label>
         <label id="a-license-wrap" hidden><span>교원자격 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-license" maxlength="100" placeholder="예: 중등학교 2급 정교사(사회)"></label>
         <label><span>이메일 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-email" type="email" maxlength="200" required placeholder="연락받을 이메일"></label>
-        <label><span>휴대전화 (승인하는 사람만 봐요) <b class="required-mark" aria-hidden="true">*</b></span><input id="a-contact" maxlength="100" required placeholder="휴대전화 번호"></label>
-        <div class="period wide" id="a-wish-wrap"><span>희망 기간 (강의할 기간 — 관리교사가 확인하고 정해요) <b class="required-mark" aria-hidden="true">*</b></span>
-          <div class="row"><input id="a-wish-from" type="date"> ~ <input id="a-wish-until" type="date"></div>
-        </div>
+        <label><span>휴대전화 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-contact" maxlength="100" required placeholder="휴대전화 번호"></label>
         <label class="wide" id="a-msg-wrap" hidden>자기 소개 <textarea id="a-msg" maxlength="500" rows="3"></textarea></label>
         <label class="wide pledge"><span><input type="checkbox" id="a-pledge" required> <strong>개인정보 보호 서약</strong>에 동의 <b class="required-mark" aria-hidden="true">*</b></span><span id="pledge-text" class="muted"></span></label>
         <button class="primary wide" type="submit" id="apply-btn">가입 신청</button>

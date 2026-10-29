@@ -679,6 +679,26 @@ const AFFIL = {
   other: ["소속 기관 (있으면)", "예: ○○연구소", false],
 };
 /** 관리교사: 소속 학교를 울산 고등학교 목록에서 고르면 그 학교가 관리할 거점학교가 된다 */
+/** 학교 교원: 소속 교육청을 고르면 그 교육청 고등학교 목록에서 소속 학교를 고른다 */
+function fillAffSchools() {
+  const school = $("#a-affil-type").value === "school";
+  const list = (META?.office_schools || {})[$("#a-office").value];
+  const pick = $("#a-aff-pick");
+  const aff = $("#a-aff");
+  const useList = school && !!list;
+  pick.hidden = !useList;
+  aff.hidden = useList;
+  pick.required = useList;
+  aff.required = !useList && !!AFFIL[$("#a-affil-type").value]?.[2]; // 숨긴 칸은 필수로 두지 않는다
+  if (!useList) return;
+  const cur = aff.value.trim();
+  const names = list.includes(cur) || !cur ? list : [cur, ...list];
+  pick.replaceChildren(h("option", { value: "" }, "소속 학교를 고르세요"), ...koSort(names).map((n) => h("option", { value: n, selected: n === cur }, n)));
+  pick.value = names.includes(cur) ? cur : "";
+}
+$("#a-aff-pick").addEventListener("change", () => { $("#a-aff").value = $("#a-aff-pick").value; });
+$("#a-office").addEventListener("change", () => { $("#a-aff").value = ""; fillAffSchools(); });
+
 function syncManagedSchool() {
   const role = document.querySelector("input[name=a-role]:checked").value;
   const aff = $("#a-aff");
@@ -703,6 +723,7 @@ function updateAffil() {
   $("#a-license-wrap").hidden = t !== "cert";
   $("#a-license").required = t === "cert";
   syncManagedSchool();
+  fillAffSchools();
 }
 $("#a-affil-type").addEventListener("change", updateAffil);
 
@@ -713,8 +734,6 @@ function updateApplyRole() {
   affiliationType.disabled = role !== "instructor";
   updateAffil();
   $("#a-kind-wrap").hidden = role !== "instructor";
-  $("#a-wish-wrap").hidden = role !== "instructor";
-  $("#a-wish-from").required = $("#a-wish-until").required = role === "instructor";
   $("#a-msg-wrap").hidden = role !== "coordinator";
   syncManagedSchool();
 }
@@ -743,8 +762,7 @@ async function sendApply(role, first, place) {
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
       assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",
       message: role === "coordinator" ? $("#a-msg").value : "",
-      wish_from: role === "instructor" ? $("#a-wish-from").value : "",
-      wish_until: role === "instructor" ? $("#a-wish-until").value : "",
+      wish_from: "", wish_until: "", // 희망 기간은 받지 않는다 (활동 기간은 전체 관리자가 승인할 때 정함)
       pledge: $("#a-pledge").checked,
     });
     toast(role === "coordinator" ? "신청했어요. 전체 관리자가 승인하면 학교 운영·학생 관리 기능이 켜져요."

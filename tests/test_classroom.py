@@ -758,7 +758,7 @@ def test_hub_structure_and_course_approval(monkeypatch):
     # 2) 강의교사(대학교수) 신청: 거점학교를 정하지 않는다 → 전체 관리자가 승인
     prof = guest("prof@univ.ac.kr")
     iform = {"role": "instructor", "name": "김교수", "affiliation": "한국대학교", **pledge}
-    assert staff_apply(prof, iform).status_code == 400  # 희망 기간 없음
+    assert staff_apply(prof, iform).status_code == 200  # 희망 기간 없이도 신청 (활동 기간은 승인 때 정함)
     assert staff_apply(prof, {**iform, "wish_from": "2020-01-01", "wish_until": "2020-02-01"}).status_code == 400
     assert staff_apply(prof, {**iform, "wish_from": "2027-01-01", "wish_until": "2099-02-28",
                                                "message": "무시됨"}).status_code == 200
