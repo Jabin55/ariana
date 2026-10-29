@@ -286,7 +286,7 @@ function renderMedia(room) {
         cameraItem(room, room.localParticipant, { pip: true, flag: S?.me?.hand ? "✋" : "" })); // 내 얼굴은 선생님 영상 오른쪽 아래에 작게 겹쳐서
     }
     stage.hidden = !stageItems.length && mode === "grid";
-    stage.classList.toggle("duo", mode === "debate" && stageItems.length === 2);
+    stage.classList.toggle("duo", mode === "debate" && !sc && stageItems.length === 2);
     grid.classList.toggle("big", mode === "grid");
     syncTiles(stage, stageItems);
     $("#stage-empty").hidden = stageItems.length > 0 || mode === "grid";

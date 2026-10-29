@@ -31,6 +31,8 @@ class Presenter {
     this.docs = new Map(); // 파일 id → Promise<PDFDocument>
     this.strokes = new Map(); // 쪽 key → [획]
     this.mine = new Map(); // 쪽 key → 내가 그린 획 id (되돌리기용)
+    this.images = new Map(); // 사진 데이터 → 로드한 이미지
+    this.pendingImage = null;
     this.tool = { kind: "pen", color: PEN_COLORS[0] };
     this.renderSeq = 0;
     this.renderTask = null;
@@ -188,13 +190,18 @@ class Presenter {
     const list = this.strokes.get(msg.key) || [];
     this.strokes.set(msg.key, list);
     let st = list.find((s) => s.id === msg.id);
-    if (!st) { st = { id: msg.id, color: msg.color, size: msg.size, hl: msg.hl, pts: [] }; if (msg.text) st.text = msg.text; list.push(st); }
-    if (st.text && st.pts.length) return; // 글자는 한 점만
+    if (!st) {
+      st = { id: msg.id, color: msg.color, size: msg.size, hl: msg.hl, pts: [] };
+      if (msg.text) st.text = msg.text;
+      if (msg.image) { st.image = msg.image; st.w = msg.w; st.h = msg.h; }
+      list.push(st);
+    }
+    if ((st.text || st.image) && st.pts.length) return; // 글자·사진은 한 번만
     const from = Math.max(0, st.pts.length - 1);
     st.pts.push(...msg.pts);
     if (msg.key !== this.key) return;
     // 형광펜은 반투명이라 나눠 그리면 이음새가 진해진다 → 판서 전체를 다시 그린다
-    if (st.hl || st.text) this.redrawInk();
+    if (st.hl || st.text || st.image) this.redrawInk();
     else this.drawStroke(this.inkCanvas.getContext("2d"), st, from);
   }
 
@@ -235,6 +242,20 @@ class Presenter {
   drawStroke(ctx, st, from) {
     const c = this.inkCanvas;
     if (!st.pts.length) return;
+    if (st.image) {
+      let img = this.images.get(st.image);
+      if (!img) {
+        img = new Image();
+        this.images.set(st.image, img);
+        img.onload = () => this.redrawInk();
+        img.src = st.image;
+      }
+      if (img.complete && img.naturalWidth) {
+        const [x, y] = st.pts[0];
+        ctx.drawImage(img, x * c.width, y * c.height, st.w * c.width, st.h * c.height);
+      }
+      return;
+    }
     if (st.text) {
       ctx.save();
       const { lines, lh } = this.textLayout(ctx, st);
@@ -281,6 +302,10 @@ class Presenter {
       const r = 12 / c.getBoundingClientRect().width; // 지우개 반경 (비율)
       const own = this.opt.eraseOwnOnly ? new Set(this.mine.get(this.key) || []) : null; // 학생은 자기 획만 지운다
       const hit = list.filter((s) => own ? own.has(s.id) : true).filter((s) => {
+        if (s.image && s.pts.length) {
+          const [x, y] = s.pts[0];
+          return p[0] >= x - r && p[0] <= x + s.w + r && p[1] >= y - r && p[1] <= y + s.h + r;
+        }
         if (s.text && s.pts.length) {
           const [x0, y0, x1, y1] = this.textBox(s);
           return p[0] >= x0 - r && p[0] <= x1 + r && p[1] >= y0 - r && p[1] <= y1 + r;
@@ -305,6 +330,7 @@ class Presenter {
       }
       if (this.tool.kind === "eraser") { cur = { eraser: true }; erase(pos(e)); return; }
       if (this.tool.kind === "text") { this.openTextInput(pos(e)); return; }
+      if (this.tool.kind === "image") { this.addImage(pos(e)); return; }
       if (this.tool.kind === "sticker") {
         const [x, y] = pos(e);
         const half = STICKER_SIZE / 2000; // 이모지 한 글자 ≈ 글자 크기만큼 넓다 → 누른 곳이 가운데 오게
@@ -357,6 +383,27 @@ class Presenter {
     this.mine.set(this.key, mine);
     this.addPoints({ key: this.key, id, color, size, hl: false, text, pts: [pt] });
     this.opt.send({ t: "stroke", key: this.key, id, color, size, hl: false, text, pts: [pt] });
+  }
+
+  /** 사진을 누른 위치를 중심으로 배치한다. 판서처럼 함께 보이고 지우기·되돌리기도 된다. */
+  addImage(p) {
+    if (!this.pendingImage || this.view?.mode !== "board" || !this.key) return;
+    const { data, ratio } = this.pendingImage;
+    const boardRatio = this.pageSize.w / this.pageSize.h;
+    const w = Math.min(0.65, 0.7 * ratio / boardRatio);
+    const hh = w * boardRatio / ratio;
+    const x = Math.min(1 - w, Math.max(0, p[0] - w / 2));
+    const y = Math.min(1 - hh, Math.max(0, p[1] - hh / 2));
+    const id = Math.random().toString(36).slice(2, 12);
+    const msg = { t: "stroke", key: this.key, id, image: data, w, h: hh, pts: [[x, y]] };
+    const mine = this.mine.get(this.key) || [];
+    mine.push(id);
+    this.mine.set(this.key, mine);
+    this.addPoints(msg);
+    this.opt.send(msg);
+    this.pendingImage = null;
+    this.tool = { kind: "pen", color: this.tool.color };
+    this.opt.onToolChange?.();
   }
 
   /** 글자 도구: 누른 자리에 입력칸을 띄운다. Enter = 올리기, Shift+Enter = 줄바꿈, Esc = 취소 */

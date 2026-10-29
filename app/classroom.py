@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import os
@@ -82,6 +84,8 @@ STICKERS = {"👏": "박수", "👍": "좋아요", "⭐": "칭찬", "💯": "최
 MAX_FILES = 20  # 수업당 올릴 수 있는 파일 수
 MAX_BOARD_PAGES = 50
 MAX_STROKES = 1500  # 한 쪽에 남길 수 있는 획 수
+MAX_BOARD_IMAGE_BYTES = 200 * 1024  # 사진 한 장: 브라우저에서 축소한 JPEG
+MAX_BOARD_IMAGES = 12  # 판서 한 쪽의 사진 수
 BOARD_TEXT_LIMIT = 200  # 판서 글자 한 덩이의 최대 글자 수
 STUDENT_MAX_STROKES = 300  # 화이트보드 한 쪽에 학생 한 명이 남길 수 있는 획 수
 MAX_POINTS = 4000  # 한 획의 점 수
@@ -1247,7 +1251,7 @@ def handle_present(k: Klass, conn: Conn, m: dict, student: Student | None = None
             asyncio.get_running_loop().run_in_executor(None, _material_delete, k.db_id, fid, class_dir(k) / f"{fid}.pdf")
     elif t == "stroke":  # 획 그리기 (그리는 중에도 조금씩 나눠 보낸다)
         key, sid = m.get("key"), m.get("id")
-        if key != before or not isinstance(sid, str) or not 0 < len(sid) <= 24:
+        if not key or key != before or not isinstance(sid, str) or not 0 < len(sid) <= 24:
             return True
         pts = clean_points(m.get("pts"))
         page = k.strokes.setdefault(key, [])
@@ -1259,29 +1263,52 @@ def handle_present(k: Klass, conn: Conn, m: dict, student: Student | None = None
                 return True
             if student is not None and sum(1 for x in page if x.get("by") == student.id) >= STUDENT_MAX_STROKES:
                 return True
+            image = m.get("image")
+            if image is not None:
+                if student is not None or k.present["mode"] != "board" or sum(bool(x.get("image")) for x in page) >= MAX_BOARD_IMAGES:
+                    return True
+                prefix = "data:image/jpeg;base64,"
+                if not isinstance(image, str) or not image.startswith(prefix) or len(image) > len(prefix) + (MAX_BOARD_IMAGE_BYTES + 2) // 3 * 4:
+                    return True
+                try:
+                    raw_image = base64.b64decode(image[len(prefix):], validate=True)
+                except (binascii.Error, ValueError):
+                    return True
+                if len(raw_image) > MAX_BOARD_IMAGE_BYTES or not raw_image.startswith(b"\xff\xd8") or not raw_image.endswith(b"\xff\xd9"):
+                    return True
+                w, h = m.get("w"), m.get("h")
+                if not (isinstance(w, (int, float)) and isinstance(h, (int, float))
+                        and math.isfinite(w) and math.isfinite(h) and 0 < w <= 1 and 0 < h <= 1
+                        and len(pts) == 1 and 0 <= pts[0][0] <= 1 - w + 0.0001 and 0 <= pts[0][1] <= 1 - h + 0.0001):
+                    return True
             color = m.get("color") if isinstance(m.get("color"), str) and COLOR_RE.match(m["color"]) else "#222222"
             size = m.get("size")
             size = float(size) if isinstance(size, (int, float)) and 0.5 <= size <= 60 else 3.0
             st = {"id": sid, "color": color, "size": size, "hl": bool(m.get("hl")), "pts": []}
-            text = clean(m.get("text"), BOARD_TEXT_LIMIT) if isinstance(m.get("text"), str) else ""
+            text = clean(m.get("text"), BOARD_TEXT_LIMIT) if image is None and isinstance(m.get("text"), str) else ""
             if text:  # 글자·이모지 스티커: 점 하나(왼쪽 위)에 글자를 쓴다
                 st["text"] = text
+            if image is not None:
+                st["image"] = image
+                st["w"], st["h"] = round(float(w), 4), round(float(h), 4)
             if student is not None:
                 st["by"] = student.id  # 학생 획: 그 학생만 지울 수 있다 (선생님은 모두 지울 수 있다)
             page.append(st)
-        elif st.get("text"):
-            return True  # 글자는 처음 한 번만 보낸다
+        elif st.get("text") or st.get("image"):
+            return True  # 글자·사진은 처음 한 번만 보낸다
         room = MAX_POINTS - len(st["pts"])
         pts = pts[:max(0, room)]
         if not pts:
             return True
-        if st.get("text"):
+        if st.get("text") or st.get("image"):
             pts = pts[:1]
         st["pts"].extend(pts)
         k.dirty_boards.add(key)
         out = {"t": "stroke", "key": key, "id": sid, "color": st["color"], "size": st["size"], "hl": st["hl"], "pts": pts}
         if st.get("text"):
             out["text"] = st["text"]
+        if st.get("image"):
+            out.update(image=st["image"], w=st["w"], h=st["h"])
         relay(k, conn, out)
     elif t == "stroke_del":  # 지우개·되돌리기
         key, ids = m.get("key"), m.get("ids")

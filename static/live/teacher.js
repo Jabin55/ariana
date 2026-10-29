@@ -20,7 +20,7 @@ let broadcast = null; // 모든 모둠에 동시에 말하기: { src, pubs: [{ r
 let focusGroup = null;
 const monitorAudio = h("div", { hidden: true });
 document.body.append(monitorAudio);
-const presenter = new Presenter($("#present"), { code: CODE, canDraw: true, send: (m) => sock?.send(m) });
+const presenter = new Presenter($("#present"), { code: CODE, canDraw: true, send: (m) => sock?.send(m), onToolChange: () => renderPresent() });
 let showStudents = store.get("present-show-students") ?? true; // 발표 중에 학생 영상도 볼지 (선생님 화면만)
 let lastDevSig = "";
 
@@ -234,7 +234,7 @@ function renderMain(room) {
   const stageItems = presenting ? [] : sc ? [sc, { ...me, pip: true }]
     : ssc ? [ssc, cameraItem(room, sharer, { pip: true })] : duo.length ? duo : mode === "teacher" ? [me] : [];
   stage.hidden = !stageItems.length;
-  stage.classList.toggle("duo", !sc && duo.length === 2);
+  stage.classList.toggle("duo", !sc && !ssc && mode === "debate" && duo.length === 2);
   syncTiles(stage, stageItems);
   const flags = new Map((S?.students || []).map((s) => [`s-${s.id}`, `${s.mic_req ? "🎙️" : ""}${s.hand ? "✋" : ""}`]));
   const students = [...room.remoteParticipants.values()].filter((p) => !isTeacher(p));
@@ -806,9 +806,53 @@ document.addEventListener("click", (e) => {
 
 /* ───── 자료 발표(PDF)·화이트보드 ───── */
 
+$("#board-image-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!S?.present || S.present.mode !== "board") return;
+  if ((presenter.strokes.get(presenter.key) || []).filter((s) => s.image).length >= 12) {
+    toast("이 화이트보드에는 사진을 최대 12장까지 붙일 수 있어요.", 5000);
+    return;
+  }
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 10 * 1024 * 1024) {
+    toast("JPG·PNG·WebP 사진(10MB 이하)을 선택해 주세요.", 5000);
+    return;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const ratio = bitmap.width / bitmap.height;
+    const canvas = document.createElement("canvas");
+    let scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+    let data = "";
+    for (let attempt = 0; attempt < 7; attempt++) {
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      data = canvas.toDataURL("image/jpeg", attempt < 3 ? [0.82, 0.67, 0.5][attempt] : 0.5);
+      if ((data.length - "data:image/jpeg;base64,".length) * 3 / 4 <= 200 * 1024) break;
+      scale *= 0.75;
+    }
+    bitmap.close();
+    if ((data.length - "data:image/jpeg;base64,".length) * 3 / 4 > 200 * 1024) throw new Error("사진을 충분히 줄일 수 없어요. 다른 사진을 선택해 주세요.");
+    if (S?.present?.mode !== "board") return;
+    presenter.pendingImage = { data, ratio };
+    presenter.tool = { kind: "image", color: presenter.tool.color };
+    renderPresent();
+    toast("화이트보드에서 사진을 붙일 위치를 눌러 주세요.", 5000);
+  } catch (err) { toast(err.message || "사진을 읽지 못했어요.", 5000); }
+});
+
 let presentSig = "";
 function renderPresent() {
   const v = S.present;
+  if (v?.mode !== "board" && presenter.tool.kind === "image") {
+    presenter.pendingImage = null;
+    presenter.tool = { kind: "pen", color: presenter.tool.color };
+  }
   $("#present").hidden = !v || S.breakout || !!S.media;
   $("#present-btn").classList.toggle("on", v?.mode === "slides");
   $("#board-btn").classList.toggle("on", v?.mode === "board");
@@ -836,6 +880,7 @@ function renderPresent() {
     tool("hl", "#f5c400", "▮", "형광펜"),
     tool("eraser", null, "🧽", "지우개 (선을 문지르면 지워져요)"),
     tool("text", null, "가", "글자 쓰기 (누른 곳에 입력 · Enter로 올리기, Shift+Enter 줄바꿈) — 지금 고른 펜 색으로 써져요"),
+    v.mode === "board" ? h("button", { class: `small tool ${presenter.tool.kind === "image" ? "on" : ""}`, title: "사진 붙이기 (사진 선택 후 화이트보드를 누르세요)", onclick: () => $("#board-image-input").click() }, "📷") : null,
     h("span", { class: "sticker-wrap" },
       h("button", { class: `small tool ${presenter.tool.kind === "sticker" ? "on" : ""}`, title: "이모지 스티커 붙이기",
         onclick: (e) => {

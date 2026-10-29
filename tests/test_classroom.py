@@ -1,5 +1,6 @@
 """실시간 수업 서버 테스트: python -m pytest tests"""
 
+import base64
 import os
 import tempfile
 import time
@@ -2749,6 +2750,31 @@ def test_students_draw_on_whiteboard_only_own_strokes():
         sa.send_json({"t": "stroke", "key": key, "id": "a2", "color": "#d92d20", "size": 3, "pts": [[0.3, 0.3]]})
         time.sleep(0.3)
         assert [s["id"] for s in k.strokes[key]] == ["t1"]
+
+
+def test_teacher_photo_on_whiteboard_is_shared_but_students_cannot_add_one():
+    """사진은 판서에 저장·공유되고, 학생의 사진 메시지와 잘못된 형식은 거부한다."""
+    t = teacher()
+    code = create(t)["code"]
+    a = student(1)
+    image = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8photo\xff\xd9").decode()
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(tw)
+        tw.send_json({"t": "present_board", "page": 1})
+        key = state(sa, lambda m: m.get("present") and m["present"]["mode"] == "board")["present"]["key"]
+        photo = {"t": "stroke", "key": key, "id": "photo1", "image": image, "w": 0.4, "h": 0.3, "pts": [[0.1, 0.2]]}
+        tw.send_json(photo)
+        assert until(sa, lambda m: m.get("t") == "stroke" and m.get("id") == "photo1")["image"] == image
+        assert cr.classes[code].strokes[key][0]["image"] == image
+        sa.send_json({**photo, "id": "student-photo"})
+        sa.send_json({"t": "stroke", "key": key, "id": "student-marker", "pts": [[0.3, 0.3]]})
+        until(tw, lambda m: m.get("t") == "stroke" and m.get("id") == "student-marker")
+        tw.send_json({**photo, "id": "bad-photo", "image": "data:image/svg+xml;base64,AAAA"})
+        too_big = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8" + b"x" * cr.MAX_BOARD_IMAGE_BYTES + b"\xff\xd9").decode()
+        tw.send_json({**photo, "id": "big-photo", "image": too_big})
+        tw.send_json({"t": "stroke", "key": key, "id": "marker", "pts": [[0.5, 0.5]]})
+        until(sa, lambda m: m.get("t") == "stroke" and m.get("id") == "marker")
+        assert [s["id"] for s in cr.classes[code].strokes[key]] == ["photo1", "student-marker", "marker"]
 
 
 def a_id(client):
