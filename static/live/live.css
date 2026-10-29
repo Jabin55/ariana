@@ -1517,7 +1517,8 @@ body.class-t .sharebox #share-url { display: none; }
 body.class-t .monitor-head #bo-edit { color: var(--text); } /* 어두운 모둠 화면 위 흰 버튼: 글씨는 검게 */
 
 /* 모둠 활동 머리줄: 한 줄로 위에 붙여 영상 칸을 넓게 */
-body.class-t .monitor-head { flex-wrap: nowrap; gap: 8px; margin: -4px 0 0; }
+body.class-t .monitor-head { flex-wrap: nowrap; gap: 8px; margin: -8px 0 28px; } /* 머리줄은 위로 붙이고, 아래 모둠 영상 자리는 그대로 */
+body.class-t #banners:empty, body.class-t #activity-mini:empty { display: none; } /* 빈 칸이 머리줄을 아래로 밀지 않게 */
 body.class-t .monitor-head .timer { font-size: 0.95rem; white-space: nowrap; }
 body.class-t .monitor-head strong { white-space: nowrap; }
 body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white-space: nowrap; }
