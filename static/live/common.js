@@ -389,8 +389,8 @@ function resultBars(a) {
   return h("div", { class: "bars" }, a.options.map((opt, i) => {
     const n = a.counts?.[i] || 0;
     const pct = total ? Math.round((n / total) * 100) : 0;
-    return h("div", { class: `bar ${a.correct === i ? "correct" : ""}` },
-      h("span", { class: "name" }, opt), h("span", { class: "muted" }, `${n}명 (${pct}%)`),
+    return h("div", { class: `bar ${oxClass(a, i)} ${a.correct === i ? "correct" : ""}` }, // 막대 색 = 보기 칸 색
+      h("span", { class: "name" }, a.kind === "ox" ? null : h("b", { class: "bar-no" }, i + 1), opt), h("span", { class: "muted" }, `${n}명 (${pct}%)`),
       h("div", { class: "track" }, h("div", { class: "fill", style: `width:${pct}%` })));
   }));
 }

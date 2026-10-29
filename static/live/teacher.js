@@ -1214,6 +1214,7 @@ function renderActivity() {
   const mini = $("#activity-mini");
   box.replaceChildren();
   mini.replaceChildren();
+  $("#act-form").hidden = !!a; // 지금 활동을 '끝내기' 해야 새 활동을 보낼 수 있다
   if (!a) return;
 
   const answerText = (r) => (a.kind === "text" ? r.value : (a.options[r.value] ?? "?"));
