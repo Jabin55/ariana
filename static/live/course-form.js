@@ -119,7 +119,7 @@ async function courseForm(c, done) {
         subject.dispatchEvent(new Event("input"));
         browse.hidden = true;
       }, title: x.special ? "특수 목적 고등학교 과목 (교육과정 총론 <표 6>)" : null }, x.special ? `${x.name}*` : x.name)))) : null;
-    }));
+    }).filter(Boolean)); // 그 교과(군)에 없는 과목 구분은 빼서 'null' 글자가 찍히지 않게
   };
   browseGroup.addEventListener("change", drawBrowse);
   browse.append(h("div", { class: "row" }, "교과(군) ", browseGroup), browseList);
