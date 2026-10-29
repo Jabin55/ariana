@@ -426,8 +426,8 @@ function openMonitor(gid) {
       h("span", { class: "grow" }), h("span", { class: "flags" })),
     grid,
     h("div", { class: "actions" },
-      h("button", { class: "listen", onclick: () => toggleListen(gid) }, "🎧 듣기"),
-      h("button", { class: "talk", onclick: () => toggleTalk(gid) }, "🎤 말하기"),
+      h("button", { class: "listen", onclick: () => toggleListen(gid), title: "이 모둠 소리 듣기" }, "🔇"),
+      h("button", { class: "talk", onclick: () => toggleTalk(gid), title: "모둠에 들어가서 말하기 (영상·소리)" }, "🎤"),
       h("button", { class: "focus-btn", onclick: () => { focusGroup = focusGroup === gid ? null : gid; syncMonitors(); } }, "🔍 크게")));
   const m = { room: null, card, grid };
   monitors.set(gid, m);
@@ -467,6 +467,7 @@ function closeMonitor(gid) {
   monitors.delete(gid);
   listening.delete(gid);
   if (talking === gid) talking = null;
+  stopTalkCam(m.room); // 모둠 연결을 닫을 때 복제한 카메라도 끈다
   syncTiles(m.grid, []);
   disposeRoom(m.room);
   m.card.remove();
@@ -504,11 +505,12 @@ function renderMonitor(gid) {
   m.card.classList.toggle("focus", focusGroup === gid);
   const listenBtn = m.card.querySelector(".listen");
   listenBtn.classList.toggle("on", hear || talking === gid);
-  listenBtn.textContent = hear || talking === gid ? "🔊 듣는 중" : "🔇 듣기";
+  listenBtn.textContent = hear || talking === gid ? "🔊" : "🔇"; // 켜졌는지는 버튼 색으로 보인다
   listenBtn.disabled = talking === gid;
   const talkBtn = m.card.querySelector(".talk");
   talkBtn.classList.toggle("on", talking === gid);
-  talkBtn.textContent = talking === gid ? "🎤 말하는 중 (끄기)" : "🎤 들어가서 말하기";
+  talkBtn.textContent = "🎤";
+  talkBtn.title = talking === gid ? "말하는 중 (누르면 나와요)" : "모둠에 들어가서 말하기 (영상·소리)";
   m.card.classList.toggle("active-talk", talking === gid || !!broadcast);
   m.card.querySelector(".focus-btn").textContent = focusGroup === gid ? "↙ 작게" : "🔍 크게";
   if (room) {
@@ -541,6 +543,7 @@ async function toggleTalk(gid) {
   if (prev) {
     talking = null;
     try { await monitors.get(prev)?.room?.localParticipant.setMicrophoneEnabled(false); } catch { /* 무시 */ }
+    await stopTalkCam(monitors.get(prev)?.room);
     applySubs(prev);
     renderMonitor(prev);
   }
@@ -552,13 +555,33 @@ async function toggleTalk(gid) {
     applySubs(gid);
     try {
       await room.localParticipant.setMicrophoneEnabled(true);
+      await startTalkCam(room);
     } catch (err) {
       talking = null;
+      await stopTalkCam(room);
       toast(mediaError(err), 5000);
     }
     renderMonitor(gid);
   }
   sendListen();
+}
+
+/* 모둠에 들어가서 말할 때 학생들에게 선생님 얼굴도 보이게: 전체 방에서 켜 둔 카메라를 복제해 모둠 방에 보낸다.
+   (카메라를 꺼 두었으면 소리만) */
+let talkCam = null; // { room, track }
+async function startTalkCam(room) {
+  const src = mainRoom?.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
+  if (!prefs.cam || !src || src.readyState !== "live") return;
+  try {
+    const pub = await room.localParticipant.publishTrack(src.clone(), { source: Track.Source.Camera, name: "talk-cam", simulcast: true });
+    talkCam = { room, track: pub.track };
+  } catch (err) { console.error(err); }
+}
+async function stopTalkCam(room) {
+  if (!talkCam || (room && talkCam.room !== room)) return;
+  const { room: r, track } = talkCam;
+  talkCam = null;
+  try { await r.localParticipant.unpublishTrack(track, true); } catch { track?.stop(); }
 }
 
 /* 모든 모둠에 동시에 말하기: 마이크 하나를 복제해 모든 모둠 방에 내보낸다 */
