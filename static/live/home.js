@@ -343,8 +343,6 @@ function photoPicker() {
 /** 선생님 내 정보: 프로필 · 이름 · 성별 · 생년월일 · 소속 · 직위 · 권한정보 · 이메일 · 휴대전화 */
 async function drawTeacherProfile() {
   const last = ME.memberships[ME.memberships.length - 1];
-  const managedRoles = ME.memberships.filter((m) => ["participant", "coordinator"].includes(m.role) &&
-    (m.status === "approved" || (m.status === "pending" && m.transfer_from)));
   const f = {
     name: h("input", { maxlength: 30, value: ME.name || "" }),
     gender: ME.gender ? h("input", { value: ME.gender, readOnly: true })
@@ -354,6 +352,7 @@ async function drawTeacherProfile() {
     position: h("input", { maxlength: 30, value: ME.position || "", placeholder: "예: 교사, 부장교사, 교감" }),
     phone: h("input", { maxlength: 100, value: ME.phone || last?.contact || "", placeholder: "010-0000-0000" }),
   };
+  // 이름·성별·소속은 [가입 유형 변경 신청]으로만 바꾼다 (전체 관리자는 이름을 바로 고칠 수 있다)
   f.name.readOnly = !!ME.name && !ME.is_admin;
   f.school.readOnly = !!ME.name;
   const roles = ME.is_admin ? ["전체 관리자", "관리교사 (모든 학교)", "강의교사 (모든 강좌)", "학생"] : [
@@ -369,65 +368,28 @@ async function drawTeacherProfile() {
       : `${m.hub} ${ROLE_NAME[m.role] || m.role} (승인 대기)`);
   const err = h("p", { class: "error" });
   const row = (label, ...v) => h("tr", {}, h("th", {}, label), h("td", {}, ...v));
-  const nameBox = h("div", { class: "box", hidden: true });
-  const schoolBox = h("div", { class: "box", hidden: true });
-  const requestBox = (box, field, label) => {
-    const input = h("input", { maxlength: field === "name" ? 30 : 60, placeholder: `새 ${label}` });
-    fill(box, h("p", { class: "muted" }, `새 ${label}을 입력하면 전체 관리자에게 승인 요청이 전달됩니다. 승인 전에는 현재 정보가 유지됩니다.`),
-      h("div", { class: "row" }, input, h("button", { type: "button", class: "primary", onclick: async () => {
-        try {
-          await api("/api/me/change-requests", { field, value: input.value.trim() });
-          toast(`${label} 변경을 신청했어요.`);
-          box.hidden = true;
-          drawTeacherProfile();
-        } catch (e) { err.textContent = e.message; }
-      } }, "승인 요청")));
-  };
-  requestBox(nameBox, "name", "이름");
-  requestBox(schoolBox, "school", "소속");
   const changeStatus = h("p", { class: "muted" });
   if (ME.name) api("/api/me/change-requests").then(({ requests }) => {
-    changeStatus.textContent = ["name", "school"].map((field) => requests.find((r) => r.field === field))
-      .filter(Boolean).map((r) => `${r.field === "name" ? "이름" : "소속"} 변경 신청: ` +
+    changeStatus.textContent = ["name", "gender", "school"].map((field) => requests.find((r) => r.field === field))
+      .filter(Boolean).map((r) => `${{ name: "이름", gender: "성별", school: "소속" }[r.field]} 변경 신청: ` +
         `${r.old_value} → ${r.new_value} (${r.status === "pending" ? "승인 대기" : r.status === "approved" ? "승인됨" : "반려됨"}${r.note ? ` · ${r.note}` : ""})`).join(" · ");
   }).catch(() => {});
-  const transferRole = h("select", {}, managedRoles.map((m) => h("option", { value: m.role }, ROLE_NAME[m.role])));
-  const transferSchool = h("input", { list: "transfer-school-options", maxlength: 60, placeholder: "변경할 학교를 입력하세요" });
-  const transferBox = h("div", { class: "box", style: "margin:10px 0" },
-    h("p", { class: "muted", style: "margin:0 0 8px" }, "전체 관리자 승인 전까지 기존 학교와 새 학교의 담당 정보에 접근할 수 없습니다."),
-    h("div", { class: "row" }, transferRole, transferSchool,
-      h("datalist", { id: "transfer-school-options" }, CONFIG.schools.map((s) => h("option", { value: s }))),
-      h("button", { class: "primary", type: "button", onclick: () => withConsent("profile-view", async () => {
-        try {
-          ME = await api("/api/me/school-transfer", { role: transferRole.value, school: transferSchool.value.trim() });
-          toast("담당 학교 변경 승인을 요청했어요.");
-          window.WaesolHeader?.render(ME);
-          drawTeacherProfile();
-        } catch (e) { err.textContent = e.message; }
-      }) }, "승인 요청")));
-  transferBox.hidden = true;
   $("#t-profile").replaceChildren(
     h("table", { class: "me-table" }, h("tbody", {},
       row("프로필", photoPicker()),
-      row("이름", h("div", { class: "me-school" }, f.name, ME.name && !ME.is_admin ? h("button", { class: "small", type: "button", onclick: () => { nameBox.hidden = !nameBox.hidden; } }, "변경 신청") : null)),
+      row("이름", f.name),
       row("성별", f.gender),
       row("생년월일", f.birth),
-      row("소속", h("div", { class: "me-school" }, f.school,
-        h("button", { class: "small", type: "button", onclick: () => {
-          const box = managedRoles.length ? transferBox : schoolBox;
-          box.hidden = !box.hidden;
-          if (!transferBox.hidden) transferSchool.focus();
-        } }, "변경 신청"))),
+      row("소속", f.school),
       row("직위", f.position),
       row("가입 유형", h("div", { class: "me-school" },
         h("span", { class: "me-value" }, joinedTypes.length ? joinedTypes.join(", ") : "거점학교 강의교사"),
-        h("button", { class: "small", type: "button", onclick: () => showGuest(true, true, true) }, "변경 신청"))),
+        h("button", { class: "small", type: "button", onclick: () => showGuest(true, true, true) }, "변경 신청")),
+        ME.is_admin ? null : h("div", { class: "muted", style: "font-size:0.82rem;margin-top:4px" }, "이름·성별·소속도 [변경 신청]에서 바꿀 수 있어요 (전체 관리자 승인 후 반영).")),
       row("권한 정보", roles.length ? roles.join(", ") : h("span", { class: "muted" }, "아직 승인된 권한이 없어요"),
         pending.length ? h("div", { class: "muted", style: "font-size:0.82rem" }, pending.join(", ")) : null),
       row("이메일", h("strong", {}, ME.email), h("span", { class: "muted", style: "font-size:0.82rem" }, "  (가입한 구글 계정)")),
       row("휴대전화", f.phone))),
-    nameBox,
-    managedRoles.length ? transferBox : schoolBox,
     changeStatus,
     err,
     h("button", { class: "primary", type: "button", style: "width:100%", onclick: async () => {
@@ -652,7 +614,7 @@ async function showGuest(fromTeacher = false, returnToProfile = false, replacing
   $("#a-birth").max = new Date().toISOString().slice(0, 10);
   if (ME.birth) $("#a-birth").value = ME.birth;
   $("#a-gender").value = ME.gender || "";
-  $("#a-gender").disabled = !!ME.gender;
+  $("#a-gender").disabled = !!ME.gender && !replacingRole; // 가입 유형 변경 신청에서는 성별도 바꿀 수 있다(승인 후 반영)
   $("#guest-hint").hidden = fromTeacher;
   $("#to-student").hidden = fromTeacher || !ME.can_be_student;
   if (sessionGet("signup_as") === "student" && !ME.can_be_student) {
@@ -662,8 +624,8 @@ async function showGuest(fromTeacher = false, returnToProfile = false, replacing
   sessionDel("signup_as");
   $("#pledge-text").textContent = CONFIG.pledge;
   $("#a-name").value = ME.name || "";
-  $("#a-name").readOnly = !!ME.name && !ME.is_admin;
-  $("#a-name").title = $("#a-name").readOnly ? "이름 변경은 내 정보에서 신청해 주세요." : "실명으로 적어 주세요. 가입한 뒤에는 바꿀 수 없어요.";
+  $("#a-name").readOnly = !!ME.name && !ME.is_admin && !replacingRole;
+  $("#a-name").title = replacingRole ? "바꾼 이름·성별·소속은 전체 관리자가 승인하면 반영돼요." : $("#a-name").readOnly ? "이름 변경은 가입 유형 변경 신청에서 해 주세요." : "실명으로 적어 주세요. 가입한 뒤에는 바꿀 수 없어요.";
   $("#a-aff").value = ME.school || "";
   const last = ME.memberships[ME.memberships.length - 1];
   const activeRoles = ME.memberships.filter((m) => ["approved", "scheduled"].includes(m.status));
@@ -773,6 +735,7 @@ async function sendApply(role, first, place) {
     await api("/api/staff/apply", {
       role, hub_id: null,
       replace_membership_id: guestReplacingRole ? Number($("#a-replace").value) || null : null,
+      profile_change: !!guestReplacingRole, // 이름·성별·소속을 바꿨으면 변경 승인 요청으로
       hub_name: role !== "instructor" ? $("#a-aff").value.trim() : "", // 관리교사: 소속 학교 = 관리할 거점학교
       name: $("#a-name").value, affiliation: $("#a-aff").value, contact: $("#a-contact").value, birth: $("#a-birth").value, gender: $("#a-gender").value,
       affil_type: $("#a-affil-type").value, office: $("#a-affil-type").value === "school" ? $("#a-office").value : "",
@@ -1420,6 +1383,7 @@ function nameChangeTable(requests) {
   const day = (t) => (t ? new Date(t * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "");
   const KIND = { student: "학생" };
   const STATE = { approved: "승인", rejected: "반려" };
+  const gv = (r, v) => (r.field === "gender" ? `${v || "-"} (성별)` : v || "-"); // 성별 변경도 이 표에서 승인
   const state = (r) => r.status === "pending"
     ? h("div", { class: "change-actions" },
       h("button", { type: "button", class: "primary small", onclick: () => decideChange(r, "name", "approve") }, "승인"),
@@ -1429,7 +1393,7 @@ function nameChangeTable(requests) {
     h("thead", {}, h("tr", {}, ["번호", "신청일", "회원 구분", "소속", "변경 전 이름", "변경 후 이름", "상태"].map((t) => h("th", {}, t)))),
     h("tbody", {}, requests.map((r, i) => h("tr", {},
       h("td", {}, requests.length - i), h("td", {}, day(r.requested_at)), h("td", {}, KIND[r.role] || "교사"),
-      h("td", {}, r.school || "-"), h("td", {}, r.old_value || "-"), h("td", {}, r.new_value), h("td", {}, state(r)))))));
+      h("td", {}, r.school || "-"), h("td", {}, gv(r, r.old_value)), h("td", {}, gv(r, r.new_value)), h("td", {}, state(r)))))));
 }
 
 /** 전체 관리자: 다른 사람의 이름 고치기 (가입 뒤에는 본인이 이름을 못 바꾼다 — 오타 등) */

@@ -2882,3 +2882,30 @@ def test_office_school_lists_from_excel(monkeypatch):
     monkeypatch.setattr(auth, "ULSAN_SCHOOLS", ["신정고등학교"])  # 학교 목록이 있으면 목록 밖 학교는 막는다
     assert admin.post("/api/courses", json={**COURSE, "hub_school": "없는고등학교"}).status_code == 400
     assert admin.post("/api/courses", json={**COURSE, "hub_school": "부산과학고등학교"}).status_code == 200
+
+
+def test_role_change_form_requests_name_gender_school_changes(monkeypatch):
+    """이름·성별·소속은 [가입 유형 변경 신청]에서만 바꾸고, 전체 관리자가 승인하면 반영된다"""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    g = TestClient(app)
+    assert google_login(g, "newt@gmail.com").status_code == 200
+    form = {"role": "instructor", "contact": "010", "pledge": True, "wish_from": "2026-03-01", "wish_until": "2099-02-28"}
+    assert staff_apply(g, {**form, "name": "김선생", "gender": "남", "affiliation": "가나고등학교"}).status_code == 200
+    me = lambda: g.get("/api/me").json()["user"]
+    assert (me()["name"], me()["gender"], me()["school"]) == ("김선생", "남", "가나고등학교")
+    # 일반 신청에서는 이름·성별을 바꿀 수 없다
+    assert staff_apply(g, {**form, "name": "김새이름", "gender": "남", "affiliation": "가나고등학교"}).status_code == 400
+    # 가입 유형 변경 신청: 바꾼 값은 승인 요청으로 남고, 지금 정보는 그대로
+    r = staff_apply(g, {**form, "name": "김새이름", "gender": "여", "affiliation": "다라고등학교", "profile_change": True})
+    assert r.status_code == 200, r.text
+    assert (me()["name"], me()["gender"], me()["school"]) == ("김선생", "남", "가나고등학교")
+    reqs = {x["field"]: x for x in g.get("/api/me/change-requests").json()["requests"]}
+    assert {k: (v["old_value"], v["new_value"]) for k, v in reqs.items()} == {
+        "name": ("김선생", "김새이름"), "gender": ("남", "여"), "school": ("가나고등학교", "다라고등학교")}
+    admin = login("admin@gmail.com", name="관리자", school=SCHOOL)
+    board = admin.get("/api/admin/change-requests?field=name").json()["requests"]
+    assert sorted(x["field"] for x in board) == ["gender", "name"]  # 이름 변경 승인 표에서 성별도 함께
+    for x in board:
+        assert admin.post(f"/api/admin/change-requests/{x['id']}", json={"action": "approve"}).status_code == 200
+    assert admin.post(f"/api/admin/change-requests/{reqs['school']['id']}", json={"action": "approve"}).status_code == 200
+    assert (me()["name"], me()["gender"], me()["school"]) == ("김새이름", "여", "다라고등학교")

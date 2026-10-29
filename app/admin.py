@@ -67,6 +67,7 @@ async def list_hubs(request: Request):
 class ApplyReq(BaseModel):
     role: str = Field(pattern="^(coordinator|instructor|participant)$")
     replace_membership_id: int | None = None
+    profile_change: bool = False  # 가입 유형 변경 신청: 이름·성별·소속이 다르면 변경 승인 요청으로 남긴다
     hub_name: str = Field(default="", max_length=60)  # 관리교사: 거점학교명 / 참여학교 담당교사: 소속 학교
     hub_id: int | None = None  # 강사: 거점학교 고르기
     name: str = Field(min_length=1, max_length=30)
@@ -160,20 +161,39 @@ async def apply(req: ApplyReq, request: Request):
             # 신청서의 동의 칸은 개인정보 보호 서약 + 이용약관·개인정보 처리방침 확인을 함께 받는다
             # 이름은 처음 적은 실명으로 굳는다 (전체 관리자만 바꿀 수 있음)
             locked = bool(u.get("name")) and not u["is_admin"]
-            if locked and req.name.strip() != (u["name"] or ""):
-                raise HTTPException(400, NAME_LOCKED)
+            changes: dict[str, str] = {}  # 가입 유형 변경 신청에서 바꾼 이름·성별·소속 (전체 관리자 승인 뒤 반영)
+            new_name = " ".join(req.name.split())
+            if locked and new_name != (u["name"] or ""):
+                if not req.profile_change:
+                    raise HTTPException(400, NAME_LOCKED)
+                changes["name"] = new_name
             if req.gender and u.get("gender") and req.gender != u["gender"]:
-                raise HTTPException(400, "성별은 내 정보에 저장된 값과 같아야 해요.")
+                if not req.profile_change:
+                    raise HTTPException(400, "성별은 내 정보에 저장된 값과 같아야 해요.")
+                changes["gender"] = req.gender
             current_manager = next((manager for manager in c.execute(select(db.memberships).where(
                 m.user_id == u["id"], m.role.in_(["coordinator", "participant"]))).all()
                 if membership_active(dict(manager._mapping))), None)
             profile_affiliation = current_manager.hub_name if current_manager else affiliation
-            who = {"name": req.name.strip(), "school": profile_affiliation, "terms_version": POLICY_VERSION, "terms_at": now,
-                   **({} if u["is_admin"] else {"name_locked": 1})}
+            if req.profile_change and u.get("school") and profile_affiliation and profile_affiliation != u["school"]:
+                changes["school"] = profile_affiliation
+                profile_affiliation = u["school"]
+            who = {"name": u["name"] if "name" in changes else new_name, "school": profile_affiliation,
+                   "terms_version": POLICY_VERSION, "terms_at": now, **({} if u["is_admin"] else {"name_locked": 1})}
             if req.birth:
                 who["birth"] = req.birth
-            if req.gender:
+            if req.gender and "gender" not in changes:
                 who["gender"] = req.gender
+            q = db.profile_change_requests.c
+            for field, value in changes.items():  # 같은 항목의 대기 중 신청이 있으면 새 값으로 바꾼다
+                old = (u.get(field) or "").strip()
+                pending_row = c.execute(select(db.profile_change_requests).where(
+                    q.user_id == u["id"], q.field == field, q.status == "pending")).first()
+                vals = {"old_value": old, "new_value": value[:60], "requested_at": now, "note": ""}
+                if pending_row:
+                    c.execute(update(db.profile_change_requests).where(q.id == pending_row.id).values(**vals))
+                else:
+                    c.execute(insert(db.profile_change_requests).values(user_id=u["id"], field=field, status="pending", **vals))
             if req.email.strip():
                 who["contact_email"] = req.email.strip()
             who["phone"] = req.contact.strip()
@@ -371,7 +391,7 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
 
 
 @router.get("/api/admin/change-requests")
-async def profile_change_requests(request: Request, field: str = Query(pattern="^(name|school)$")):
+async def profile_change_requests(request: Request, field: str = Query(pattern="^(name|school|gender)$")):
     u = await login_required(request)
     if not u["is_admin"]:
         raise HTTPException(403, "전체 관리자만 할 수 있어요.")
@@ -381,7 +401,8 @@ async def profile_change_requests(request: Request, field: str = Query(pattern="
         with db.engine.connect() as c:
             rows = c.execute(select(db.profile_change_requests, db.users.c.name, db.users.c.email,
                 db.users.c.role, db.users.c.school).join(db.users, db.users.c.id == q.user_id).where(
-                    q.field == field, db.users.c.role != "student" if field == "school" else True)
+                    q.field.in_(["name", "gender"]) if field == "name" else q.field == field,  # 이름 변경 승인 칸에서 성별도 함께
+                    db.users.c.role != "student" if field == "school" else True)
                 .order_by(q.requested_at.desc()).limit(100)).all()
             return [{"id": r.id, "user_id": r.user_id, "field": r.field,
                      "old_value": r.old_value, "new_value": r.new_value, "status": r.status,
@@ -429,6 +450,8 @@ async def decide_profile_change(change_id: int, req: ProfileChangeDecision, requ
                         m.role.in_(["participant", "coordinator"]))).all()
                     if any(r.status == "approved" or (r.status == "pending" and r.transfer_from) for r in managers):
                         raise HTTPException(409, "담당 학교 권한이 생겼어요. 담당 학교 변경 신청으로 처리해 주세요.")
+                if row.field == "gender" and row.new_value not in ("남", "여"):
+                    raise HTTPException(400, "성별 값을 확인해 주세요.")
                 values = {row.field: row.new_value}
                 if row.field == "name":
                     values["name_locked"] = 1
