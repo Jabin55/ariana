@@ -1530,3 +1530,6 @@ body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white
 
 /* 어두운 화면 위 이모티콘: 밝은 동그라미에 올려 잘 보이게 */
 .ico-chip { display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 50%; background: #ffffff; font-size: 0.9em; vertical-align: middle; margin-right: 2px; }
+
+/* 미디어 공유: 소리 켜기 버튼을 눈에 띄게 */
+.media-tap { font-size: 1.05rem; padding: 8px 16px; animation: pulse 1.4s infinite; }

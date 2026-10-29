@@ -596,7 +596,16 @@ class MediaShare {
     if (!this.media) return;
     const m = this.media;
     this.title = h("strong", { class: "grow" }, `🎬 ${m.title}`);
-    this.tap = h("button", { class: "primary", hidden: true, onclick: () => { this.tap.hidden = true; this.sync(true); } }, "▶ 눌러서 함께 보기");
+    // 브라우저가 소리 있는 자동 재생을 막으면: 소리 없이 먼저 재생해 선생님과 맞추고, 이 버튼 한 번으로 소리를 켠다
+    this.tap = h("button", { class: "primary media-tap", hidden: true, onclick: () => {
+      this.tap.hidden = true;
+      this.muted = false;
+      try { this.yt?.unMute?.(); } catch { /* 무시 */ }
+      if (this.el) this.el.muted = false;
+      this.sync(true);
+    } }, "🔊 소리 켜기");
+    this.muted = false;
+    this.ytTry = 0;
     const bar = h("div", { class: "media-bar" }, this.title, this.tap,
       this.teacher ? h("button", { class: "small danger", onclick: () => this.onClose?.() }, "공유 끝내기") : null);
     const stage = h("div", { class: "media-stage" });
@@ -634,6 +643,12 @@ class MediaShare {
     }
   }
 
+  showSoundButton() {
+    this.muted = true;
+    this.tap.textContent = "🔊 소리 켜기";
+    this.tap.hidden = false;
+  }
+
   /** 학생: 선생님이 정한 곳(시작 위치 + 지난 시간)에 맞춘다 */
   sync(fromTap = false) {
     const m = this.media;
@@ -643,14 +658,25 @@ class MediaShare {
       const p = this.yt;
       if (Math.abs((p.getCurrentTime() || 0) - target) > 2) p.seekTo(target, true);
       const playing = p.getPlayerState() === 1 || p.getPlayerState() === 3;
-      if (m.playing && !playing) p.playVideo();
+      if (m.playing && !playing) {
+        p.playVideo();
+        // 1.5초가 지나도 시작되지 않으면 소리 없이 재생하고 [소리 켜기]를 보여 준다
+        if (!this.ytTry) this.ytTry = Date.now();
+        else if (!fromTap && Date.now() - this.ytTry > 1500) { p.mute(); p.playVideo(); this.showSoundButton(); }
+      } else this.ytTry = 0;
       if (!m.playing && playing) p.pauseVideo();
       return;
     }
     const el = this.el;
     if (!el) return;
     if (el.readyState >= 1 && Math.abs(el.currentTime - target) > 2) el.currentTime = target;
-    if (m.playing && el.paused) el.play().then(() => { this.tap.hidden = true; }).catch(() => { if (!fromTap) this.tap.hidden = false; });
+    if (m.playing && el.paused) {
+      el.play().then(() => { if (!this.muted) this.tap.hidden = true; }).catch(() => {
+        if (fromTap) return;
+        el.muted = true; // 소리 없이라도 먼저 맞춰 재생
+        el.play().then(() => this.showSoundButton()).catch(() => { this.tap.textContent = "▶ 눌러서 함께 보기"; this.tap.hidden = false; });
+      });
+    }
     if (!m.playing && !el.paused) el.pause();
   }
 }
