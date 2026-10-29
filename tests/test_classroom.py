@@ -2808,3 +2808,18 @@ def test_subject_groups_order_and_old_names_migrated():
     with db.engine.connect() as c:
         got = [c.execute(db.courses.select().where(db.courses.c.id == i)).first().subject_group for i in ids]
     assert got == ["사회", "기술·가정/정보", "제2외국어/한문", "교양"]
+
+
+def test_special_purpose_subjects_from_table6():
+    """특목고 과목(총론 <표 6>)이 각 교과(군)·교과·과목 구분에 들어가고, 보통 교과와 겹치는 과목은 한 번만 나온다."""
+    from app import subjects
+    by = {x["name"]: x for x in subjects.SUBJECTS}
+    assert len(by) == len(subjects.SUBJECTS)
+    assert (by["고급 미적분"]["group"], by["고급 미적분"]["type"], by["고급 미적분"]["special"]) == ("수학", "진로선택", True)
+    assert (by["지구과학 실험"]["type"], by["정보과학"]["area"]) == ("융합선택", "정보")
+    assert (by["스포츠 행정 및 경영"]["group"], by["스포츠 행정 및 경영"]["type"]) == ("체육", "융합선택")
+    assert (by["사진과 삶"]["area"], by["영화의 이해"]["area"], by["시 창작"]["area"], by["안무"]["area"]) == ("사진", "영화", "문예 창작", "무용")
+    assert (by["심화 영어 작문Ⅱ"]["group"], by["국제법"]["group"]) == ("영어", "사회")
+    assert by["베트남어 독해와 작문Ⅱ"]["area"] == "제2외국어" and by["전공 기초 아랍어"]["special"]
+    assert not by["심화 독일어"]["special"] and not by["중국 문화"]["special"]  # 보통 교과에도 있는 과목
+    assert by["고급 물리학"]["achievement"] == "5"
