@@ -242,10 +242,11 @@ body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]�
 .options button.chosen { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .options button.correct { outline: 3px solid var(--ok); }
 .bars { display: grid; gap: 0; }
-.bar { display: grid; grid-template-columns: 1.4em minmax(6em, 2.4fr) minmax(56px, 1fr) 7.2em; /* 보기 글이 길어도 두 줄 안쪽으로: 막대는 좁게 */ align-items: center; gap: 10px; padding: 8px 4px; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
+.bar { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) 72px 5.8em; /* 보기 글에 폭을 최대한: 막대·숫자는 좁게 붙여서 */ align-items: center; gap: 6px; padding: 8px 4px; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
 .bar:last-child { border-bottom: 0; }
 .bar .mark { color: var(--brand-warm); font-weight: 900; font-size: 1.15rem; text-align: center; }
-.bar .name { min-width: 0; overflow-wrap: anywhere; }
+.bar .name { min-width: 0; overflow-wrap: anywhere; display: flex; align-items: baseline; } /* 번호 옆에 글이 이어지게 (번호만 한 줄 차지하지 않게) */
+.bar .name .bar-no { flex: none; }
 .bar .track { height: 12px; border-radius: 3px; background: #d6d9de; overflow: hidden; }
 .bar .fill { height: 100%; transition: width 0.3s; }
 .bar .num { font-size: 0.85rem; color: var(--muted); white-space: nowrap; text-align: right; }
