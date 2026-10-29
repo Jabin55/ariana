@@ -183,7 +183,7 @@ body.no-mirror .tile video { transform: none; } /* 선생님이 [좌우 반전]�
 .chatmsg .text { background: var(--surface-2); border-radius: 10px; padding: 6px 10px; white-space: pre-wrap; display: inline-block; }
 .chatmsg.mine { align-self: flex-end; text-align: right; }
 .chatmsg.mine .text { background: var(--accent); color: var(--accent-text); }
-.chatmsg.teacher .text { background: var(--warn-soft); }
+.chatmsg.teacher .text { background: var(--warn-soft); color: var(--text); } /* 선생님 글: 연한 노랑 바탕에 검은 글씨 (내 글이어도) */
 .chatmsg .scope { font-size: 0.7rem; padding: 0 5px; border-radius: 4px; background: var(--surface-2); margin-left: 4px; }
 .chatform { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
 .chatform textarea, .chatform input { flex: 1; resize: none; }
