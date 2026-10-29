@@ -1,4 +1,6 @@
+/* 컴퓨터를 어두운 모드로 해도 늘 밝은 화면으로 보인다 (입력 칸·스크롤바도 밝게) */
 :root {
+  color-scheme: light;
   --bg: #f3f4f7;
   --surface: #ffffff;
   --surface-2: #eef0f4;
@@ -22,31 +24,6 @@
   --tile: #222833;
   --speaking: #3ccf6e;
   --radius: 12px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101318;
-    --surface: #1a1e26;
-    --surface-2: #232834;
-    --text: #e6e9ef;
-    --muted: #98a2b3;
-    --border: #2e3440;
-    --accent: #5fc795;
-    --accent-soft: #17352a;
-    --accent-text: #08150f;
-    --brand: #6fd3a3;
-    --brand-deep: #9be3c0;
-    --brand-warm: #ff8f63;
-    --cream: #141a17;
-    --ok: #4ad37f;
-    --ok-soft: #173524;
-    --warn: #f5b84a;
-    --warn-soft: #3a2d12;
-    --danger: #f97066;
-    --danger-soft: #3d1a17;
-    --stage: #07090c;
-    --tile: #1c212b;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -460,7 +437,6 @@ details.card > summary { cursor: pointer; }
 
 /* ───── 강의 녹화 ───── */
 .banner.rec { background: #fde8e7; color: #8a1c13; }
-@media (prefers-color-scheme: dark) { .banner.rec { background: #4a1714; color: #ffd9d5; } }
 #rec-btn.recording { background: var(--danger); color: #fff; border-color: var(--danger); animation: rec-pulse 1.6s ease-in-out infinite; }
 @keyframes rec-pulse { 50% { opacity: 0.75; } }
 .banner.rec strong { color: inherit; }
@@ -490,7 +466,6 @@ details.card > summary { cursor: pointer; }
   border: 1.5px solid var(--brand); border-radius: 999px; padding: 6px 12px; }
 .site-user.site-signup { background: var(--brand); color: #fff; }
 .site-user.site-signup:hover { background: var(--brand-deep); }
-@media (prefers-color-scheme: dark) { .site-user.site-signup { color: #102b1d; } }
 @media (max-width: 760px) {
   .site-header-in { flex-wrap: wrap; gap: 6px 10px; padding: 8px 12px; }
   .brand { font-size: 1.4rem; }
@@ -671,9 +646,6 @@ body.site { background: var(--bg); }
   .home-cols { grid-template-columns: 1fr; }
 }
 @media (max-width: 420px) { .bb-art { display: none; } }
-@media (prefers-color-scheme: dark) {
-  .hue-0, .hue-1, .hue-2, .hue-3, .hue-4 { background: var(--surface-2); }
-}
 /* 메인 화면 제목용 둥근 글꼴 (배달의민족 주아체, SIL OFL — fonts/OFL-Jua.txt) */
 @font-face { font-family: "WaesolFun"; src: url("/static/live/fonts/jua-subset.woff2") format("woff2"); font-display: swap; }
 .bb-text h2, .bb-btn, .circles a, .home-box-h h2, .mini-course strong { font-family: "WaesolFun", system-ui, sans-serif; font-weight: 400; }
@@ -819,7 +791,6 @@ body.site { background: var(--bg); }
 .sys-col.teacher li::before { background: #4b74c4; }
 .sys-col.student li { background: #fcebee; border: 1.5px solid #f0c0ca; }
 .sys-col.student li::before { background: #c9506a; }
-@media (prefers-color-scheme: dark) { .sys-col.teacher li, .sys-col.student li { background: var(--surface-2); border-color: var(--border); } }
 @media (max-width: 640px) { .sys-col { grid-template-columns: 1fr; } .sys-col li { border-radius: 16px; } }
 /* 고교학점제 */
 .credit-hero { background: linear-gradient(120deg, #3d63dd, #6d8cf0 60%, #9fb6ff); }
@@ -1329,7 +1300,6 @@ img.me-avatar { object-fit: cover; }
 .site-menu { position: sticky; top: 0; z-index: 30; background: #f5f1ea; /* 따뜻한 미색: 초록·주황 어느 쪽과도 어울리게 */
   border-top: 1px solid #e6dfd3; border-bottom: 1px solid #e6dfd3; }
 .site-menu .site-nav a:hover { background: rgba(120, 100, 70, 0.08); }
-@media (prefers-color-scheme: dark) { .site-menu { background: #1d1b18; border-color: #2e2a24; } .site-menu .site-nav a:hover { background: #2e2a24; } }
 .site-menu-in { max-width: 1160px; margin: 0 auto; padding: 8px 12px; }
 .site-menu .site-nav { display: flex; gap: 6px; overflow-x: auto; }
 .site-menu .site-nav a { flex: 1; text-align: center; padding: 10px 12px; border-radius: 999px; color: var(--text);
