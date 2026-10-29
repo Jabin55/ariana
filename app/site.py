@@ -29,7 +29,7 @@ def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_cla
     return HTMLResponse(f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)} · 외솔온닷</title>
-<link rel="icon" href="/static/live/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/live/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#1b6b4a"><link rel="apple-touch-icon" href="/static/live/icons/apple-touch-icon.png"><script src="/static/live/pwa.js" defer></script>
 <link rel="stylesheet" href="/static/live/live.css">
 <script src="/static/live/thumbs.js"></script>
 <script src="/static/live/course-search.js"></script></head>

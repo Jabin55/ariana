@@ -157,6 +157,19 @@ async def index() -> FileResponse | RedirectResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+# ── 앱처럼 설치하기 (PWA): 설정 파일과 서비스 워커는 사이트 맨 위 주소에 있어야 사이트 전체를 맡는다 ──
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def web_manifest() -> FileResponse:
+    return FileResponse(STATIC_DIR / "live" / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker() -> FileResponse:
+    # 늘 새로 받아 가게 해서, 서비스 워커를 고치면 다음 접속 때 바로 바뀐다
+    return FileResponse(STATIC_DIR / "live" / "sw.js", media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache"})
+
+
 # ── 실시간 수업 화면 ──
 @app.get("/live")
 async def live_index() -> FileResponse:

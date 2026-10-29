@@ -1532,3 +1532,6 @@ body.class-t .sharebox #share-url { display: none; }
 .people-tools { flex-wrap: nowrap; gap: 6px; }
 .people-tools button { flex: 1 1 0; min-width: 0; padding: 6px 4px; font-size: 0.85rem; white-space: nowrap; }
 .change-note { font-size: 0.8rem; color: var(--brand-warm); margin-top: 2px; white-space: nowrap; }
+
+/* 머리글 [앱 설치] 버튼 (설치할 수 있는 브라우저에서만 나타남) */
+.app-install-btn { margin-right: 8px; border-radius: 999px; }
