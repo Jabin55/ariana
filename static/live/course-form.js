@@ -105,7 +105,7 @@ async function courseForm(c, done) {
   const custom = h("input", { type: "checkbox", checked: c.custom_subject });
   const group = h("select", { required: true }, opt(meta.groups, c.subject_group, "교과(군)", true)); // 교과(군)은 교육과정 순서 그대로
   const area = h("select", { required: true }, opt(meta.areas, c.subject_area, "교과"));
-  const type = h("select", { required: true }, opt(meta.types, c.subject_type, "과목 구분"));
+  const type = h("select", { required: true }, opt(meta.types, c.subject_type, "과목 구분", true));
   // '찾기': 교과(군)을 고르면 과목이 버튼으로 나온다
   const browse = h("div", { class: "subject-browse", hidden: true });
   const browseGroup = h("select", {}, opt(meta.groups, c.subject_group || meta.groups[0], null, true));
