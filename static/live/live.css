@@ -897,7 +897,8 @@ body.site { background: var(--bg); }
 .stage.duo > .tile { position: relative; inset: auto; min-width: 0; min-height: 0; width: 100%; height: 100%; }
 .chatmsg.private { border-left: 3px solid #7a4fd6; background: color-mix(in srgb, #7a4fd6 8%, var(--surface)); }
 .chatmsg.private > button { margin-top: 4px; }
-.chatform select { flex: 0 0 auto; max-width: 9.5em; }
+.chatform select { flex: 0 1 auto; max-width: 7em; min-width: 0; } /* 좁은 채팅 칸에서도 입력 칸이 넉넉하게 */
+.chatform textarea, .chatform input { min-width: 6em; }
 .layout-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; white-space: nowrap; }
 .layout-pick select { padding: 4px 6px; }
 .people-tools { gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
