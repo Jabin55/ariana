@@ -41,17 +41,24 @@ async function courseForm(c, done) {
   const leadHubs = ME.lead_hubs || [];
   const byName = !leadHubs.length || ME.is_admin || ME.lead_any; // 울산 고등학교 어디든 거점학교로 고른다
   const schoolNames = [...new Set([...leadHubs.map((x) => x.name), ...schools, ...(c.hub_school ? [c.hub_school] : [])])].sort();
-  const office = h("select", { required: true }, koSort(meta.offices).map((o) => h("option", { value: o, selected: o === "울산광역시교육청" }, o)));
-  const hubSel = h("select", { required: true }, h("option", { value: "" }, "거점학교를 고르세요"),
-    byName ? koSort(schoolNames).map((n) => h("option", { value: n, selected: n === c.hub_school }, n))
-      : koSort(leadHubs, (x) => x.name).map((x) => h("option", { value: x.id, selected: x.id === c.hub_id }, x.name)));
+  // 교육청을 고르면 그 교육청 고등학교가 거점학교 목록에 나온다 (학교 기본 정보 목록)
+  const officeSchools = meta.office_schools || {};
+  const officeOf = (name) => Object.keys(officeSchools).find((o) => officeSchools[o].includes(name));
+  const office = h("select", { required: true }, meta.offices.map((o) => h("option", { value: o }, o)));
+  office.value = (c.hub_school && officeOf(c.hub_school)) || "울산광역시교육청";
+  const hubSel = h("select", { required: true });
+  const fillHubs = () => {
+    const keep = hubSel.value || c.hub_school || "";
+    const names = byName ? [...new Set([...(officeSchools[office.value] || []),
+      ...(office.value === "울산광역시교육청" ? schoolNames : []), ...(keep && officeOf(keep) === undefined ? [keep] : [])])] : [];
+    hubSel.replaceChildren(h("option", { value: "" }, "거점학교를 고르세요"),
+      ...(byName ? koSort(names).map((n) => h("option", { value: n, selected: n === keep }, n))
+        : koSort(leadHubs, (x) => x.name).map((x) => h("option", { value: x.id, selected: x.id === c.hub_id }, x.name))));
+  };
+  fillHubs();
   if (isNew && !byName && leadHubs.length === 1) hubSel.value = String(leadHubs[0].id);
   const officeNote = h("span", { class: "muted", style: "font-size:0.85rem" });
-  office.addEventListener("change", () => {
-    const ulsan = office.value === "울산광역시교육청";
-    hubSel.disabled = !ulsan;
-    officeNote.textContent = ulsan ? "" : "거점학교는 울산광역시교육청 소속 고등학교만 고를 수 있어요.";
-  });
+  office.addEventListener("change", () => { hubSel.value = ""; fillHubs(); hubSel.dispatchEvent(new Event("change")); });
   const hubIdNow = () => (byName ? (leadHubs.find((x) => x.name === hubSel.value)?.id || (hubSel.value === c.hub_school ? c.hub_id : null)) : Number(hubSel.value) || null);
 
   const joined = [...(c.schools || [])]; // (참여 학교 칸은 없앴다. 예전 강좌 값은 그대로 둔다)
@@ -92,9 +99,9 @@ async function courseForm(c, done) {
     h("p", { class: "muted", style: "margin:0;font-size:0.85rem" }, "교강사 정보는 등록 신청 때 적은 내용이에요. 바꾸려면 '내 정보'나 등록 신청서에서 고쳐 주세요."),
     h("h3", { class: "wz-h" }, "개설학교 정보"),
     h("div", { class: "wz-table two" },
-      row("소속 교육청", office, officeNote),
+      row("교육청", office, officeNote),
       row("거점학교", hubSel,
-        byName && !schoolNames.length ? h("span", { class: "error", style: "font-size:0.85rem" }, "울산 고등학교 목록이 비어 있어요. 전체 운영 관리자에게 문의해 주세요.") : null)),
+        byName && !schoolNames.length ? h("span", { class: "error", style: "font-size:0.85rem" }, "고등학교 목록이 비어 있어요. 전체 운영 관리자에게 문의해 주세요.") : null)),
     h("h3", { class: "wz-h" }, "팀 티칭 교강사 정보"),
     h("div", { class: "wz-table" }, row("팀티칭 여부", teamToggle, coBox)));
 

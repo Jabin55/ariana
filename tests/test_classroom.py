@@ -1993,7 +1993,7 @@ def test_roles_are_separate_and_one_step_enrollment(monkeypatch):
 
 
 def test_instructor_applies_to_any_ulsan_school(monkeypatch):
-    """강의교사는 가입 때 거점학교를 고르지 않는다. 과목을 열 때 울산 고등학교 목록에서 고른다"""
+    """강의교사는 가입 때 거점학교를 고르지 않는다. 과목을 열 때 교육청별 고등학교 목록에서 고른다"""
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
     boss = login("boss@gmail.com", name="관리자")
     boss.post("/api/admin/schools", json={"text": "신정고등학교\n울산고등학교"})
@@ -2865,3 +2865,20 @@ def test_syllabus_limit_is_5mb():
     r = t.post(f"/api/courses/{cid}/syllabus?name=plan.pdf", content=big)
     assert r.status_code == 413 and "5MB" in r.json()["detail"]
     assert t.post(f"/api/courses/{cid}/syllabus?name=plan.pdf", content=b"%PDF-1.4\nsmall").status_code == 200
+
+
+def test_office_school_lists_from_excel(monkeypatch):
+    """과목 개설: 교육청별 고등학교 목록(학교 기본 정보)에서 거점학교를 고른다"""
+    from app import subjects
+    assert subjects.OFFICES[0] == "울산광역시교육청" and "전남광주통합특별시교육청" in subjects.OFFICES
+    assert "울산마이스터고등학교" in subjects.OFFICE_SCHOOLS["울산광역시교육청"]
+    assert "국립국악고등학교" in subjects.OFFICE_SCHOOLS["서울특별시교육청"]  # 국립 학교는 지역 교육청에
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"admin@gmail.com"})
+    admin = login("admin@gmail.com", name="관리자", school=SCHOOL)
+    meta = admin.get("/api/subjects").json()
+    assert meta["office_schools"]["부산광역시교육청"] and meta["offices"] == subjects.OFFICES
+    r = admin.post("/api/courses", json={**COURSE, "hub_school": "국립국악고등학교"})
+    assert r.status_code == 200, r.text
+    monkeypatch.setattr(auth, "ULSAN_SCHOOLS", ["신정고등학교"])  # 학교 목록이 있으면 목록 밖 학교는 막는다
+    assert admin.post("/api/courses", json={**COURSE, "hub_school": "없는고등학교"}).status_code == 400
+    assert admin.post("/api/courses", json={**COURSE, "hub_school": "부산과학고등학교"}).status_code == 200

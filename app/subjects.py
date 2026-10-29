@@ -166,10 +166,14 @@ TYPES = ["일반선택", "진로선택", "전문교과"]  # 과목 개설 때 �
 TERMS = ["1학기", "여름학기", "2학기", "겨울학기"]
 DELIVERY = ["실시간 온라인", "온·오프라인 병행"]  # 운영방식
 ACHIEVEMENTS = {"5": "5단계 (A~E)", "3": "3단계 (A~C)", "P": "P/F"}
-OFFICES = ["울산광역시교육청", "서울특별시교육청", "부산광역시교육청", "대구광역시교육청", "인천광역시교육청",
-           "광주광역시교육청", "대전광역시교육청", "세종특별자치시교육청", "경기도교육청", "강원특별자치도교육청",
-           "충청북도교육청", "충청남도교육청", "전북특별자치도교육청", "전라남도교육청", "경상북도교육청",
-           "경상남도교육청", "제주특별자치도교육청"]
+# 교육청별 고등학교 (학교 기본 정보 엑셀에서 만든 목록, 폐교 제외 · 국립 학교는 지역 교육청에 넣음)
+import json as _json
+from pathlib import Path as _Path
+
+OFFICE_SCHOOLS: dict[str, list[str]] = _json.loads(
+    (_Path(__file__).parent / "data" / "office_schools.json").read_text(encoding="utf-8"))
+OFFICES = list(OFFICE_SCHOOLS)  # 교육청 (울산 먼저)
+ALL_SCHOOLS = {n for names in OFFICE_SCHOOLS.values() for n in names}
 HOURS_PER_CREDIT = 16  # 1학점 = 50분 × 16회
 
 

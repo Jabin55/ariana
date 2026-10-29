@@ -367,7 +367,7 @@ async def subject_list():
     """강좌 개설 화면: 2022 개정 교육과정 과목 (검색해서 고른다)"""
     return {"subjects": subjects.SUBJECTS, "groups": subjects.GROUPS, "areas": subjects.AREAS,
             "types": subjects.TYPES, "browse_types": subjects.BROWSE_TYPES, "terms": subjects.TERMS, "delivery": subjects.DELIVERY, "achievements": subjects.ACHIEVEMENTS,
-            "offices": subjects.OFFICES, "hours_per_credit": subjects.HOURS_PER_CREDIT}
+            "offices": subjects.OFFICES, "office_schools": subjects.OFFICE_SCHOOLS, "hours_per_credit": subjects.HOURS_PER_CREDIT}
 
 
 def grades_text(grades: list[int] | None) -> str:
@@ -431,8 +431,8 @@ async def create_course(req: CourseReq, request: Request):
             raise HTTPException(403, "강사로 승인받은 거점학교에만 강좌를 개설할 수 있어요.")
     elif not hub_school:
         raise HTTPException(400, "거점학교를 골라 주세요. 거점학교 없이는 강좌를 열 수 없어요.")
-    elif schools and hub_school not in schools:
-        raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
+    elif schools and hub_school not in schools and hub_school not in subjects.ALL_SCHOOLS:
+        raise HTTPException(400, "거점학교는 교육청별 고등학교 목록에서 골라 주세요.")
     elif not (anywhere or independent):
         if t.get("teach_any"):
             raise HTTPException(403, "팀티칭 보조교사는 강좌를 직접 열 수 없어요. 주강사가 강좌를 열 때 보조교사로 넣어 줘요.")
@@ -526,8 +526,8 @@ async def new_hub(t: dict, hub_id: int | None, name: str) -> dict:
             raise HTTPException(404, "거점학교를 찾을 수 없어요.")
         return {"hub_id": hub.id, "hub_school": hub.name}
     schools = await db.run(auth.get_schools)
-    if not name or (schools and name not in schools):
-        raise HTTPException(400, "거점학교는 울산 고등학교 목록에서 골라 주세요.")
+    if not name or (schools and name not in schools and name not in subjects.ALL_SCHOOLS):
+        raise HTTPException(400, "거점학교는 교육청별 고등학교 목록에서 골라 주세요.")
     if not (t["is_admin"] or t.get("lead_any")):
         if t["email"].lower() in auth.TEACHER_EMAILS:  # 거점학교 밖 강사(설정으로 등록): 학교 이름만
             return {"hub_id": None, "hub_school": name}
