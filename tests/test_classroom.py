@@ -802,7 +802,7 @@ def test_hub_structure_and_course_approval(monkeypatch):
                                                "message": "무시됨"}).status_code == 200
     other_coord_view = teacher().get("/api/staff/applications", params={"role": "instructor"})
     assert other_coord_view.status_code == 403  # 관리교사가 아니면 못 봄
-    assert coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"] == []  # 관리교사에겐 안 보임
+    assert coord.get("/api/staff/applications", params={"role": "instructor"}).status_code == 403  # 교사 승인은 전체 관리자만
     iapps = admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
     assert iapps[0]["name"] == "김교수" and iapps[0]["hub_id"] is None
     assert (iapps[0]["wish_from"], iapps[0]["wish_until"], iapps[0]["message"]) == ("2027-01-01", "2099-02-28", "")
@@ -912,7 +912,7 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
     # 1) 강사였던 B: 가나고 강사 (작년, 기간 끝남) → 올해 같은 학교 관리교사도 신청
     b = guest("b@gmail.com")
     staff_apply(b, {"role": "instructor", "name": "강사B", **form})
-    assert [x for x in apps(a, "instructor") if x["name"] == "강사B"] == []  # 강의교사 가입은 전체 관리자가 승인
+    assert a.get("/api/staff/applications", params={"role": "instructor"}).status_code == 403  # 강의교사 가입은 전체 관리자만 승인
     bi = [x for x in apps(admin, "instructor") if x["name"] == "강사B"][0]
     approve(admin, "instructor", bi["id"], valid_from="2025-01-01", valid_until="2025-12-31")
     assert b.get("/api/me").json()["user"]["role"] == "guest"  # 기간 끝남

@@ -43,11 +43,8 @@ async def login_required(request: Request) -> dict:
 
 
 def can_manage(u: dict, m) -> bool:
-    """관리교사·참여학교 담당교사·강의교사 가입은 전체 관리자가 처리한다.
-    (예전에 거점학교를 정해 가입한 강의교사는 그 거점학교 관리교사도 처리할 수 있다)"""
-    if u["is_admin"]:
-        return True
-    return m.role == "instructor" and m.hub_id in {h["id"] for h in u["coordinator_hubs"]}
+    """관리교사·참여학교 담당교사·강의교사 가입(교사 승인)은 전체 관리자만 처리한다."""
+    return bool(u["is_admin"])
 
 
 @router.get("/api/hubs")
@@ -258,13 +255,12 @@ async def apply(req: ApplyReq, request: Request):
 
 @router.get("/api/staff/applications")
 async def applications(role: str, request: Request):
-    """role=coordinator: 전체 관리자용 / role=instructor: 관리교사(자기 거점학교)·전체 관리자용"""
+    """교사 승인 표 (전체 관리자만)"""
     u = await login_required(request)
     if role not in ROLES:
         raise HTTPException(400)
-    hubs = {h["id"] for h in u["coordinator_hubs"]}
-    if not (u["is_admin"] or (role == "instructor" and hubs)):
-        raise HTTPException(403, "관리 권한이 없어요.")
+    if not u["is_admin"]:
+        raise HTTPException(403, "교사 승인은 전체 관리자만 할 수 있어요.")
 
     def run():
         m = db.memberships.c
@@ -272,8 +268,6 @@ async def applications(role: str, request: Request):
             q = (select(db.memberships, db.users.c.name, db.users.c.email, db.users.c.school, db.users.c.google_name,
                         db.users.c.birth, db.users.c.gender, db.users.c.position)
                  .join(db.users, db.users.c.id == m.user_id).where(m.role == role))
-            if not u["is_admin"] and role == "instructor":
-                q = q.where(m.hub_id.in_(hubs))
             rows = c.execute(q.order_by(m.requested_at.desc())).all()
             names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
             replaced_ids = {r.replace_membership_id for r in rows if r.replace_membership_id}
