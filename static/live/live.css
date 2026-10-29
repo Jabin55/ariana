@@ -907,7 +907,7 @@ body.site { background: var(--bg); }
 .present-area.zoomed .sheet { position: absolute; }
 .sheet canvas.ink.drawable.pan { cursor: grab; }
 .reveal-preview { margin-top: 10px; padding: 10px; border: 2px dashed var(--border); border-radius: 14px; background: var(--surface-2); }
-.activity.preview { pointer-events: none; }
+.activity.preview { pointer-events: none; aspect-ratio: auto; overflow: visible; background: var(--surface); }
 
 /* ───── 노트북·태블릿 화면에 맞게 가로로 넓게 (세로로 길게 늘어지지 않게) ───── */
 .landing { max-width: 1120px; padding: 24px 24px 48px; }
