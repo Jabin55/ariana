@@ -1527,3 +1527,7 @@ body.class-t .sharebox #share-url { display: none; }
 /* 설문/퀴즈·모둠 팝업 (왼쪽 버튼으로 연다) */
 .overlay .card.dlg-wide { max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; }
 .tool-dlg .box { margin: 0; }
+
+/* 참여자 탭: 모두 영상·모두 음소거·모두 손 내리기를 한 줄에 */
+.people-tools { flex-wrap: nowrap; gap: 6px; }
+.people-tools button { flex: 1 1 0; min-width: 0; padding: 6px 4px; font-size: 0.85rem; white-space: nowrap; }

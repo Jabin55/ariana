@@ -1141,6 +1141,7 @@ $("#debate-apply").addEventListener("click", () => {
   sock.send({ t: "layout", mode: "debate", pair });
   toast("학생 화면에 두 학생이 나란히 크게 보여요.");
 });
+$("#cam-all").addEventListener("click", () => { sock.send({ t: "cmd", cmd: "cam_on", target: "all" }); toast("모든 학생의 카메라를 켰어요."); });
 $("#lower-all").addEventListener("click", () => sock.send({ t: "lower_hand", target: "all" }));
 
 /* ───── 퀴즈·설문 ───── */
