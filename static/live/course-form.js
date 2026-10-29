@@ -176,9 +176,11 @@ async function courseForm(c, done) {
   const step2 = h("section", { class: "wz-step", hidden: true },
     h("h3", { class: "wz-h" }, "수업 개설 정보"),
     h("div", { class: "wz-table" },
+      // [찾기]를 눌러 과목 목록이 펼쳐져도 '고시외 과목' 체크는 [찾기] 옆에 그대로 둔다
       row("과목명", h("div", { class: "row" }, subject, sdl,
-        h("button", { type: "button", onclick: () => { browse.hidden = !browse.hidden; if (!browse.hidden) drawBrowse(); } }, "찾기")),
-        browse, h("label", { class: "switch" }, custom, " 고시외 과목 (목록에 없는 과목 — 직접 적고 아래 칸을 골라요)"))),
+        h("button", { type: "button", onclick: () => { browse.hidden = !browse.hidden; if (!browse.hidden) drawBrowse(); } }, "찾기"),
+        h("label", { class: "switch nowrap", title: "목록에 없는 과목은 직접 적고 아래 칸을 골라요" }, custom, " 고시외 과목(목록에 없는 과목)")),
+        browse)),
     h("div", { class: "wz-table two" },
       row("교과(군)", group), row("교과 영역", area),
       row("과목 선택 구분", type), row("학년도", schoolYear),
