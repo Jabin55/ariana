@@ -75,13 +75,10 @@
             <span class="timer" id="bo-timer"></span>
             <span class="grow"></span>
             <span class="muted" style="font-size:0.85rem">🎧 여러 모둠을 동시에 들을 수 있어요 · 이어폰 권장</span>
+            <button id="bo-edit" title="모둠 활동 중에도 학생을 다른 모둠으로 옮기거나, 새로 들어온 학생을 배치해요">👥 모둠 구성 바꾸기</button>
             <button class="danger" id="bo-voice">📢 모든 모둠에 말하기</button>
             <button class="primary" id="bo-end">모두 전체 교실로 돌아오기</button>
           </div>
-          <form class="row" id="bo-broadcast" style="margin:10px 0">
-            <input class="grow" id="bo-broadcast-text" maxlength="500" placeholder="모든 모둠 채팅에 공지 보내기 (예: 2분 남았어요!)">
-            <button type="submit">📢 모든 모둠에 보내기</button>
-          </form>
           <div class="rooms" id="rooms"></div>
         </div>
       </main>
@@ -127,7 +124,7 @@
 
   <div class="overlay tool-dlg" id="quiz-dlg" hidden>
     <div class="card dlg-wide">
-      <div class="row"><h2 class="grow" style="margin:0">📊 설문/퀴즈</h2><button class="small" type="button" data-close>닫기</button></div>
+      <div class="row dlg-drag" title="끌어서 창을 옮길 수 있어요"><h2 class="grow" style="margin:0">📊 설문/퀴즈</h2><button class="small" type="button" data-close>닫기</button></div>
           <div id="activity-current"></div>
           <form class="box" id="act-form">
             <h4>새 활동 보내기</h4>

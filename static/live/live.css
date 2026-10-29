@@ -1500,7 +1500,7 @@ body.class-t .sharebox #share-url { display: none; }
 .tool-dlg .box { margin: 0; }
 /* 설문/퀴즈 창: 화면 오른쪽에 띄우고 뒤를 가리지 않아, 퀴즈를 내면서도 학생 표정이 보인다 */
 #quiz-dlg { background: transparent; pointer-events: none; justify-items: end; align-items: start; padding: 64px 16px 16px; }
-#quiz-dlg .card.dlg-wide { pointer-events: auto; max-width: 680px; width: min(680px, 46vw); min-width: 420px;
+#quiz-dlg .card.dlg-wide { pointer-events: auto; max-width: 600px; width: min(600px, 42vw); min-width: 400px;
   max-height: calc(100vh - 80px); box-shadow: 0 12px 40px #0006; }
 @media (max-width: 900px) { #quiz-dlg { justify-items: center; } #quiz-dlg .card.dlg-wide { width: 100%; min-width: 0; } }
 
@@ -1511,3 +1511,6 @@ body.class-t .sharebox #share-url { display: none; }
 
 /* 머리글 [앱 설치] 버튼 (설치할 수 있는 브라우저에서만 나타남) */
 .app-install-btn { margin-right: 8px; border-radius: 999px; }
+
+#quiz-dlg .dlg-drag { cursor: move; user-select: none; touch-action: none; }
+body.class-t .monitor-head #bo-edit { color: var(--text); } /* 어두운 모둠 화면 위 흰 버튼: 글씨는 검게 */

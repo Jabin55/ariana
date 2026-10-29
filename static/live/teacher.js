@@ -638,15 +638,24 @@ function tickTimer() {
 }
 setInterval(tickTimer, 1000);
 $("#bo-end").addEventListener("click", () => sock.send({ t: "breakout_end" }));
-$("#bo-broadcast").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const input = $("#bo-broadcast-text");
-  if (input.value.trim() && sock.send({ t: "broadcast", text: input.value.trim() })) { input.value = ""; toast("모든 모둠에 보냈어요."); }
-});
+$("#bo-edit").addEventListener("click", () => showTab("groups"));
 
 /* ───── 전체 그리기 ───── */
 
+let knownStudents = null; // 모둠 활동 중에 새로 들어온 학생을 알려 주려고
+function noticeLateJoin() {
+  if (!S.breakout) { knownStudents = null; return; }
+  const ids = new Set(S.students.map((s) => s.id));
+  if (knownStudents) {
+    for (const s of S.students) {
+      if (!knownStudents.has(s.id)) toast(`${s.name} 학생이 들어와 ${s.group ? groupName(s.group) : "전체 교실"}에 들어갔어요. 옮기려면 [👥 모둠 구성 바꾸기]`, 8000);
+    }
+  }
+  knownStudents = ids;
+}
+
 function render() {
+  noticeLateJoin();
   document.title = `${S.title} · 선생님`;
   $("#title").textContent = S.title;
   const online = S.students.filter((s) => s.online).length;
@@ -1413,6 +1422,10 @@ function renderGroups() {
         : h("span", { class: "muted", style: "font-size:0.85rem" }, "비어 있어요"))));
   }
   box.append(board);
+  if (S.breakout) {
+    box.prepend(h("p", { class: "banner", style: "margin:0 0 8px;font-size:0.88rem" },
+      "모둠 활동 중이에요. 여기서 바꾸면 학생이 바로 그 모둠 방으로 옮겨져요. 새로 들어온 학생은 인원이 적은 모둠에 먼저 들어가요."));
+  }
   if (none.length && !S.breakout) {
     box.append(h("p", { class: "muted", style: "font-size:0.85rem;margin:6px 0 0" }, "미배정 학생은 시작할 때 인원이 적은 모둠으로 들어가요."));
   }
@@ -1469,6 +1482,34 @@ for (const d of document.querySelectorAll(".tool-dlg")) {
   d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.hidden = true; });
 }
 $("#group-btn").addEventListener("click", () => showTab("groups"));
+
+/* 설문/퀴즈 창: 제목 줄을 끌어서 원하는 곳으로 옮긴다 (위치는 이 컴퓨터에 기억) */
+(() => {
+  const card = $("#quiz-dlg .card");
+  const handle = $("#quiz-dlg .dlg-drag");
+  let pos = { x: 0, y: 0 };
+  try { pos = JSON.parse(localStorage.getItem("quiz-dlg-pos")) || pos; } catch { /* 처음 위치 */ }
+  const apply = () => { card.style.transform = `translate(${pos.x}px, ${pos.y}px)`; };
+  apply();
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    e.preventDefault();
+    const start = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+    const r0 = card.getBoundingClientRect(), base = { x: r0.left - pos.x, y: r0.top - pos.y };
+    const move = (ev) => {
+      // 창 제목 줄이 화면 밖으로 나가지 않게
+      pos.x = Math.min(innerWidth - base.x - 120, Math.max(-base.x - r0.width + 120, ev.clientX - start.x));
+      pos.y = Math.min(innerHeight - base.y - 48, Math.max(-base.y, ev.clientY - start.y));
+      apply();
+    };
+    const up = () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up);
+      try { localStorage.setItem("quiz-dlg-pos", JSON.stringify(pos)); } catch { /* 무시 */ }
+    };
+    addEventListener("pointermove", move); addEventListener("pointerup", up);
+  });
+  handle.addEventListener("dblclick", () => { pos = { x: 0, y: 0 }; apply(); try { localStorage.removeItem("quiz-dlg-pos"); } catch { /* 무시 */ } });
+})();
 
 $("#copy-link").addEventListener("click", async () => {
   try {

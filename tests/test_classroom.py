@@ -2973,3 +2973,25 @@ def test_other_teacher_joins_meeting_by_code():
         me = state(ow, lambda m: m.get("me"))
         assert me["me"]["name"] == "박선생"
         assert state(tw, lambda m: any(s["online"] for s in m["students"]))
+
+
+def test_regroup_during_breakout_and_late_joiner():
+    """모둠 활동 중에도 학생을 다른 모둠으로 옮기면 바로 그 방으로 가고, 늦게 들어온 학생도 선생님이 배치할 수 있다."""
+    t = teacher()
+    code = create(t)["code"]
+    a, b, late = student(1), student(2), student(3)
+    with t.websocket_connect(f"/ws/live/{code}") as tw, \
+         a.websocket_connect(f"/ws/live/{code}") as sa, b.websocket_connect(f"/ws/live/{code}"):
+        state(tw, lambda m: sum(s["online"] for s in m["students"]) == 2)
+        tw.send_json({"t": "breakout_setup", "n": 2})
+        tw.send_json({"t": "breakout_start"})
+        st = state(sa, lambda m: m["room"] != "main")
+        ra, aid = st["room"], st["me"]["id"]
+        other = "g2" if ra == "g1" else "g1"
+        tw.send_json({"t": "breakout_assign", "target": aid, "group": other})
+        assert state(sa, lambda m: m["room"] == other)
+        with late.websocket_connect(f"/ws/live/{code}") as sl:
+            lst = state(sl, lambda m: m.get("me") and m["room"] != "main")
+            target = "g1" if lst["room"] == "g2" else "g2"
+            tw.send_json({"t": "breakout_assign", "target": lst["me"]["id"], "group": target})
+            assert state(sl, lambda m: m["room"] == target)
