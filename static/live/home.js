@@ -875,34 +875,55 @@ function classroomCourseStatus(c) {
 }
 
 let selectedStudentCourseId = null;
+let studentCourseTab = "info"; // 강좌 안의 탭: info(과목 정보) learn(학습 활동) assess(수행평가)
 function openStudentCourse(c) {
+  if (selectedStudentCourseId !== c.id) studentCourseTab = "info";
   selectedStudentCourseId = c.id;
   $("#student-course-list").hidden = true;
   const detail = $("#student-course-detail");
   detail.hidden = false;
-  for (const id of ["student-assignments", "student-results", "student-questions"]) {
-    const section = $(`#${id}`);
-    section.hidden = true;
-    detail.append(section);
-  }
   const content = $("#student-course-content");
   const [state, label] = classroomCourseStatus(c);
+  const approved = c.status === "approved";
   const materials = h("div", { class: "course-materials" });
+  // 과목 정보: 맨 위에 강좌 공지, 그 아래 과목 상세
+  const info = h("div", { class: "sc-panel" },
+    h("section", { class: "sc-notices" }, h("h3", {}, "📢 강좌 공지"),
+      c.notices?.length ? c.notices.map((n) => h("details", { class: "box" },
+        h("summary", {}, n.title, ` · ${fmtDate(n.date)}`), h("p", { style: "white-space:pre-wrap" }, n.body)))
+        : h("p", { class: "muted" }, approved ? "아직 공지가 없어요." : "수강이 확정되면 강좌 공지를 볼 수 있어요.")),
+    h("section", {}, h("h3", {}, "📘 과목 정보"), courseInfo(c), courseFacts(c),
+      c.description ? h("p", { style: "white-space:pre-wrap" }, c.description) : null,
+      c.syllabus ? h("p", {}, h("a", { class: "button small", href: c.syllabus.url, target: "_blank", rel: "noopener" }, "📄 수업계획서 받기")) : null,
+      c.note ? h("p", { class: "error" }, `반려 사유: ${c.note}`) : null));
+  // 학습 활동: 수업별 자료 + 채점 결과 + 지난 수업 질문답변
+  const learn = h("div", { class: "sc-panel" },
+    h("section", {}, h("h3", {}, "📚 수업별 자료"),
+      approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 자료를 볼 수 있어요.")));
+  // 수행평가: 평가 활동(과제)
+  const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
+  const assess = h("div", { class: "sc-panel" }, noAssign);
+  for (const id of ["student-results", "student-questions"]) { const sec = $(`#${id}`); sec.hidden = true; learn.append(sec); }
+  { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
+  const panels = { info, learn, assess };
+  const tabs = [["info", "과목 정보"], ["learn", "학습 활동"], ["assess", "수행평가"]];
+  const nav = h("nav", { class: "tabs sub-tabs sc-tabs", "aria-label": "강좌 메뉴" });
+  const show = (k) => {
+    studentCourseTab = k;
+    for (const [key, p] of Object.entries(panels)) p.hidden = key !== k;
+    for (const b of nav.children) b.classList.toggle("active", b.dataset.k === k);
+  };
+  nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
   content.replaceChildren(
     h("div", { class: "row" }, h("h2", { class: "grow" }, c.title), h("span", { class: `status ${state}` }, label)),
-    courseInfo(c), courseFacts(c),
-    c.description ? h("p", { style: "white-space:pre-wrap" }, c.description) : null,
-    c.note ? h("p", { class: "error" }, `반려 사유: ${c.note}`) : null,
-    c.notices?.length ? h("section", {}, h("h3", {}, "강좌 공지"), ...c.notices.map((n) => h("details", { class: "box" },
-      h("summary", {}, n.title, ` · ${fmtDate(n.date)}`), h("p", { style: "white-space:pre-wrap" }, n.body)))) : null,
-    c.status === "approved" ? h("section", {}, h("h3", {}, "수업별 자료"), materials) :
-      h("p", { class: "muted" }, "수강이 확정되면 각 수업의 자료를 볼 수 있어요."));
-  if (c.status === "approved") {
+    nav, info, learn, assess);
+  show(studentCourseTab);
+  if (approved) {
     loadCourseMaterials(c.id, materials);
-    loadMyAssignments(c.id);
+    Promise.resolve(loadMyAssignments(c.id)).then(() => { noAssign.hidden = !$("#student-assignments").hidden; });
     loadMyResults(c.id);
     loadMyQuestions(c.id);
-  }
+  } else noAssign.hidden = false;
   $("#student-course-detail").scrollIntoView({ block: "start" });
 }
 

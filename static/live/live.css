@@ -1588,3 +1588,9 @@ table.att.hub-grid-table tfoot td:first-child { text-align: center; }
 .cd-facts dd { margin: 0; }
 .cd-desc { white-space: pre-wrap; margin: 0; }
 @media (max-width: 600px) { .cd-thumb { width: 100%; } .cd-facts { grid-template-columns: 7em 1fr; } }
+
+/* 학생 강좌 안: 과목 정보 · 학습 활동 · 수행평가 탭 */
+.sc-tabs { margin: 8px 0 14px; }
+.sc-panel > section { margin-bottom: 16px; }
+.sc-panel > section.card { box-shadow: none; padding: 0; border: 0; margin-top: 0 !important; background: none; }
+.sc-notices .box { margin-bottom: 6px; }
