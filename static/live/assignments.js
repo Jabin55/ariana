@@ -178,7 +178,9 @@ async function renderSubmissions(a, box, reload) {
 /* ───────────── 학생 ───────────── */
 
 let activeStudentCourseId = null;
+let viewMyAssign = null; // 학생이 열어 본 수행평가(게시물) id
 async function loadMyAssignments(courseId = activeStudentCourseId) {
+  if (courseId !== activeStudentCourseId) viewMyAssign = null;
   activeStudentCourseId = courseId;
   let list;
   try { ({ assignments: list } = await api("/api/my/assignments")); } catch { return; }
@@ -187,49 +189,84 @@ async function loadMyAssignments(courseId = activeStudentCourseId) {
   if (!list.length) { $("#student-assignments").hidden = true; return; }
   $("#student-assignments").hidden = false;
   const box = $("#my-assignments");
-  const open = new Set([...box.querySelectorAll("details[open]")].map((d) => d.dataset.id));
-  box.replaceChildren(...list.map((a) => {
+  const viewing = list.find((a) => a.id === viewMyAssign);
+  if (viewing) { renderMyAssignmentPost(viewing, box); return; }
+  const badgeOf = (a) => {
     const m = a.mine;
-    const badge = m.graded ? ["approved", `채점됨${m.score !== null ? ` ${m.score}점` : ""}`]
+    return m.graded ? ["approved", `채점됨${m.score !== null ? ` ${m.score}점` : ""}`]
       : m.submitted ? (m.late ? ["pending", "지각 제출"] : ["approved", "제출함"])
         : a.past_due || a.closed ? ["rejected", "미제출"] : ["pending", "미제출"];
-    const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: async (e) => {
-      const files = [...e.target.files];
-      e.target.value = "";
-      for (const f of files) {
-        try { toast(`${f.name} 올리는 중…`, 20000); await uploadRaw(`/api/assignments/${a.id}/files?name=${encodeURIComponent(f.name)}`, f); }
-        catch (err) { toast(`${f.name}: ${err.message}`, 6000); return loadMyAssignments(); }
+  };
+  const open = (a) => { viewMyAssign = a.id; loadMyAssignments(); };
+  box.replaceChildren(h("div", { class: "table-wrap" }, h("table", { class: "att assign-board my-assign-board" },
+    h("thead", {}, h("tr", {}, ["연번", "평가명", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
+    h("tbody", {}, list.map((a, i) => {
+      const [cls, label] = badgeOf(a);
+      return h("tr", { class: "assign-row", onclick: () => open(a), title: "눌러서 제출하기" },
+        h("td", { class: "num" }, list.length - i),
+        h("td", {}, h("strong", {}, a.title), " ", h("span", { class: `status ${cls}`, style: "margin-left:6px" }, label)),
+        h("td", { class: "num" }, a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
+        h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
+        h("td", { class: "num" }, a.due ? a.due.replaceAll("-", ".") : "없음"));
+    })))));
+}
+
+/** 학생 게시물 화면: 평가 내용을 보고, 파일을 붙이고 메모를 써서 [제출] */
+function renderMyAssignmentPost(a, box) {
+  const m = a.mine;
+  const back = () => { viewMyAssign = null; loadMyAssignments(); };
+  const pending = []; // 아직 올리지 않은 파일 (제출을 눌러야 올라간다)
+  const pendList = h("div", { class: "people" });
+  const drawPending = () => pendList.replaceChildren(...pending.map((f, i) => h("div", { class: "person" },
+    h("span", { class: "grow" }, `📎 ${f.name}`), h("span", { class: "muted", style: "font-size:0.75rem" }, fmtSize(f.size)),
+    h("button", { class: "small", onclick: () => { pending.splice(i, 1); drawPending(); } }, "빼기"))));
+  const fileInput = h("input", { type: "file", multiple: true, hidden: true, onchange: (e) => {
+    pending.push(...e.target.files);
+    e.target.value = "";
+    drawPending();
+  } });
+  const memo = h("textarea", { rows: 4, maxlength: 20000, placeholder: "간단한 메모 (선택) — 글로 내거나 선생님께 남길 말", value: m.text });
+  const submit = h("button", { class: "primary", onclick: async () => {
+    if (!pending.length && !memo.value.trim() && !m.files.length) { toast("파일을 붙이거나 메모를 써 주세요."); return; }
+    submit.disabled = true;
+    try {
+      for (const f of pending) {
+        toast(`${f.name} 올리는 중…`, 20000);
+        await uploadRaw(`/api/assignments/${a.id}/files?name=${encodeURIComponent(f.name)}`, f);
       }
-      toast("제출했어요. 마감 전까지 고칠 수 있어요.");
+      await api(`/api/assignments/${a.id}/text`, { text: memo.value });
+      toast("제출했어요. 마감 전까지 다시 고쳐 낼 수 있어요.");
       loadMyAssignments();
-    } });
-    const text = h("textarea", { rows: 3, maxlength: 20000, placeholder: "글로 내거나, 선생님께 남길 말 (선택)", value: m.text });
-    return h("details", { class: "assign-student", "data-id": String(a.id), open: open.has(String(a.id)) || null },
-      h("summary", {}, h("span", { class: "row", style: "display:inline-flex;width:calc(100% - 20px)" },
-        h("span", { class: "grow" }, h("strong", {}, a.title),
-          h("span", { class: "muted", style: "font-size:0.8rem" }, ` ${a.course_title}`)),
-        h("span", { class: `status ${badge[0]}` }, badge[1])),
-        h("div", { class: "muted", style: "font-size:0.8rem;margin-left:18px" }, [dueText(a),
-          a.weight !== null && a.weight !== undefined ? `반영 비율 ${fmtNum(a.weight)}%` : null,
-          a.max_score ? `만점 ${fmtNum(a.max_score)}점` : null].filter(Boolean).join(" · "))),
+    } catch (err) { toast(err.message, 6000); submit.disabled = false; loadMyAssignments(); }
+  } }, m.submitted ? "다시 제출" : "제출");
+  const info = (label, value) => h("div", { class: "assign-info" }, h("span", {}, label), h("strong", {}, value));
+  box.replaceChildren(...[ // 빈 칸(null)이 "null" 글자로 찍히지 않게 걸러 낸다
+    h("div", { class: "row", style: "margin-bottom:10px" },
+      h("button", { class: "small", onclick: back }, "← 수행평가 목록"),
+      h("h3", { class: "grow", style: "margin:0" }, a.title)),
+    h("div", { class: "assign-post" },
+      h("div", { class: "assign-infos" },
+        info("반영 비율", a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
+        info("영역 만점", a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
+        info("마감일", a.due ? a.due.replaceAll("-", ".") : "없음"),
+        info("내 제출", m.submitted ? `${m.submitted_at}${m.late ? " (지각)" : ""}` : "아직 안 냄"),
+        m.graded ? info("점수", m.score !== null ? `${m.score}점` : "-") : null),
       a.description ? h("div", { class: "assign-desc" }, a.description) : null,
-      m.graded && m.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${m.feedback}`) : null,
-      h("div", { class: "people" }, m.files.map((f) => h("div", { class: "person" },
-        h("a", { class: "grow", href: `/api/submission-files/${f.id}`, target: "_blank" }, `📎 ${f.name}`),
-        h("span", { class: "muted", style: "font-size:0.75rem" }, fmtSize(f.size)),
-        a.can_submit ? h("button", { class: "small", onclick: async () => {
-          if (!confirm(`${f.name} 파일을 지울까요?`)) return;
-          try { await api(`/api/submission-files/${f.id}/delete`, {}); loadMyAssignments(); } catch (err) { toast(err.message); }
-        } }, "지우기") : null))),
-      m.submitted ? h("div", { class: "muted", style: "font-size:0.8rem" }, `마지막 제출 ${m.submitted_at}${m.late ? " (지각)" : ""}`) : null,
-      a.can_submit
-        ? h("div", { class: "assign-submit" },
-          h("button", { onclick: () => fileInput.click() }, "📎 파일 올리기"), fileInput,
-          h("span", { class: "muted", style: "font-size:0.8rem" }, "파일 5개까지, 하나에 20MB까지"),
-          text,
-          h("button", { class: "primary", onclick: async () => {
-            try { await api(`/api/assignments/${a.id}/text`, { text: text.value }); toast("저장했어요."); loadMyAssignments(); } catch (err) { toast(err.message); }
-          } }, "글 저장"))
-        : h("p", { class: "muted", style: "margin:6px 0 0" }, a.why_not));
-  }));
+      m.graded && m.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${m.feedback}`) : null),
+    h("h4", { style: "margin:14px 0 6px" }, "제출하기"),
+    m.files.length ? h("div", { class: "people" }, m.files.map((f) => h("div", { class: "person" },
+      h("a", { class: "grow", href: `/api/submission-files/${f.id}`, target: "_blank" }, `📎 ${f.name} (낸 파일)`),
+      h("span", { class: "muted", style: "font-size:0.75rem" }, fmtSize(f.size)),
+      a.can_submit ? h("button", { class: "small", onclick: async () => {
+        if (!confirm(`${f.name} 파일을 지울까요?`)) return;
+        try { await api(`/api/submission-files/${f.id}/delete`, {}); loadMyAssignments(); } catch (err) { toast(err.message); }
+      } }, "지우기") : null))) : null,
+    a.can_submit
+      ? h("div", { class: "assign-submit" },
+        pendList,
+        h("div", { class: "row" }, h("button", { onclick: () => fileInput.click() }, "📎 파일 첨부"), fileInput,
+          h("span", { class: "muted", style: "font-size:0.8rem" }, "파일 5개까지, 하나에 20MB까지")),
+        memo,
+        h("div", { class: "row", style: "justify-content:flex-end" }, submit))
+      : h("p", { class: "muted", style: "margin:6px 0 0" }, a.why_not)].filter(Boolean));
 }
