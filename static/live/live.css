@@ -1570,3 +1570,6 @@ table.att.assign-board td:last-child { min-width: 0; }
 .assign-infos { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 8px; }
 .assign-info { display: flex; gap: 6px; align-items: baseline; font-size: 0.92rem; }
 .assign-info > span { color: var(--muted); font-size: 0.85rem; }
+/* 강좌별 출석부: 소속학교 열과 맨 아래 '참여 인원'은 가운데 */
+table.att.hub-grid-table thead tr:first-child th:nth-child(2), table.att.hub-grid-table tbody td:nth-child(2),
+table.att.hub-grid-table tfoot td:first-child { text-align: center; }
