@@ -199,15 +199,17 @@ async function loadMyAssignments(courseId = activeStudentCourseId) {
   };
   const open = (a) => { viewMyAssign = a.id; loadMyAssignments(); };
   box.replaceChildren(h("div", { class: "table-wrap" }, h("table", { class: "att assign-board my-assign-board" },
-    h("thead", {}, h("tr", {}, ["연번", "평가명", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
+    h("thead", {}, h("tr", {}, ["연번", "평가명", "반영 비율", "영역 만점", "마감일", "내 점수"].map((x) => h("th", {}, x)))),
     h("tbody", {}, list.map((a, i) => {
+      const scored = a.mine.graded && a.mine.score !== null && a.mine.score !== undefined;
       const [cls, label] = badgeOf(a);
       return h("tr", { class: "assign-row", onclick: () => open(a), title: "눌러서 제출하기" },
         h("td", { class: "num" }, list.length - i),
         h("td", {}, h("strong", {}, a.title), " ", h("span", { class: `status ${cls}`, style: "margin-left:6px" }, label)),
         h("td", { class: "num" }, a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
         h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
-        h("td", { class: "num" }, a.due ? a.due.replaceAll("-", ".") : "없음"));
+        h("td", { class: "num" }, a.due ? a.due.replaceAll("-", ".") : "없음"),
+        h("td", { class: "num" }, scored ? h("strong", { class: "my-score" }, `${fmtNum(a.mine.score)}점`) : h("span", { class: "muted" }, "평가 중")));
     })))));
 }
 
