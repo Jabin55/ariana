@@ -900,7 +900,7 @@ function openStudentCourse(c) {
   const learn = h("div", { class: "sc-panel" },
     h("section", {}, h("h3", {}, "📚 수업별 자료"),
       approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 자료를 볼 수 있어요.")));
-  // 수행평가: 평가 활동(과제)
+  // 수행평가(과제)
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
   const assess = h("div", { class: "sc-panel" }, noAssign);
   for (const id of ["student-results", "student-questions"]) { const sec = $(`#${id}`); sec.hidden = true; learn.append(sec); }

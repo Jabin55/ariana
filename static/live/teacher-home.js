@@ -3,7 +3,7 @@
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 과목 운영에서 연 과목
-let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(평가 활동) learn(학습 관리)
+let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(수행평가) learn(학습 관리)
 let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
@@ -347,7 +347,7 @@ function renderRun() {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 공지사항"], ["open", "▶ 온라인 수업 열기"], ["assess", "📝 평가 활동"], ["learn", "📊 학습 관리"]];
+  const subs = [["notice", "📢 공지사항"], ["open", "▶ 온라인 수업 열기"], ["assess", "📝 수행평가"], ["learn", "📊 학습 관리"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -479,7 +479,7 @@ async function renderOpenClass(c, box) {
 
 const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
 const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "활동" };
-const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '활동'은 평가 활동(과제) 제출
+const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '활동'은 수행평가(과제) 제출
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
@@ -583,14 +583,14 @@ function learnNotices(d, box) {
       : h("p", { class: "muted" }, "'공지사항' 칸에서 올린 공지가 없어요."));
 }
 
-/** 활동 = 평가 활동(과제): 낸 과제마다 제출·채점 현황, 펼치면 학생별 제출 내역 */
+/** 활동 = 수행평가(과제): 낸 과제마다 제출·채점 현황, 펼치면 학생별 제출 내역 */
 function learnAssignments(c, d, st, box) {
   const list = d.assignments;
   const n = d.summary.enrolled;
   const COLS = 8;
   const draw = () => fill(box,
-    h("div", { class: "row", style: "margin:4px 0 8px" }, h("h3", { class: "section-title grow", style: "margin:0" }, `✍️ 평가 활동(과제) ${list.length}개`),
-      h("button", { class: "small", onclick: () => { runSub = "assess"; renderRun(); } }, "📝 평가 활동에서 과제 내기·채점")),
+    h("div", { class: "row", style: "margin:4px 0 8px" }, h("h3", { class: "section-title grow", style: "margin:0" }, `✍️ 수행평가 ${list.length}개`),
+      h("button", { class: "small", onclick: () => { runSub = "assess"; renderRun(); } }, "📝 수행평가에서 과제 내기·채점")),
     list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
       h("thead", {}, h("tr", {}, ["연번", "낸 날", "과제", "마감", "제출", "제출률", "채점", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.flatMap((a, i) => {
@@ -606,7 +606,7 @@ function learnAssignments(c, d, st, box) {
           h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, key, draw) }, open ? "접기" : "제출 내역")));
         if (open) submissionsOf(a.id, sub);
         return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
-      })))) : h("p", { class: "muted" }, "아직 낸 과제가 없어요. '평가 활동'에서 과제를 내면 학생들의 제출 현황이 여기에 쌓여요."));
+      })))) : h("p", { class: "muted" }, "아직 낸 과제가 없어요. '수행평가'에서 과제를 내면 학생들의 제출 현황이 여기에 쌓여요."));
   draw();
 }
 

@@ -1,4 +1,4 @@
-/* 평가 활동(수행평가 과제): 선생님(과목 운영 → 평가 활동)과 학생(마이페이지 📝 평가 활동) */
+/* 수행평가(과제): 선생님(과목 운영 → 수행평가)과 학생(강의실 → 내 강좌 → 수행평가) */
 const openAssign = new Set(); // 과제 칸을 펼친 강좌
 const openSubs = new Set(); // (예전) 제출 현황을 펼친 과제
 const viewAssign = new Map(); // 강좌 id → 지금 열어 본 평가(게시물) id
@@ -50,7 +50,7 @@ function assignmentDialog(c, a, done) {
       try {
         if (a) await api(`/api/assignments/${a.id}`, body);
         else await api(`/api/courses/${c.id}/assignments`, body);
-        toast(a ? "평가를 고쳤어요." : "평가를 올렸어요. 수강생 마이페이지 '평가 활동'에 바로 보여요.");
+        toast(a ? "평가를 고쳤어요." : "평가를 올렸어요. 수강생 강의실 '내 강좌 → 수행평가'에 바로 보여요.");
         close();
         done();
       } catch (err) { toast(err.message); }

@@ -122,7 +122,7 @@ async def course_classes(course_id: int, request: Request):
 
 
 QUIZ_KINDS = {"ox", "choice"}  # 퀴즈: 정답이 있는 문제
-# 수업 중 활동: 설문(투표) · 퀴즈(OX·객관식·주관식). '활동'은 평가 활동(과제) 제출로 따로 센다
+# 수업 중 활동: 설문(투표) · 퀴즈(OX·객관식·주관식). '활동'은 수행평가(과제) 제출로 따로 센다
 ACT_GROUP = {"poll": "survey", "ox": "quiz", "choice": "quiz", "text": "quiz"}
 
 
@@ -186,7 +186,7 @@ async def course_learning(course_id: int, request: Request):
     summary = {"classes": len(out), "enrolled": enrolled,
                "attendance": pct(sum(x["attended"] for x in out), enrolled * len(out)),
                "notices": len(notes) + len(course_notes), "class_notices": len(notes), "course_notices": len(course_notes)}
-    # 활동 = 평가 활동(과제): 낸 과제 수와 제출률
+    # 활동 = 수행평가(과제): 낸 과제 수와 제출률
     assignments = [{"id": a.id, "title": a.title, "date": datetime.fromtimestamp(a.created_at, KST).strftime("%Y-%m-%d"),
                     "due": datetime.fromtimestamp(a.due_at, KST).strftime("%Y-%m-%d %H:%M") if a.due_at else "",
                     "closed": bool(a.closed), "submitted": done.get(a.id, (0, 0))[0], "graded": done.get(a.id, (0, 0))[1]}

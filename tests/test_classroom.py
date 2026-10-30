@@ -2337,7 +2337,7 @@ def test_teacher_signup_birth(monkeypatch):
 
 
 def test_learning_overview(monkeypatch, tmp_path):
-    """학습 관리: 수업 참석률·공지·설문·퀴즈 횟수와 참여율, 활동 = 평가 활동(과제) 제출률"""
+    """학습 관리: 수업 참석률·공지·설문·퀴즈 횟수와 참여율, 활동 = 수행평가(과제) 제출률"""
     import app.assignments as asg
     monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
     t = teacher()
@@ -3061,7 +3061,7 @@ def test_group_count_limited_to_six():
 
 
 def test_assignment_weight_and_max_score(monkeypatch, tmp_path):
-    """평가 활동: 반영 비율(%)·영역 만점(점)을 정하고, 점수는 만점을 넘을 수 없다"""
+    """수행평가: 반영 비율(%)·영역 만점(점)을 정하고, 점수는 만점을 넘을 수 없다"""
     import app.assignments as asg
     monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
     t = teacher()
