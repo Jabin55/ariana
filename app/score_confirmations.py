@@ -156,6 +156,7 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     small = ParagraphStyle("small", parent=normal, fontSize=8.5, leading=13)
     title = ParagraphStyle("title", parent=normal, fontSize=17, leading=24, alignment=TA_CENTER)
     heading = ParagraphStyle("heading", parent=normal, fontSize=12, leading=20)
+    centered_heading = ParagraphStyle("centered_heading", parent=heading, alignment=TA_CENTER)
     def p(value, style=normal):
         return Paragraph(escape(str(value or "-")).replace("\n", "<br/>"), style)
 
@@ -197,7 +198,7 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                     ("TOPPADDING", (0, 0), (-1, -1), 7),
                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
-    story += [info_table, Spacer(1, 20), p("수행평가 성적일람표", heading), Spacer(1, 7)]
+    story += [info_table, Spacer(1, 20), p("수행평가 성적일람표", centered_heading), Spacer(1, 7)]
     head = [p(x, small) for x in ("연번", "평가명", "반영 비율", "영역 만점", "점수")]
     overview = [head] + [[p(i + 1, small), p(item["title"], small),
                          p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", small),
