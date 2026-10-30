@@ -108,6 +108,7 @@ class Student:
     id: str  # 사용자 id (문자열)
     name: str  # 화면에 보이는 이름 (예: 20315 김민준)
     school: str = ""  # 다른 학교 학생도 함께 들을 수 있어 학번만으로는 구분이 안 될 때 쓴다
+    observer: bool = False  # 전체 관리자가 학생 화면으로 들어옴: 명단·출결·화상에 나오지 않고 보기만 한다
     conns: int = 0
     hand: bool = False  # ✋ 손 들기: 할 말이 있어요
     mic_req: bool = False  # 🎙️ 마이크를 켜 달라는 요청 (손 들기와 따로)
@@ -511,7 +512,7 @@ def activity_counts(a: dict) -> list[int]:
 
 def activity_noanswer(k: Klass, a: dict) -> int:
     """지금 교실에 있는데 아직 답하지 않은 학생 수 (결과의 '무응답')"""
-    return sum(1 for sid, st in k.students.items() if st.online and sid not in a["responses"])
+    return sum(1 for sid, st in k.students.items() if st.online and not st.observer and sid not in a["responses"])
 
 
 def activity_for_teacher(k: Klass, a: dict | None) -> dict | None:
@@ -587,7 +588,7 @@ def student_state(k: Klass, s: Student) -> dict:
     return {
         "t": "state", "role": "student", "code": k.code, "title": k.title,
         "settings": k.settings, "livekit": livekit_ready(),
-        "me": {"id": s.id, "name": s.name, "hand": s.hand, "mic_req": s.mic_req, "help": s.help,
+        "me": {"id": s.id, "name": s.name, "hand": s.hand, "mic_req": s.mic_req, "help": s.help, "observer": s.observer,
                "can_speak": s.can_speak, "can_cam": s.can_cam, "mic_blocked": s.mic_blocked},
         "room": room, "group": group, "breakout": k.breakout, "ends_at": k.ends_at,
         "teacher_online": k.teacher_online(),
@@ -601,7 +602,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "media": k.media if room == "main" else None,
         "announce": k.announce,
         "my_questions": [q for q in k.questions if q["sid"] == s.id][-20:],
-        "online_count": sum(1 for m in k.students.values() if m.online),
+        "online_count": sum(1 for m in k.students.values() if m.online and not m.observer),
     }
 
 
@@ -618,7 +619,7 @@ def roster_rows(k: Klass) -> list[dict]:
              "help": s.help, "can_speak": s.can_speak, "can_cam": s.can_cam, "mic_blocked": s.mic_blocked,
              "group": s.group, "room": k.room_of(s), "sessions": s.sessions, "absent": False,
              "stickers": k.stickers.get(s.id, 0)}
-            for s in k.students.values()]
+            for s in k.students.values() if not s.observer]
     rows += [{"id": r["id"], "name": r["name"], "school": r["school"], "online": False, "hand": False, "mic_req": False,
               "help": False, "can_speak": False, "can_cam": False, "mic_blocked": False, "group": None, "room": None,
               "sessions": 0, "absent": True, "stickers": 0}
@@ -736,6 +737,8 @@ SOURCE_ENUM = {
 
 def student_sources(k: Klass, s: Student, room: str) -> list[str]:
     """학생이 그 방에서 내보낼 수 있는 것. 화상 서버가 강제하므로 학생 화면을 고쳐도 우회할 수 없다."""
+    if s.observer:  # 관리자 보기: 아무것도 내보내지 않는다
+        return []
     if room != "main":  # 모둠: 카메라·마이크·화면 공유(발표) 모두 가능
         return ["camera", "microphone", "screen_share", "screen_share_audio"]
     out = []
@@ -751,7 +754,7 @@ def enforce_sources(k: Klass, students: list[Student] | None = None) -> None:
     권한이 없어진 카메라·마이크는 화상 서버가 즉시 끊는다."""
     targets = [(s.id, student_sources(k, s, "main"))
                for s in (students if students is not None else list(k.students.values()))
-               if k.room_of(s) == "main" and s.conns]
+               if k.room_of(s) == "main" and s.conns and not s.observer]
     if not targets or not livekit_ready():
         return
     room = lk_room_name(k.code, "main")
@@ -949,7 +952,7 @@ def add_student(k: Klass, u: dict) -> Student:
         return s
     if len(k.students) >= MAX_STUDENTS:
         raise HTTPException(409, "수업 인원이 가득 찼어요.")
-    s = Student(id=sid, name=display_name(u), school=u.get("school") or "")
+    s = Student(id=sid, name=display_name(u), school=u.get("school") or "", observer=bool(u.get("is_admin")))
     if k.breakout and k.groups:  # 모둠 활동 중에 들어오면 인원이 가장 적은 모둠으로
         s.group = smallest_group(k)
     k.students[sid] = s
@@ -1011,6 +1014,7 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
     if not livekit_ready():
         raise HTTPException(503, "화상 서버(LiveKit)가 아직 설정되지 않았어요.")
     as_student = u["is_admin"] and request.query_params.get("as_student") == "1"
+    hidden = False
     if not as_student and await is_class_teacher(k, u):
         if req.room != "main" and not any(g["id"] == req.room for g in k.groups):
             raise HTTPException(404, "없는 모둠이에요.")
@@ -1024,6 +1028,7 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
             raise HTTPException(403, "지금은 그 방에 들어갈 수 없어요.")
         identity, name, role = f"s-{s.id}", s.name, "student"
         sources = student_sources(k, s, req.room)
+        hidden = s.observer  # 관리자 보기: 다른 사람 화면에 나타나지 않는다
     else:
         raise HTTPException(403, "이 수업에 들어갈 수 없어요.")
 
@@ -1031,7 +1036,7 @@ async def livekit_token(code: str, req: TokenReq, request: Request):
         room_join=True, room=lk_room_name(k.code, req.room),
         # 목록이 비면 '모두 허용'으로 해석되므로 그때는 아예 내보내기를 막는다
         can_publish=bool(sources), can_subscribe=True, can_publish_data=False,
-        can_publish_sources=sources, room_admin=(role == "teacher"),
+        can_publish_sources=sources, room_admin=(role == "teacher"), hidden=hidden,
     )
     token = (
         lk.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
@@ -1544,7 +1549,7 @@ async def live_socket(ws: WebSocket, code: str):
             finish_away(k, s)  # 유예가 이미 지났다 → 나간 것으로 닫고 새로 들어온 것으로
         s.conns += 1
         cancel_away(s)  # 1분 안에 다시 붙었다 → 계속 들어와 있던 것으로 본다
-        if s.conns == 1 and not s.att_id:  # 출결: 접속 시작
+        if s.conns == 1 and not s.att_id and not s.observer:  # 출결: 접속 시작 (관리자 보기는 기록하지 않음)
             s.sessions += 1
             log_event(k, s, "rejoin" if s.sessions > 1 else "join")
             try:
@@ -1632,6 +1637,8 @@ async def live_socket(ws: WebSocket, code: str):
 
 def handle_student(k: Klass, s: Student, m: dict) -> None:
     t = m.get("t")
+    if s.observer and t in ("hand", "mic_req", "help", "chat", "answer", "question", "stroke", "stroke_del"):
+        return  # 관리자 보기: 학생 화면을 보기만 하고, 명단·기록에 남는 일은 하지 않는다
     if t == "hand":
         s.hand = bool(m.get("up"))
     elif t == "mic_req":  # 마이크 통제 중 '마이크 요청' (이미 켜 줬으면 무시)

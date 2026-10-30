@@ -38,6 +38,14 @@ GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
 ALLOWED_DOMAINS = {d.strip().lower().lstrip("@") for d in os.environ.get("ALLOWED_DOMAINS", "").split(",") if d.strip()}
 TEACHER_EMAILS = {e.strip().lower() for e in os.environ.get("TEACHER_EMAILS", "").split(",") if e.strip()}
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+
+def admin_user_ids(c) -> set[int]:
+    """전체 관리자 계정들: 모든 수업을 볼 수 있지만 수업의 출결·명단·채점에는 나오지 않는다."""
+    if not ADMIN_EMAILS:
+        return set()
+    from sqlalchemy import func as _f, select as _s
+    return set(c.execute(_s(db.users.c.id).where(_f.lower(db.users.c.email).in_(ADMIN_EMAILS))).scalars())
 KST = ZoneInfo("Asia/Seoul")
 
 

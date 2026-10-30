@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
 from app import db
-from app.auth import require_user, student_no
+from app.auth import admin_user_ids, require_user, student_no
 from app.history import KST, _owned_class, csv_response
 
 router = APIRouter()
@@ -37,6 +37,7 @@ def _activities(class_id: int):
         uids = set(c.execute(select(db.attendance.c.user_id).where(db.attendance.c.class_id == class_id)).scalars())
         for a in acts:
             uids |= {int(u) for u in json.loads(a["responses"])}
+        uids -= admin_user_ids(c)  # 전체 관리자는 채점 대상이 아니다
         users = {u.id: dict(u._mapping) for u in c.execute(select(db.users).where(db.users.c.id.in_(uids or {-1})))}
     return acts, grades, users
 

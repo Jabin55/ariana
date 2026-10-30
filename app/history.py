@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy import and_, func, or_, select
 
 from app import db
-from app.auth import require_user, student_no
+from app.auth import admin_user_ids, require_user, student_no
 from app.courses import course_roster, hub_locked, managed_hubs, taught_course_ids, taught_filter
 from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
 
@@ -79,9 +79,10 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
             locked = locked_course_ids(c, t)
             rows = [r for r in rows if r.course_id not in locked]
             counts, qcounts = {}, {}
+            adm = admin_user_ids(c)
             for r in rows:
                 counts[r.id] = len(set(c.execute(select(db.attendance.c.user_id)
-                                                 .where(db.attendance.c.class_id == r.id)).scalars()))
+                                                 .where(db.attendance.c.class_id == r.id)).scalars()) - adm)
                 qcounts[r.id] = len(c.execute(select(db.questions.c.id)
                                               .where(db.questions.c.class_id == r.id)).all())
             titles = dict(c.execute(select(db.courses.c.id, db.courses.c.title).where(taught_filter(t["id"]))).all())
@@ -94,8 +95,9 @@ async def history_by_date(request: Request, day: str = Query(alias="date")):
 
 def _counts(c, rows) -> dict:
     out = {}
+    adm = admin_user_ids(c)
     for r in rows:
-        out[r.id] = len(set(c.execute(select(db.attendance.c.user_id).where(db.attendance.c.class_id == r.id)).scalars()))
+        out[r.id] = len(set(c.execute(select(db.attendance.c.user_id).where(db.attendance.c.class_id == r.id)).scalars()) - adm)
     return out
 
 
@@ -139,9 +141,11 @@ async def course_learning(course_id: int, request: Request):
                              .order_by(db.classes.c.created_at.desc())).all()
             ids = [r.id for r in rows] or [-1]
             present: dict = {}
+            adm = admin_user_ids(c)
             for cid, uid in c.execute(select(db.attendance.c.class_id, db.attendance.c.user_id)
                                       .where(db.attendance.c.class_id.in_(ids))):
-                present.setdefault(cid, set()).add(uid)
+                if uid not in adm:
+                    present.setdefault(cid, set()).add(uid)
             acts = c.execute(select(db.activities.c.class_id, db.activities.c.kind, db.activities.c.responses)
                              .where(db.activities.c.class_id.in_(ids))).all()
             notes = c.execute(select(db.announcements).where(db.announcements.c.class_id.in_(ids))
@@ -267,6 +271,8 @@ async def hub_course_attendance(course_id: int, request: Request):
             attended = set(c.execute(select(at.class_id, at.user_id).where(
                 at.class_id.in_([x.id for x in classes] or [-1]),
                 at.user_id.in_([x.id for x in roster] or [-1]))).all())
+            adm = admin_user_ids(c)
+            roster = [r for r in roster if r.id not in adm]
         return course, roster, classes, attended
 
     course, roster, classes, attended = await db.run(run)
@@ -360,6 +366,8 @@ def attendance_report(cls, teacher_id: int) -> dict:
             .where(db.attendance.c.class_id == cls.id)
             .order_by(db.attendance.c.joined_at)
         ).all()
+        adm = admin_user_ids(c)
+        rows = [r for r in rows if r._mapping["user_id"] not in adm]
         roster = []
         if cls.course_id:  # 강좌 수업: 승인된 수강생이 출석 대상
             roster = course_roster(cls.course_id)
@@ -369,6 +377,7 @@ def attendance_report(cls, teacher_id: int) -> dict:
             if cls.school:
                 cond.append(db.users.c.school == cls.school)
             roster = c.execute(select(db.users).where(and_(*cond))).all()
+        roster = [x for x in roster if x.id not in adm]
 
     people: dict[int, dict] = {}
     for r in rows:
@@ -552,9 +561,9 @@ async def results_csv(class_id: int, request: Request):
             if current:
                 ids |= {int(k) for k in current["responses"]}
             names = {u.id: u._mapping for u in c.execute(select(db.users).where(db.users.c.id.in_(ids or {-1})))}
-            return acts, names
+            return acts, names, admin_user_ids(c)
 
-    acts, names = await db.run(run)
+    acts, names, adm = await db.run(run)
     acts = [{"kind": a["kind"], "prompt": a["prompt"], "options": json.loads(a["options"]),
              "correct": a["correct"], "responses": json.loads(a["responses"]), "id": a["id"]} for a in acts]
     if current and not current.get("db_id"):
@@ -565,6 +574,8 @@ async def results_csv(class_id: int, request: Request):
     rows = [["활동 번호", "유형", "문제", "학번", "이름", "응답", "정답 여부"]]
     for i, a in enumerate(acts, 1):
         for uid, v in a["responses"].items():
+            if int(uid) in adm:
+                continue  # 전체 관리자(학생 화면으로 본 것)는 결과에 넣지 않는다
             u = names.get(int(uid))
             pick = lambda x: a["options"][x] if isinstance(x, int) and x < len(a["options"]) else x  # noqa: E731
             shown = ", ".join(str(pick(x)) for x in v) if isinstance(v, list) else pick(v)  # 여러 개 고른 설문은 "보기1, 보기2"

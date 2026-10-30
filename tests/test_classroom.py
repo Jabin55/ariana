@@ -1641,10 +1641,17 @@ def test_admin_student_actions_require_enrollment(monkeypatch):
     assert boss.post(f"/api/assignments/{aid}/text", json={"text": "관리자 제출"}).status_code == 200
     assert boss.get("/api/my/assignments").json()["assignments"][0]["mine"]["text"] == "관리자 제출"
     assert boss.post(f"/api/live/classes/{code}/join?as_student=1").status_code == 200
-    with boss.websocket_connect(f"/ws/live/{code}?as_student=1") as ws:
-        state(ws)
+    # 전체 관리자는 학생 화면으로 보기만 한다: 선생님 명단·접속 수·출결에 나오지 않고, 채팅·답도 남지 않는다
+    with t.websocket_connect(f"/ws/live/{code}") as tw, boss.websocket_connect(f"/ws/live/{code}?as_student=1") as ws:
+        me = state(ws, lambda m: m.get("me"))["me"]
+        assert me["observer"]
+        ws.send_json({"t": "chat", "text": "관리자 채팅"})
+        ws.send_json({"t": "hand", "up": True})
+        ts = state(tw)
+        assert all(x["id"] != str(boss_id) for x in ts["students"])
+        assert not any(m.get("text") == "관리자 채팅" for m in cr.classes[code].chat)
     with db.engine.connect() as c:
-        assert c.execute(db.attendance.select().where(db.attendance.c.user_id == boss_id)).first()
+        assert not c.execute(db.attendance.select().where(db.attendance.c.user_id == boss_id)).first()
 
 
 @pytest.mark.parametrize("role", ["participant", "coordinator"])
