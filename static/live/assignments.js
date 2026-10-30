@@ -78,8 +78,8 @@ async function renderCourseAssignments(c, box) {
       h("td", { class: "num" }, list.length - i),
       h("td", {}, h("strong", {}, a.title)),
       h("td", { class: "assign-desc-cell" }, a.description || "-"),
-      h("td", { class: "num" }, fmtNum(a.weight)),
-      h("td", { class: "num" }, fmtNum(a.max_score)),
+      h("td", { class: "num" }, a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
+      h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
       h("td", {}, a.due ? a.due.replaceAll("-", ".") : "없음",
         h("div", { class: "muted", style: "font-size:0.78rem" }, a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중")));
     if (!open) return [main];
@@ -105,7 +105,7 @@ async function renderCourseAssignments(c, box) {
       list.length ? h("div", { class: "hub-grid-summary grow", style: "margin:0" }, `반영 비율 합계 ${fmtNum(total)}%`) : h("span", { class: "grow" }),
       h("button", { class: "primary", onclick: () => assignmentDialog(c, null, reload) }, "평가 올리기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
-      h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율(%)", "영역 만점(점)", "마감일"].map((x) => h("th", {}, x)))),
+      h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "올린 평가가 없어요."))))));
 }
 

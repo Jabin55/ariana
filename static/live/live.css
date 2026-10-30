@@ -1555,3 +1555,14 @@ table.att.hub-grid-table thead tr:last-child th, table.att.hub-grid-table td.cen
 .hub-grid-summary { background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 4px 0 12px; color: var(--muted); font-size: 0.92rem; }
 table.att.hub-grid-table .hub-grid-count { font-weight: 700; white-space: nowrap; }
 table.att.hub-grid-table td:last-child { min-width: 0; }
+/* 평가 활동 게시판: 제목 줄과 내용 위치를 맞추고, 평가 내용 칸을 넓게 */
+table.att.assign-board { table-layout: fixed; }
+table.att.assign-board th:nth-child(1) { width: 6%; }
+table.att.assign-board th:nth-child(2) { width: 15%; }
+table.att.assign-board th:nth-child(3) { width: 47%; }
+table.att.assign-board th:nth-child(4), table.att.assign-board th:nth-child(5) { width: 9%; }
+table.att.assign-board th:nth-child(6) { width: 14%; }
+table.att.assign-board th:nth-child(1), table.att.assign-board th:nth-child(4), table.att.assign-board th:nth-child(5),
+table.att.assign-board td.num { text-align: center; }
+table.att.assign-board .assign-desc-cell { max-width: none; }
+table.att.assign-board td:last-child { min-width: 0; }
