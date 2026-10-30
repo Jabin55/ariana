@@ -878,6 +878,14 @@ def test_hub_structure_and_course_approval(monkeypatch):
         ("20301", [True]), ("20303", [False])]
     assert prof.get(f"/api/hub/courses/{cid}/attendance").status_code == 403
     assert coord.get("/api/hub/courses/999999/attendance").status_code == 404
+    # 수업일 하나의 수강생 출석부: 출결과 참여 시간 (12분 있었던 학생 / 결석 학생)
+    with db.engine.begin() as conn:
+        conn.execute(db.attendance.update().where(db.attendance.c.class_id == log[0]["id"]).values(
+            joined_at=1000.0, left_at=1000.0 + 12 * 60, last_seen=1000.0 + 12 * 60))
+    day = coord.get(f"/api/hub/classes/{log[0]['id']}/attendance").json()
+    assert [(x["student_no"], x["present"], x["minutes"]) for x in day["rows"]] == [("20301", True, 12), ("20303", False, 0)]
+    assert prof.get(f"/api/hub/classes/{log[0]['id']}/attendance").status_code == 403
+    assert coord.get("/api/hub/classes/999999/attendance").status_code == 404
 
     # 6) 관리교사 권한을 해제하면 관리 기능이 꺼지고, 강사 기간이 끝나면 강사 기능이 꺼진다
     admin.post(f"/api/staff/{capps[0]['id']}", json={"action": "revoke", "note": "임기 종료"})

@@ -29,6 +29,7 @@ _RULES = [
     ("GET", r"/api/hub/course-requests", "조회", "희망 과목 신청 현황"),
     ("GET", r"/api/hub/class-log", "조회", "수업 운영 기록"),
     ("GET", r"/api/hub/courses/(?P<course>\d+)/attendance", "조회", "출석부"),
+    ("GET", r"/api/hub/classes/(?P<class>\d+)/attendance", "조회", "수강생 출석부(수업일)"),
     ("GET", r"/api/school/overview", "조회", "우리 학교 학생 현황"),
     ("POST", r"/api/school/withdrawals/(?P<user>\d+)", "삭제", "학생 탈퇴 처리"),
     ("GET", r"/api/school/change-requests", "조회", "정보 변경 요청 목록"),

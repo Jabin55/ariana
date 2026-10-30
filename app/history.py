@@ -285,6 +285,32 @@ async def hub_course_attendance(course_id: int, request: Request):
             "students": students}
 
 
+@router.get("/api/hub/classes/{class_id}/attendance")
+async def hub_class_attendance(class_id: int, request: Request):
+    """관리교사: 그 수업일의 수강생 출석부 — 수강생(과 들어온 사람) 한 명마다 출결과 참여 시간."""
+    u = await require_user(request)
+    hubs = managed_hubs(u)
+
+    def run():
+        with db.engine.connect() as c:
+            cls = c.execute(select(db.classes).where(db.classes.c.id == class_id)).first()
+            course = c.execute(select(db.courses).where(db.courses.c.id == cls.course_id)).first() if cls and cls.course_id else None
+        if not course or course.hub_id is None or (hubs is not None and course.hub_id not in hubs):
+            raise HTTPException(404, "수업 기록을 찾을 수 없어요.")
+        return cls, course, attendance_report(cls, cls.teacher_id)
+
+    cls, course, rep = await db.run(run)
+    rows = [{"school": p["school"] or "", "student_no": p["student_no"], "name": p["name"],
+             "present": True, "online": p["online"], "minutes": p["minutes"]} for p in rep["students"]]
+    rows += [{"school": a["school"], "student_no": a["student_no"], "name": a["name"],
+              "present": False, "online": False, "minutes": 0} for a in rep["absent"]]
+    rows.sort(key=lambda r: (r["school"], r["student_no"] or "~", r["name"]))
+    return {"course": {"id": course.id, "title": course.title},
+            "class": {"id": cls.id, "title": cls.title, "date": datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d"),
+                      "start": kst(cls.created_at)[:5], "end": kst(cls.ended_at)[:5] if cls.ended_at else ""},
+            "rows": rows}
+
+
 def my_class_filter(c, t: dict):
     """SQL 조건: 내가 연 수업 + 내가 가르치는(팀티칭 보조교사 포함) 강좌의 수업"""
     return or_(db.classes.c.teacher_id == t["id"], db.classes.c.course_id.in_(taught_course_ids(c, t["id"]) or [-1]))

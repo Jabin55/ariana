@@ -1542,3 +1542,13 @@ body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white
 .assign-dialog { max-width: 560px; display: grid; gap: 10px; }
 .assign-field { display: grid; gap: 4px; }
 .assign-field > span { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+
+/* 거점학교 운영: 강좌별 출석부(날짜별 O/X)와 수업일 출석부 */
+table.att.hub-grid-table th.center, table.att.hub-grid-table td.center { text-align: center; }
+table.att.hub-grid-table .ox-o-mark { color: var(--ok); font-weight: 700; }
+table.att.hub-grid-table .ox-x-mark { color: var(--danger); }
+table.att.hub-grid-table tfoot td { font-weight: 700; background: var(--surface-2); }
+table.att.hub-day-table tr.absent td { color: var(--muted); }
+.day-link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; text-align: left; }
+table.att.hub-grid-table { width: auto; min-width: 60%; }
+table.att.hub-grid-table thead tr:last-child th, table.att.hub-grid-table td.center { min-width: 56px; }

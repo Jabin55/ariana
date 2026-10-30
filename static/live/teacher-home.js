@@ -7,6 +7,7 @@ let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수�
 let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
+let hubClassId = null; // 수업일에서 눌러 본 그날의 수강생 출석부
 let adminSub = "approve";
 let schoolSub = "students";
 let detailTarget = null; // 수업 기록(출결·채점)을 그릴 자리
@@ -685,11 +686,12 @@ async function loadHub() {
   ];
   fill($("#hub-list"),
     h("nav", { class: "tabs sub-tabs", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
-      onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; loadHub(); } }, label))),
+      onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); } }, label))),
     box);
   if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
-    if (hubRecordCourseId) {
+    if (hubRecordCourseId && hubClassId) await hubClassAttendance(box, ov);
+    else if (hubRecordCourseId) {
       const log = await api(`/api/hub/class-log?course_id=${hubRecordCourseId}`);
       fill(box, ...hubCourseDays(ov, log.classes));
     } else fill(box, ...hubCourseDays(ov, []));
@@ -872,8 +874,34 @@ function hubCourseDays(ov, classes) {
       h("tbody", {}, rows.map((x, i) => h("tr", {},
         h("td", { class: "num" }, rows.length - i), h("td", {}, fmtDate(x.date)),
         h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "-")}`),
-        h("td", {}, x.title || "-"), h("td", {}, `${x.attended}명`))))))
+        h("td", {}, h("button", { type: "button", class: "day-link", title: "이 수업일의 수강생 출석부", onclick: () => openDay(x.id) }, x.title || "(주제 없음)")),
+        h("td", {}, h("button", { type: "button", class: "day-link", title: "이 수업일의 수강생 출석부", onclick: () => openDay(x.id) }, `${x.attended}명`)))))))
       : h("p", { class: "muted" }, "아직 연 수업이 없어요.")];
+}
+
+function openDay(classId) { hubClassId = classId; loadHub(); }
+
+/** 수업일 하나의 수강생 출석부: 연번 · 소속학교 · 학번 · 이름 · 출결 · 참여 시간 */
+async function hubClassAttendance(box, ov) {
+  const course = ov.courses.find((c) => c.id === hubRecordCourseId);
+  const back = h("button", { type: "button", class: "small", onclick: () => { hubClassId = null; loadHub(); } }, "← 수업일 목록");
+  fill(box, h("p", { class: "muted" }, "출석부를 불러오는 중…"));
+  let d;
+  try { d = await api(`/api/hub/classes/${hubClassId}/attendance`); }
+  catch (err) { fill(box, h("div", { class: "row" }, back), h("p", { class: "error" }, err.message)); return; }
+  const present = d.rows.filter((r) => r.present).length;
+  const mins = (m) => (m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`);
+  fill(box,
+    h("div", { class: "row hub-record-heading" }, back,
+      h("h2", { class: "grow" }, `${course?.title || d.course.title} · 수강생 출석부`)),
+    h("p", { class: "muted" }, `${fmtDate(d.class.date)} ${d.class.start}${d.class.end ? ` ~ ${d.class.end}` : ""} · ${d.class.title || "(주제 없음)"} · 출석 ${present}/${d.rows.length}명`),
+    h("div", { class: "table-wrap" }, h("table", { class: "att hub-day-table" },
+      h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "출결", "참여 시간"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, d.rows.length ? d.rows.map((r, i) => h("tr", { class: r.present ? "" : "absent" },
+        h("td", { class: "num" }, i + 1), h("td", {}, r.school || "-"), h("td", {}, r.student_no || "-"), h("td", {}, r.name),
+        h("td", {}, h("span", { class: `status ${r.present ? "approved" : "rejected"}` }, r.present ? (r.online ? "출석 (접속 중)" : "출석") : "결석")),
+        h("td", {}, r.present ? mins(r.minutes) : "-")))
+        : h("tr", {}, h("td", { colspan: 6, class: "muted" }, "수강 확정된 학생이 없어요."))))));
 }
 
 async function hubCourseAttendance(box, ov) {
@@ -888,21 +916,26 @@ async function hubCourseAttendance(box, ov) {
   try { sheet = await api(`/api/hub/courses/${course.id}/attendance`); }
   catch (err) { fill(box, hubRecordHeading(course, "출석부"), h("p", { class: "error" }, err.message)); return; }
   if (hubSub !== "attendance" || hubRecordCourseId !== course.id) return;
-  const marks = (student) => sheet.classes.length
-    ? h("div", { class: "hub-attendance-marks" }, sheet.classes.map((cls, i) =>
-      h("span", { class: student.attendance[i] ? "status approved" : "status pending",
-        title: cls.title || "" }, `${i + 1}회 ${fmtDate(cls.date)} · ${student.attendance[i] ? "참석" : "기록 없음"}`)))
-    : h("span", { class: "muted" }, "수업 기록 없음");
+  const cls = sheet.classes; // 수업일 (먼저 연 수업부터)
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  const counts = cls.map((_, j) => sheet.students.filter((st) => st.attendance[j]).length);
+  const fixed = ["연번", "소속학교", "학번", "이름"];
   fill(box, hubRecordHeading(course, "출석부"),
-    h("p", { class: "muted" }, `수강 확정 ${sheet.students.length}명 · 열린 수업 ${sheet.classes.length}회 · 출석 기록 기준`),
-    h("div", { class: "table-wrap" }, h("table", { class: "att hub-attendance-table" },
-      h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "출석 횟수", "수업별 출석"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, sheet.students.length ? sheet.students.map((student, i) => h("tr", {},
-        h("td", { class: "num" }, i + 1), h("td", {}, student.school || "-"),
-        h("td", {}, student.student_no || "-"), h("td", {}, student.name),
-        h("td", {}, `${student.attended_count}/${sheet.classes.length}회`),
-        h("td", {}, marks(student))))
-        : h("tr", {}, h("td", { colspan: 6, class: "muted" }, "수강 확정된 학생이 없어요."))))));
+    h("p", { class: "muted" }, `수강 확정 ${sheet.students.length}명 · 수업 ${cls.length}회 · 한 번이라도 들어오면 O`),
+    h("div", { class: "table-wrap" }, h("table", { class: "att hub-grid-table" },
+      h("thead", {},
+        h("tr", {}, fixed.map((t) => h("th", { rowspan: 2 }, t)),
+          cls.length ? h("th", { colspan: cls.length, class: "center" }, "수업일") : h("th", { rowspan: 2 }, "수업일")),
+        cls.length ? h("tr", {}, cls.map((c, j) => h("th", { class: "center", title: `${j + 1}회 · ${c.title || "주제 없음"} · ${c.start}` }, md(c.date)))) : null),
+      h("tbody", {},
+        sheet.students.length ? sheet.students.map((st, i) => h("tr", {},
+          h("td", { class: "num" }, i + 1), h("td", {}, st.school || "-"), h("td", {}, st.student_no || "-"), h("td", {}, st.name),
+          cls.length ? cls.map((_, j) => h("td", { class: `center ${st.attendance[j] ? "ox-o-mark" : "ox-x-mark"}` }, st.attendance[j] ? "O" : "X"))
+            : h("td", { class: "muted" }, "수업 기록 없음")))
+          : h("tr", {}, h("td", { colspan: 4 + Math.max(1, cls.length), class: "muted" }, "수강 확정된 학생이 없어요."))),
+      cls.length && sheet.students.length ? h("tfoot", {}, h("tr", { class: "hub-grid-total" },
+        h("td", { colspan: 4 }, "참여 인원"),
+        counts.map((n) => h("td", { class: "center" }, `${n}명`)))) : null)));
 }
 
 /* ───────────────────────── 참여학교 담당: 우리 학교 수강생 관리 · 탈퇴 승인 ───────────────────────── */
