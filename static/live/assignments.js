@@ -102,7 +102,7 @@ async function renderCourseAssignments(c, box) {
   });
   box.replaceChildren(
     h("div", { class: "row", style: "margin-bottom:8px" },
-      h("span", { class: "grow muted", style: "font-size:0.88rem" }, list.length ? `반영 비율 합계 ${fmtNum(total)}%` : ""),
+      list.length ? h("div", { class: "hub-grid-summary grow", style: "margin:0" }, `반영 비율 합계 ${fmtNum(total)}%`) : h("span", { class: "grow" }),
       h("button", { class: "primary", onclick: () => assignmentDialog(c, null, reload) }, "평가 올리기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
       h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율(%)", "영역 만점(점)", "마감일"].map((x) => h("th", {}, x)))),
