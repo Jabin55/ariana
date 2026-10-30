@@ -104,7 +104,7 @@ async function loadTeacherConfirmations(courseId, box) {
       h("td", { class: "center" }, item.name),
       h("td", { class: "center" }, item.signed
         ? h("a", { href: `/api/courses/${courseId}/score-confirmations/${item.user_id}/file`, class: "button small" }, "PDF 내려받기")
-        : item.needs_resign ? "점수 변경 · 재서명 대기" : "서명 대기")));
+        : item.expired ? "보존기간 만료" : item.needs_resign ? "점수 변경 · 재서명 대기" : "서명 대기")));
     box.replaceChildren(h("table", { class: "att grade-table" },
       h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "확인서(파일)"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 5, class: "muted", style: "text-align:center;padding:18px" }, "수강 확정된 학생이 없어요.")))));
@@ -281,6 +281,10 @@ async function loadMyScoreConfirmation(courseId, box) {
     const table = h("div", { class: "table-wrap" }, h("table", { class: "att grade-table" },
       h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "내 점수", "피드백"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows)));
+    if (data.expired) {
+      box.replaceChildren(table, h("p", { class: "muted" }, "점수 확인서의 1년 보관 기간이 지났어요."));
+      return;
+    }
     const download = h("a", { class: "button small", href: `/api/my/courses/${courseId}/score-confirmation/${data.signed ? "file" : "draft"}`, target: "_blank" },
       data.signed ? "서명한 확인서 보기" : "확인서 미리보기");
     if (data.signed) {

@@ -1167,7 +1167,7 @@ def test_policy_pages(monkeypatch):
         assert "수강한 학년도가 끝난 날부터 5년" in r.text
     assert "수강한 학년도가 끝난 날부터 5년" in c.get("/api/consent").json()["privacy"]
     monkeypatch.setenv("RETENTION", "수강한 학년도가 끝난 날부터 1년")
-    assert "1년" not in c.get("/live/privacy").text
+    assert "수강한 학년도가 끝난 날부터 1년" not in c.get("/live/privacy").text
     assert "수강한 학년도가 끝난 날부터 5년" in c.get("/live/privacy").text
     monkeypatch.delenv("RETENTION")
     monkeypatch.setenv("OPERATOR_NAME", "가나고등학교<script>")
@@ -1476,9 +1476,26 @@ def test_withdraw(monkeypatch, tmp_path):
         tombstone = conn.execute(select(db.users.c.account_state, db.users.c.last_login).where(db.users.c.id == q[0]["user_id"])).one()
         assert tombstone.account_state == "withdrawn" and tombstone.last_login is None
         assert [x.action for x in conn.execute(select(db.evidence_audit)) if x.archive_id == evidence_id] == ["archive_created", "view", "download_requested"]
+    # 탈퇴 증빙의 다른 기록은 5년 보관해도 서명 PDF는 개별 1년 기한에 사라진다.
+    import json
+    from app.evidence import cipher, maintain_retention
+    with db.engine.begin() as conn:
+        encrypted = conn.execute(select(db.evidence_archives.c.payload).where(db.evidence_archives.c.id == evidence_id)).scalar_one()
+        snapshot = json.loads(cipher().decrypt(encrypted.encode("ascii")))
+        snapshot["score_confirmations"][0]["expires_at"] = time.time() - 1
+        conn.execute(db.evidence_archives.update().where(db.evidence_archives.c.id == evidence_id).values(
+            payload=cipher().encrypt(json.dumps(snapshot, ensure_ascii=False).encode()).decode("ascii")))
+    assert p1.get(f"/api/evidence/{evidence_id}", params=params).json()["record"]["score_confirmations"] == []
+    with zipfile.ZipFile(io.BytesIO(p1.get(f"/api/evidence/{evidence_id}/download.zip", params=params).content)) as archive:
+        assert not any(name.startswith("score-confirmations/") for name in archive.namelist())
+    maintain_retention()
+    with db.engine.connect() as conn:
+        assert conn.execute(select(db.evidence_files.c.id).where(
+            db.evidence_files.c.id == score_record["evidence_file_id"])).first() is None
+        assert conn.execute(select(db.evidence_archives.c.id).where(
+            db.evidence_archives.c.id == evidence_id)).first() is not None
     monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "1")
     monkeypatch.setenv("EVIDENCE_RETENTION_BASIS", "검증용 보존 근거")
-    from app.evidence import maintain_retention
     maintain_retention()
     with db.engine.connect() as conn:
         assert conn.execute(select(db.evidence_archives.c.expires_at).where(db.evidence_archives.c.id == evidence_id)).scalar_one() is not None
@@ -2537,7 +2554,8 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
         from zoneinfo import ZoneInfo
         c.execute(db.score_confirmations.insert().values(id="undatedscore", course_id=undated,
                   user_id=9, snapshot_hash="b" * 64,
-                  signed_at=datetime(2024, 7, 20, tzinfo=ZoneInfo("Asia/Seoul")).timestamp()))
+                  signed_at=datetime(2024, 7, 20, tzinfo=ZoneInfo("Asia/Seoul")).timestamp(),
+                  expires_at=datetime(2025, 7, 20, tzinfo=ZoneInfo("Asia/Seoul")).timestamp()))
     score_path = sc.confirmation_path(old, 9, "oldscore")
     score_path.parent.mkdir(parents=True, exist_ok=True)
     score_path.write_bytes(b"encrypted confirmation")
@@ -2556,16 +2574,14 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
     with db.engine.connect() as c:
         assert sorted(r.key for r in c.execute(select(db.boards))) == ["mnew:1", "mold:1"]  # 판서는 남는다
     assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0}
-    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1, "score_confirmations": 0}
-    assert score_path.is_file()
+    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1, "score_confirmations": 2}
+    assert not score_path.exists() and not undated_path.exists()
     assert not (tmp_path / "slides" / str(ids["old"][0]) / "mold.pdf").exists()
     assert not asg.file_path(ids["old"][1], "fold").exists()
     assert (tmp_path / "slides" / str(ids["new"][0]) / "mnew.pdf").exists() and asg.file_path(ids["new"][1], "fnew").exists()
     with db.engine.connect() as c:
         assert [r.key for r in c.execute(select(db.boards))] == ["mnew:1"]
         assert c.execute(select(db.submissions.c.score)).scalars().all() == [90, 90]  # 점수는 남는다
-    assert purge_expired_files(date(2029, 7, 21))["score_confirmations"] == 2
-    assert not score_path.exists() and not undated_path.exists()
 
 
 def test_remember_me_controls_login_cookie(monkeypatch):
@@ -3176,6 +3192,14 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
     assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
         "signature": signature, "snapshot_hash": updated["snapshot_hash"]}).status_code == 200
     assert a.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 200
+    with db.engine.begin() as conn:
+        conn.execute(db.score_confirmations.update().where(db.score_confirmations.c.user_id == uid)
+                     .values(expires_at=time.time() - 1))
+    assert a.get(f"/api/my/courses/{cid}/score-confirmation").json()["expired"]
+    assert a.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 404
+    assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
+    assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": signature, "snapshot_hash": updated["snapshot_hash"]}).status_code == 409
 
 
 def test_course_detail_page_public_info():

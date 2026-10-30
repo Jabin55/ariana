@@ -10,6 +10,7 @@ import os
 import threading
 import time
 import uuid
+from datetime import date, datetime, time as day_time, timedelta
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -31,7 +32,7 @@ from sqlalchemy import insert, select, update
 
 from app import db
 from app.assignments import FILES_DIR, fmt, safe_name
-from app.auth import require_user, student_no
+from app.auth import KST, require_user, student_no
 from app.courses import course_roster, is_enrolled, owned_course
 from app.wipe import wipe
 
@@ -44,6 +45,22 @@ _FONT_LOCK = threading.Lock()
 
 def confirmation_path(course_id: int, user_id: int, file_id: str) -> Path:
     return FILES_DIR / "score-confirmations" / str(course_id) / str(user_id) / f"{file_id}.enc"
+
+
+def confirmation_expires_at(end_date: str, signed_at: float) -> float:
+    """과목 종료일부터 365일, 종료일이 없으면 서명일부터 365일."""
+    if end_date:
+        try:
+            end = date.fromisoformat(end_date)
+        except ValueError:
+            end = None
+        if end:
+            return datetime.combine(end + timedelta(days=365), day_time.min, KST).timestamp()
+    return signed_at + 365 * 86400
+
+
+def record_expires_at(row, end_date: str) -> float:
+    return row.expires_at or confirmation_expires_at(end_date, row.signed_at)
 
 
 def _snapshot(course_id: int, user_id: int) -> dict:
@@ -63,6 +80,7 @@ def _snapshot(course_id: int, user_id: int) -> dict:
               "score": r.score if r.graded_at else None,
               "feedback": r.feedback if r.graded_at else ""} for r in rows]
     details = {"course_id": course_id, "course_title": course.title,
+               "end_date": course.end_date or "",
                "school_year": course.school_year, "term": course.term,
                "hub_school": course.hub_school, "instructor": course.instructor,
                "student_name": user.name or user.google_name,
@@ -82,11 +100,15 @@ def _record(course_id: int, user_id: int):
 
 def _status(snap: dict, row) -> dict:
     has_scores = any(item["score"] is not None for item in snap["items"])
-    current = bool(row and row.snapshot_hash == snap["snapshot_hash"] and
+    now = time.time()
+    expired = bool((row and record_expires_at(row, snap["end_date"]) <= now) or
+                   confirmation_expires_at(snap["end_date"], now) <= now)
+    current = bool(row and not expired and row.snapshot_hash == snap["snapshot_hash"] and
                    confirmation_path(snap["course_id"], row.user_id, row.id).is_file())
     return {"items": snap["items"], "has_scores": has_scores,
             "snapshot_hash": snap["snapshot_hash"],
-            "signed": current, "needs_resign": bool(row and not current),
+            "signed": current, "needs_resign": bool(row and not current and not expired),
+            "expired": expired,
             "signed_at": fmt(row.signed_at) if current else ""}
 
 
@@ -205,6 +227,8 @@ async def draft_confirmation(course_id: int, request: Request):
     snap = await db.run(_snapshot, course_id, u["id"])
     if not any(item["score"] is not None for item in snap["items"]):
         raise HTTPException(409, "채점된 수행평가가 없어요.")
+    if _status(snap, None)["expired"]:
+        raise HTTPException(410, "점수 확인서 보관 기간이 지났어요.")
     return Response(await db.run(_pdf, snap, None, None), media_type="application/pdf", headers=PRIVATE)
 
 
@@ -227,6 +251,12 @@ async def sign_confirmation(course_id: int, body: SignRequest, request: Request)
         if snap["snapshot_hash"] != body.snapshot_hash:
             raise HTTPException(409, "점수 또는 평가 내용이 바뀌었어요. 새 내용을 확인한 뒤 다시 서명해 주세요.")
         signed_at = time.time()
+        expires_at = confirmation_expires_at(snap["end_date"], signed_at)
+        previous = _record(course_id, u["id"])
+        if previous:
+            expires_at = min(expires_at, record_expires_at(previous, snap["end_date"]))
+        if expires_at <= signed_at:
+            raise HTTPException(409, "이 강좌의 점수 확인서 보관 기간이 지났어요.")
         pdf = _pdf(snap, signature, signed_at)
         from app.evidence import cipher
         encrypted = cipher().encrypt(pdf)
@@ -241,7 +271,8 @@ async def sign_confirmation(course_id: int, body: SignRequest, request: Request)
                 old = c.execute(select(db.score_confirmations).where(
                     db.score_confirmations.c.course_id == course_id,
                     db.score_confirmations.c.user_id == u["id"])).first()
-                values = {"id": file_id, "snapshot_hash": snap["snapshot_hash"], "signed_at": signed_at}
+                values = {"id": file_id, "snapshot_hash": snap["snapshot_hash"],
+                          "signed_at": signed_at, "expires_at": expires_at}
                 if old:
                     c.execute(update(db.score_confirmations).where(db.score_confirmations.c.id == old.id).values(**values))
                 else:
@@ -282,6 +313,7 @@ async def teacher_confirmations(course_id: int, request: Request):
             out.append({"number": i, "user_id": u.id, "school": u.school or "",
                         "student_no": student_no(dict(u._mapping)), "name": u.name or u.google_name,
                         "signed": status["signed"], "needs_resign": status["needs_resign"],
+                        "expired": status["expired"],
                         "signed_at": status["signed_at"]})
         return out
 

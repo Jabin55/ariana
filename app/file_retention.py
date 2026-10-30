@@ -5,6 +5,7 @@
   파일 내용만 지우고 공유한 기록(파일명)은 남긴다.
 - 판서·화이트보드: 학생 복습용으로 남긴다. 과목이 끝나고(특강·회의는 연 날부터) 365일이 지나면 지운다
 - 과제에 학생이 낸 파일: 과목이 끝나고 365일이 지나면 (점수·피드백·글 제출은 남긴다)
+- 학생 서명 점수 확인서 PDF: 과목 종료일부터 365일 (종료일이 없으면 서명일부터 365일)
 탈퇴 학생의 분리 보관 증빙(evidence)은 따로 정한 보존 기간을 따른다.
 """
 
@@ -23,7 +24,7 @@ from app import db
 from app.wipe import wipe
 
 KEEP_DAYS = 365  # 판서·화이트보드, 과제 제출 파일
-SCORE_CONFIRMATION_KEEP_DAYS = 1825  # 학생 서명 점수 확인서: 과목 종료 뒤 최대 5년
+SCORE_CONFIRMATION_KEEP_DAYS = 365  # 학생 서명 점수 확인서: 과목 종료 뒤 1년
 MATERIAL_KEEP_DAYS = 0  # 과목 수업의 발표 자료(PDF): 과목이 끝나면 바로
 log = logging.getLogger(__name__)
 _MEDIABOX = re.compile(rb"/MediaBox\s*\[\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\]")
@@ -56,7 +57,8 @@ def purge_expired_files(today: date | None = None) -> dict:
     from app.score_confirmations import confirmation_path
     from app.classroom import SLIDES_DIR
 
-    today = today or date.today()
+    fixed_day = today is not None
+    today = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     cutoff = (today - timedelta(days=KEEP_DAYS)).isoformat()  # 이 날보다 먼저 끝난 과목
     co, cl, m = db.courses.c, db.classes.c, db.materials.c
     removed_materials, removed_files, removed_confirmations = [], [], []
@@ -88,10 +90,14 @@ def purge_expired_files(today: date | None = None) -> dict:
         score_cutoff = (today - timedelta(days=SCORE_CONFIRMATION_KEEP_DAYS)).isoformat()
         sc = db.score_confirmations.c
         score_cutoff_ts = datetime.fromisoformat(score_cutoff).replace(tzinfo=ZoneInfo("Asia/Seoul")).timestamp()
+        now_ts = (datetime.combine(today, datetime.min.time(), ZoneInfo("Asia/Seoul")).timestamp()
+                  if fixed_day else time.time())
         removed_confirmations = c.execute(select(sc.id, sc.course_id, sc.user_id)
             .join(db.courses, co.id == sc.course_id)
-            .where(or_(and_(co.end_date != "", co.end_date < score_cutoff),
-                       and_(co.end_date == "", sc.signed_at < score_cutoff_ts)))).all()
+            .where(or_(sc.expires_at <= now_ts,
+                       and_(sc.expires_at.is_(None),
+                            or_(and_(co.end_date != "", co.end_date <= score_cutoff),
+                                and_(co.end_date == "", sc.signed_at < score_cutoff_ts)))))).all()
         c.execute(delete(db.score_confirmations).where(sc.id.in_([r.id for r in removed_confirmations] or ["-"])))
     for class_id, fid in removed_materials:
         wipe(SLIDES_DIR / str(class_id) / f"{fid}.pdf")

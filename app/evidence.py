@@ -97,7 +97,7 @@ def rows(c, table, condition) -> list[dict]:
 def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[str, list[Path]]:
     from app import auth
     from app.assignments import file_path
-    from app.score_confirmations import confirmation_path
+    from app.score_confirmations import confirmation_expires_at, confirmation_path
 
     now = time.time()
     days, basis = retention_policy()
@@ -142,6 +142,7 @@ def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[
         course_fields = ("id", "title", "instructor", "hub_school", "start_date", "end_date", "school_year", "term")
         snapshot["courses"] = [{k: r[k] for k in course_fields}
                                for r in rows(c, db.courses, db.courses.c.id.in_(course_ids or [-1]))]
+        course_ends = {course["id"]: course["end_date"] for course in snapshot["courses"]}
         submission_ids = {r["id"] for r in snapshot["submissions"]}
         files = rows(c, db.submission_files, db.submission_files.c.submission_id.in_(submission_ids or [-1]))
         assignment_of = {r["id"]: r["assignment_id"] for r in snapshot["submissions"]}
@@ -155,7 +156,13 @@ def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[
             c.execute(insert(db.evidence_files).values(id=file_id, archive_id=archive_id,
                                                       payload=crypt.encrypt(data).decode("ascii")))
             snapshot["files"].append({**f, "evidence_file_id": file_id, "sha256": hashlib.sha256(data).hexdigest()})
+        retained_confirmations = []
         for confirmation in snapshot["score_confirmations"]:
+            expires_at = confirmation.get("expires_at") or confirmation_expires_at(
+                course_ends.get(confirmation["course_id"], ""), confirmation["signed_at"])
+            if expires_at <= now:
+                continue  # 만료된 확인서는 탈퇴 증빙으로 옮기지 않고 원본만 파기한다.
+            confirmation["expires_at"] = expires_at
             path = confirmation_path(confirmation["course_id"], uid, confirmation["id"])
             if not path.is_file():
                 raise HTTPException(409, "점수 확인서 파일이 없어 증빙을 보존하지 못했어요. 원본을 확인해 주세요.")
@@ -168,6 +175,8 @@ def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[
                                                       payload=crypt.encrypt(data).decode("ascii")))
             confirmation["evidence_file_id"] = file_id
             confirmation["sha256"] = hashlib.sha256(data).hexdigest()
+            retained_confirmations.append(confirmation)
+        snapshot["score_confirmations"] = retained_confirmations
         c.execute(insert(db.evidence_archives).values(
             id=archive_id, subject_id=uid, school=user.school, created_at=now,
             expires_at=now + days * 86400 if days else None, basis=basis,
@@ -217,12 +226,32 @@ def maintain_retention():
     """탈퇴 승인일부터 최대 1,825일 보관하고, 만료 자료는 내용을 지운 뒤 삭제한다."""
     now = time.time()
     days, basis = retention_policy()
+    crypt = cipher()
     with db.engine.begin() as c:
         for row in c.execute(select(db.evidence_archives)).all():
             limit = row.created_at + days * 86400
             if row.expires_at is None or row.expires_at > limit:
                 c.execute(update(db.evidence_archives).where(db.evidence_archives.c.id == row.id)
                           .values(expires_at=limit, basis=basis))
+            if (row.expires_at or limit) <= now:
+                continue  # 전체 증빙은 아래에서 파기한다.
+            try:
+                snapshot = json.loads(crypt.decrypt(row.payload.encode("ascii")))
+            except (InvalidToken, ValueError):
+                raise HTTPException(503, "증빙 무결성 또는 암호화 키를 확인해야 합니다.") from None
+            score_rows = snapshot.get("score_confirmations", [])
+            expired_scores = [item for item in score_rows if score_confirmation_expiry(snapshot, item) <= now]
+            if expired_scores:
+                snapshot["score_confirmations"] = [item for item in score_rows if item not in expired_scores]
+                for item in expired_scores:
+                    if item.get("evidence_file_id"):
+                        c.execute(update(db.evidence_files).where(
+                            db.evidence_files.c.id == item["evidence_file_id"]).values(payload=""))
+                        c.execute(delete(db.evidence_files).where(db.evidence_files.c.id == item["evidence_file_id"]))
+                c.execute(update(db.evidence_archives).where(db.evidence_archives.c.id == row.id).values(
+                    payload=crypt.encrypt(json.dumps(snapshot, ensure_ascii=False).encode("utf-8")).decode("ascii")))
+                c.execute(insert(db.evidence_audit).values(archive_id=row.id, actor_id=None,
+                          action="score_file_expired", purpose="retention", created_at=now))
         expired = c.execute(select(db.evidence_archives).where(db.evidence_archives.c.expires_at <= now)).all()
         for row in expired:
             # 지우기 전에 암호문을 비워 둔다 (DB 안에 내용이 남지 않게)
@@ -269,9 +298,22 @@ def _get(archive_id: str, schools: set[str] | None):
 
 def decode(row) -> dict:
     try:
-        return json.loads(cipher().decrypt(row.payload.encode("ascii")))
+        snapshot = json.loads(cipher().decrypt(row.payload.encode("ascii")))
+        snapshot["score_confirmations"] = [item for item in snapshot.get("score_confirmations", [])
+                                            if score_confirmation_expiry(snapshot, item) > time.time()]
+        return snapshot
     except (InvalidToken, ValueError):
         raise HTTPException(503, "증빙 무결성 또는 암호화 키를 확인해야 합니다.") from None
+
+
+def score_confirmation_expiry(snapshot: dict, confirmation: dict) -> float:
+    from app.score_confirmations import confirmation_expires_at
+
+    if confirmation.get("expires_at"):
+        return confirmation["expires_at"]
+    course = next((course for course in snapshot.get("courses", [])
+                   if course["id"] == confirmation["course_id"]), None)
+    return confirmation_expires_at(course["end_date"] if course else "", confirmation["signed_at"])
 
 
 @router.get("/live/evidence")

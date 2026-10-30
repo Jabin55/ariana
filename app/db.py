@@ -443,6 +443,7 @@ score_confirmations = Table(
     Column("user_id", Integer, nullable=False, index=True),
     Column("snapshot_hash", String(64), nullable=False),
     Column("signed_at", Float, nullable=False),
+    Column("expires_at", Float),  # PDF 개별 파기 시각 (탈퇴 증빙으로 이관돼도 동일)
     UniqueConstraint("course_id", "user_id"),
 )
 
@@ -477,6 +478,7 @@ def init() -> None:
     metadata.create_all(engine)
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
+             ("score_confirmations", "expires_at", "FLOAT"),
              ("assignments", "weight", "FLOAT"),
              ("assignments", "max_score", "FLOAT"),
              ("materials", "deleted_at", "FLOAT"),
