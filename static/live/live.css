@@ -1599,7 +1599,6 @@ table.att.hub-grid-table tfoot td:first-child { text-align: center; }
 table.att.grade-table .grade-score { width: 5.5em; }
 table.att.grade-table .grade-feedback { width: 100%; min-width: 12em; }
 table.att.grade-table td.grade-score-cell { width: 7em; }
-table.att.grade-table td:last-child { min-width: 14em; }
 /* 학생 수행평가 게시판 (5칸) */
 table.att.my-assign-board th:nth-child(1) { width: 8%; }
 table.att.my-assign-board th:nth-child(2) { width: 38%; }
@@ -1608,3 +1607,10 @@ table.att.my-assign-board th:nth-child(5) { width: 17%; text-align: center; }
 table.att.my-assign-board th:nth-child(6) { width: 11%; text-align: center; }
 table.att.my-assign-board .my-score { color: var(--accent); }
 .assign-submit { display: grid; gap: 8px; margin-top: 8px; }
+
+table.att.grade-table th { text-align: center; }
+table.att.grade-table td.center { text-align: center; }
+table.att.grade-table .file-ico { font-size: 1.25rem; text-decoration: none; margin: 0 2px; }
+table.att.grade-table td:last-child { min-width: 0; }
+.grade-box { display: grid; gap: 8px; margin-top: 12px; }
+.grade-box .grade-score { width: 6em; }

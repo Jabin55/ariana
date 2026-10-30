@@ -122,57 +122,84 @@ function renderAssignmentPost(c, a, data, box, reload) {
   renderSubmissions(a, subsBox, reload);
 }
 
+const viewSub = new Map(); // 평가 id → 지금 열어 본 학생 id (학생 제출 상세 화면)
+
 async function renderSubmissions(a, box, reload) {
   const { submissions } = await api(`/api/assignments/${a.id}/submissions`);
-  const mixed = new Set(submissions.map((s) => s.school)).size > 1;
-  const changed = new Map(); // 학생 id → 고친 점수·피드백 칸 (저장 버튼을 눌러야 저장)
-  const saveBtn = h("button", { class: "primary small", disabled: true, onclick: async () => {
-    saveBtn.disabled = true;
-    let ok = 0;
-    for (const [uid, { s, score, fb }] of changed) {
-      if (score.value !== "" && a.max_score && Number(score.value) > a.max_score) {
-        toast(`${s.name}: 점수는 영역 만점(${fmtNum(a.max_score)}점)을 넘을 수 없어요.`, 5000);
-        continue;
-      }
-      try {
-        await api(`/api/assignments/${a.id}/grade`, { user_id: uid, score: score.value === "" ? null : Number(score.value), feedback: fb.value });
-        changed.delete(uid);
-        ok++;
-      } catch (err) { toast(`${s.name}: ${err.message}`, 5000); }
-    }
-    if (ok) toast(`${ok}명의 점수·피드백을 저장했어요.`);
-    saveBtn.disabled = !changed.size;
-    saveBtn.textContent = changed.size ? `저장 (${changed.size}명)` : "저장";
-  } }, "저장");
-  const mark = (s, score, fb) => {
-    changed.set(s.user_id, { s, score, fb });
-    saveBtn.disabled = false;
-    saveBtn.textContent = `저장 (${changed.size}명)`;
-  };
-  const rows = submissions.map((s) => {
-    const score = h("input", { type: "number", min: 0, max: a.max_score ?? undefined, step: 0.5, value: s.score ?? "", placeholder: a.max_score ? `/${fmtNum(a.max_score)}` : "점수", class: "grade-score" });
-    const fb = h("input", { maxlength: 3000, value: s.feedback, placeholder: "피드백 (학생에게 보여요)", class: "grade-feedback" });
-    score.addEventListener("input", () => mark(s, score, fb));
-    fb.addEventListener("input", () => mark(s, score, fb));
+  const again = () => renderSubmissions(a, box, reload);
+  const viewing = submissions.find((s) => s.user_id === viewSub.get(a.id));
+  if (viewing) { renderSubmissionPost(a, viewing, box, again); return; }
+  const scoreInput = (s) => h("input", { type: "number", min: 0, max: a.max_score ?? undefined, step: 0.5, value: s.score ?? "",
+    placeholder: a.max_score ? `/${fmtNum(a.max_score)}` : "점수", class: "grade-score" });
+  const rows = submissions.map((s, i) => {
+    const score = scoreInput(s);
+    const save = h("button", { class: "small", onclick: () => saveGrade(a, s, score, null, save) }, "저장");
+    score.addEventListener("input", () => save.classList.add("primary"));
+    score.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); });
     return h("tr", { class: s.submitted ? "" : "absent" },
-      h("td", {}, s.student_no || "-"),
-      h("td", {}, s.name, mixed && s.school ? h("div", { class: "muted", style: "font-size:0.75rem" }, s.school) : null,
+      h("td", { class: "num" }, i + 1),
+      h("td", { class: "center" }, s.school || "-"),
+      h("td", { class: "center" }, s.student_no || "-"),
+      h("td", { class: "center" }, h("button", { type: "button", class: "day-link", title: "메모·제출 파일 자세히 보기", onclick: () => { viewSub.set(a.id, s.user_id); again(); } }, s.name),
         s.enrolled ? null : h("div", { class: "muted", style: "font-size:0.75rem" }, "(수강 취소됨)")),
-      h("td", {}, s.submitted ? [s.submitted_at.slice(5), s.late ? h("span", { class: "status pending", style: "margin-left:4px" }, "지각") : null] : "미제출"),
-      h("td", { class: "answer" },
-        s.files.map((f) => h("div", {}, h("a", { href: `/api/submission-files/${f.id}`, target: "_blank" }, `📎 ${f.name}`),
-          h("span", { class: "muted", style: "font-size:0.75rem" }, ` ${fmtSize(f.size)}`))),
-        s.text ? h("details", {}, h("summary", { class: "muted" }, "제출 글"), h("div", { style: "white-space:pre-wrap" }, s.text)) : null),
-      h("td", { class: "grade-score-cell" }, score),
-      h("td", {}, fb));
+      h("td", { class: "center" }, s.submitted ? [s.submitted_at.slice(5), s.late ? h("span", { class: "status pending", style: "margin-left:4px" }, "지각") : null] : "미제출"),
+      h("td", { class: "center" }, s.files.length ? s.files.map((f) => h("a", { class: "file-ico", href: `/api/submission-files/${f.id}`, title: `${f.name} (${fmtSize(f.size)}) 받기` }, "📄")) : "-"),
+      h("td", { class: "center" }, score),
+      h("td", { class: "center" }, save));
   });
   box.replaceChildren(...[
-    submissions.length ? h("div", { class: "row", style: "justify-content:flex-end;margin-bottom:6px" },
-      h("span", { class: "muted", style: "font-size:0.82rem" }, "점수·피드백을 고친 뒤 [저장]을 눌러야 저장돼요."), saveBtn) : null,
     h("div", { class: "table-wrap" }, h("table", { class: "att grade-table" },
-      h("thead", {}, h("tr", {}, ["학번", "이름", "제출", "파일·글", a.max_score ? `점수 (/${fmtNum(a.max_score)})` : "점수", "피드백"].map((x) => h("th", {}, x)))),
+      h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "제출일", "첨부파일", a.max_score ? `점수 (/${fmtNum(a.max_score)})` : "점수", "저장"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows))),
     submissions.length ? null : h("p", { class: "muted" }, "수강 확정된 학생이 없어요.")].filter(Boolean));
+}
+
+/** 점수(·피드백) 저장: fb가 없으면 지금 피드백은 그대로 둔다 */
+async function saveGrade(a, s, score, fb, btn) {
+  if (score.value !== "" && a.max_score && Number(score.value) > a.max_score) {
+    toast(`점수는 영역 만점(${fmtNum(a.max_score)}점)을 넘을 수 없어요.`, 5000);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const feedback = fb ? fb.value : s.feedback;
+    await api(`/api/assignments/${a.id}/grade`, { user_id: s.user_id, score: score.value === "" ? null : Number(score.value), feedback });
+    s.score = score.value === "" ? null : Number(score.value);
+    s.feedback = feedback;
+    btn.classList.remove("primary");
+    toast(`${s.name} 학생 점수를 저장했어요.`);
+  } catch (err) { toast(err.message, 5000); }
+  btn.disabled = false;
+}
+
+/** 학생 한 명의 제출 상세: 메모·제출 파일·제출일, 여기서도 점수·피드백 저장 */
+function renderSubmissionPost(a, s, box, again) {
+  const back = () => { viewSub.delete(a.id); again(); };
+  const score = h("input", { type: "number", min: 0, max: a.max_score ?? undefined, step: 0.5, value: s.score ?? "",
+    placeholder: a.max_score ? `/${fmtNum(a.max_score)}` : "점수", class: "grade-score" });
+  const fb = h("textarea", { rows: 3, maxlength: 3000, placeholder: "피드백 (학생에게 보여요)" }, s.feedback || "");
+  const save = h("button", { class: "primary", onclick: () => saveGrade(a, s, score, fb, save) }, "저장");
+  const info = (label, value) => h("div", { class: "assign-info" }, h("span", {}, label), h("strong", {}, value));
+  box.replaceChildren(...[
+    h("div", { class: "row", style: "margin-bottom:10px" },
+      h("button", { class: "small", onclick: back }, "← 제출 목록"),
+      h("h4", { class: "grow", style: "margin:0" }, `${s.name} 학생의 제출`)),
+    h("div", { class: "assign-post" },
+      h("div", { class: "assign-infos" },
+        info("소속학교", s.school || "-"), info("학번", s.student_no || "-"), info("이름", s.name),
+        info("제출일", s.submitted ? `${s.submitted_at}${s.late ? " (지각)" : ""}` : "미제출")),
+      h("h5", { style: "margin:10px 0 4px" }, "메모"),
+      s.text ? h("div", { class: "assign-desc" }, s.text) : h("p", { class: "muted", style: "margin:0" }, "작성한 메모가 없어요."),
+      h("h5", { style: "margin:12px 0 4px" }, "제출한 파일"),
+      s.files.length ? h("div", { class: "people" }, s.files.map((f) => h("div", { class: "person" },
+        h("a", { class: "grow", href: `/api/submission-files/${f.id}`, target: "_blank" }, `📄 ${f.name}`),
+        h("span", { class: "muted", style: "font-size:0.75rem" }, fmtSize(f.size)),
+        h("a", { class: "button small", href: `/api/submission-files/${f.id}` }, "받기"))))
+        : h("p", { class: "muted", style: "margin:0" }, "제출한 파일이 없어요.")),
+    h("div", { class: "box grade-box" },
+      h("div", { class: "row" }, h("strong", {}, "점수"), score, h("span", { class: "muted" }, a.max_score ? `/ ${fmtNum(a.max_score)}점` : "")),
+      fb,
+      h("div", { class: "row", style: "justify-content:flex-end" }, save))].filter(Boolean));
 }
 
 /* ───────────── 학생 ───────────── */
