@@ -409,6 +409,8 @@ assignments = Table(
     Column("allow_late", Integer, nullable=False, default=1),  # 마감 뒤에도 제출 받기(지각 표시)
     Column("closed", Integer, nullable=False, default=0),  # 제출 막기
     Column("created_at", Float, nullable=False),
+    Column("weight", Float),  # 반영 비율(%)
+    Column("max_score", Float),  # 영역 만점(점)
 )
 
 submissions = Table(
@@ -465,6 +467,8 @@ def init() -> None:
     metadata.create_all(engine)
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
+             ("assignments", "weight", "FLOAT"),
+             ("assignments", "max_score", "FLOAT"),
              ("materials", "deleted_at", "FLOAT"),
              ("materials", "ratio", "FLOAT"),
              ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),

@@ -1533,3 +1533,12 @@ body.class-t .monitor-head button { padding: 5px 10px; font-size: 0.88rem; white
 
 /* 미디어 공유: 소리 켜기 버튼을 눈에 띄게 */
 .media-tap { font-size: 1.05rem; padding: 8px 16px; animation: pulse 1.4s infinite; }
+
+/* 평가 활동 게시판 */
+.assign-board .assign-row { cursor: pointer; }
+.assign-board .assign-row:hover td { background: var(--surface-2); }
+.assign-board .assign-desc-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.assign-board td.num { text-align: center; white-space: nowrap; }
+.assign-dialog { max-width: 560px; display: grid; gap: 10px; }
+.assign-field { display: grid; gap: 4px; }
+.assign-field > span { font-size: 0.85rem; font-weight: 600; color: var(--muted); }

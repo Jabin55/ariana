@@ -66,7 +66,8 @@ def assignment_view(a, now: float) -> dict:
     return {"id": a.id, "course_id": a.course_id, "title": a.title, "description": a.description,
             "due_at": a.due_at, "due": fmt(a.due_at), "due_input": due_input(a.due_at),
             "allow_late": bool(a.allow_late), "closed": bool(a.closed),
-            "past_due": bool(a.due_at and now > a.due_at), "created_at": a.created_at}
+            "past_due": bool(a.due_at and now > a.due_at), "created_at": a.created_at,
+            "weight": a.weight, "max_score": a.max_score}
 
 
 def can_submit(a, now: float) -> tuple[bool, str]:
@@ -105,6 +106,8 @@ class AssignmentReq(BaseModel):
     description: str = Field(default="", max_length=5000)
     due: str = Field(default="", pattern=DUE_RE)  # 2026-11-05T23:59 (한국 시각)
     allow_late: bool = True
+    weight: float | None = Field(default=None, ge=0, le=100)  # 반영 비율(%)
+    max_score: float | None = Field(default=None, gt=0, le=1000)  # 영역 만점(점)
 
 
 class AssignmentUpdate(BaseModel):
@@ -113,6 +116,8 @@ class AssignmentUpdate(BaseModel):
     due: str | None = Field(default=None, pattern=DUE_RE)
     allow_late: bool | None = None
     closed: bool | None = None
+    weight: float | None = Field(default=None, ge=0, le=100)
+    max_score: float | None = Field(default=None, gt=0, le=1000)
 
 
 @router.get("/api/courses/{course_id}/assignments")
@@ -148,7 +153,8 @@ async def create_assignment(course_id: int, req: AssignmentReq, request: Request
         with db.engine.begin() as c:
             return c.execute(insert(db.assignments).values(
                 course_id=course_id, teacher_id=t["id"], title=req.title.strip(), description=req.description.strip(),
-                due_at=due, allow_late=int(req.allow_late), closed=0, created_at=time.time())).inserted_primary_key[0]
+                due_at=due, allow_late=int(req.allow_late), closed=0, created_at=time.time(),
+                weight=req.weight, max_score=req.max_score)).inserted_primary_key[0]
 
     return {"id": await db.run(run)}
 
@@ -165,6 +171,8 @@ async def update_assignment(aid: int, req: AssignmentUpdate, request: Request):
             values["due_at"] = parse_due(v)
         elif isinstance(v, bool):
             values[k] = int(v)
+        elif isinstance(v, (int, float)):
+            values[k] = float(v)
         else:
             values[k] = v.strip()
 
@@ -250,6 +258,8 @@ async def grade_submission(aid: int, req: GradeReq, request: Request):
     a = await db.run(_assignment, aid)
     if not await db.run(is_enrolled, a.course_id, req.user_id):
         raise HTTPException(404, "이 과제의 수강생을 찾을 수 없어요.")
+    if req.score is not None and a.max_score and req.score > a.max_score:
+        raise HTTPException(400, f"점수는 영역 만점({a.max_score:g}점)을 넘을 수 없어요.")
 
     def run():
         s = db.submissions.c

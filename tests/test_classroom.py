@@ -3043,3 +3043,26 @@ def test_group_count_limited_to_six():
         tw.send_json({"t": "breakout_plan", "n": 12})
         tw.send_json({"t": "breakout_setup", "n": 3})
         assert len(state(tw, lambda m: len(m["groups"]) == 3)["groups"]) == 3
+
+
+def test_assignment_weight_and_max_score(monkeypatch, tmp_path):
+    """평가 활동: 반영 비율(%)·영역 만점(점)을 정하고, 점수는 만점을 넘을 수 없다"""
+    import app.assignments as asg
+    monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a = student(1)
+    a.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    assert t.post(f"/api/courses/{cid}/assignments", json={"title": "x", "weight": 120}).status_code == 422
+    aid = t.post(f"/api/courses/{cid}/assignments", json={
+        "title": "토론 보고서", "description": "주장과 근거", "weight": 30, "max_score": 50, "due": "2099-11-05T23:55"}).json()["id"]
+    row = t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]
+    assert (row["weight"], row["max_score"], row["due"]) == (30, 50, "2099-11-05 23:55")
+    assert a.get("/api/my/assignments").json()["assignments"][0]["max_score"] == 50
+    uid = a.get("/api/me").json()["user"]["id"]
+    assert t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 51}).status_code == 400
+    assert t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 50}).status_code == 200
+    assert t.post(f"/api/assignments/{aid}", json={"weight": 25, "max_score": 40}).status_code == 200
+    row = t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]
+    assert (row["weight"], row["max_score"]) == (25, 40)
