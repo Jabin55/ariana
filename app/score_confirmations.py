@@ -180,16 +180,16 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
         canvas.drawRightString(A4[0] - 40, 35, str(doc.page))
 
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=42, rightMargin=42,
-                            topMargin=46, bottomMargin=138, title="공동교육과정 성적 확인서")
+                            topMargin=66, bottomMargin=138, title="공동교육과정 성적 확인서")
     year = snap["school_year"] or ""
     term = snap["term"] or ""
     document_title = " ".join(part for part in (f"{year}학년도" if year else "", term,
                                                  "공동교육과정 성적 확인서") if part)
     story = [p(document_title, title), Spacer(1, 16)]
-    info = [[p("강좌명", small), p(snap["course_title"]), p("거점학교", small), p(snap["hub_school"])],
-            [p("소속학교", small), p(snap["student_school"]), p("학번", small), p(snap["student_no"])],
-            [p("학생 이름", small), p(snap["student_name"]), p("강의교사", small), p(snap["instructor"])]]
-    info_table = Table(info, colWidths=[65, 190, 65, 190])
+    info = [[p("강좌명", small), p(snap["course_title"]), p("학생 소속 학교", small), p(snap["student_school"])],
+            [p("거점학교", small), p(snap["hub_school"]), p("학생 학번", small), p(snap["student_no"])],
+            [p("강의 교사", small), p(snap["instructor"]), p("학생 이름", small), p(snap["student_name"])]]
+    info_table = Table(info, colWidths=[85, 170, 95, 160])
     info_table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#adbfc1")),
                                     ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
                                     ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f2f7f5")),
