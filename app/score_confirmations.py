@@ -137,14 +137,20 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
         canvas.setStrokeColor(colors.HexColor("#49636d"))
         canvas.setLineWidth(0.7)
         canvas.rect(24, 24, A4[0] - 48, A4[1] - 48)
+        hub_school = (snap["hub_school"] or "").strip()
+        if hub_school:
+            canvas.setFont(font, 10)
+            canvas.drawCentredString(A4[0] / 2, 38, f"{hub_school}장 귀하")
         canvas.setFont(font, 8)
         canvas.drawRightString(A4[0] - 40, 35, str(doc.page))
 
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=42, rightMargin=42,
-                            topMargin=46, bottomMargin=50, title="수행평가 점수 확인서")
+                            topMargin=46, bottomMargin=50, title="공동교육과정 성적 확인서")
     year = snap["school_year"] or ""
     term = snap["term"] or ""
-    story = [p(f"{year}학년도 {term} 수행평가 점수 확인서" if year else "수행평가 점수 확인서", title), Spacer(1, 16)]
+    document_title = " ".join(part for part in (f"{year}학년도" if year else "", term,
+                                                 "공동교육과정 성적 확인서") if part)
+    story = [p(document_title, title), Spacer(1, 16)]
     info = [[p("강좌명", small), p(snap["course_title"]), p("거점학교", small), p(snap["hub_school"])],
             [p("소속학교", small), p(snap["student_school"]), p("학번", small), p(snap["student_no"])],
             [p("학생 이름", small), p(snap["student_name"]), p("강의교사", small), p(snap["instructor"])]]
