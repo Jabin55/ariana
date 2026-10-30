@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, time as day_time, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -123,6 +124,32 @@ def _number(value) -> str:
     return "-" if value is None else f"{value:g}"
 
 
+def converted_performance_score(items: list[dict]) -> int | None:
+    """모든 평가가 채점되고 반영비율 합계가 100%일 때만 환산점수를 확정한다."""
+    if not items:
+        return None
+    total_weight = Decimal(0)
+    converted = Decimal(0)
+    for item in items:
+        if any(item.get(key) is None for key in ("score", "max_score", "weight")):
+            return None
+        try:
+            score = Decimal(str(item["score"]))
+            maximum = Decimal(str(item["max_score"]))
+            weight = Decimal(str(item["weight"]))
+            if not all(value.is_finite() for value in (score, maximum, weight)):
+                return None
+            if maximum <= 0 or score < 0 or score > maximum or weight < 0 or weight > 100:
+                return None
+            total_weight += weight
+            converted += score / maximum * weight
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+    if total_weight != 100:
+        return None
+    return int(converted.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     font = _font()
     normal = ParagraphStyle("normal", fontName=font, fontSize=10, leading=16)
@@ -170,16 +197,23 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                     ("TOPPADDING", (0, 0), (-1, -1), 7),
                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
-    story += [info_table, Spacer(1, 20), p("성적일람표", heading), Spacer(1, 7)]
+    story += [info_table, Spacer(1, 20), p("수행평가 성적일람표", heading), Spacer(1, 7)]
     head = [p(x, small) for x in ("연번", "평가명", "반영 비율", "영역 만점", "점수")]
     overview = [head] + [[p(i + 1, small), p(item["title"], small),
                          p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", small),
                          p(_number(item["max_score"]), small), p(_number(item["score"]) if item["score"] is not None else "미채점", small)]
                          for i, item in enumerate(snap["items"])]
+    converted = converted_performance_score(snap["items"])
+    summary_index = len(overview)
+    overview.append([p("환산점수", small), "", "", "",
+                     p(f"{converted}점" if converted is not None else "산출 대기", small)])
     table = Table(overview, colWidths=[38, 244, 80, 75, 73], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#94a8ac")),
                               ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
                               ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf5f2")),
+                              ("BACKGROUND", (0, summary_index), (-1, summary_index), colors.HexColor("#f2f7f5")),
+                              ("SPAN", (0, summary_index), (3, summary_index)),
+                              ("LINEABOVE", (0, summary_index), (-1, summary_index), .7, colors.HexColor("#94a8ac")),
                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
                               ("TOPPADDING", (0, 0), (-1, -1), 7),
                               ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))

@@ -3202,6 +3202,19 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
         "signature": signature, "snapshot_hash": updated["snapshot_hash"]}).status_code == 409
 
 
+def test_performance_converted_score():
+    from app.score_confirmations import converted_performance_score
+
+    items = [{"score": 100, "max_score": 100, "weight": 50},
+             {"score": 80, "max_score": 100, "weight": 30},
+             {"score": 90, "max_score": 100, "weight": 20}]
+    assert converted_performance_score(items) == 92
+    assert converted_performance_score([{"score": 45, "max_score": 50, "weight": 100}]) == 90
+    assert converted_performance_score([{"score": 92.5, "max_score": 100, "weight": 100}]) == 93
+    assert converted_performance_score(items[:-1]) is None  # 반영비율 합계가 100% 아님
+    assert converted_performance_score([{**items[0], "score": None}, *items[1:]]) is None
+
+
 def test_course_detail_page_public_info():
     """수강신청 강좌 상세: 로그인 없이 강좌 정보·수업계획서 주소를 보고, 보관한 강좌는 보이지 않는다"""
     t = teacher()
