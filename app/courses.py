@@ -268,6 +268,8 @@ def subject_values(v: dict, cur=None) -> dict:
     else:
         title = v.get("title") or (cur.title if cur is not None else "")
     title = " ".join(title.split())
+    if v.get("subject_group") in subjects.GROUP_ALIASES:  # 예전 교과(군) 이름 → 공식 이름
+        v["subject_group"] = subjects.GROUP_ALIASES[v["subject_group"]]
     custom = bool(get("custom_subject"))
     if any(v.get(k) is not None for k in ("title", "subject", "custom_subject", "subject_group", "subject_area", "subject_type")):
         found = next((x for x in subjects.SUBJECTS if x["name"] == title), None)

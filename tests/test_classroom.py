@@ -1786,7 +1786,7 @@ def test_teacher_signup_course_fields_and_team_teaching(monkeypatch, tmp_path):
     cid = r.json()["id"]
     assert coord.post(f"/api/hub/courses/{cid}/approval", json={"action": "approve"}).status_code == 200
     c = prof.get("/api/courses/mine").json()["courses"][0]
-    assert (c["subject_group"], c["subject_area"], c["subject_type"]) == ("사회", "사회", "진로선택")
+    assert (c["subject_group"], c["subject_area"], c["subject_type"]) == ("사회(역사/도덕 포함)", "사회", "진로선택")
     assert c["credits"] == 3 and c["hours"] == 48 and c["achievement_text"] == "5단계 (A~E)" and c["recruit"] == "open"
     assert c["co_teachers"] == [{"id": asst_id, "name": "이보조"}] and c["lead"]
     # 고시외 과목은 직접 적는다
@@ -2862,7 +2862,7 @@ def test_access_logs_paging(monkeypatch):
 
 def test_subject_groups_order_and_old_names_migrated():
     from app import subjects
-    assert subjects.GROUPS == ["국어", "수학", "영어", "사회", "과학", "예술", "체육", "기술·가정/정보", "제2외국어/한문", "교양",
+    assert subjects.GROUPS == ["국어", "수학", "영어", "사회(역사/도덕 포함)", "과학", "예술", "체육", "기술·가정/정보", "제2외국어/한문", "교양",
                                "경영·금융", "보건·복지", "정보·통신", "융복합·지식 재산"]
     by = {x["name"]: x for x in subjects.SUBJECTS}
     assert (by["노동 인권과 산업 안전 보건"]["group"], by["노동 인권과 산업 안전 보건"]["type"]) == ("경영·금융", "전문 공통")
@@ -2870,12 +2870,12 @@ def test_subject_groups_order_and_old_names_migrated():
     with db.engine.begin() as c:
         ids = [c.execute(db.courses.insert().values(teacher_id=1, title=t, instructor="t", start_date="2027-03-02", end_date="2027-07-20",
                           subject_group=g, subject_area=a, open=1, archived=0, created_at=time.time())).inserted_primary_key[0]
-               for t, g, a in (("정치", "사회(역사/도덕 포함)", "사회"), ("정보", "기술·가정/정보/제2외국어/한문/교양", "정보"),
+               for t, g, a in (("정치", "사회", "사회"), ("정보", "기술·가정/정보/제2외국어/한문/교양", "정보"),
                                ("한문", "기술·가정/정보/제2외국어/한문/교양", "한문"), ("논술", "기술·가정/정보/제2외국어/한문/교양", "교양"))]
     db.init()
     with db.engine.connect() as c:
         got = [c.execute(db.courses.select().where(db.courses.c.id == i)).first().subject_group for i in ids]
-    assert got == ["사회", "기술·가정/정보", "제2외국어/한문", "교양"]
+    assert got == ["사회(역사/도덕 포함)", "기술·가정/정보", "제2외국어/한문", "교양"]
 
 
 def test_special_purpose_subjects_from_table6():
@@ -2887,7 +2887,7 @@ def test_special_purpose_subjects_from_table6():
     assert (by["지구과학 실험"]["type"], by["정보과학"]["area"]) == ("융합선택", "정보")
     assert (by["스포츠 행정 및 경영"]["group"], by["스포츠 행정 및 경영"]["type"]) == ("체육", "융합선택")
     assert (by["사진과 삶"]["area"], by["영화의 이해"]["area"], by["시 창작"]["area"], by["안무"]["area"]) == ("사진", "영화", "문예 창작", "무용")
-    assert (by["심화 영어 작문Ⅱ"]["group"], by["국제법"]["group"]) == ("영어", "사회")
+    assert (by["심화 영어 작문Ⅱ"]["group"], by["국제법"]["group"]) == ("영어", "사회(역사/도덕 포함)")
     assert by["베트남어 독해와 작문Ⅱ"]["area"] == "제2외국어" and by["전공 기초 아랍어"]["special"]
     assert not by["심화 독일어"]["special"] and not by["중국 문화"]["special"]  # 보통 교과에도 있는 과목
     assert by["고급 물리학"]["achievement"] == "5"
