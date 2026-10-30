@@ -875,7 +875,7 @@ function classroomCourseStatus(c) {
 }
 
 let selectedStudentCourseId = null;
-let studentCourseTab = "info"; // 강좌 안의 탭: info(과목 정보) learn(학습 활동) assess(수행평가)
+let studentCourseTab = "info"; // 강좌 안의 탭: info(강좌 정보) notice(강좌 공지) learn(학습 활동) assess(수행평가)
 function openStudentCourse(c) {
   if (selectedStudentCourseId !== c.id) studentCourseTab = "info";
   selectedStudentCourseId = c.id;
@@ -886,16 +886,33 @@ function openStudentCourse(c) {
   const [state, label] = classroomCourseStatus(c);
   const approved = c.status === "approved";
   const materials = h("div", { class: "course-materials" });
-  // 과목 정보: 맨 위에 강좌 공지, 그 아래 과목 상세
+  // 강좌 정보: 과목 상세
   const info = h("div", { class: "sc-panel" },
-    h("section", { class: "sc-notices" }, h("h3", {}, "📢 강좌 공지"),
-      c.notices?.length ? c.notices.map((n) => h("details", { class: "box" },
-        h("summary", {}, n.title, ` · ${fmtDate(n.date)}`), h("p", { style: "white-space:pre-wrap" }, n.body)))
-        : h("p", { class: "muted" }, approved ? "아직 공지가 없어요." : "수강이 확정되면 강좌 공지를 볼 수 있어요.")),
-    h("section", {}, h("h3", {}, "📘 과목 정보"), courseInfo(c), courseFacts(c),
+    h("section", {}, h("h3", {}, "📘 강좌 정보"), courseInfo(c), courseFacts(c),
       c.description ? h("p", { style: "white-space:pre-wrap" }, c.description) : null,
       c.syllabus ? h("p", {}, h("a", { class: "button small", href: c.syllabus.url, target: "_blank", rel: "noopener" }, "📄 수업계획서 받기")) : null,
       c.note ? h("p", { class: "error" }, `반려 사유: ${c.note}`) : null));
+  // 강좌 공지: 게시판(연번·제목·작성자·작성일) → 누르면 글 보기
+  const notice = h("div", { class: "sc-panel" });
+  const notices = c.notices || [];
+  const day = (d) => (d ? fmtDate(d) : "-");
+  const noticeList = () => notice.replaceChildren(
+    approved ? h("div", { class: "table-wrap" }, h("table", { class: "att assign-board notice-board" },
+      h("thead", {}, h("tr", {}, ["연번", "제목", "작성자", "작성일"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, notices.length ? notices.map((n, i) => h("tr", { class: "assign-row", onclick: () => noticeRead(n, notices.length - i) },
+        h("td", { class: "num" }, notices.length - i),
+        h("td", {}, h("span", { class: "day-link" }, n.title)),
+        h("td", { class: "num" }, n.author || "-"),
+        h("td", { class: "num" }, day(n.date))))
+        : h("tr", {}, h("td", { colspan: 4, class: "muted", style: "text-align:center;padding:18px" }, "아직 공지가 없어요.")))))
+      : h("p", { class: "muted" }, "수강이 확정되면 강좌 공지를 볼 수 있어요."));
+  const noticeRead = (n, no) => notice.replaceChildren(
+    h("div", { class: "row", style: "margin-bottom:10px" }, h("button", { class: "small", type: "button", onclick: noticeList }, "← 공지 목록")),
+    h("div", { class: "assign-post notice-post" },
+      h("h3", { style: "margin:0 0 6px" }, n.title),
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" }, `${no}번 · 작성자 ${n.author || "-"} · 작성일 ${day(n.date)}`),
+      h("div", { class: "notice-body" }, n.body || "(내용 없음)")));
+  noticeList();
   // 학습 활동: 수업별 자료 + 채점 결과 + 지난 수업 질문답변
   const learn = h("div", { class: "sc-panel" },
     h("section", {}, h("h3", {}, "📚 수업별 자료"),
@@ -905,8 +922,8 @@ function openStudentCourse(c) {
   const assess = h("div", { class: "sc-panel" }, noAssign);
   for (const id of ["student-results", "student-questions"]) { const sec = $(`#${id}`); sec.hidden = true; learn.append(sec); }
   { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
-  const panels = { info, learn, assess };
-  const tabs = [["info", "과목 정보"], ["learn", "학습 활동"], ["assess", "수행평가"]];
+  const panels = { info, notice, learn, assess };
+  const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"], ["assess", "수행평가"]];
   const nav = h("nav", { class: "tabs sub-tabs sc-tabs", "aria-label": "강좌 메뉴" });
   const show = (k) => {
     studentCourseTab = k;
@@ -916,7 +933,7 @@ function openStudentCourse(c) {
   nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
   content.replaceChildren(
     h("div", { class: "row" }, h("h2", { class: "grow" }, c.title), h("span", { class: `status ${state}` }, label)),
-    nav, info, learn, assess);
+    nav, info, notice, learn, assess);
   show(studentCourseTab);
   if (approved) {
     loadCourseMaterials(c.id, materials);
