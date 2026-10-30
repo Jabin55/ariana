@@ -22,7 +22,7 @@ from cryptography.fernet import InvalidToken
 from PIL import Image as PILImage, ImageChops, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
@@ -239,25 +239,28 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                                     ("TOPPADDING", (0, 0), (-1, -1), 7),
                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
     story += [info_table, Spacer(1, 20), p("수행평가 성적일람표", centered_heading), Spacer(1, 7)]
-    bold_small = ParagraphStyle("bold_small", parent=small, fontName=_FONT_BOLD_NAME)
+    numeric_small = ParagraphStyle("numeric_small", parent=small, alignment=TA_RIGHT)
+    bold_small = ParagraphStyle("bold_small", parent=numeric_small, fontName=_FONT_BOLD_NAME)
     def bold(value):
         return p(value, bold_small)
     head = [p(x, small) for x in ("연번", "평가명", "영역 만점", "반영 비율", "원점수", "반영비율 환산 점수")]
     overview = [head] + [[p(i + 1, small), p(item["title"], small),
-                         p(_number(item["max_score"]), small),
-                         p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", small),
-                         bold(_number(item["score"])) if item["score"] is not None else p("미채점", small),
-                         bold(_weighted_score(item)) if item["score"] is not None else p("-", small)]
+                         p(_number(item["max_score"]), numeric_small),
+                         p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", numeric_small),
+                         bold(_number(item["score"])) if item["score"] is not None else p("미채점", numeric_small),
+                         bold(_weighted_score(item)) if item["score"] is not None else p("-", numeric_small)]
                          for i, item in enumerate(snap["items"])]
     converted = converted_performance_score(snap["items"])
     summary_index = len(overview)
-    overview.append([p("최종 원점수(총점)", small), "", "", "", "",
-                     bold(f"{converted}점") if converted is not None else p("산출 대기", small)])
+    centered_small = ParagraphStyle("centered_small", parent=small, alignment=TA_CENTER)
+    overview.append([p("최종 원점수(총점)", centered_small), "", "", "", "",
+                     bold(f"{converted}점") if converted is not None else p("산출 대기", numeric_small)])
     table = Table(overview, colWidths=[32, 174, 64, 64, 62, 114], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#94a8ac")),
                               ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
                               ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf5f2")),
                               ("BACKGROUND", (0, summary_index), (-1, summary_index), colors.HexColor("#f2f7f5")),
+                              ("BACKGROUND", (5, summary_index), (5, summary_index), colors.white),
                               ("SPAN", (0, summary_index), (4, summary_index)),
                               ("LINEABOVE", (0, summary_index), (-1, summary_index), .7, colors.HexColor("#94a8ac")),
                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
