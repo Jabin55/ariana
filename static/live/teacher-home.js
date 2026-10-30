@@ -921,7 +921,7 @@ async function hubCourseAttendance(box, ov) {
   const counts = cls.map((_, j) => sheet.students.filter((st) => st.attendance[j]).length);
   const fixed = ["연번", "소속학교", "학번", "이름"];
   fill(box, hubRecordHeading(course, "출석부"),
-    h("p", { class: "muted" }, `수강 확정 ${sheet.students.length}명 · 수업 ${cls.length}회 · 한 번이라도 들어오면 O`),
+    h("div", { class: "hub-grid-summary" }, `수강 확정 ${sheet.students.length}명 · 수업 ${cls.length}회 · 한 번이라도 들어오면 O`),
     h("div", { class: "table-wrap" }, h("table", { class: "att hub-grid-table" },
       h("thead", {},
         h("tr", {}, fixed.map((t) => h("th", { rowspan: 2 }, t)),
