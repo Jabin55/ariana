@@ -1594,3 +1594,9 @@ table.att.hub-grid-table tfoot td:first-child { text-align: center; }
 .sc-panel > section { margin-bottom: 16px; }
 .sc-panel > section.card { box-shadow: none; padding: 0; border: 0; margin-top: 0 !important; background: none; }
 .sc-notices .box { margin-bottom: 6px; }
+
+/* 수행평가 채점표: 점수와 피드백을 따로 */
+table.att.grade-table .grade-score { width: 5.5em; }
+table.att.grade-table .grade-feedback { width: 100%; min-width: 12em; }
+table.att.grade-table td.grade-score-cell { width: 7em; }
+table.att.grade-table td:last-child { min-width: 14em; }

@@ -125,17 +125,35 @@ function renderAssignmentPost(c, a, data, box, reload) {
 async function renderSubmissions(a, box, reload) {
   const { submissions } = await api(`/api/assignments/${a.id}/submissions`);
   const mixed = new Set(submissions.map((s) => s.school)).size > 1;
-  const rows = submissions.map((s) => {
-    const score = h("input", { type: "number", min: 0, max: a.max_score ?? undefined, step: 0.5, value: s.score ?? "", placeholder: a.max_score ? `/${fmtNum(a.max_score)}` : "점수", style: "width:5em" });
-    const fb = h("input", { class: "grow", maxlength: 3000, value: s.feedback, placeholder: "피드백 (학생에게 보여요)" });
-    const save = async () => {
+  const changed = new Map(); // 학생 id → 고친 점수·피드백 칸 (저장 버튼을 눌러야 저장)
+  const saveBtn = h("button", { class: "primary small", disabled: true, onclick: async () => {
+    saveBtn.disabled = true;
+    let ok = 0;
+    for (const [uid, { s, score, fb }] of changed) {
+      if (score.value !== "" && a.max_score && Number(score.value) > a.max_score) {
+        toast(`${s.name}: 점수는 영역 만점(${fmtNum(a.max_score)}점)을 넘을 수 없어요.`, 5000);
+        continue;
+      }
       try {
-        await api(`/api/assignments/${a.id}/grade`, { user_id: s.user_id, score: score.value === "" ? null : Number(score.value), feedback: fb.value });
-        toast(`${s.name} 학생 점수·피드백을 저장했어요.`);
-      } catch (err) { toast(err.message); }
-    };
-    score.addEventListener("change", save);
-    fb.addEventListener("change", save);
+        await api(`/api/assignments/${a.id}/grade`, { user_id: uid, score: score.value === "" ? null : Number(score.value), feedback: fb.value });
+        changed.delete(uid);
+        ok++;
+      } catch (err) { toast(`${s.name}: ${err.message}`, 5000); }
+    }
+    if (ok) toast(`${ok}명의 점수·피드백을 저장했어요.`);
+    saveBtn.disabled = !changed.size;
+    saveBtn.textContent = changed.size ? `저장 (${changed.size}명)` : "저장";
+  } }, "저장");
+  const mark = (s, score, fb) => {
+    changed.set(s.user_id, { s, score, fb });
+    saveBtn.disabled = false;
+    saveBtn.textContent = `저장 (${changed.size}명)`;
+  };
+  const rows = submissions.map((s) => {
+    const score = h("input", { type: "number", min: 0, max: a.max_score ?? undefined, step: 0.5, value: s.score ?? "", placeholder: a.max_score ? `/${fmtNum(a.max_score)}` : "점수", class: "grade-score" });
+    const fb = h("input", { maxlength: 3000, value: s.feedback, placeholder: "피드백 (학생에게 보여요)", class: "grade-feedback" });
+    score.addEventListener("input", () => mark(s, score, fb));
+    fb.addEventListener("input", () => mark(s, score, fb));
     return h("tr", { class: s.submitted ? "" : "absent" },
       h("td", {}, s.student_no || "-"),
       h("td", {}, s.name, mixed && s.school ? h("div", { class: "muted", style: "font-size:0.75rem" }, s.school) : null,
@@ -145,12 +163,16 @@ async function renderSubmissions(a, box, reload) {
         s.files.map((f) => h("div", {}, h("a", { href: `/api/submission-files/${f.id}`, target: "_blank" }, `📎 ${f.name}`),
           h("span", { class: "muted", style: "font-size:0.75rem" }, ` ${fmtSize(f.size)}`))),
         s.text ? h("details", {}, h("summary", { class: "muted" }, "제출 글"), h("div", { style: "white-space:pre-wrap" }, s.text)) : null),
-      h("td", {}, h("div", { class: "row" }, score, fb)));
+      h("td", { class: "grade-score-cell" }, score),
+      h("td", {}, fb));
   });
-  box.replaceChildren(...[h("div", { class: "table-wrap" }, h("table", { class: "att" },
-    h("thead", {}, h("tr", {}, ["학번", "이름", "제출", "파일·글", "점수·피드백 (입력하면 저장)"].map((x) => h("th", {}, x)))),
-    h("tbody", {}, rows))),
-  submissions.length ? null : h("p", { class: "muted" }, "수강 확정된 학생이 없어요.")].filter(Boolean));
+  box.replaceChildren(...[
+    submissions.length ? h("div", { class: "row", style: "justify-content:flex-end;margin-bottom:6px" },
+      h("span", { class: "muted", style: "font-size:0.82rem" }, "점수·피드백을 고친 뒤 [저장]을 눌러야 저장돼요."), saveBtn) : null,
+    h("div", { class: "table-wrap" }, h("table", { class: "att grade-table" },
+      h("thead", {}, h("tr", {}, ["학번", "이름", "제출", "파일·글", a.max_score ? `점수 (/${fmtNum(a.max_score)})` : "점수", "피드백"].map((x) => h("th", {}, x)))),
+      h("tbody", {}, rows))),
+    submissions.length ? null : h("p", { class: "muted" }, "수강 확정된 학생이 없어요.")].filter(Boolean));
 }
 
 /* ───────────── 학생 ───────────── */
