@@ -498,7 +498,7 @@ async function renderLearning(c, box) {
   const detail = h("div", { class: "learn-detail" });
   fill(box,
     h("div", { class: "learn-cards" }, cards.map(([k, label, big, small]) => h("button", { type: "button", class: `learn-card ${st.card === k ? "on" : ""}`,
-      onclick: () => { st.card = k; st.open.clear(); renderLearning(c, box); } },
+      onclick: () => { st.card = k; st.open.clear(); st.view = null; renderLearning(c, box); } },
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
   if (st.card === "activity") { learnAssignments(c, d, st, detail); return; }
@@ -515,22 +515,30 @@ function toggleRow(st, id, draw) {
 }
 
 function learnAttendance(d, st, box) {
-  const COLS = 7;
+  const viewing = d.classes.find((x) => x.id === st.view);
+  if (viewing) { // 게시물 화면: 그 수업의 학생별 출결
+    const x = viewing;
+    const list = h("div");
+    fill(box,
+      h("div", { class: "row", style: "margin:4px 0 8px" },
+        h("button", { class: "small", onclick: () => { st.view = null; learnAttendance(d, st, box); } }, "← 수업 목록")),
+      h("div", { class: "hub-grid-summary" }, `${fmtDate(x.date)} ${x.start} ~ ${x.end || (x.live ? "진행 중" : "")} · 참여 ${x.attended}명${d.summary.enrolled ? ` / ${d.summary.enrolled}명` : ""}${x.rate == null ? "" : ` · 출석률 ${x.rate}%`}`),
+      list);
+    attendanceOf(x.id, list);
+    return;
+  }
   const draw = () => fill(box,
     h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `🙋 수업별 출석 (수강생 ${d.summary.enrolled}명)`),
     h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
       h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "참여 학생", "출석률", ""].map((t) => h("th", {}, t)))),
-      h("tbody", {}, d.classes.flatMap((x, i) => {
-        const open = st.open.has(x.id);
-        const sub = h("td", { colspan: COLS });
-        const row = h("tr", { class: open ? "on" : "" },
+      h("tbody", {}, d.classes.map((x, i) => {
+        const row = h("tr", {},
           h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(x.date)),
           h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "")}`), h("td", {}, x.title),
           h("td", { class: "num" }, `${x.attended}명${d.summary.enrolled ? ` / ${d.summary.enrolled}명` : ""}`),
           h("td", { class: "num" }, h("strong", {}, x.rate == null ? "-" : `${x.rate}%`)),
-          h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, x.id, draw) }, open ? "접기" : "출결 확인")));
-        if (open) attendanceOf(x.id, sub);
-        return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
+          h("td", {}, h("button", { class: "small", onclick: () => { st.view = x.id; learnAttendance(d, st, box); } }, "출결 확인")));
+        return row;
       })))));
   draw();
 }
