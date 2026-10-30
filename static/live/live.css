@@ -1566,3 +1566,7 @@ table.att.assign-board th:nth-child(1), table.att.assign-board th:nth-child(4), 
 table.att.assign-board td.num { text-align: center; }
 table.att.assign-board .assign-desc-cell { max-width: none; }
 table.att.assign-board td:last-child { min-width: 0; }
+.assign-post { background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.assign-infos { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 8px; }
+.assign-info { display: flex; gap: 6px; align-items: baseline; font-size: 0.92rem; }
+.assign-info > span { color: var(--muted); font-size: 0.85rem; }

@@ -1,6 +1,7 @@
 /* 평가 활동(수행평가 과제): 선생님(과목 운영 → 평가 활동)과 학생(마이페이지 📝 평가 활동) */
 const openAssign = new Set(); // 과제 칸을 펼친 강좌
-const openSubs = new Set(); // 제출 현황을 펼친 과제
+const openSubs = new Set(); // (예전) 제출 현황을 펼친 과제
+const viewAssign = new Map(); // 강좌 id → 지금 열어 본 평가(게시물) id
 
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`);
 
@@ -70,36 +71,17 @@ async function renderCourseAssignments(c, box) {
   try { data = await api(`/api/courses/${c.id}/assignments`); } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
   const reload = () => renderCourseAssignments(c, box);
   const list = data.assignments; // 최근에 올린 것이 위
+  const viewing = list.find((x) => x.id === viewAssign.get(c.id));
+  if (viewing) { renderAssignmentPost(c, viewing, data, box, reload); return; }
   const total = list.reduce((sum, a) => sum + (a.weight || 0), 0);
-  const rows = list.flatMap((a, i) => {
-    const open = openSubs.has(a.id);
-    const toggle = () => { if (open) openSubs.delete(a.id); else openSubs.add(a.id); reload(); };
-    const main = h("tr", { class: `assign-row ${open ? "open-row" : ""}`, onclick: toggle, title: "누르면 제출 현황·채점" },
-      h("td", { class: "num" }, list.length - i),
-      h("td", {}, h("strong", {}, a.title)),
-      h("td", { class: "assign-desc-cell" }, a.description || "-"),
-      h("td", { class: "num" }, a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
-      h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
-      h("td", {}, a.due ? a.due.replaceAll("-", ".") : "없음",
-        h("div", { class: "muted", style: "font-size:0.78rem" }, a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중")));
-    if (!open) return [main];
-    const subsBox = h("div");
-    renderSubmissions(a, subsBox, reload);
-    const detail = h("tr", { class: "detail-row" }, h("td", { colspan: 6 },
-      h("div", { class: "row", style: "margin-bottom:8px" },
-        h("span", { class: "muted grow" }, `제출 ${a.submitted}/${data.students}명 · 채점 ${a.graded}명`),
-        h("button", { class: "small", onclick: () => assignmentDialog(c, a, reload) }, "고치기"),
-        h("a", { class: "button small", href: `/api/assignments/${a.id}/download.zip` }, "📥 모두 내려받기"),
-        h("button", { class: "small", onclick: async () => { await api(`/api/assignments/${a.id}`, { closed: !a.closed }); reload(); } },
-          a.closed ? "다시 받기" : "제출 마감"),
-        h("button", { class: "small danger", onclick: async () => {
-          if (!confirm(`'${a.title}' 평가를 지울까요? 학생들이 낸 파일과 점수도 모두 지워져요.`)) return;
-          await api(`/api/assignments/${a.id}/delete`, {});
-          reload();
-        } }, "지우기")),
-      subsBox));
-    return [main, detail];
-  });
+  const rows = list.map((a, i) => h("tr", { class: "assign-row", onclick: () => { viewAssign.set(c.id, a.id); reload(); }, title: "누르면 제출 현황·채점" },
+    h("td", { class: "num" }, list.length - i),
+    h("td", {}, h("strong", {}, a.title)),
+    h("td", { class: "assign-desc-cell" }, a.description || "-"),
+    h("td", { class: "num" }, a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
+    h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
+    h("td", {}, a.due ? a.due.replaceAll("-", ".") : "없음",
+      h("div", { class: "muted", style: "font-size:0.78rem" }, a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중"))));
   box.replaceChildren(
     h("div", { class: "row", style: "margin-bottom:8px" },
       list.length ? h("div", { class: "hub-grid-summary grow", style: "margin:0" }, `반영 비율 합계 ${fmtNum(total)}%`) : h("span", { class: "grow" }),
@@ -107,6 +89,37 @@ async function renderCourseAssignments(c, box) {
     h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
       h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "올린 평가가 없어요."))))));
+}
+
+/** 게시물 화면: 평가 한 건의 내용·관리 버튼·학생별 제출과 채점. [← 평가 목록]으로 돌아간다 */
+function renderAssignmentPost(c, a, data, box, reload) {
+  const back = () => { viewAssign.delete(c.id); reload(); };
+  const subsBox = h("div", {}, h("p", { class: "muted" }, "제출 현황을 불러오는 중…"));
+  const info = (label, value) => h("div", { class: "assign-info" }, h("span", {}, label), h("strong", {}, value));
+  box.replaceChildren(
+    h("div", { class: "row", style: "margin-bottom:10px" },
+      h("button", { class: "small", onclick: back }, "← 평가 목록"),
+      h("h3", { class: "grow", style: "margin:0" }, a.title),
+      h("button", { class: "small", onclick: () => assignmentDialog(c, a, reload) }, "고치기"),
+      h("a", { class: "button small", href: `/api/assignments/${a.id}/download.zip` }, "📥 모두 내려받기"),
+      h("button", { class: "small", onclick: async () => { await api(`/api/assignments/${a.id}`, { closed: !a.closed }); reload(); } },
+        a.closed ? "다시 받기" : "제출 마감"),
+      h("button", { class: "small danger", onclick: async () => {
+        if (!confirm(`'${a.title}' 평가를 지울까요? 학생들이 낸 파일과 점수도 모두 지워져요.`)) return;
+        await api(`/api/assignments/${a.id}/delete`, {});
+        back();
+      } }, "지우기")),
+    h("div", { class: "assign-post" },
+      h("div", { class: "assign-infos" },
+        info("반영 비율", a.weight === null || a.weight === undefined ? "-" : `${fmtNum(a.weight)}%`),
+        info("영역 만점", a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
+        info("마감일", a.due ? a.due.replaceAll("-", ".") : "없음"),
+        info("상태", a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중"),
+        info("제출·채점", `제출 ${a.submitted}/${data.students}명 · 채점 ${a.graded}명`)),
+      a.description ? h("div", { class: "assign-desc" }, a.description) : null),
+    h("h4", { style: "margin:14px 0 6px" }, "학생별 제출과 채점"),
+    subsBox);
+  renderSubmissions(a, subsBox, reload);
 }
 
 async function renderSubmissions(a, box, reload) {
