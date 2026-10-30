@@ -874,6 +874,41 @@ function classroomCourseStatus(c) {
   return ["approved", "수강 중"];
 }
 
+/* 내 강좌 > 강좌 정보: 두 항목씩 한 줄로 놓은 기본 정보 표 */
+function basicInfoTable(c) {
+  const dash = (v) => (v === null || v === undefined || v === "" ? "-" : v);
+  const n = c.sessions?.length || 0;
+  const time = c.class_days?.length ? `매주 ${c.class_days.map((d) => DAYS[d]).join("·")} ${c.class_start || ""}~${c.class_end || ""}` : "";
+  const pairs = [
+    ["학기", [c.school_year ? `${c.school_year}학년도` : "", c.term || ""].filter(Boolean).join(" "),
+      "대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", ")],
+    ["거점학교", c.hub_school, "선택과목 유형", c.custom_subject ? "고시외 과목" : c.subject_type],
+    ["교과(군)", c.subject_group, "과목명", c.subject || c.title],
+    ["강의 교사 소속 학교", c.instructor_school, "강의 교사 성명", c.instructor],
+    ["운영 학점(운영 시간)", c.credits ? `${c.credits}학점${c.hours ? ` (${c.hours}시간)` : ""}` : "", "수강 인원", c.capacity ? `${c.capacity}명` : "제한 없음"],
+    ["수업 시간(횟수)", [time, n ? `(${n}회)` : ""].filter(Boolean).join(" "),
+      "평가 방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : ""],
+    ["성취도", c.achievement_text, "등급", c.rank_grade],
+  ];
+  const period = c.start_date || c.end_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
+  return h("div", { class: "table-wrap" }, h("table", { class: "info-table" }, h("tbody", {},
+    ...pairs.map(([k1, v1, k2, v2]) => h("tr", {}, h("th", {}, k1), h("td", {}, dash(v1)), h("th", {}, k2), h("td", {}, dash(v2)))),
+    h("tr", {}, h("th", {}, "강의 기간"), h("td", { colspan: 3 }, dash(period), c.finished ? h("span", { class: "status rejected", style: "margin-left:8px" }, "기간 종료") : null)))));
+}
+
+/* 내 강좌 > 강좌 정보: 회차 정보 표 */
+function sessionTable(c) {
+  const s = c.sessions || [];
+  if (!s.length) return h("p", { class: "muted" }, "등록된 회차 정보가 없어요.");
+  return h("div", { class: "table-wrap" }, h("table", { class: "att session-board" },
+    h("thead", {}, h("tr", {}, ["회차", "날짜", "시간", "수업 주제"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, s.map((x) => h("tr", {},
+      h("td", { class: "num" }, `${x.no}회`),
+      h("td", { class: "num" }, `${fmtDate(x.date)} (${DAYS[dayOf(x.date)]})`),
+      h("td", { class: "num" }, x.start ? `${x.start}~${x.end || ""}` : "-"),
+      h("td", {}, x.topic || "-"))))));
+}
+
 let selectedStudentCourseId = null;
 let studentCourseTab = "info"; // 강좌 안의 탭: info(강좌 정보) notice(강좌 공지) learn(학습 활동) assess(수행평가)
 function openStudentCourse(c) {
@@ -886,12 +921,12 @@ function openStudentCourse(c) {
   const [state, label] = classroomCourseStatus(c);
   const approved = c.status === "approved";
   const materials = h("div", { class: "course-materials" });
-  // 강좌 정보: 과목 상세
+  // 강좌 정보: 기본 정보 표 + 회차 정보 표
   const info = h("div", { class: "sc-panel" },
-    h("section", {}, h("h3", {}, "📘 강좌 정보"), courseInfo(c), courseFacts(c),
-      c.description ? h("p", { style: "white-space:pre-wrap" }, c.description) : null,
+    h("section", {}, h("h3", {}, "기본 정보"), basicInfoTable(c),
       c.syllabus ? h("p", {}, h("a", { class: "button small", href: c.syllabus.url, target: "_blank", rel: "noopener" }, "📄 수업계획서 받기")) : null,
-      c.note ? h("p", { class: "error" }, `반려 사유: ${c.note}`) : null));
+      c.note ? h("p", { class: "error" }, `반려 사유: ${c.note}`) : null),
+    h("section", {}, h("h3", {}, "회차정보"), sessionTable(c)));
   // 강좌 공지: 게시판(연번·제목·작성자·작성일) → 누르면 글 보기
   const notice = h("div", { class: "sc-panel" });
   const notices = c.notices || [];
@@ -913,14 +948,12 @@ function openStudentCourse(c) {
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" }, `${no}번 · 작성자 ${n.author || "-"} · 작성일 ${day(n.date)}`),
       h("div", { class: "notice-body" }, n.body || "(내용 없음)")));
   noticeList();
-  // 학습 활동: 수업별 자료 + 채점 결과 + 지난 수업 질문답변
-  const learn = h("div", { class: "sc-panel" },
-    h("section", {}, h("h3", {}, "📚 수업별 자료"),
-      approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 자료를 볼 수 있어요.")));
+  // 학습 활동: 게시판(연번·강의 주제·강의일·학습 자료) → 강의 주제를 누르면 그 수업의 자료·결과·질문
+  const learn = h("div", { class: "sc-panel" }, approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 학습 활동을 볼 수 있어요."));
   // 수행평가(과제)
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
   const assess = h("div", { class: "sc-panel" }, noAssign);
-  for (const id of ["student-results", "student-questions"]) { const sec = $(`#${id}`); sec.hidden = true; learn.append(sec); }
+  for (const id of ["student-results", "student-questions"]) $(`#${id}`).hidden = true;
   { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
   const panels = { info, notice, learn, assess };
   const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"], ["assess", "수행평가"]];
@@ -938,8 +971,6 @@ function openStudentCourse(c) {
   if (approved) {
     loadCourseMaterials(c.id, materials);
     Promise.resolve(loadMyAssignments(c.id)).then(() => { noAssign.hidden = !$("#student-assignments").hidden; });
-    loadMyResults(c.id);
-    loadMyQuestions(c.id);
   } else noAssign.hidden = false;
   $("#student-course-detail").scrollIntoView({ block: "start" });
 }
@@ -950,15 +981,63 @@ $("#student-course-back").addEventListener("click", () => {
   $("#student-course-list").hidden = false;
 });
 
+/* 학습 활동 게시판: 이 강좌의 지난 수업마다 한 줄. 강의 주제를 누르면 그 수업의 학습 자료·퀴즈 결과·내 질문 */
 async function loadCourseMaterials(courseId, box) {
   box.replaceChildren(h("span", { class: "muted" }, "불러오는 중…"));
   try {
-    const { classes } = await api(`/api/materials?course_id=${courseId}`);
-    if (!classes.length) return box.replaceChildren(h("p", { class: "muted" }, "아직 볼 수 있는 지난 수업 자료가 없어요."));
-    box.replaceChildren(...classes.map((c) => h("a", { class: "person material-link", href: `/live/materials?class=${c.id}&from=courses` },
-      h("span", { class: "grow" }, h("strong", {}, c.title),
-        h("span", { class: "muted", style: "font-size:0.8rem" }, ` ${fmtDate(c.date)}`)),
-      h("span", { class: "muted", style: "font-size:0.85rem" }, [c.files ? `자료 ${c.files}개` : "", c.whiteboard ? "판서" : ""].filter(Boolean).join(" · ")))));
+    const [{ classes }, res, qs] = await Promise.all([
+      api(`/api/materials?course_id=${courseId}&all=1`),
+      api("/api/live/my-results").catch(() => ({ classes: [] })),
+      api("/api/live/my-questions").catch(() => ({ questions: [] }))]);
+    const results = new Map(res.classes.filter((r) => r.class_id).map((r) => [r.class_id, r]));
+    const questions = qs.questions.filter((q) => q.course_id === courseId);
+    const list = () => {
+      const rows = classes.map((c, i) => {
+        const mat = [c.files ? `📄 자료 ${c.files}개` : "", c.whiteboard ? "✏️ 판서" : ""].filter(Boolean).join(" · ");
+        return h("tr", { class: "assign-row", onclick: () => post(c, classes.length - i) },
+          h("td", { class: "num" }, classes.length - i),
+          h("td", {}, h("span", { class: "day-link" }, c.title || "(주제 없음)"), c.live ? h("span", { class: "tag", style: "margin-left:6px" }, "진행 중") : null),
+          h("td", { class: "num" }, fmtDate(c.date)),
+          h("td", { class: "num" }, mat || h("span", { class: "muted" }, "-")));
+      });
+      box.replaceChildren(h("div", { class: "table-wrap" }, h("table", { class: "att assign-board learn-board" },
+        h("thead", {}, h("tr", {}, ["연번", "강의 주제", "강의일", "학습 자료"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 4, class: "muted", style: "text-align:center;padding:18px" }, "아직 지난 수업이 없어요."))))));
+    };
+    const post = async (c, no) => {
+      const filesBox = h("div", {}, h("span", { class: "muted" }, "불러오는 중…"));
+      const r = results.get(c.id);
+      const myQ = questions.filter((q) => q.class_id === c.id);
+      box.replaceChildren(
+        h("div", { class: "row", style: "margin-bottom:10px" }, h("button", { class: "small", type: "button", onclick: list }, "← 학습 활동 목록")),
+        h("div", { class: "assign-post notice-post" },
+          h("h3", { style: "margin:0 0 6px" }, c.title || "(주제 없음)"),
+          h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" }, `${no}번 · 강의일 ${fmtDate(c.date)}`),
+          h("h4", { class: "learn-h" }, "📚 학습 자료"), filesBox,
+          h("h4", { class: "learn-h" }, "📝 퀴즈·활동 결과"),
+          r ? h("div", {}, h("p", { style: "margin:0 0 6px" }, h("strong", {}, `${fmtScore(r.score)} / ${fmtScore(r.max)}점`)),
+            ...r.items.map((it) => h("div", { class: "q" },
+              h("div", { class: "meta" }, `${it.no}. ${it.kind} · ${fmtScore(it.score)} / ${fmtScore(it.points)}점`),
+              h("div", {}, it.prompt),
+              h("div", {}, h("span", { class: "muted" }, "내 답: "), it.answer || "(답하지 않음)"),
+              it.correct_answer ? h("div", {}, h("span", { class: "muted" }, "정답: "), it.correct_answer) : null,
+              it.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${it.feedback}`) : null)))
+            : h("p", { class: "muted" }, "공개된 결과가 없어요."),
+          h("h4", { class: "learn-h" }, "💬 내 질문과 답변"),
+          myQ.length ? h("div", {}, ...myQ.map((q) => qaItem(q, `${q.time.slice(0, 5)}`))) : h("p", { class: "muted" }, "이 수업에서 한 질문이 없어요.")));
+      try {
+        const d = await api(`/api/materials/class/${c.id}`);
+        const items = d.files.map((f) => h("div", { class: "row learn-file" },
+          h("span", { class: "grow" }, `📄 ${f.name}`, f.pages ? h("span", { class: "muted" }, ` (${f.pages}쪽)`) : null),
+          h("a", { class: "button small", href: `/api/materials/file/${f.id}`, download: f.name }, "받기")));
+        const removed = (d.removed || []).map((f) => h("p", { class: "muted", style: "margin:2px 0" }, `🗑 ${f.name} (보관 기간이 지나 파기됨)`));
+        filesBox.replaceChildren(...[
+          ...(items.length || removed.length || d.board_pages ? [...items, ...removed] : [h("p", { class: "muted" }, "이 수업에서 공유한 자료가 없어요.")]),
+          d.files.length || d.board_pages ? h("p", { style: "margin:8px 0 0" }, h("a", { class: "button small", href: `/live/materials?class=${c.id}&from=courses` },
+            d.board_pages ? "📖 자료·판서 화면으로 보기" : "📖 자료 화면으로 보기")) : null].filter(Boolean));
+      } catch (err) { filesBox.replaceChildren(h("p", { class: "muted" }, err.message)); }
+    };
+    list();
   } catch (err) { box.textContent = err.message; }
 }
 

@@ -791,7 +791,7 @@ async def my_learning_courses(request: Request):
                 return [], mine, {}, {}
             co = db.courses.c
             rows = c.execute(
-                select(db.courses, db.users.c.name.label("teacher_name"))
+                select(db.courses, db.users.c.name.label("teacher_name"), db.users.c.school.label("teacher_school"))
                 .join(db.users, db.users.c.id == co.teacher_id)
                 .where(co.id.in_(list(mine)))
                 .order_by(co.created_at.desc())).all()
@@ -800,7 +800,7 @@ async def my_learning_courses(request: Request):
 
     rows, mine, sessions, notices = await db.run(run)
     return {"courses": [{**course_row(r), "instructor": r.instructor or r.teacher_name,
-                         "status": mine[r.id][0], "note": mine[r.id][1] if mine[r.id][0] == "rejected" else "",
+                         "instructor_school": r.teacher_school or "", "status": mine[r.id][0], "note": mine[r.id][1] if mine[r.id][0] == "rejected" else "",
                          "sessions": sessions.get(r.id, []), "notices": notices.get(r.id, [])}
                         for r in rows]}
 

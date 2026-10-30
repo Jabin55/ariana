@@ -1621,3 +1621,22 @@ table.att.notice-board th:nth-child(3) { width: 16%; }
 table.att.notice-board th:nth-child(4) { width: 18%; }
 table.att.notice-board th { text-align: center; }
 .notice-post .notice-body { white-space: pre-wrap; line-height: 1.6; border-top: 1px solid var(--border); padding-top: 10px; }
+/* 내 강좌 > 학습 활동 게시판 */
+table.att.learn-board th:nth-child(1) { width: 8%; }
+table.att.learn-board th:nth-child(2) { width: 50%; text-align: left; }
+table.att.learn-board th:nth-child(3) { width: 16%; }
+table.att.learn-board th:nth-child(4) { width: 26%; }
+table.att.learn-board th { text-align: center; }
+.notice-post .learn-h { margin: 14px 0 6px; font-size: 0.98rem; border-top: 1px solid var(--border); padding-top: 10px; }
+.learn-file { padding: 4px 0; }
+/* 내 강좌 > 강좌 정보: 기본 정보 표 · 회차 정보 표 */
+table.info-table { width: 100%; border-collapse: collapse; background: #ffffff; font-size: 0.92rem; }
+table.info-table th, table.info-table td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+table.info-table th { background: var(--surface-2); width: 18%; white-space: nowrap; font-weight: 600; color: var(--text); }
+table.info-table td { width: 32%; }
+table.att.session-board th:nth-child(1) { width: 10%; }
+table.att.session-board th:nth-child(2) { width: 20%; }
+table.att.session-board th:nth-child(3) { width: 18%; }
+table.att.session-board th { text-align: center; }
+table.att.session-board td.num { text-align: center; white-space: nowrap; }
+table.att.session-board td:last-child { min-width: 0; }

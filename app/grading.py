@@ -237,7 +237,7 @@ def _my_results(user_id: int) -> list[dict]:
                           "correct_answer": a["correct_answer"], "score": r["score"], "points": a["points"],
                           "feedback": r["feedback"]})
         if items:
-            out.append({"course_id": cls.course_id, "title": cls.title, "date": datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d"),
+            out.append({"class_id": cls.id, "course_id": cls.course_id, "title": cls.title, "date": datetime.fromtimestamp(cls.created_at, KST).strftime("%Y-%m-%d"),
                         "score": round(total, 2), "max": round(maxi, 2), "items": items})
     return out
 

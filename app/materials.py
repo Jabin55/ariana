@@ -60,15 +60,18 @@ def _class_info(r, titles: dict) -> dict:
 
 
 @router.get("/api/materials")
-async def list_materials(request: Request, course_id: int | None = None):
-    """자료나 판서가 남아 있는 지난 수업 목록 (최근 것부터)"""
+async def list_materials(request: Request, course_id: int | None = None, all: bool = False):
+    """자료나 판서가 남아 있는 지난 수업 목록 (최근 것부터). all=1 이면 그 강좌의 자료 없는 수업까지"""
     u = await require_user(request)
 
     def run():
         with db.engine.connect() as c:
             with_files = set(c.execute(select(db.materials.c.class_id)).scalars())  # 파기한 자료도 기록은 보인다
             with_boards = set(c.execute(select(db.boards.c.class_id)).scalars())
-            ids = _allowed_class_ids(c, u, sorted(with_files | with_boards))
+            pool = with_files | with_boards
+            if all and course_id is not None:
+                pool |= set(c.execute(select(db.classes.c.id).where(db.classes.c.course_id == course_id)).scalars())
+            ids = _allowed_class_ids(c, u, sorted(pool))
             if not ids:
                 return []
             q = select(db.classes).where(db.classes.c.id.in_(ids))

@@ -507,7 +507,7 @@ def _questions(class_id: int, user_id: int | None = None) -> list[dict]:
         m = r._mapping
         out.append({
             "student_no": student_no(m), "name": m["name"] or m["google_name"], "school": m["school"] or "",
-            "class_title": m["title"], "class_code": m["code"], "course_id": m["course_id"],
+            "class_id": m["class_id"], "class_title": m["title"], "class_code": m["code"], "course_id": m["course_id"],
             "date": datetime.fromtimestamp(m["class_created"], KST).strftime("%Y-%m-%d"),
             "time": kst(m["created_at"]), "text": m["text"], "reply": m["reply"] or "",
             "reply_time": kst(m["replied_at"]), "done": bool(m["done"]),
@@ -540,7 +540,7 @@ async def my_questions(request: Request):
     """학생: 지난 수업들에서 선생님께 한 질문과 받은 답변"""
     u = await require_user(request, "student")
     qs = await db.run(_questions, 0, u["id"])
-    return {"questions": [{k: q[k] for k in ("class_title", "course_id", "date", "time", "text", "reply", "reply_time")}
+    return {"questions": [{k: q[k] for k in ("class_id", "class_title", "course_id", "date", "time", "text", "reply", "reply_time")}
                           for q in reversed(qs[-100:])]}
 
 
