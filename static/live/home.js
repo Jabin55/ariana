@@ -834,16 +834,32 @@ async function loadCourses() {
     const box = $("#my-courses");
     if (!courses.length) return box.replaceChildren(h("p", { class: "muted" }, "신청한 강좌가 없어요."),
       h("a", { href: "/live/courses" }, "수강신청으로 이동"));
-    box.replaceChildren(h("table", { class: "classroom-course-board" },
-      h("thead", {}, h("tr", {}, ["번호", "신청 학기", "강좌명", "거점학교", "강의교사", "상태"].map((x) => h("th", {}, x)))),
-      h("tbody", {}, courses.map((c, i) => {
-        const [state, label] = classroomCourseStatus(c);
-        return h("tr", {}, h("td", {}, String(courses.length - i)),
-          h("td", {}, [c.school_year ? `${c.school_year}학년도` : "", c.term || ""].filter(Boolean).join(" ") || "-"),
-          h("td", {}, h("button", { class: "link-btn classroom-course-open", onclick: () => openStudentCourse(c) }, c.title)),
-          h("td", {}, c.hub_school || "-"), h("td", {}, c.instructor || "-"),
-          h("td", {}, h("span", { class: `status ${state}` }, label)));
-      }))));
+    // 수강신청 화면의 강좌 카드와 같은 모양 (카드를 누르면 강좌 안으로)
+    box.classList.add("catalog");
+    box.classList.remove("table-wrap");
+    box.replaceChildren(...courses.map((c) => {
+      const [state, label] = classroomCourseStatus(c);
+      const grades = (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`);
+      const facts = [
+        ["학기", [c.school_year ? `${c.school_year}학년도` : "", c.term || ""].filter(Boolean).join(" ") || "-"],
+        ["학점", c.credits ? `${c.credits}학점` : "-"],
+        ["거점학교", c.hub_school || "-"],
+        ["강의교사", c.instructor || "-"],
+        ["성취도", c.achievement_text || "-"],
+        ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
+      ];
+      const thumb = h("div");
+      thumb.innerHTML = window.courseThumb ? window.courseThumb(c) : "";
+      return h("article", { class: "course-tile with-thumb clickable", title: "눌러서 강좌 들어가기", onclick: (e) => { if (!e.target.closest("button, a")) openStudentCourse(c); } },
+        ...thumb.childNodes,
+        h("div", { class: "ct-body" },
+          h("div", { class: "ct-top" }, grades.map((g) => h("span", { class: "tag soft" }, g))),
+          h("h3", {}, c.title),
+          h("dl", { class: "facts" }, facts.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])),
+          h("p", { class: `status ${state}` }, label, c.status === "rejected" && c.note ? ` · ${c.note}` : ""),
+          h("div", { class: "row", style: "margin-top:10px" },
+            h("button", { class: `small ${c.status === "approved" ? "primary" : ""}`, onclick: () => openStudentCourse(c) }, "강좌 들어가기"))));
+    }));
   } catch (err) {
     $("#my-courses").textContent = err.message;
   }
