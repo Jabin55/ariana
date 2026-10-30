@@ -14,7 +14,8 @@ import asyncio
 import logging
 import re
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, delete, or_, select, update
 
@@ -22,6 +23,7 @@ from app import db
 from app.wipe import wipe
 
 KEEP_DAYS = 365  # 판서·화이트보드, 과제 제출 파일
+SCORE_CONFIRMATION_KEEP_DAYS = 1825  # 학생 서명 점수 확인서: 과목 종료 뒤 최대 5년
 MATERIAL_KEEP_DAYS = 0  # 과목 수업의 발표 자료(PDF): 과목이 끝나면 바로
 log = logging.getLogger(__name__)
 _MEDIABOX = re.compile(rb"/MediaBox\s*\[\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\]")
@@ -51,12 +53,13 @@ def _mark_deleted(c, class_id: int, fid: str) -> None:
 
 def purge_expired_files(today: date | None = None) -> dict:
     from app.assignments import file_path
+    from app.score_confirmations import confirmation_path
     from app.classroom import SLIDES_DIR
 
     today = today or date.today()
     cutoff = (today - timedelta(days=KEEP_DAYS)).isoformat()  # 이 날보다 먼저 끝난 과목
     co, cl, m = db.courses.c, db.classes.c, db.materials.c
-    removed_materials, removed_files = [], []
+    removed_materials, removed_files, removed_confirmations = [], [], []
     with db.engine.begin() as c:
         done = [r.id for r in c.execute(select(co.id).where(co.end_date != "", co.end_date < cutoff))]
         mat_cutoff = (today - timedelta(days=MATERIAL_KEEP_DAYS)).isoformat()
@@ -82,11 +85,22 @@ def purge_expired_files(today: date | None = None) -> dict:
                          .where(a.course_id.in_(done or [-1]))).all()
         c.execute(delete(db.submission_files).where(f.id.in_([r.id for r in rows] or ["-"])))
         removed_files = [(r.assignment_id, r.id) for r in rows]
+        score_cutoff = (today - timedelta(days=SCORE_CONFIRMATION_KEEP_DAYS)).isoformat()
+        sc = db.score_confirmations.c
+        score_cutoff_ts = datetime.fromisoformat(score_cutoff).replace(tzinfo=ZoneInfo("Asia/Seoul")).timestamp()
+        removed_confirmations = c.execute(select(sc.id, sc.course_id, sc.user_id)
+            .join(db.courses, co.id == sc.course_id)
+            .where(or_(and_(co.end_date != "", co.end_date < score_cutoff),
+                       and_(co.end_date == "", sc.signed_at < score_cutoff_ts)))).all()
+        c.execute(delete(db.score_confirmations).where(sc.id.in_([r.id for r in removed_confirmations] or ["-"])))
     for class_id, fid in removed_materials:
         wipe(SLIDES_DIR / str(class_id) / f"{fid}.pdf")
     for assignment_id, fid in removed_files:
         wipe(file_path(assignment_id, fid))
-    return {"materials": len(removed_materials), "submission_files": len(removed_files)}
+    for r in removed_confirmations:
+        wipe(confirmation_path(r.course_id, r.user_id, r.id))
+    return {"materials": len(removed_materials), "submission_files": len(removed_files),
+            "score_confirmations": len(removed_confirmations)}
 
 
 def purge_meeting(class_id: int) -> int:
@@ -113,8 +127,8 @@ async def file_retention_loop():
                 log.info("보관 기간(365일)이 지난 접속기록 삭제: %d건", old_logs)
             result = await db.run(purge_expired_files)
             if any(result.values()):
-                log.info("보관 기간이 지난 파일 삭제: 수업 자료 %d개, 과제 파일 %d개",
-                         result["materials"], result["submission_files"])
+                log.info("보관 기간이 지난 파일 삭제: 수업 자료 %d개, 과제 파일 %d개, 점수 확인서 %d개",
+                         result["materials"], result["submission_files"], result["score_confirmations"])
         except Exception:
             log.exception("수업 자료·과제 파일 자동 삭제 실패: 운영자 확인 필요")
         await asyncio.sleep(6 * 3600)

@@ -1183,13 +1183,13 @@ def test_policy_pages(monkeypatch):
     assert "다른 법령이 해당 개인정보를 수집 대상으로 명시한 경우" in p
     assert "수업 자료라는 이유만으로 요청을 일괄 제한하지 않으며" in p
     assert "백업 생성일부터 14일이 지난 사본은 다음 자동 백업 작업에서 삭제" in p
-    assert "시행일 최소 7일 전에" in p and "탈퇴 승인일부터 최대 365일" in p and "복구할 수 없도록" in p
+    assert "시행일 최소 7일 전에" in p and "탈퇴 승인일부터 최대 1,825일" in p and "복구할 수 없도록" in p
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert "Anthropic" in c.get("/live/privacy").text and "AI 조교" in c.get("/live/terms").text
     assert c.get("/api/me").json()["policy_ready"] is True
-    n = c.get("/live/notice").text  # 보호자 안내문: 만 14세 이상 본인 동의라 서명 양식이 없다
+    n = c.get("/live/notice").text  # 보호자 안내문: 만 14세 이상 본인 동의라 보호자 서명 양식이 없다
     assert "가나고등학교&lt;script&gt;" in n and "제22조의2" in n
-    assert "서명" not in n and "국외 이전 동의서" not in n
+    assert "보호자 서명" not in n and "국외 이전 동의서" not in n
     # 강사 신청서의 동의는 이용약관 확인으로도 기록된다
     g = TestClient(app)
     google_login(g, "guest@gmail.com")
@@ -1359,7 +1359,9 @@ def test_signup_choice_schools_and_grades(monkeypatch):
 def test_withdraw(monkeypatch, tmp_path):
     """학생 탈퇴는 그 학생 소속 학교의 참여학교 교사(없으면 전체 관리자)가 승인한다"""
     import app.assignments as asg
+    import app.score_confirmations as sc
     monkeypatch.setattr(asg, "FILES_DIR", tmp_path)
+    monkeypatch.setattr(sc, "FILES_DIR", tmp_path)
     monkeypatch.delenv("EVIDENCE_RETENTION_DAYS", raising=False)
     monkeypatch.delenv("EVIDENCE_RETENTION_BASIS", raising=False)
     monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
@@ -1393,6 +1395,19 @@ def test_withdraw(monkeypatch, tmp_path):
     aid = t.post(f"/api/courses/{cid}/assignments", json={"title": "보고서"}).json()["id"]
     a.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF a", headers={"Content-Type": "application/pdf"})
     b.post(f"/api/assignments/{aid}/files?name=r.pdf", content=b"%PDF b", headers={"Content-Type": "application/pdf"})
+    # 학생이 서명한 점수 확인서도 탈퇴할 때 분리 증빙으로 옮겨진다.
+    t.post(f"/api/assignments/{aid}/grade", json={"user_id": a.get("/api/me").json()["user"]["id"], "score": 89})
+    from PIL import Image, ImageDraw
+    image = Image.new("RGB", (520, 170), "white")
+    ImageDraw.Draw(image).line([(20, 100), (100, 50)], fill="black", width=4)
+    import io
+    png = io.BytesIO()
+    image.save(png, "PNG")
+    detail = a.get(f"/api/my/courses/{cid}/score-confirmation").json()
+    a.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": "data:image/png;base64," + base64.b64encode(png.getvalue()).decode(),
+        "snapshot_hash": detail["snapshot_hash"]})
+    signed_pdf = a.get(f"/api/my/courses/{cid}/score-confirmation/file").content
     # 참여학교 교사는 우리 학교 학생과 수강 강좌를 본다
     ov = p1.get("/api/school/overview").json()
     assert [(x["student_no"], [c["title"] for c in x["courses"]]) for x in ov["students"]] == [("20301", ["강좌"]), ("20302", ["강좌"])]
@@ -1432,6 +1447,7 @@ def test_withdraw(monkeypatch, tmp_path):
     subs = t.get(f"/api/assignments/{aid}/submissions").json()["submissions"]
     assert [s["student_no"] for s in subs] == ["20302"] and subs[0]["submitted"]
     assert len(list((tmp_path / "assignments" / str(aid)).iterdir())) == 1
+    assert not list((tmp_path / "score-confirmations" / str(cid) / str(q[0]["user_id"])).glob("*.enc"))
     assert google_login(TestClient(app), "st1@s.school.kr").status_code == 403
     params = {"purpose": "record_check"}
     assert p1.get("/live/evidence").status_code == 200
@@ -1439,17 +1455,20 @@ def test_withdraw(monkeypatch, tmp_path):
     assert a.get("/live/evidence").status_code == 401
     assert p1.get("/api/evidence").status_code == 422
     listing = p1.get("/api/evidence", params=params)
-    assert listing.status_code == 200 and listing.json()["policy"]["days"] == 365
+    assert listing.status_code == 200 and listing.json()["policy"]["days"] == 1825
     assert [x["id"] for x in listing.json()["archives"]] == [evidence_id]
     assert p2.get("/api/evidence", params=params).json()["archives"] == []
     assert p2.get(f"/api/evidence/{evidence_id}", params=params).status_code == 404
     record = p1.get(f"/api/evidence/{evidence_id}", params=params).json()["record"]
     assert record["subject"]["student_no"] == "20301"
     assert len(record["submissions"]) == len(record["files"]) == 1
+    assert len(record["score_confirmations"]) == 1
     import io
     import zipfile
     with zipfile.ZipFile(io.BytesIO(p1.get(f"/api/evidence/{evidence_id}/download.zip", params=params).content)) as archive:
         assert archive.read(f"files/{record['files'][0]['evidence_file_id']}") == b"%PDF a"
+        score_record = record["score_confirmations"][0]
+        assert archive.read(f"score-confirmations/{cid}_{score_record['id']}.pdf") == signed_pdf
     from sqlalchemy import select
     with db.engine.connect() as conn:
         encrypted = conn.execute(select(db.evidence_archives.c.payload).where(db.evidence_archives.c.id == evidence_id)).scalar_one()
@@ -2158,12 +2177,12 @@ def test_student_signup_rejects_under_fourteen_and_school_mismatch():
                                "contact": "010", "pledge": True, "birth": "2015-01-01"}).status_code == 403
 
 
-def test_evidence_retention_never_exceeds_one_year(monkeypatch):
+def test_evidence_retention_never_exceeds_five_years(monkeypatch):
     from app.evidence import retention_policy
     monkeypatch.delenv("EVIDENCE_RETENTION_DAYS", raising=False)
-    assert retention_policy()[0] == 365
+    assert retention_policy()[0] == 1825
     monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "3000")
-    assert retention_policy()[0] == 365
+    assert retention_policy()[0] == 1825
     monkeypatch.setenv("EVIDENCE_RETENTION_DAYS", "90")
     assert retention_policy()[0] == 90
 
@@ -2482,11 +2501,13 @@ def test_admin_fixes_names(monkeypatch):
 def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
     """수업 자료(PDF) 파일은 과목이 끝나면 바로, 판서와 과제 제출 파일은 1년이 지나면 지운다 (점수·피드백은 남는다)"""
     import app.assignments as asg
+    import app.score_confirmations as sc
     from datetime import date
     from app import classroom as cr_mod
     from app.file_retention import purge_expired_files
     from sqlalchemy import select
     monkeypatch.setattr(asg, "FILES_DIR", tmp_path / "files")
+    monkeypatch.setattr(sc, "FILES_DIR", tmp_path / "files")
     monkeypatch.setattr(cr_mod, "SLIDES_DIR", tmp_path / "slides")
     now = time.time()
     with db.engine.begin() as c:
@@ -2507,25 +2528,44 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
             c.execute(db.submission_files.insert().values(id=f"f{name}", submission_id=sid, name="r.hwp", size=1,
                       created_at=now))
             ids[name] = (cls, aid)
+        c.execute(db.score_confirmations.insert().values(id="oldscore", course_id=old,
+                  user_id=9, snapshot_hash="a" * 64, signed_at=now))
+        undated = c.execute(db.courses.insert().values(teacher_id=1, title="종료일 없는 과목",
+                    instructor="t", start_date="2024-03-01", end_date="", open=1,
+                    archived=0, created_at=now)).inserted_primary_key[0]
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        c.execute(db.score_confirmations.insert().values(id="undatedscore", course_id=undated,
+                  user_id=9, snapshot_hash="b" * 64,
+                  signed_at=datetime(2024, 7, 20, tzinfo=ZoneInfo("Asia/Seoul")).timestamp()))
+    score_path = sc.confirmation_path(old, 9, "oldscore")
+    score_path.parent.mkdir(parents=True, exist_ok=True)
+    score_path.write_bytes(b"encrypted confirmation")
+    undated_path = sc.confirmation_path(undated, 9, "undatedscore")
+    undated_path.parent.mkdir(parents=True, exist_ok=True)
+    undated_path.write_bytes(b"encrypted confirmation")
     for name, (cls, aid) in ids.items():
         (tmp_path / "slides" / str(cls)).mkdir(parents=True)
         (tmp_path / "slides" / str(cls) / f"m{name}.pdf").write_bytes(b"pdf")
         asg.file_path(aid, f"f{name}").parent.mkdir(parents=True, exist_ok=True)
         asg.file_path(aid, f"f{name}").write_bytes(b"hwp")
     # 과목 마지막 날까지는 그대로 → 다음 날 PDF·판서 삭제 → 1년 뒤 과제 파일 삭제
-    assert purge_expired_files(date(2024, 7, 20)) == {"materials": 0, "submission_files": 0}
-    assert purge_expired_files(date(2024, 7, 21)) == {"materials": 1, "submission_files": 0}
+    assert purge_expired_files(date(2024, 7, 20)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0}
+    assert purge_expired_files(date(2024, 7, 21)) == {"materials": 1, "submission_files": 0, "score_confirmations": 0}
     assert asg.file_path(ids["old"][1], "fold").exists()
     with db.engine.connect() as c:
         assert sorted(r.key for r in c.execute(select(db.boards))) == ["mnew:1", "mold:1"]  # 판서는 남는다
-    assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0}
-    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1}
+    assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0}
+    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1, "score_confirmations": 0}
+    assert score_path.is_file()
     assert not (tmp_path / "slides" / str(ids["old"][0]) / "mold.pdf").exists()
     assert not asg.file_path(ids["old"][1], "fold").exists()
     assert (tmp_path / "slides" / str(ids["new"][0]) / "mnew.pdf").exists() and asg.file_path(ids["new"][1], "fnew").exists()
     with db.engine.connect() as c:
         assert [r.key for r in c.execute(select(db.boards))] == ["mnew:1"]
         assert c.execute(select(db.submissions.c.score)).scalars().all() == [90, 90]  # 점수는 남는다
+    assert purge_expired_files(date(2029, 7, 21))["score_confirmations"] == 2
+    assert not score_path.exists() and not undated_path.exists()
 
 
 def test_remember_me_controls_login_cookie(monkeypatch):
@@ -3081,6 +3121,61 @@ def test_assignment_weight_and_max_score(monkeypatch, tmp_path):
     assert t.post(f"/api/assignments/{aid}", json={"weight": 25, "max_score": 40}).status_code == 200
     row = t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]
     assert (row["weight"], row["max_score"]) == (25, 40)
+
+
+def test_signed_score_confirmation(monkeypatch, tmp_path):
+    """채점→학생 서명→교사 다운로드, 타인 차단, 성적 변경 시 재서명."""
+    import io
+    import app.score_confirmations as sc
+    from PIL import Image, ImageDraw
+
+    monkeypatch.setattr(sc, "FILES_DIR", tmp_path)
+    t, other_teacher = teacher(), teacher("other@gmail.com")
+    a, other_student = student(1), student(2)
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a.post(f"/api/courses/{cid}/enroll")
+    other_student.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    aid = t.post(f"/api/courses/{cid}/assignments", json={
+        "title": "경제 뉴스 분석", "description": "뉴스를 읽고 원인과 대안을 발표", "weight": 50, "max_score": 50}).json()["id"]
+    uid = a.get("/api/me").json()["user"]["id"]
+    assert t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 43, "feedback": "근거가 명확해요"}).status_code == 200
+    detail = a.get(f"/api/my/courses/{cid}/score-confirmation").json()
+    assert detail["has_scores"] and detail["items"][0]["score"] == 43
+    assert a.get(f"/api/my/courses/{cid}/score-confirmation/draft").content.startswith(b"%PDF-")
+
+    im = Image.new("RGB", (520, 170), "white")
+    blank = io.BytesIO()
+    im.save(blank, "PNG")
+    assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": "data:image/png;base64," + base64.b64encode(blank.getvalue()).decode(),
+        "snapshot_hash": detail["snapshot_hash"]}).status_code == 400
+    ImageDraw.Draw(im).line([(30, 110), (85, 70), (145, 100)], fill="black", width=4)
+    raw = io.BytesIO()
+    im.save(raw, "PNG")
+    signature = "data:image/png;base64," + base64.b64encode(raw.getvalue()).decode()
+    assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": signature, "snapshot_hash": detail["snapshot_hash"]}).status_code == 200
+    signed = a.get(f"/api/my/courses/{cid}/score-confirmation/file")
+    assert signed.status_code == 200 and signed.content.startswith(b"%PDF-")
+    assert len(signed.content) > 5000
+    stored = next((tmp_path / "score-confirmations" / str(cid) / str(uid)).iterdir())
+    assert not stored.read_bytes().startswith(b"%PDF-")  # 서버 디스크에는 암호문만 저장
+    roster = t.get(f"/api/courses/{cid}/score-confirmations").json()["confirmations"]
+    assert next(x for x in roster if x["user_id"] == uid)["signed"]
+    assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").content == signed.content
+    assert other_student.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 404
+    assert other_teacher.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
+
+    t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 44, "feedback": "수정됨"})
+    assert a.get(f"/api/my/courses/{cid}/score-confirmation").json()["needs_resign"]
+    assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
+    assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": signature, "snapshot_hash": detail["snapshot_hash"]}).status_code == 409
+    updated = a.get(f"/api/my/courses/{cid}/score-confirmation").json()
+    assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": signature, "snapshot_hash": updated["snapshot_hash"]}).status_code == 200
+    assert a.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 200
 
 
 def test_course_detail_page_public_info():

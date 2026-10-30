@@ -51,6 +51,8 @@ _RULES = [
     ("GET", r"/api/assignments/(?P<assignment>\d+)/submissions", "조회", "과제 제출물"),
     ("POST", r"/api/assignments/(?P<assignment>\d+)/grade", "수정", "과제 채점"),
     ("GET", r"/api/assignments/(?P<assignment>\d+)/download\.zip", "다운로드", "과제 제출 파일 전체"),
+    ("GET", r"/api/courses/(?P<course>\d+)/score-confirmations", "조회", "수행평가 점수 확인서 목록"),
+    ("GET", r"/api/courses/(?P<course>\d+)/score-confirmations/(?P<user>\d+)/file", "다운로드", "수행평가 점수 확인서"),
     ("GET", r"/api/submission-files/\d+", "다운로드", "과제 제출 파일"),
     ("GET", r"/api/evidence/(?P<archive>\d+)", "조회", "수업 증빙 보관함"),
     ("GET", r"/api/evidence/(?P<archive>\d+)/download\.zip", "다운로드", "수업 증빙 보관함"),

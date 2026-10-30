@@ -8,3 +8,5 @@ google-auth>=2.30
 requests>=2.31
 itsdangerous>=2.1
 cryptography>=46
+reportlab>=4.4
+Pillow>=11

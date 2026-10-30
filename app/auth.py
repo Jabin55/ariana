@@ -700,6 +700,7 @@ class Withdraw(BaseModel):
 def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
     """활성 표에서 제거한다. 학생은 암호화 증빙을 만든 트랜잭션 안에서만 호출한다."""
     from app.assignments import file_path  # 순환 import 를 피한다
+    from app.score_confirmations import confirmation_path
 
     photo = c.execute(select(db.users.c.photo).where(db.users.c.id == uid)).scalar() or ""
     for a in c.execute(select(db.activities.c.id, db.activities.c.responses)).all():
@@ -713,6 +714,8 @@ def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
     files = c.execute(select(db.submission_files.c.id, db.submission_files.c.submission_id)
                       .where(db.submission_files.c.submission_id.in_([s.id for s in subs] or [-1]))).all()
     aid_of = {s.id: s.assignment_id for s in subs}
+    confirmations = c.execute(select(db.score_confirmations).where(db.score_confirmations.c.user_id == uid)).all()
+    c.execute(delete(db.score_confirmations).where(db.score_confirmations.c.user_id == uid))
     c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(list(aid_of) or [-1])))
     c.execute(delete(db.submissions).where(db.submissions.c.user_id == uid))
     # 희망과목 신청 글과 공감은 통계용으로 남기고, 누가 썼는지·누가 공감했는지만 알 수 없게 한다
@@ -742,6 +745,7 @@ def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
     else:
         c.execute(delete(db.users).where(db.users.c.id == uid))
     paths = [file_path(aid_of[f.submission_id], f.id) for f in files]
+    paths += [confirmation_path(r.course_id, uid, r.id) for r in confirmations]
     if photo:
         paths.append(photo_dir() / photo)
     return paths

@@ -88,7 +88,27 @@ async function renderCourseAssignments(c, box) {
       h("button", { class: "primary", onclick: () => assignmentDialog(c, null, reload) }, "평가 올리기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
       h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
-      h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "올린 평가가 없어요."))))));
+      h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "올린 평가가 없어요."))))),
+    h("h3", { style: "margin:24px 0 10px" }, "점수 확인서"),
+    h("div", { class: "table-wrap", id: `score-confirmations-${c.id}` }, h("p", { class: "muted" }, "확인서를 불러오는 중…")));
+  loadTeacherConfirmations(c.id, box.querySelector(`#score-confirmations-${c.id}`));
+}
+
+async function loadTeacherConfirmations(courseId, box) {
+  try {
+    const { confirmations } = await api(`/api/courses/${courseId}/score-confirmations`);
+    const rows = confirmations.map((item) => h("tr", {},
+      h("td", { class: "num" }, item.number),
+      h("td", { class: "center" }, item.school || "-"),
+      h("td", { class: "center" }, item.student_no || "-"),
+      h("td", { class: "center" }, item.name),
+      h("td", { class: "center" }, item.signed
+        ? h("a", { href: `/api/courses/${courseId}/score-confirmations/${item.user_id}/file`, class: "button small" }, "PDF 내려받기")
+        : item.needs_resign ? "점수 변경 · 재서명 대기" : "서명 대기")));
+    box.replaceChildren(h("table", { class: "att grade-table" },
+      h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "확인서(파일)"].map((x) => h("th", {}, x)))),
+      h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 5, class: "muted", style: "text-align:center;padding:18px" }, "수강 확정된 학생이 없어요.")))));
+  } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); }
 }
 
 /** 게시물 화면: 평가 한 건의 내용·관리 버튼·학생별 제출과 채점. [← 평가 목록]으로 돌아간다 */
@@ -237,7 +257,67 @@ async function loadMyAssignments(courseId = activeStudentCourseId) {
         h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
         h("td", { class: "num" }, a.due ? a.due.replaceAll("-", ".") : "없음"),
         h("td", { class: "num" }, scored ? h("strong", { class: "my-score" }, `${fmtNum(a.mine.score)}점`) : h("span", { class: "muted" }, "평가 중")));
-    })))));
+    })))),
+    h("h3", { style: "margin:24px 0 10px" }, "평가 확인"),
+    h("div", { id: `my-score-confirmation-${courseId}` }, h("p", { class: "muted" }, "점수를 불러오는 중…")));
+  loadMyScoreConfirmation(courseId, box.querySelector(`#my-score-confirmation-${courseId}`));
+}
+
+async function loadMyScoreConfirmation(courseId, box) {
+  try {
+    const data = await api(`/api/my/courses/${courseId}/score-confirmation`);
+    if (!data.has_scores) {
+      box.replaceChildren(h("p", { class: "muted" }, "선생님이 점수를 입력하면 여기에서 확인하고 서명할 수 있어요."));
+      return;
+    }
+    const rows = data.items.map((item, i) => h("tr", {},
+      h("td", { class: "num" }, i + 1),
+      h("td", {}, item.title),
+      h("td", {}, item.description || "-"),
+      h("td", { class: "num" }, item.weight == null ? "-" : `${fmtNum(item.weight)}%`),
+      h("td", { class: "num" }, item.max_score == null ? "-" : `${fmtNum(item.max_score)}점`),
+      h("td", { class: "num" }, item.score === null ? "미채점" : `${fmtNum(item.score)}점`),
+      h("td", {}, item.feedback || "-")));
+    const table = h("div", { class: "table-wrap" }, h("table", { class: "att grade-table" },
+      h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "내 점수", "피드백"].map((x) => h("th", {}, x)))),
+      h("tbody", {}, rows)));
+    const download = h("a", { class: "button small", href: `/api/my/courses/${courseId}/score-confirmation/${data.signed ? "file" : "draft"}`, target: "_blank" },
+      data.signed ? "서명한 확인서 보기" : "확인서 미리보기");
+    if (data.signed) {
+      box.replaceChildren(table, h("div", { class: "row", style: "margin-top:12px" },
+        h("span", {}, `${data.signed_at}에 서명해 제출했어요.`), download));
+      return;
+    }
+    const canvas = h("canvas", { width: 520, height: 170, class: "score-signature", "aria-label": "학생 서명란" });
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#142a30"; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    let active = false, drawn = false;
+    const point = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height]; };
+    canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); active = true; const [x, y] = point(e); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + .1, y + .1); ctx.stroke(); drawn = true; });
+    canvas.addEventListener("pointermove", (e) => { if (!active) return; e.preventDefault(); const [x, y] = point(e); ctx.lineTo(x, y); ctx.stroke(); });
+    for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) canvas.addEventListener(event, () => { active = false; });
+    const checked = h("input", { type: "checkbox" });
+    const submit = h("button", { class: "primary", onclick: async () => {
+      if (!drawn) { toast("서명란에 서명해 주세요."); return; }
+      if (!checked.checked) { toast("점수와 평가 내용을 확인해 주세요."); return; }
+      submit.disabled = true;
+      try {
+        await api(`/api/my/courses/${courseId}/score-confirmation`, { signature: canvas.toDataURL("image/png"), snapshot_hash: data.snapshot_hash });
+        toast("서명한 점수 확인서를 제출했어요.");
+        loadMyScoreConfirmation(courseId, box);
+      } catch (err) { toast(err.message, 6000); submit.disabled = false; if (err.message.includes("바뀌었어요")) loadMyScoreConfirmation(courseId, box); }
+    } }, "서명하여 제출");
+    box.replaceChildren(...[table,
+      data.needs_resign ? h("p", { class: "error" }, "점수 또는 평가 내용이 변경되어 다시 확인하고 서명해야 해요.") : null,
+      h("div", { class: "row", style: "margin:12px 0" }, download),
+      h("p", { class: "muted" }, "위 점수와 평가 내용을 확인한 뒤 아래에 직접 서명해 주세요."),
+      canvas,
+      h("div", { class: "row", style: "margin:8px 0 12px" },
+        h("button", { class: "small", onclick: () => { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); drawn = false; } }, "서명 지우기")),
+      h("label", { class: "row", style: "margin:6px 0 12px" }, checked, h("span", {}, "표의 점수와 평가 내용을 확인했습니다.")),
+      submit].filter(Boolean));
+  } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); }
 }
 
 /** 학생 게시물 화면: 평가 내용을 보고, 파일을 붙이고 메모를 써서 [제출] */

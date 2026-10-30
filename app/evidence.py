@@ -25,11 +25,11 @@ from app.wipe import wipe
 router = APIRouter()
 Purpose = Literal["record_check", "certificate", "appeal"]
 PRIVATE = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
-MAX_DAYS = 365  # 탈퇴 증빙 최대 보존 기간 (탈퇴 승인일부터 1년)
+MAX_DAYS = 1825  # 탈퇴 증빙 최대 보존 기간 (탈퇴 승인일부터 5년)
 
 
 def retention_policy() -> tuple[int | None, str]:
-    # 운영 기준: 탈퇴 승인 후 최대 1년(365일). 더 짧은 기간만 설정할 수 있다.
+    # 운영 기준: 탈퇴 승인 후 최대 5년(1,825일). 더 짧은 기간만 설정할 수 있다.
     basis = os.environ.get("EVIDENCE_RETENTION_BASIS", "").strip() or "운영 기관의 수업·활동 증빙 보존 기준"
     try:
         days = int(os.environ.get("EVIDENCE_RETENTION_DAYS", str(MAX_DAYS)))
@@ -97,6 +97,7 @@ def rows(c, table, condition) -> list[dict]:
 def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[str, list[Path]]:
     from app import auth
     from app.assignments import file_path
+    from app.score_confirmations import confirmation_path
 
     now = time.time()
     days, basis = retention_policy()
@@ -113,7 +114,9 @@ def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[
         for key in ("attendance", "questions", "enrollments", "grades", "submissions"):
             table = getattr(db, key)
             snapshot[key] = rows(c, table, table.c.user_id == uid)
+        snapshot["score_confirmations"] = rows(c, db.score_confirmations, db.score_confirmations.c.user_id == uid)
         course_ids = {r["course_id"] for r in snapshot["enrollments"]}
+        course_ids |= {r["course_id"] for r in snapshot["score_confirmations"]}
         class_ids = {r["class_id"] for r in snapshot["attendance"] + snapshot["questions"]}
         graded_activity_ids = {r["activity_id"] for r in snapshot["grades"]}
         activities = []
@@ -152,6 +155,19 @@ def _archive(uid: int, actor_id: int, live: list[dict], crypt: Fernet) -> tuple[
             c.execute(insert(db.evidence_files).values(id=file_id, archive_id=archive_id,
                                                       payload=crypt.encrypt(data).decode("ascii")))
             snapshot["files"].append({**f, "evidence_file_id": file_id, "sha256": hashlib.sha256(data).hexdigest()})
+        for confirmation in snapshot["score_confirmations"]:
+            path = confirmation_path(confirmation["course_id"], uid, confirmation["id"])
+            if not path.is_file():
+                raise HTTPException(409, "점수 확인서 파일이 없어 증빙을 보존하지 못했어요. 원본을 확인해 주세요.")
+            try:
+                data = crypt.decrypt(path.read_bytes())
+            except (InvalidToken, OSError):
+                raise HTTPException(409, "점수 확인서의 무결성을 확인해야 합니다.") from None
+            file_id = uuid.uuid4().hex
+            c.execute(insert(db.evidence_files).values(id=file_id, archive_id=archive_id,
+                                                      payload=crypt.encrypt(data).decode("ascii")))
+            confirmation["evidence_file_id"] = file_id
+            confirmation["sha256"] = hashlib.sha256(data).hexdigest()
         c.execute(insert(db.evidence_archives).values(
             id=archive_id, subject_id=uid, school=user.school, created_at=now,
             expires_at=now + days * 86400 if days else None, basis=basis,
@@ -198,7 +214,7 @@ async def archive_student(uid: int, actor_id: int) -> str:
 
 
 def maintain_retention():
-    """탈퇴 승인일부터 최대 365일 보관하고, 만료 자료는 내용을 지운 뒤 삭제한다(되살릴 수 없음)."""
+    """탈퇴 승인일부터 최대 1,825일 보관하고, 만료 자료는 내용을 지운 뒤 삭제한다."""
     now = time.time()
     days, basis = retention_policy()
     with db.engine.begin() as c:
@@ -322,6 +338,18 @@ async def download(archive_id: str, request: Request, purpose: Purpose):
                     if hashlib.sha256(data).hexdigest() != f["sha256"]:
                         raise InvalidToken
                     archive.writestr(f"files/{f['evidence_file_id']}", data)
+                for f in snapshot.get("score_confirmations", []):
+                    if not f.get("evidence_file_id"):
+                        continue
+                    with db.engine.connect() as c:
+                        encrypted = c.execute(select(db.evidence_files.c.payload).where(
+                            db.evidence_files.c.id == f["evidence_file_id"], db.evidence_files.c.archive_id == archive_id)).scalar()
+                    if not encrypted:
+                        raise InvalidToken
+                    data = crypt.decrypt(encrypted.encode("ascii"))
+                    if hashlib.sha256(data).hexdigest() != f["sha256"]:
+                        raise InvalidToken
+                    archive.writestr(f"score-confirmations/{f['course_id']}_{f['id']}.pdf", data)
             output.seek(0)
             return output
         except (InvalidToken, ValueError):

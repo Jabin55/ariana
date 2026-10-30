@@ -1640,3 +1640,4 @@ table.att.session-board th:nth-child(3) { width: 18%; }
 table.att.session-board th { text-align: center; }
 table.att.session-board td.num { text-align: center; white-space: nowrap; }
 table.att.session-board td:last-child { min-width: 0; }
+.score-signature { display:block; width:min(100%, 520px); height:auto; border:1px solid #a9b9b2; border-radius:6px; background:#fff; touch-action:none; cursor:crosshair; }

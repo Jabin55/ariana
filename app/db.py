@@ -436,6 +436,16 @@ submission_files = Table(
     Column("created_at", Float, nullable=False),
 )
 
+score_confirmations = Table(
+    "score_confirmations", metadata,  # 학생이 수행평가 점수를 확인하고 서명한 PDF
+    Column("id", String(32), primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("snapshot_hash", String(64), nullable=False),
+    Column("signed_at", Float, nullable=False),
+    UniqueConstraint("course_id", "user_id"),
+)
+
 grades = Table(
     "grades", metadata,  # 수업이 끝난 뒤 선생님이 매긴 점수·피드백 (자동 채점을 덮어쓸 수도 있음)
     Column("id", Integer, primary_key=True),
