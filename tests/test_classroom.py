@@ -3186,6 +3186,13 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
     assert other_student.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 404
     assert other_teacher.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
 
+    # 양식 개정 전 서명된 확인서도 계속 열람할 수 있어야 한다.
+    with db.engine.begin() as conn:
+        conn.execute(db.score_confirmations.update().where(db.score_confirmations.c.user_id == uid)
+                     .values(snapshot_hash=sc._snapshot(cid, uid)["legacy_snapshot_hash"]))
+    assert a.get(f"/api/my/courses/{cid}/score-confirmation").json()["signed"]
+    assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").content == signed.content
+
     t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 44, "feedback": "수정됨"})
     assert a.get(f"/api/my/courses/{cid}/score-confirmation").json()["needs_resign"]
     assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
@@ -3206,7 +3213,7 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
 
 
 def test_performance_converted_score():
-    from app.score_confirmations import converted_performance_score
+    from app.score_confirmations import converted_performance_score, _grading_note, _weighted_score
 
     items = [{"score": 100, "max_score": 100, "weight": 50},
              {"score": 80, "max_score": 100, "weight": 30},
@@ -3216,6 +3223,11 @@ def test_performance_converted_score():
     assert converted_performance_score([{"score": 92.5, "max_score": 100, "weight": 100}]) == 93
     assert converted_performance_score(items[:-1]) is None  # 반영비율 합계가 100% 아님
     assert converted_performance_score([{**items[0], "score": None}, *items[1:]]) is None
+    assert [_weighted_score(item) for item in items] == ["50", "24", "18"]
+    assert _grading_note({"achievement": "5", "rank_grade": "미산출"}) == (
+        "※ 본 과목은 성취도 5단계(A/B/C/D/E)로 평정하며, 석차 등급 미산출입니다.")
+    assert "성취도 3단계(A/B/C)" in _grading_note({"achievement": "3", "rank_grade": "산출"})
+    assert "성취도 P/F" in _grading_note({"achievement": "P", "rank_grade": "미산출"})
 
 
 def test_course_detail_page_public_info():

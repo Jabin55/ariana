@@ -35,12 +35,15 @@ from app import db
 from app.assignments import FILES_DIR, fmt, safe_name
 from app.auth import KST, require_user, student_no
 from app.courses import course_roster, is_enrolled, owned_course
+from app import subjects
 from app.wipe import wipe
 
 router = APIRouter()
 PRIVATE = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
 FONT_PATH = Path(__file__).parent / "assets" / "GowunBatang-Regular.ttf"
+FONT_BOLD_PATH = Path(__file__).parent / "assets" / "GowunBatang-Bold.ttf"
 _FONT_NAME = "ScoreConfirmationGowun"
+_FONT_BOLD_NAME = "ScoreConfirmationGowunBold"
 _FONT_LOCK = threading.Lock()
 
 
@@ -84,10 +87,18 @@ def _snapshot(course_id: int, user_id: int) -> dict:
                "end_date": course.end_date or "",
                "school_year": course.school_year, "term": course.term,
                "hub_school": course.hub_school, "instructor": course.instructor,
+               "achievement": course.achievement or subjects.default_achievement(
+                   course.subject_group, course.subject_area, course.subject_type,
+                   course.subject or course.title),
+               "rank_grade": course.rank_grade or subjects.default_rank(course.achievement),
                "student_name": user.name or "",
                "student_school": user.school or "", "student_no": student_no(dict(user._mapping)),
                "items": items}
+    legacy_details = {key: value for key, value in details.items()
+                      if key not in ("achievement", "rank_grade")}
+    legacy_payload = json.dumps(legacy_details, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     payload = json.dumps(details, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    details["legacy_snapshot_hash"] = hashlib.sha256(legacy_payload.encode()).hexdigest()
     details["snapshot_hash"] = hashlib.sha256(payload.encode()).hexdigest()
     return details
 
@@ -104,7 +115,8 @@ def _status(snap: dict, row) -> dict:
     now = time.time()
     expired = bool((row and record_expires_at(row, snap["end_date"]) <= now) or
                    confirmation_expires_at(snap["end_date"], now) <= now)
-    current = bool(row and not expired and row.snapshot_hash == snap["snapshot_hash"] and
+    matching_hash = row and row.snapshot_hash in (snap["snapshot_hash"], snap["legacy_snapshot_hash"])
+    current = bool(row and not expired and matching_hash and
                    confirmation_path(snap["course_id"], row.user_id, row.id).is_file())
     return {"items": snap["items"], "has_scores": has_scores,
             "snapshot_hash": snap["snapshot_hash"],
@@ -117,6 +129,8 @@ def _font() -> str:
     with _FONT_LOCK:
         if _FONT_NAME not in pdfmetrics.getRegisteredFontNames():
             pdfmetrics.registerFont(TTFont(_FONT_NAME, str(FONT_PATH)))
+            pdfmetrics.registerFont(TTFont(_FONT_BOLD_NAME, str(FONT_BOLD_PATH)))
+            pdfmetrics.registerFontFamily(_FONT_NAME, normal=_FONT_NAME, bold=_FONT_BOLD_NAME)
     return _FONT_NAME
 
 
@@ -150,6 +164,29 @@ def converted_performance_score(items: list[dict]) -> int | None:
     return int(converted.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _weighted_score(item: dict) -> str:
+    try:
+        score = Decimal(str(item["score"]))
+        maximum = Decimal(str(item["max_score"]))
+        weight = Decimal(str(item["weight"]))
+        if not all(v.is_finite() for v in (score, maximum, weight)) or maximum <= 0:
+            return "-"
+        value = (score / maximum * weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return format(value.normalize(), "f")
+    except (InvalidOperation, KeyError, TypeError, ValueError):
+        return "-"
+
+
+def _grading_note(snap: dict) -> str:
+    achievement = snap.get("achievement")
+    scale = {"5": "성취도 5단계(A/B/C/D/E)", "3": "성취도 3단계(A/B/C)",
+             "P": "성취도 P/F"}.get(achievement, "강좌에 정해진 성취도 기준")
+    rank = snap.get("rank_grade")
+    if rank in ("산출", "미산출"):
+        return f"※ 본 과목은 {scale}로 평정하며, 석차 등급 {rank}입니다."
+    return f"※ 본 과목은 {scale}로 평정합니다."
+
+
 def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     font = _font()
     normal = ParagraphStyle("normal", fontName=font, fontSize=10, leading=16)
@@ -170,18 +207,21 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
             addressee = f"{hub_school}장 귀하"
             footer_size = min(30, 30 * (A4[0] - 120) / pdfmetrics.stringWidth(addressee, font, 30))
             canvas.setFont(font, footer_size)
-            canvas.drawCentredString(A4[0] / 2, 112, addressee)
+            canvas.drawCentredString(A4[0] / 2, 166, addressee)
         footnote_style = ParagraphStyle("footnote", parent=normal, fontSize=10, leading=14)
         footnote = Paragraph(
             "※ 원점수는 지필평가 및 수행평가의 반영비율에 따른 환산 점수 합계를 "
             "소수 첫째 자리에서 반올림하여 정수로 기록함.", footnote_style)
         footnote.wrapOn(canvas, A4[0] - 84, 55)
-        footnote.drawOn(canvas, 42, 54)
+        footnote.drawOn(canvas, 42, 111)
+        grade_note = Paragraph(escape(_grading_note(snap)), footnote_style)
+        grade_note.wrapOn(canvas, A4[0] - 84, 42)
+        grade_note.drawOn(canvas, 42, 77)
         canvas.setFont(font, 8)
         canvas.drawRightString(A4[0] - 40, 35, str(doc.page))
 
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=42, rightMargin=42,
-                            topMargin=66, bottomMargin=158, title="공동교육과정 성적 확인서")
+                            topMargin=66, bottomMargin=211, title="공동교육과정 성적 확인서")
     year = snap["school_year"] or ""
     term = snap["term"] or ""
     document_title = " ".join(part for part in (f"{year}학년도" if year else "", term,
@@ -199,34 +239,39 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                                     ("TOPPADDING", (0, 0), (-1, -1), 7),
                                     ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
     story += [info_table, Spacer(1, 20), p("수행평가 성적일람표", centered_heading), Spacer(1, 7)]
-    head = [p(x, small) for x in ("연번", "평가명", "반영 비율", "영역 만점", "점수")]
+    bold_small = ParagraphStyle("bold_small", parent=small, fontName=_FONT_BOLD_NAME)
+    def bold(value):
+        return p(value, bold_small)
+    head = [p(x, small) for x in ("연번", "평가명", "영역 만점", "반영 비율", "원점수", "반영비율 환산 점수")]
     overview = [head] + [[p(i + 1, small), p(item["title"], small),
+                         p(_number(item["max_score"]), small),
                          p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", small),
-                         p(_number(item["max_score"]), small), p(_number(item["score"]) if item["score"] is not None else "미채점", small)]
+                         bold(_number(item["score"])) if item["score"] is not None else p("미채점", small),
+                         bold(_weighted_score(item)) if item["score"] is not None else p("-", small)]
                          for i, item in enumerate(snap["items"])]
     converted = converted_performance_score(snap["items"])
     summary_index = len(overview)
-    overview.append([p("환산점수", small), "", "", "",
-                     p(f"{converted}점" if converted is not None else "산출 대기", small)])
-    table = Table(overview, colWidths=[38, 244, 80, 75, 73], repeatRows=1, hAlign="LEFT")
+    overview.append([p("최종 원점수(총점)", small), "", "", "", "",
+                     bold(f"{converted}점") if converted is not None else p("산출 대기", small)])
+    table = Table(overview, colWidths=[32, 174, 64, 64, 62, 114], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#94a8ac")),
                               ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
                               ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf5f2")),
                               ("BACKGROUND", (0, summary_index), (-1, summary_index), colors.HexColor("#f2f7f5")),
-                              ("SPAN", (0, summary_index), (3, summary_index)),
+                              ("SPAN", (0, summary_index), (4, summary_index)),
                               ("LINEABOVE", (0, summary_index), (-1, summary_index), .7, colors.HexColor("#94a8ac")),
                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
                               ("TOPPADDING", (0, 0), (-1, -1), 7),
                               ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
-    story += [table, Spacer(1, 16), p("위 수행평가 점수를 확인했습니다."), Spacer(1, 9),
-              p("학생 확인(서명)", heading), Spacer(1, 5)]
+    story += [table, Spacer(1, 16), p("위 수행평가 점수를 확인했습니다."), Spacer(1, 25)]
     if signature:
         picture = ImageReader(io.BytesIO(signature))
         w, h = picture.getSize()
         signature_cell = Image(io.BytesIO(signature), width=180, height=180 * h / w)
     else:
         signature_cell = p("서명 전 미리보기", small)
-    signature_row = Table([[p(snap["student_name"], heading), signature_cell]], colWidths=[180, 330], hAlign="LEFT")
+    signature_row = Table([[p("학생 확인(서명)", heading), p(snap["student_name"], heading), signature_cell]],
+                          colWidths=[165, 115, 230], hAlign="LEFT")
     signature_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
                                        ("TOPPADDING", (0, 0), (-1, -1), 4),

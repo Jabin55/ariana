@@ -270,25 +270,14 @@ async function loadMyScoreConfirmation(courseId, box) {
       box.replaceChildren(h("p", { class: "muted" }, "선생님이 점수를 입력하면 여기에서 확인하고 서명할 수 있어요."));
       return;
     }
-    const rows = data.items.map((item, i) => h("tr", {},
-      h("td", { class: "num" }, i + 1),
-      h("td", {}, item.title),
-      h("td", {}, item.description || "-"),
-      h("td", { class: "num" }, item.weight == null ? "-" : `${fmtNum(item.weight)}%`),
-      h("td", { class: "num" }, item.max_score == null ? "-" : `${fmtNum(item.max_score)}점`),
-      h("td", { class: "num" }, item.score === null ? "미채점" : `${fmtNum(item.score)}점`),
-      h("td", {}, item.feedback || "-")));
-    const table = h("div", { class: "table-wrap" }, h("table", { class: "att grade-table" },
-      h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "내 점수", "피드백"].map((x) => h("th", {}, x)))),
-      h("tbody", {}, rows)));
     if (data.expired) {
-      box.replaceChildren(table, h("p", { class: "muted" }, "점수 확인서의 1년 보관 기간이 지났어요."));
+      box.replaceChildren(h("p", { class: "muted" }, "점수 확인서의 1년 보관 기간이 지났어요."));
       return;
     }
     const download = h("a", { class: "button small", href: `/api/my/courses/${courseId}/score-confirmation/${data.signed ? "file" : "draft"}`, target: "_blank" },
       data.signed ? "서명한 확인서 보기" : "확인서 미리보기");
     if (data.signed) {
-      box.replaceChildren(table, h("div", { class: "row", style: "margin-top:12px" },
+      box.replaceChildren(h("div", { class: "row", style: "margin-top:12px" },
         h("span", {}, `${data.signed_at}에 서명해 제출했어요.`), download));
       return;
     }
@@ -312,14 +301,14 @@ async function loadMyScoreConfirmation(courseId, box) {
         loadMyScoreConfirmation(courseId, box);
       } catch (err) { toast(err.message, 6000); submit.disabled = false; if (err.message.includes("바뀌었어요")) loadMyScoreConfirmation(courseId, box); }
     } }, "서명하여 제출");
-    box.replaceChildren(...[table,
+    box.replaceChildren(...[
       data.needs_resign ? h("p", { class: "error" }, "점수 또는 평가 내용이 변경되어 다시 확인하고 서명해야 해요.") : null,
-      h("div", { class: "row", style: "margin:12px 0" }, download),
-      h("p", { class: "muted" }, "위 점수와 평가 내용을 확인한 뒤 아래에 직접 서명해 주세요."),
+      h("p", { class: "muted" }, "※ 수행 평가 내용과 그 점수를 확인한 뒤 아래 서명란에 직접 서명하세요. 서명란에는 본인 이름 석자를 정(正)자로 쓰세요."),
       canvas,
       h("div", { class: "row", style: "margin:8px 0 12px" },
-        h("button", { class: "small", onclick: () => { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); drawn = false; } }, "서명 지우기")),
-      h("label", { class: "row", style: "margin:6px 0 12px" }, checked, h("span", {}, "표의 점수와 평가 내용을 확인했습니다.")),
+        h("button", { class: "small", onclick: () => { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); drawn = false; } }, "서명 지우기"),
+        download),
+      h("label", { class: "row", style: "margin:6px 0 12px" }, checked, h("span", {}, "확인서의 점수와 평가 내용을 확인했습니다.")),
       submit].filter(Boolean));
   } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); }
 }
