@@ -84,7 +84,7 @@ def _snapshot(course_id: int, user_id: int) -> dict:
                "end_date": course.end_date or "",
                "school_year": course.school_year, "term": course.term,
                "hub_school": course.hub_school, "instructor": course.instructor,
-               "student_name": user.name or user.google_name,
+               "student_name": user.name or "",
                "student_school": user.school or "", "student_no": student_no(dict(user._mapping)),
                "items": items}
     payload = json.dumps(details, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -217,22 +217,22 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
                               ("TOPPADDING", (0, 0), (-1, -1), 7),
                               ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
-    story += [table, Spacer(1, 14)]
-    for i, item in enumerate(snap["items"], 1):
-        story.append(p(f'{i}. {item["title"]}', heading))
-        story.append(p(f'평가 내용: {item["description"] or "기재 없음"}', small))
-        if item["feedback"]:
-            story.append(p(f'교사 피드백: {item["feedback"]}', small))
-        story.append(Spacer(1, 8))
-    story += [Spacer(1, 12), p("위 수행평가 내용과 점수를 확인했습니다."), Spacer(1, 9),
-              p("학생 확인(서명)", heading)]
+    story += [table, Spacer(1, 16), p("위 수행평가 점수를 확인했습니다."), Spacer(1, 9),
+              p("학생 확인(서명)", heading), Spacer(1, 5)]
     if signature:
         picture = ImageReader(io.BytesIO(signature))
         w, h = picture.getSize()
-        story.append(Image(io.BytesIO(signature), width=180, height=180 * h / w))
-        story.append(p(f'서명일시: {fmt(signed_at)}', small))
+        signature_cell = Image(io.BytesIO(signature), width=180, height=180 * h / w)
     else:
-        story.append(p("서명 전 미리보기", small))
+        signature_cell = p("서명 전 미리보기", small)
+    signature_row = Table([[p(snap["student_name"], heading), signature_cell]], colWidths=[180, 330], hAlign="LEFT")
+    signature_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                       ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                                       ("TOPPADDING", (0, 0), (-1, -1), 4),
+                                       ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    story.append(signature_row)
+    if signature:
+        story.append(p(f'서명일시: {fmt(signed_at)}', small))
     doc.build(story, onFirstPage=frame, onLaterPages=frame)
     return buf.getvalue()
 
@@ -296,6 +296,8 @@ async def sign_confirmation(course_id: int, body: SignRequest, request: Request)
         snap = _snapshot(course_id, u["id"])
         if not any(item["score"] is not None for item in snap["items"]):
             raise HTTPException(409, "채점된 수행평가가 없어요.")
+        if not snap["student_name"].strip():
+            raise HTTPException(409, "가입할 때 입력한 실명이 없어 서명할 수 없어요. 내 정보를 확인해 주세요.")
         if snap["snapshot_hash"] != body.snapshot_hash:
             raise HTTPException(409, "점수 또는 평가 내용이 바뀌었어요. 새 내용을 확인한 뒤 다시 서명해 주세요.")
         signed_at = time.time()

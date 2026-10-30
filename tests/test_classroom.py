@@ -3155,6 +3155,9 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
     aid = t.post(f"/api/courses/{cid}/assignments", json={
         "title": "경제 뉴스 분석", "description": "뉴스를 읽고 원인과 대안을 발표", "weight": 50, "max_score": 50}).json()["id"]
     uid = a.get("/api/me").json()["user"]["id"]
+    with db.engine.begin() as conn:
+        conn.execute(db.users.update().where(db.users.c.id == uid).values(google_name="구글 별명"))
+    assert sc._snapshot(cid, uid)["student_name"] == "학생1"  # 가입 때 입력한 실명
     assert t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 43, "feedback": "근거가 명확해요"}).status_code == 200
     detail = a.get(f"/api/my/courses/{cid}/score-confirmation").json()
     assert detail["has_scores"] and detail["items"][0]["score"] == 43
