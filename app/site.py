@@ -402,6 +402,29 @@ async def courses_page():
 """, "지금 신청할 수 있는 강좌", scripts='<script src="/static/live/enroll-page.js"></script>')
 
 
+@router.get("/live/courses/{course_id}", response_class=HTMLResponse)
+async def course_detail_page(course_id: int):
+    return site_page("강좌 정보", f"""
+<section class="course-detail" id="course-detail" data-id="{int(course_id)}"><p class="muted">불러오는 중…</p></section>
+""", hero=False, scripts='<script src="/static/live/course-detail.js"></script>')
+
+
+@router.get("/api/courses/{course_id}/info")
+async def course_info(course_id: int):
+    """로그인 없이 보는 강좌 상세 정보 (학생 개인정보 없음). 개설 승인된 강좌만"""
+    def run():
+        with db.engine.connect() as c:
+            r = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
+            return r, (sessions_of(c, [course_id]).get(course_id, []) if r else [])
+
+    r, sess = await db.run(run)
+    if not r or r.archived or (r.approval or "approved") != "approved":
+        raise HTTPException(404, "강좌를 찾을 수 없어요.")
+    return {"course": {"id": r.id, "title": r.title, "instructor": r.instructor, "hub_school": r.hub_school,
+                       "start_date": r.start_date, "end_date": r.end_date, "grades": course_grades(r),
+                       "description": r.description, "sessions": sess, **subject_info(r)}}
+
+
 @router.get("/live/help", response_class=HTMLResponse)
 async def help_page():
     s = settings()

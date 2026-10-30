@@ -35,7 +35,7 @@
         ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
       ];
       const status = { approved: "수강 확정", pending: "승인 대기", rejected: "신청 반려" }[c.status] || "";
-      return `<article class="course-tile with-thumb">${window.courseThumb ? window.courseThumb(c) : ""}<div class="ct-body">
+      return `<article class="course-tile with-thumb clickable" data-href="/live/courses/${c.id}" title="눌러서 강좌 정보·수업계획서 보기">${window.courseThumb ? window.courseThumb(c) : ""}<div class="ct-body">
         <div class="ct-top">${grades.map((g) => `<span class="tag soft">${esc(g)}</span>`).join("")}</div>
         <h3>${esc(c.title)}</h3>
         <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
@@ -53,6 +53,11 @@
     } catch (e) { box.textContent = e.message; }
   }
   box.addEventListener("click", async (event) => {
+    // 버튼·링크가 아닌 곳을 누르면 강좌 상세 화면으로
+    if (!event.target.closest("button, a")) {
+      const card = event.target.closest("article[data-href]");
+      if (card) { location.href = card.dataset.href; return; }
+    }
     const button = event.target.closest("button[data-action]");
     if (!button || !student) return;
     if (button.dataset.action === "cancel" && !confirm("수강신청을 취소할까요?")) return;

@@ -1573,3 +1573,18 @@ table.att.assign-board td:last-child { min-width: 0; }
 /* 강좌별 출석부: 소속학교 열과 맨 아래 '참여 인원'은 가운데 */
 table.att.hub-grid-table thead tr:first-child th:nth-child(2), table.att.hub-grid-table tbody td:nth-child(2),
 table.att.hub-grid-table tfoot td:first-child { text-align: center; }
+
+/* 수강신청: 강좌 카드를 누르면 상세 화면 */
+.course-tile.clickable { cursor: pointer; transition: transform .12s, box-shadow .12s; }
+.course-tile.clickable:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+.course-detail { max-width: 920px; margin: 0 auto; }
+.cd-head { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin: 6px 0 18px; }
+.cd-thumb { width: 280px; flex: none; border-radius: 14px; overflow: hidden; }
+.cd-title { flex: 1; min-width: 260px; }
+.cd-title h1 { margin: 0 0 6px; }
+.cd-actions { gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.cd-facts { display: grid; grid-template-columns: 9em 1fr; gap: 8px 14px; margin: 0; }
+.cd-facts dt { color: var(--muted); font-weight: 600; }
+.cd-facts dd { margin: 0; }
+.cd-desc { white-space: pre-wrap; margin: 0; }
+@media (max-width: 600px) { .cd-thumb { width: 100%; } .cd-facts { grid-template-columns: 7em 1fr; } }

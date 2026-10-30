@@ -3081,3 +3081,17 @@ def test_assignment_weight_and_max_score(monkeypatch, tmp_path):
     assert t.post(f"/api/assignments/{aid}", json={"weight": 25, "max_score": 40}).status_code == 200
     row = t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]
     assert (row["weight"], row["max_score"]) == (25, 40)
+
+
+def test_course_detail_page_public_info():
+    """수강신청 강좌 상세: 로그인 없이 강좌 정보·수업계획서 주소를 보고, 보관한 강좌는 보이지 않는다"""
+    t = teacher()
+    cid = t.post("/api/courses", json={**COURSE, "description": "판례로 배워요"}).json()["id"]
+    anon = TestClient(app)
+    assert anon.get(f"/live/courses/{cid}").status_code == 200
+    info = anon.get(f"/api/courses/{cid}/info").json()["course"]
+    assert info["title"] == COURSE["title"] and info["description"] == "판례로 배워요" and info["syllabus"] is None
+    t.post(f"/api/courses/{cid}/syllabus?name=plan.pdf", content=b"%PDF-1.4\nsmall")
+    assert anon.get(f"/api/courses/{cid}/info").json()["course"]["syllabus"]["url"] == f"/api/courses/{cid}/syllabus"
+    t.post(f"/api/courses/{cid}", json={"archived": True})
+    assert anon.get(f"/api/courses/{cid}/info").status_code == 404

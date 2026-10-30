@@ -21,7 +21,7 @@
   const params = new URLSearchParams(location.search);
   const group = ["/live/about", "/live/joint", "/live/credit", "/live/sitemap"].includes(path) ? "about"
     : ["/live/notices", "/live/guide", "/live/help", "/live/community"].includes(path) || path.startsWith("/live/notices/") || path.startsWith("/live/community/") ? "info"
-      : ["/live/courses", "/live/course-requests"].includes(path) ? "enroll" : "";
+      : ["/live/courses", "/live/course-requests"].includes(path) || path.startsWith("/live/courses/") ? "enroll" : "";
   const active = (href, u) => {
     if (policyMode) return href === path;
     if (href === "/live/about") return group === "about";
