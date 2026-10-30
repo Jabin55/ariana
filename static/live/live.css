@@ -1614,3 +1614,10 @@ table.att.grade-table .file-ico { font-size: 1.25rem; text-decoration: none; mar
 table.att.grade-table td:last-child { min-width: 0; }
 .grade-box { display: grid; gap: 8px; margin-top: 12px; }
 .grade-box .grade-score { width: 6em; }
+/* 과목 운영 > 공지사항 게시판 */
+table.att.notice-board th:nth-child(1) { width: 8%; }
+table.att.notice-board th:nth-child(2) { width: 58%; text-align: left; }
+table.att.notice-board th:nth-child(3) { width: 16%; }
+table.att.notice-board th:nth-child(4) { width: 18%; }
+table.att.notice-board th { text-align: center; }
+.notice-post .notice-body { white-space: pre-wrap; line-height: 1.6; border-top: 1px solid var(--border); padding-top: 10px; }

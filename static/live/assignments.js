@@ -55,7 +55,7 @@ function assignmentDialog(c, a, done) {
         done();
       } catch (err) { toast(err.message); }
     } },
-      h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, a ? "평가 고치기" : "평가 올리기"), h("button", { type: "button", class: "small", onclick: close }, "닫기")),
+      h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, a ? "평가 영역 수정" : "평가 올리기"), h("button", { type: "button", class: "small", onclick: close }, "닫기")),
       row("평가명", title),
       row("평가 내용", desc),
       h("div", { class: "row" }, row("반영 비율(%)", weight), row("영역 만점(점)", maxScore)),
@@ -100,7 +100,7 @@ function renderAssignmentPost(c, a, data, box, reload) {
     h("div", { class: "row", style: "margin-bottom:10px" },
       h("button", { class: "small", onclick: back }, "← 평가 목록"),
       h("h3", { class: "grow", style: "margin:0" }, a.title),
-      h("button", { class: "small", onclick: () => assignmentDialog(c, a, reload) }, "고치기"),
+      h("button", { class: "small", onclick: () => assignmentDialog(c, a, reload) }, "평가 영역 수정"),
       h("a", { class: "button small", href: `/api/assignments/${a.id}/download.zip` }, "📥 모두 내려받기"),
       h("button", { class: "small", onclick: async () => { await api(`/api/assignments/${a.id}`, { closed: !a.closed }); reload(); } },
         a.closed ? "다시 받기" : "제출 마감"),

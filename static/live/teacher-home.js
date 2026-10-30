@@ -384,36 +384,73 @@ function courseEditForm(c) {
   return box;
 }
 
-/* 공지사항: 이 강좌 수강생에게 */
+/* 공지사항: 이 강좌 수강생에게. 게시판(연번·제목·작성자·작성일) → 누르면 글 보기, [공지 쓰기]·[수정]은 글쓰기 화면 */
+const noticeView = new Map(); // 강좌 id → { read: 공지 id } | { write: 공지 id 또는 null }
 async function renderCourseNotices(c, box) {
   const { notices } = await api(`/api/courses/${c.id}/notices`);
-  const title = h("input", { maxlength: 120, placeholder: "제목 (예: 다음 주 수업은 줌 대신 외솔온닷에서 해요)" });
-  const body = h("textarea", { rows: 4, maxlength: 10000, placeholder: "내용" });
-  let editId = null;
-  const submit = h("button", { class: "primary", type: "button" }, "공지 올리기");
-  const reset = () => { editId = null; title.value = ""; body.value = ""; submit.textContent = "공지 올리기"; };
-  submit.onclick = async () => {
-    if (!title.value.trim()) { title.focus(); return; }
-    try {
-      await api(`/api/courses/${c.id}/notices`, { id: editId, title: title.value, body: body.value });
-      toast(editId ? "공지를 고쳤어요." : "공지를 올렸어요. 수강생 마이페이지에 보여요.");
-      renderCourseNotices(c, box);
-    } catch (err) { toast(err.message); }
-  };
-  fill(box, 
-    h("div", { class: "course-form" }, h("label", { class: "wide" }, "제목", title), h("label", { class: "wide" }, "내용", body),
-      h("div", { class: "row wide" }, submit, h("button", { type: "button", onclick: reset }, "새로 쓰기"),
-        h("span", { class: "muted", style: "font-size:0.85rem" }, `수강 확정 학생 ${c.approved}명에게 보여요.`))),
-    h("div", { class: "course-notices" }, notices.length ? notices.map((n) => h("details", { class: "box" },
-      h("summary", {}, h("strong", {}, n.title), h("span", { class: "muted", style: "font-size:0.85rem" }, ` · ${fmtDate(n.date)}${n.author ? ` · ${n.author}` : ""}`)),
-      h("p", { style: "white-space:pre-wrap;margin:8px 0" }, n.body || ""),
-      h("div", { class: "row" },
-        h("button", { class: "small", onclick: () => { editId = n.id; title.value = n.title; body.value = n.body; submit.textContent = "고친 내용 저장"; title.focus(); } }, "고치기"),
+  const again = () => renderCourseNotices(c, box);
+  const go = (v) => { if (v) noticeView.set(c.id, v); else noticeView.delete(c.id); again(); };
+  const v = noticeView.get(c.id) || {};
+  const day = (d) => (d ? fmtDate(d) : "-");
+
+  if ("write" in v) {
+    const cur = notices.find((n) => n.id === v.write) || null;
+    const title = h("input", { maxlength: 120, value: cur ? cur.title : "", placeholder: "제목 (예: 다음 주 수업은 줌 대신 외솔온닷에서 해요)" });
+    const body = h("textarea", { rows: 8, maxlength: 10000, placeholder: "내용" });
+    body.value = cur ? cur.body || "" : "";
+    const submit = h("button", { class: "primary", type: "button" }, cur ? "수정 저장" : "공지 올리기");
+    submit.onclick = async () => {
+      if (!title.value.trim()) { title.focus(); return; }
+      submit.disabled = true;
+      try {
+        const r = await api(`/api/courses/${c.id}/notices`, { id: cur ? cur.id : null, title: title.value, body: body.value });
+        toast(cur ? "공지를 고쳤어요." : "공지를 올렸어요. 수강생 마이페이지에 보여요.");
+        go(cur ? { read: cur.id } : (r && r.id ? { read: r.id } : null));
+      } catch (err) { toast(err.message); submit.disabled = false; }
+    };
+    fill(box,
+      h("div", { class: "row", style: "margin-bottom:10px" },
+        h("button", { class: "small", onclick: () => go(cur ? { read: cur.id } : null) }, cur ? "← 공지 보기" : "← 공지 목록"),
+        h("h3", { class: "grow", style: "margin:0" }, cur ? "공지 수정" : "공지 쓰기")),
+      h("div", { class: "course-form" }, h("label", { class: "wide" }, "제목", title), h("label", { class: "wide" }, "내용", body),
+        h("div", { class: "row wide" }, submit,
+          h("span", { class: "muted", style: "font-size:0.85rem" }, `수강 확정 학생 ${c.approved}명에게 보여요.`))));
+    title.focus();
+    return;
+  }
+
+  const n = notices.find((x) => x.id === v.read);
+  if (n) {
+    const no = notices.length - notices.indexOf(n);
+    fill(box,
+      h("div", { class: "row", style: "margin-bottom:10px" },
+        h("button", { class: "small", onclick: () => go(null) }, "← 공지 목록"),
+        h("span", { class: "grow" }),
+        h("button", { class: "small", onclick: () => go({ write: n.id }) }, "수정"),
         h("button", { class: "small danger", onclick: async () => {
           if (!confirm(`'${n.title}' 공지를 지울까요?`)) return;
           await api(`/api/courses/${c.id}/notices/${n.id}/delete`, {});
-          renderCourseNotices(c, box);
-        } }, "지우기")))) : h("p", { class: "muted" }, "아직 올린 공지가 없어요.")));
+          go(null);
+        } }, "삭제")),
+      h("div", { class: "assign-post notice-post" },
+        h("h3", { style: "margin:0 0 6px" }, n.title),
+        h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" }, `${no}번 · 작성자 ${n.author || "-"} · 작성일 ${day(n.date)}`),
+        h("div", { class: "notice-body" }, n.body || "(내용 없음)")));
+    return;
+  }
+
+  const rows = notices.map((x, i) => h("tr", { class: "assign-row", onclick: () => go({ read: x.id }) },
+    h("td", { class: "num" }, notices.length - i),
+    h("td", {}, h("span", { class: "day-link" }, x.title)),
+    h("td", { class: "num" }, x.author || "-"),
+    h("td", { class: "num" }, day(x.date))));
+  fill(box,
+    h("div", { class: "row", style: "margin-bottom:8px" },
+      h("span", { class: "grow muted", style: "font-size:0.88rem" }, `공지 ${notices.length}건`),
+      h("button", { class: "primary", onclick: () => go({ write: null }) }, "공지 쓰기")),
+    h("div", { class: "table-wrap" }, h("table", { class: "att assign-board notice-board" },
+      h("thead", {}, h("tr", {}, ["연번", "제목", "작성자", "작성일"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 4, class: "muted", style: "text-align:center;padding:18px" }, "아직 올린 공지가 없어요."))))));
 }
 
 /* 수업 열기: 열린 수업이 있으면 들어가기, 없으면 회차 이름으로 바로 열기 */
