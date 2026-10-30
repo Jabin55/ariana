@@ -925,17 +925,19 @@ async function hubCourseAttendance(box, ov) {
     h("div", { class: "table-wrap" }, h("table", { class: "att hub-grid-table" },
       h("thead", {},
         h("tr", {}, fixed.map((t) => h("th", { rowspan: 2 }, t)),
-          cls.length ? h("th", { colspan: cls.length, class: "center" }, "수업일") : h("th", { rowspan: 2 }, "수업일")),
+          cls.length ? h("th", { colspan: cls.length, class: "center" }, "수업일") : h("th", { rowspan: 2 }, "수업일"),
+          h("th", { rowspan: 2, class: "center" }, "참여횟수")),
         cls.length ? h("tr", {}, cls.map((c, j) => h("th", { class: "center", title: `${j + 1}회 · ${c.title || "주제 없음"} · ${c.start}` }, md(c.date)))) : null),
       h("tbody", {},
         sheet.students.length ? sheet.students.map((st, i) => h("tr", {},
           h("td", { class: "num" }, i + 1), h("td", {}, st.school || "-"), h("td", {}, st.student_no || "-"), h("td", {}, st.name),
           cls.length ? cls.map((_, j) => h("td", { class: `center ${st.attendance[j] ? "ox-o-mark" : "ox-x-mark"}` }, st.attendance[j] ? "O" : "X"))
-            : h("td", { class: "muted" }, "수업 기록 없음")))
-          : h("tr", {}, h("td", { colspan: 4 + Math.max(1, cls.length), class: "muted" }, "수강 확정된 학생이 없어요."))),
+            : h("td", { class: "muted" }, "수업 기록 없음"),
+          h("td", { class: "center hub-grid-count" }, `${st.attendance.filter(Boolean).length}/${cls.length}회`)))
+          : h("tr", {}, h("td", { colspan: 5 + Math.max(1, cls.length), class: "muted" }, "수강 확정된 학생이 없어요."))),
       cls.length && sheet.students.length ? h("tfoot", {}, h("tr", { class: "hub-grid-total" },
         h("td", { colspan: 4 }, "참여 인원"),
-        counts.map((n) => h("td", { class: "center" }, `${n}명`)))) : null)));
+        counts.map((n) => h("td", { class: "center" }, `${n}명`)), h("td", {}))) : null)));
 }
 
 /* ───────────────────────── 참여학교 담당: 우리 학교 수강생 관리 · 탈퇴 승인 ───────────────────────── */
