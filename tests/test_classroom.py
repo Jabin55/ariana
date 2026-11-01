@@ -3284,7 +3284,8 @@ def test_course_satisfaction_anonymous_aggregate():
     with db.engine.begin() as conn:
         auth._purge_user_rows(conn, uid)
     after_withdrawal = t.get(teacher_url).json()
-    assert after_withdrawal["responses"] == 2 and "results" not in after_withdrawal
+    assert after_withdrawal["responses"] == 2 and after_withdrawal["results_available"]
+    assert len(after_withdrawal["results"]) == 12
 
     from datetime import date
     from app.satisfaction import purge_old_satisfaction
@@ -3337,6 +3338,12 @@ def test_empty_legacy_satisfaction_upgrades_for_students():
     assert student_view["questions"][0]["category"] == "교육과정"
     assert len(t.get(f"/api/courses/{cid}/satisfaction").json()["questions"]) == 12
     assert s.post(student_url, json={"ratings": [5] * 12}).status_code == 200
+    teacher_url = f"/api/courses/{cid}/satisfaction"
+    assert "results" not in t.get(teacher_url).json()
+    assert t.post(f"{teacher_url}/close").status_code == 200
+    result = t.get(teacher_url).json()
+    assert result["responses"] == 1 and result["results_available"]
+    assert len(result["results"]) == 12 and result["results"][0]["average"] == 5.0
 
 
 def test_course_detail_page_public_info():

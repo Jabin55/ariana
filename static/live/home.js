@@ -986,7 +986,7 @@ async function loadStudentSatisfaction(courseId, box) {
   try {
     const data = await api(`/api/my/courses/${courseId}/satisfaction`);
     if (data.submitted) {
-      box.replaceChildren(h("p", {}, "만족도 조사 응답을 제출했어요. 교사에게는 익명 집계 결과만 표시됩니다."));
+      box.replaceChildren(h("p", {}, "만족도 조사 응답을 제출했어요. 교사에게는 이름 없이 결과가 표시되지만, 응답자가 적으면 답변으로 응답자를 추정할 수 있습니다."));
       return;
     }
     if (!data.open) {
@@ -1016,7 +1016,7 @@ async function loadStudentSatisfaction(courseId, box) {
         h("tr", {}, scale.map(([, label]) => h("th", {}, label)))),
       h("tbody", {}, tableRows)));
     form.append(h("h3", { class: "section-title" }, "학교교육만족도 조사"),
-      h("p", { class: "muted" }, "각 문항에 5점(매우 그렇다)부터 1점(전혀 그렇지 않다)까지 답해 주세요. 응답은 한 번만 제출할 수 있습니다."), table);
+      h("p", { class: "muted" }, "각 문항에 5점(매우 그렇다)부터 1점(전혀 그렇지 않다)까지 답해 주세요. 응답은 한 번만 제출할 수 있습니다. 교사에게 이름은 표시되지 않지만 응답자가 적으면 답변으로 응답자를 추정할 수 있습니다."), table);
     const comment = data.narrative_prompt ? h("textarea", { rows: 6, maxlength: 2000, style: "width:100%;box-sizing:border-box" }) : null;
     if (comment) form.append(h("label", { style: "display:block;margin:16px 0" },
       h("strong", {}, "서술 의견 (선택)"), h("p", { class: "muted" }, data.narrative_prompt),

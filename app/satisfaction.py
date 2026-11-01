@@ -194,7 +194,7 @@ async def teacher_satisfaction(course_id: int, request: Request):
             questions = survey_questions(None)
         result = {"started": bool(survey), "open": bool(survey and not closed),
                   "closed": closed, "responses": count, "enrolled": enrolled,
-                  "results_available": closed and count >= 3,
+                  "results_available": closed and count > 0,
                   "questions": questions,
                   "narrative_prompt": survey_narrative_prompt(survey, course.term, len(questions))}
         if result["results_available"]:

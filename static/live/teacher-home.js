@@ -408,7 +408,7 @@ async function renderCourseSatisfaction(c, box) {
       h("td", { class: "num" }, `${r.average}점`),
       scale.map(([n]) => h("td", { class: "num" }, `${r.counts[n - 1]}명`))));
     const action = async (verb) => {
-      if (verb === "close" && !confirm("조사를 마감할까요? 응답이 있으면 다시 열 수 없고, 3명 이상 응답한 경우에만 익명 집계 결과가 보입니다.")) return;
+      if (verb === "close" && !confirm("조사를 마감할까요? 응답이 있으면 다시 열 수 없고, 마감 후 결과가 보입니다.")) return;
       const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()),
         narrative_prompt: promptInput?.value.trim() || undefined } : {};
       try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, body); renderCourseSatisfaction(c, box); }
@@ -418,7 +418,7 @@ async function renderCourseSatisfaction(c, box) {
       : data.closed ? `마감 · ${data.responses}/${data.enrolled}명 응답` : "아직 시작하지 않았어요.";
     fill(box,
       h("h3", { class: "section-title" }, "학교교육만족도 조사"),
-      h("p", { class: "muted" }, "수강 확정 학생이 각 문항에 1~5점으로 답합니다. 학생별 응답은 공개되지 않습니다."),
+      h("p", { class: "muted" }, "수강 확정 학생이 각 문항에 1~5점으로 답합니다. 마감 후 응답이 1건 이상이면 집계 결과가 보입니다. 응답자가 적으면 답변으로 응답자를 추정할 수 있습니다."),
       h("p", {}, status),
       h("h4", { style: "margin:16px 0 8px" }, "조사 문항"),
       h("p", { class: "muted" }, "응답 기준: 5 매우 그렇다 · 4 그렇다 · 3 보통 · 2 그렇지 않다 · 1 전혀 그렇지 않다"),
@@ -429,8 +429,8 @@ async function renderCourseSatisfaction(c, box) {
       canPublish ? h("p", { class: "muted" }, "문항을 확인·수정한 뒤 학생에게 내보내세요. 공개 후에는 문항을 바꿀 수 없어요.") : null,
       canPublish ? h("button", { class: "primary", onclick: () => action("open") }, "학생에게 내보내기") : null,
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
-      data.closed && !data.results_available && data.responses
-        ? h("p", { class: "muted" }, "익명성 보호를 위해 응답이 3건 이상일 때만 집계 결과를 볼 수 있어요.") : null,
+      data.closed && !data.results_available
+        ? h("p", { class: "muted" }, "아직 제출된 응답이 없어요.") : null,
       data.results_available ? h("div", {}, h("h4", {}, "학교교육만족도 조사결과"),
         h("div", { class: "table-wrap" }, h("table", { class: "att satisfaction-table" },
         h("thead", {}, h("tr", {}, h("th", { rowspan: 2 }, "영역"), h("th", { rowspan: 2 }, "설문 내용"),
