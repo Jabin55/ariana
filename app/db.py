@@ -447,6 +447,25 @@ score_confirmations = Table(
     UniqueConstraint("course_id", "user_id"),
 )
 
+course_satisfaction_surveys = Table(
+    "course_satisfaction_surveys", metadata,
+    Column("course_id", Integer, primary_key=True),
+    Column("opened_at", Float, nullable=False),
+    Column("closed_at", Float),
+)
+
+course_satisfaction_responses = Table(
+    "course_satisfaction_responses", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),  # 중복 응답 방지·탈퇴 시 삭제. 교사 API에는 노출하지 않음
+    Column("content", Integer, nullable=False),
+    Column("communication", Integer, nullable=False),
+    Column("environment", Integer, nullable=False),
+    Column("submitted_at", Float, nullable=False),
+    UniqueConstraint("course_id", "user_id"),
+)
+
 grades = Table(
     "grades", metadata,  # 수업이 끝난 뒤 선생님이 매긴 점수·피드백 (자동 채점을 덮어쓸 수도 있음)
     Column("id", Integer, primary_key=True),

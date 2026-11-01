@@ -716,6 +716,7 @@ def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
     aid_of = {s.id: s.assignment_id for s in subs}
     confirmations = c.execute(select(db.score_confirmations).where(db.score_confirmations.c.user_id == uid)).all()
     c.execute(delete(db.score_confirmations).where(db.score_confirmations.c.user_id == uid))
+    c.execute(delete(db.course_satisfaction_responses).where(db.course_satisfaction_responses.c.user_id == uid))
     c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(list(aid_of) or [-1])))
     c.execute(delete(db.submissions).where(db.submissions.c.user_id == uid))
     # 희망과목 신청 글과 공감은 통계용으로 남기고, 누가 썼는지·누가 공감했는지만 알 수 없게 한다

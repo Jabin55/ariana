@@ -135,6 +135,10 @@ async def file_retention_loop():
             if any(result.values()):
                 log.info("보관 기간이 지난 파일 삭제: 수업 자료 %d개, 과제 파일 %d개, 점수 확인서 %d개",
                          result["materials"], result["submission_files"], result["score_confirmations"])
+            from app.satisfaction import purge_old_satisfaction
+            old_responses = await db.run(purge_old_satisfaction)
+            if old_responses:
+                log.info("보관 기간이 지난 만족도 조사 응답 삭제: %d건", old_responses)
         except Exception:
             log.exception("수업 자료·과제 파일 자동 삭제 실패: 운영자 확인 필요")
         await asyncio.sleep(6 * 3600)

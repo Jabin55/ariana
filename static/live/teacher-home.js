@@ -3,7 +3,7 @@
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 과목 운영에서 연 과목
-let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(수행평가) learn(학습 관리)
+let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(수행평가) learn(학습 관리) satisfaction(만족도 조사)
 let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
@@ -347,7 +347,8 @@ function renderRun() {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 과목 공지사항"], ["open", "▶ 온라인 수업 열기"], ["assess", "📝 수행평가"], ["learn", "📊 학습 관리"]];
+  const subs = [["notice", "📢 과목 공지사항"], ["open", "▶ 온라인 수업 열기"], ["assess", "📝 수행평가"],
+    ["learn", "📊 학습 관리"], ["satisfaction", "📋 만족도 조사"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -371,7 +372,36 @@ function renderRunCourse(c) {
   if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "open") renderOpenClass(c, subBox);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
-  else renderLearning(c, subBox);
+  else if (runSub === "learn") renderLearning(c, subBox);
+  else renderCourseSatisfaction(c, subBox);
+}
+
+async function renderCourseSatisfaction(c, box) {
+  fill(box, h("p", { class: "muted" }, "만족도 조사를 불러오는 중…"));
+  try {
+    const data = await api(`/api/courses/${c.id}/satisfaction`);
+    const action = async (verb) => {
+      if (verb === "close" && !confirm("조사를 마감할까요? 응답이 있으면 다시 열 수 없고, 3명 이상 응답한 경우에만 익명 집계 결과가 보입니다.")) return;
+      try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, {}); renderCourseSatisfaction(c, box); }
+      catch (err) { toast(err.message, 6000); }
+    };
+    const status = data.open ? `진행 중 · ${data.responses}/${data.enrolled}명 응답`
+      : data.closed ? `마감 · ${data.responses}/${data.enrolled}명 응답` : "아직 시작하지 않았어요.";
+    fill(box,
+      h("h3", { class: "section-title" }, "만족도 조사"),
+      h("p", { class: "muted" }, "수강 확정 학생이 기본 3문항에 1~5점으로 답합니다. 학생별 응답은 공개되지 않습니다."),
+      h("p", {}, status),
+      !data.started || (data.closed && !data.responses)
+        ? h("button", { class: "primary", onclick: () => action("open") }, "만족도 조사 시작") : null,
+      data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
+      data.closed && !data.results_available && data.responses
+        ? h("p", { class: "muted" }, "익명성 보호를 위해 응답이 3건 이상일 때만 집계 결과를 볼 수 있어요.") : null,
+      data.results_available ? h("div", { class: "table-wrap" }, h("table", { class: "att" },
+        h("thead", {}, h("tr", {}, ["문항", "평균", "1점", "2점", "3점", "4점", "5점"].map((x) => h("th", {}, x)))),
+        h("tbody", {}, data.results.map((r) => h("tr", {},
+          h("td", {}, r.question), h("td", { class: "num" }, `${r.average}점`),
+          ...r.counts.map((n) => h("td", { class: "num" }, `${n}명`))))))) : null);
+  } catch (err) { fill(box, h("p", { class: "error" }, err.message)); }
 }
 
 function courseEditForm(c) {

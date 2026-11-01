@@ -910,7 +910,7 @@ function sessionTable(c) {
 }
 
 let selectedStudentCourseId = null;
-let studentCourseTab = "info"; // 강좌 안의 탭: info(강좌 정보) notice(강좌 공지) learn(학습 활동) assess(수행평가)
+let studentCourseTab = "info"; // 강좌 안의 탭: info(강좌 정보) notice(강좌 공지) learn(학습 활동) assess(수행평가) satisfaction(만족도 조사)
 function openStudentCourse(c) {
   if (selectedStudentCourseId !== c.id) studentCourseTab = "info";
   selectedStudentCourseId = c.id;
@@ -953,10 +953,12 @@ function openStudentCourse(c) {
   // 수행평가(과제)
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
   const assess = h("div", { class: "sc-panel" }, noAssign);
+  const satisfaction = h("div", { class: "sc-panel" });
   for (const id of ["student-results", "student-questions"]) $(`#${id}`).hidden = true;
   { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
-  const panels = { info, notice, learn, assess };
-  const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"], ["assess", "수행평가"]];
+  const panels = { info, notice, learn, assess, satisfaction };
+  const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"],
+    ["assess", "수행평가"], ["satisfaction", "만족도 조사"]];
   const nav = h("nav", { class: "tabs sub-tabs sc-tabs", "aria-label": "강좌 메뉴" });
   const show = (k) => {
     studentCourseTab = k;
@@ -966,13 +968,50 @@ function openStudentCourse(c) {
   nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
   content.replaceChildren(
     h("div", { class: "row" }, h("h2", { class: "grow" }, c.title), h("span", { class: `status ${state}` }, label)),
-    nav, info, notice, learn, assess);
+    nav, info, notice, learn, assess, satisfaction);
   show(studentCourseTab);
   if (approved) {
     loadCourseMaterials(c.id, materials);
     Promise.resolve(loadMyAssignments(c.id)).then(() => { noAssign.hidden = !$("#student-assignments").hidden; });
-  } else noAssign.hidden = false;
+    loadStudentSatisfaction(c.id, satisfaction);
+  } else {
+    noAssign.hidden = false;
+    satisfaction.replaceChildren(h("p", { class: "muted" }, "수강이 확정되면 만족도 조사에 응답할 수 있어요."));
+  }
   $("#student-course-detail").scrollIntoView({ block: "start" });
+}
+
+async function loadStudentSatisfaction(courseId, box) {
+  box.replaceChildren(h("p", { class: "muted" }, "만족도 조사를 불러오는 중…"));
+  try {
+    const data = await api(`/api/my/courses/${courseId}/satisfaction`);
+    if (data.submitted) {
+      box.replaceChildren(h("p", {}, "만족도 조사 응답을 제출했어요. 교사에게는 익명 집계 결과만 표시됩니다."));
+      return;
+    }
+    if (!data.open) {
+      box.replaceChildren(h("p", { class: "muted" }, "현재 진행 중인 만족도 조사가 없어요."));
+      return;
+    }
+    const form = h("form", { class: "satisfaction-form" });
+    form.append(h("p", { class: "muted" }, "각 문항에 1점(전혀 그렇지 않다)부터 5점(매우 그렇다)까지 답해 주세요. 응답은 한 번만 제출할 수 있습니다."));
+    data.questions.forEach((q, i) => form.append(h("div", { class: "box", style: "margin-bottom:10px" },
+      h("strong", {}, `${i + 1}. ${q.text}`),
+      h("div", { class: "row", style: "margin-top:8px;gap:14px;flex-wrap:wrap" },
+        [1, 2, 3, 4, 5].map((n) => h("label", {},
+          h("input", { type: "radio", name: `satisfaction-${courseId}-${i}`, value: n }), ` ${n}점`))))));
+    const submit = h("button", { type: "submit", class: "primary" }, "응답 제출");
+    form.append(submit);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const ratings = data.questions.map((_, i) => Number(form.querySelector(`input[name="satisfaction-${courseId}-${i}"]:checked`)?.value || 0));
+      if (ratings.some((n) => !n)) { toast("모든 문항에 답해 주세요."); return; }
+      submit.disabled = true;
+      try { await api(`/api/my/courses/${courseId}/satisfaction`, { ratings }); loadStudentSatisfaction(courseId, box); }
+      catch (err) { toast(err.message, 6000); submit.disabled = false; }
+    });
+    box.replaceChildren(form);
+  } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); }
 }
 
 $("#student-course-back").addEventListener("click", () => {

@@ -3233,6 +3233,51 @@ def test_performance_converted_score():
     assert "성취도 P/F" in _grading_note({"achievement": "P", "rank_grade": "미산출"})
 
 
+def test_course_satisfaction_anonymous_aggregate():
+    t, other_teacher = teacher(), teacher("other@gmail.com")
+    students = [student(i) for i in range(1, 5)]
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    for s in students[:3]:
+        assert s.post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 3
+
+    teacher_url = f"/api/courses/{cid}/satisfaction"
+    student_url = f"/api/my/courses/{cid}/satisfaction"
+    assert not students[0].get(student_url).json()["open"]
+    assert students[3].get(student_url).status_code == 404
+    assert other_teacher.get(teacher_url).status_code == 404
+    assert t.post(f"{teacher_url}/open").status_code == 200
+    assert students[0].post(student_url, json={"ratings": [5, 4, 3]}).status_code == 200
+    assert students[0].post(student_url, json={"ratings": [1, 1, 1]}).status_code == 409
+    assert students[1].post(student_url, json={"ratings": [0, 4, 5]}).status_code == 400
+    assert students[1].post(student_url, json={"ratings": [4, 4, 5]}).status_code == 200
+    assert students[2].post(student_url, json={"ratings": [3, 2, 4]}).status_code == 200
+    active = t.get(teacher_url).json()
+    assert active["responses"] == 3 and "results" not in active
+    assert t.post(f"{teacher_url}/close").status_code == 200
+    closed = t.get(teacher_url).json()
+    assert closed["results_available"] and closed["results"][0] == {
+        "question": "수업 내용과 자료는 학습에 도움이 되었나요?",
+        "average": 4.0, "counts": [0, 0, 1, 1, 1]}
+    assert "user_id" not in str(closed)
+    assert students[0].get(student_url).json()["submitted"]
+    assert students[2].post(student_url, json={"ratings": [5, 5, 5]}).status_code == 409
+    assert t.post(f"{teacher_url}/open").status_code == 409
+
+    uid = students[0].get("/api/me").json()["user"]["id"]
+    with db.engine.begin() as conn:
+        auth._purge_user_rows(conn, uid)
+    after_withdrawal = t.get(teacher_url).json()
+    assert after_withdrawal["responses"] == 2 and "results" not in after_withdrawal
+
+    from datetime import date
+    from app.satisfaction import purge_old_satisfaction
+    with db.engine.begin() as conn:
+        conn.execute(db.courses.update().where(db.courses.c.id == cid).values(school_year=2026))
+    assert purge_old_satisfaction(date(2032, 2, 29)) == 0
+    assert purge_old_satisfaction(date(2032, 3, 1)) == 2
+
+
 def test_course_detail_page_public_info():
     """수강신청 강좌 상세: 로그인 없이 강좌 정보·수업계획서 주소를 보고, 보관한 강좌는 보이지 않는다"""
     t = teacher()

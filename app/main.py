@@ -27,6 +27,7 @@ from app.policy import router as policy_router
 from app.materials import router as materials_router
 from app.assignments import router as assignments_router
 from app.score_confirmations import router as score_confirmations_router
+from app.satisfaction import router as satisfaction_router
 from app.site import router as site_router
 from app.auth import router as auth_router
 from app.classroom import heartbeat_loop, router as live_router
@@ -130,6 +131,7 @@ app.include_router(policy_router)
 app.include_router(materials_router)
 app.include_router(assignments_router)
 app.include_router(score_confirmations_router)
+app.include_router(satisfaction_router)
 app.include_router(site_router)
 app.include_router(evidence_router)
 app.include_router(access_log_router)
