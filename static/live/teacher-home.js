@@ -418,8 +418,6 @@ async function renderCourseSatisfaction(c, box) {
     const status = data.open ? `진행 중 · ${data.responses}/${data.enrolled}명 응답`
       : data.closed ? `마감 · ${data.responses}/${data.enrolled}명 응답` : "아직 시작하지 않았어요.";
     fill(box,
-      h("h3", { class: "section-title" }, "학교교육만족도 조사"),
-      h("p", { class: "muted" }, "수강 확정 학생이 각 문항에 1~5점으로 답합니다. 마감 후 응답이 1건 이상이면 집계 결과가 보입니다. 응답자가 적으면 답변으로 응답자를 추정할 수 있습니다."),
       h("p", {}, status),
       h("h4", { style: "margin:16px 0 8px" }, "조사 문항"),
       h("p", { class: "muted" }, "응답 기준: 5 매우 그렇다 · 4 그렇다 · 3 보통 · 2 그렇지 않다 · 1 전혀 그렇지 않다"),
