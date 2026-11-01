@@ -205,18 +205,16 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
         hub_school = (snap["hub_school"] or "").strip()
         if hub_school:
             addressee = f"{hub_school}장 귀하"
-            footer_size = min(30, 30 * (A4[0] - 120) / pdfmetrics.stringWidth(addressee, font, 30))
+            footer_size = min(25, 25 * (A4[0] - 120) / pdfmetrics.stringWidth(addressee, font, 25))
             canvas.setFont(font, footer_size)
-            canvas.drawCentredString(A4[0] / 2, 166, addressee)
+            canvas.drawCentredString(A4[0] / 2, 150, addressee)
         footnote_style = ParagraphStyle("footnote", parent=normal, fontSize=10, leading=14)
         footnote = Paragraph(
             "※ 원점수는 지필평가 및 수행평가의 반영비율에 따른 환산 점수 합계를 "
-            "소수 첫째 자리에서 반올림하여 정수로 기록함.", footnote_style)
-        footnote.wrapOn(canvas, A4[0] - 84, 55)
-        footnote.drawOn(canvas, 42, 111)
-        grade_note = Paragraph(escape(_grading_note(snap)), footnote_style)
-        grade_note.wrapOn(canvas, A4[0] - 84, 42)
-        grade_note.drawOn(canvas, 42, 77)
+            "소수 첫째 자리에서 반올림하여 정수로 기록함."
+            + escape(_grading_note(snap)), footnote_style)
+        footnote.wrapOn(canvas, A4[0] - 84, 70)
+        footnote.drawOn(canvas, 42, 80)
         canvas.setFont(font, 8)
         canvas.drawRightString(A4[0] - 40, 35, str(doc.page))
 
