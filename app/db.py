@@ -452,6 +452,7 @@ course_satisfaction_surveys = Table(
     Column("course_id", Integer, primary_key=True),
     Column("opened_at", Float, nullable=False),
     Column("closed_at", Float),
+    Column("questions", Text, nullable=False, default=""),  # 공개 시점에 확정한 문항 JSON (3개)
 )
 
 course_satisfaction_responses = Table(
@@ -497,6 +498,7 @@ def init() -> None:
     metadata.create_all(engine)
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
+             ("course_satisfaction_surveys", "questions", "TEXT NOT NULL DEFAULT ''"),
              ("score_confirmations", "expires_at", "FLOAT"),
              ("assignments", "weight", "FLOAT"),
              ("assignments", "max_score", "FLOAT"),

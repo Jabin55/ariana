@@ -381,19 +381,30 @@ async function renderCourseSatisfaction(c, box) {
   fill(box, h("p", { class: "muted" }, "만족도 조사를 불러오는 중…"));
   try {
     const data = await api(`/api/courses/${c.id}/satisfaction`);
+    const canPublish = !data.started || (data.closed && !data.responses);
+    const inputs = canPublish ? data.questions.map((q) => h("input", {
+      type: "text", maxlength: 200, value: q.text,
+      style: "display:block;width:100%;box-sizing:border-box;margin-top:4px"
+    })) : [];
     const action = async (verb) => {
       if (verb === "close" && !confirm("조사를 마감할까요? 응답이 있으면 다시 열 수 없고, 3명 이상 응답한 경우에만 익명 집계 결과가 보입니다.")) return;
-      try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, {}); renderCourseSatisfaction(c, box); }
+      const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()) } : {};
+      try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, body); renderCourseSatisfaction(c, box); }
       catch (err) { toast(err.message, 6000); }
     };
     const status = data.open ? `진행 중 · ${data.responses}/${data.enrolled}명 응답`
       : data.closed ? `마감 · ${data.responses}/${data.enrolled}명 응답` : "아직 시작하지 않았어요.";
     fill(box,
       h("h3", { class: "section-title" }, "만족도 조사"),
-      h("p", { class: "muted" }, "수강 확정 학생이 기본 3문항에 1~5점으로 답합니다. 학생별 응답은 공개되지 않습니다."),
+      h("p", { class: "muted" }, "수강 확정 학생이 각 문항에 1~5점으로 답합니다. 학생별 응답은 공개되지 않습니다."),
       h("p", {}, status),
-      !data.started || (data.closed && !data.responses)
-        ? h("button", { class: "primary", onclick: () => action("open") }, "만족도 조사 시작") : null,
+      h("h4", { style: "margin:16px 0 8px" }, "조사 문항"),
+      canPublish ? h("div", {},
+        data.questions.map((q, i) => h("label", { style: "display:block;margin:8px 0" },
+          h("span", {}, `${i + 1}. `), inputs[i])),
+        h("p", { class: "muted" }, "문항을 확인·수정한 뒤 학생에게 내보내세요. 공개 후에는 문항을 바꿀 수 없어요."))
+        : h("ol", {}, data.questions.map((q) => h("li", {}, q.text))),
+      canPublish ? h("button", { class: "primary", onclick: () => action("open") }, "학생에게 내보내기") : null,
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
       data.closed && !data.results_available && data.responses
         ? h("p", { class: "muted" }, "익명성 보호를 위해 응답이 3건 이상일 때만 집계 결과를 볼 수 있어요.") : null,

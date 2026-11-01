@@ -3246,7 +3246,13 @@ def test_course_satisfaction_anonymous_aggregate():
     assert not students[0].get(student_url).json()["open"]
     assert students[3].get(student_url).status_code == 404
     assert other_teacher.get(teacher_url).status_code == 404
-    assert t.post(f"{teacher_url}/open").status_code == 200
+    assert other_teacher.post(f"{teacher_url}/open", json={}).status_code == 404
+    questions = ["수업 자료가 이해에 도움이 되었나요?", "교사의 설명은 명확했나요?", "온라인 참여는 편리했나요?"]
+    assert t.post(f"{teacher_url}/open", json={"questions": ["짧음", *questions[1:]]}).status_code == 400
+    assert t.post(f"{teacher_url}/open", json={"questions": questions}).status_code == 200
+    assert [q["text"] for q in t.get(teacher_url).json()["questions"]] == questions
+    assert [q["text"] for q in students[0].get(student_url).json()["questions"]] == questions
+    assert t.post(f"{teacher_url}/open", json={"questions": ["다른 질문으로 바꾸기", *questions[1:]]}).status_code == 409
     assert students[0].post(student_url, json={"ratings": [5, 4, 3]}).status_code == 200
     assert students[0].post(student_url, json={"ratings": [1, 1, 1]}).status_code == 409
     assert students[1].post(student_url, json={"ratings": [0, 4, 5]}).status_code == 400
@@ -3257,7 +3263,7 @@ def test_course_satisfaction_anonymous_aggregate():
     assert t.post(f"{teacher_url}/close").status_code == 200
     closed = t.get(teacher_url).json()
     assert closed["results_available"] and closed["results"][0] == {
-        "question": "수업 내용과 자료는 학습에 도움이 되었나요?",
+        "question": questions[0],
         "average": 4.0, "counts": [0, 0, 1, 1, 1]}
     assert "user_id" not in str(closed)
     assert students[0].get(student_url).json()["submitted"]

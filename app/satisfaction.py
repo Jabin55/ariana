@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -30,6 +31,29 @@ class SatisfactionAnswer(BaseModel):
     ratings: list[StrictInt] = Field(min_length=3, max_length=3)
 
 
+class SurveyPublish(BaseModel):
+    questions: list[str] | None = Field(default=None, min_length=3, max_length=3)
+
+
+def survey_questions(survey) -> list[dict]:
+    """예전 조사에는 고정 기본 문항을 적용한다."""
+    try:
+        saved = json.loads(survey.questions or "") if survey else None
+    except (ValueError, TypeError):
+        saved = None
+    if not isinstance(saved, list) or len(saved) != len(QUESTIONS) or not all(isinstance(x, str) for x in saved):
+        saved = [text for _, text in QUESTIONS]
+    return [{"key": key, "text": text} for (key, _), text in zip(QUESTIONS, saved)]
+
+
+def checked_questions(body: SurveyPublish | None) -> list[str]:
+    questions = body.questions if body and body.questions is not None else [text for _, text in QUESTIONS]
+    cleaned = [" ".join(question.split()) for question in questions]
+    if any(len(question) < 5 or len(question) > 200 for question in cleaned) or len(set(cleaned)) != len(cleaned):
+        raise HTTPException(400, "서로 다른 문항 3개를 각각 5~200자로 입력해 주세요.")
+    return cleaned
+
+
 @router.get("/api/my/courses/{course_id}/satisfaction")
 async def my_satisfaction(course_id: int, request: Request):
     student = await require_user(request, "student")
@@ -45,7 +69,7 @@ async def my_satisfaction(course_id: int, request: Request):
                 db.course_satisfaction_responses.c.user_id == student["id"])).first() is not None
         return {"open": bool(survey and survey.closed_at is None),
                 "submitted": submitted,
-                "questions": [{"key": key, "text": text} for key, text in QUESTIONS]}
+                "questions": survey_questions(survey)}
 
     return JSONResponse(await db.run(read), headers=PRIVATE)
 
@@ -96,22 +120,24 @@ async def teacher_satisfaction(course_id: int, request: Request):
         closed = bool(survey and survey.closed_at is not None)
         result = {"started": bool(survey), "open": bool(survey and not closed),
                   "closed": closed, "responses": count, "enrolled": enrolled,
-                  "results_available": closed and count >= 3}
+                  "results_available": closed and count >= 3,
+                  "questions": survey_questions(survey)}
         if result["results_available"]:
-            result["results"] = [{"question": text,
+            result["results"] = [{"question": question["text"],
                                    "average": round(sum(getattr(row, key) for row in responses) / count, 1),
                                    "counts": [sum(getattr(row, key) == rating for row in responses)
                                               for rating in range(1, 6)]}
-                                  for key, text in QUESTIONS]
+                                  for (key, _), question in zip(QUESTIONS, result["questions"])]
         return result
 
     return JSONResponse(await db.run(read), headers=PRIVATE)
 
 
 @router.post("/api/courses/{course_id}/satisfaction/open")
-async def open_satisfaction(course_id: int, request: Request):
+async def open_satisfaction(course_id: int, request: Request, body: SurveyPublish | None = None):
     teacher = await require_user(request, "teacher")
     await db.run(owned_course, course_id, teacher)
+    questions = checked_questions(body)
 
     def open_survey():
         with db.engine.begin() as c:
@@ -119,7 +145,8 @@ async def open_satisfaction(course_id: int, request: Request):
                 db.course_satisfaction_surveys.c.course_id == course_id)).first()
             if not survey:
                 c.execute(insert(db.course_satisfaction_surveys).values(
-                    course_id=course_id, opened_at=time.time()))
+                    course_id=course_id, opened_at=time.time(),
+                    questions=json.dumps(questions, ensure_ascii=False)))
             elif survey.closed_at is not None:
                 count = c.execute(select(func.count()).select_from(db.course_satisfaction_responses).where(
                     db.course_satisfaction_responses.c.course_id == course_id)).scalar_one()
@@ -127,7 +154,10 @@ async def open_satisfaction(course_id: int, request: Request):
                     raise HTTPException(409, "익명 집계 보호를 위해 마감한 조사는 다시 열 수 없어요.")
                 c.execute(update(db.course_satisfaction_surveys).where(
                     db.course_satisfaction_surveys.c.course_id == course_id).values(
-                        opened_at=time.time(), closed_at=None))
+                        opened_at=time.time(), closed_at=None,
+                        questions=json.dumps(questions, ensure_ascii=False)))
+            elif body and body.questions is not None and questions != [q["text"] for q in survey_questions(survey)]:
+                raise HTTPException(409, "이미 공개한 조사 문항은 변경할 수 없어요.")
 
     await db.run(open_survey)
     return JSONResponse({"ok": True}, headers=PRIVATE)
