@@ -214,7 +214,7 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
             "소수 첫째 자리에서 반올림하여 정수로 기록함.<br/>"
             + escape(_grading_note(snap)), footnote_style)
         footnote.wrapOn(canvas, A4[0] - 84, 70)
-        footnote.drawOn(canvas, 42, 80)
+        footnote.drawOn(canvas, 42, 94)
         canvas.setFont(font, 8)
         canvas.drawRightString(A4[0] - 40, 35, str(doc.page))
 
