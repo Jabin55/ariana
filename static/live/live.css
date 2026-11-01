@@ -326,6 +326,13 @@ a.button:hover { border-color: var(--accent); }
 .class-pick { text-align: left; white-space: normal; }
 .class-pick.on { background: var(--accent-soft); border-color: var(--accent); }
 .table-wrap { overflow-x: auto; }
+table.att.satisfaction-table { min-width: 800px; table-layout: fixed; }
+table.att.satisfaction-table th, table.att.satisfaction-table td { white-space: normal; text-align: center; vertical-align: middle; min-width: 0; }
+table.att.satisfaction-table th:first-child { width: 94px; }
+table.att.satisfaction-table .satisfaction-question { text-align: left; overflow-wrap: anywhere; }
+table.att.satisfaction-table th:nth-last-child(-n+5), table.att.satisfaction-table td:nth-last-child(-n+5) { width: 76px; }
+table.att.satisfaction-table td:last-child { min-width: 0; }
+table.att.satisfaction-table label { display: flex; justify-content: center; cursor: pointer; }
 table.att { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 table.att th, table.att td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
 table.att th { color: var(--muted); font-weight: 600; }

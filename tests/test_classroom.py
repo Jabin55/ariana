@@ -1,6 +1,7 @@
 """실시간 수업 서버 테스트: python -m pytest tests"""
 
 import base64
+import json
 import os
 import tempfile
 import time
@@ -3247,27 +3248,36 @@ def test_course_satisfaction_anonymous_aggregate():
     assert students[3].get(student_url).status_code == 404
     assert other_teacher.get(teacher_url).status_code == 404
     assert other_teacher.post(f"{teacher_url}/open", json={}).status_code == 404
-    questions = ["수업 자료가 이해에 도움이 되었나요?", "교사의 설명은 명확했나요?", "온라인 참여는 편리했나요?"]
+    from app.satisfaction import DEFAULT_QUESTIONS
+    questions = [text for _, text in DEFAULT_QUESTIONS]
+    questions[0] = "운영학교 수업의 난이도는 이해하기에 알맞았다."
     assert t.post(f"{teacher_url}/open", json={"questions": ["짧음", *questions[1:]]}).status_code == 400
-    assert t.post(f"{teacher_url}/open", json={"questions": questions}).status_code == 200
+    prompt = "이번 학기 수업에서 좋았던 점과 개선할 점을 자유롭게 적어 주세요."
+    assert t.post(f"{teacher_url}/open", json={"questions": questions, "narrative_prompt": prompt}).status_code == 200
     assert [q["text"] for q in t.get(teacher_url).json()["questions"]] == questions
     assert [q["text"] for q in students[0].get(student_url).json()["questions"]] == questions
+    assert students[0].get(student_url).json()["narrative_prompt"] == prompt
     assert t.post(f"{teacher_url}/open", json={"questions": ["다른 질문으로 바꾸기", *questions[1:]]}).status_code == 409
-    assert students[0].post(student_url, json={"ratings": [5, 4, 3]}).status_code == 200
-    assert students[0].post(student_url, json={"ratings": [1, 1, 1]}).status_code == 409
-    assert students[1].post(student_url, json={"ratings": [0, 4, 5]}).status_code == 400
-    assert students[1].post(student_url, json={"ratings": [4, 4, 5]}).status_code == 200
-    assert students[2].post(student_url, json={"ratings": [3, 2, 4]}).status_code == 200
+    assert students[0].post(student_url, json={"ratings": [5, 4, 3] * 4,
+                                              "comment": "학생1 010-1234-5678 수업 시간이 좋았어요."}).status_code == 200
+    assert students[0].post(student_url, json={"ratings": [1] * 12}).status_code == 409
+    assert students[1].post(student_url, json={"ratings": [0, 4, 5] * 4}).status_code == 400
+    assert students[1].post(student_url, json={"ratings": [4, 4, 5] * 4}).status_code == 200
+    assert students[2].post(student_url, json={"ratings": [3, 2, 4] * 4}).status_code == 200
     active = t.get(teacher_url).json()
     assert active["responses"] == 3 and "results" not in active
     assert t.post(f"{teacher_url}/close").status_code == 200
     closed = t.get(teacher_url).json()
     assert closed["results_available"] and closed["results"][0] == {
+        "category": "교육과정",
         "question": questions[0],
         "average": 4.0, "counts": [0, 0, 1, 1, 1]}
+    assert len(closed["results"]) == 12 and len(closed["comments"]) == 1
+    assert "학생1" not in closed["comments"][0]
+    assert "010-1234-5678" not in closed["comments"][0]
     assert "user_id" not in str(closed)
     assert students[0].get(student_url).json()["submitted"]
-    assert students[2].post(student_url, json={"ratings": [5, 5, 5]}).status_code == 409
+    assert students[2].post(student_url, json={"ratings": [5] * 12}).status_code == 409
     assert t.post(f"{teacher_url}/open").status_code == 409
 
     uid = students[0].get("/api/me").json()["user"]["id"]
@@ -3282,6 +3292,29 @@ def test_course_satisfaction_anonymous_aggregate():
         conn.execute(db.courses.update().where(db.courses.c.id == cid).values(school_year=2026))
     assert purge_old_satisfaction(date(2032, 2, 29)) == 0
     assert purge_old_satisfaction(date(2032, 3, 1)) == 2
+
+
+def test_legacy_satisfaction_keeps_published_questions_and_responses():
+    t = teacher()
+    students = [student(i) for i in range(1, 4)]
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    for s in students:
+        assert s.post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 3
+    old_questions = ["기존 수업 내용에 만족했나요?", "기존 소통 방식에 만족했나요?", "기존 수업 환경에 만족했나요?"]
+    with db.engine.begin() as conn:
+        conn.execute(db.course_satisfaction_surveys.insert().values(
+            course_id=cid, opened_at=time.time(),
+            questions=json.dumps(old_questions, ensure_ascii=False)))
+    student_url = f"/api/my/courses/{cid}/satisfaction"
+    assert [q["text"] for q in students[0].get(student_url).json()["questions"]] == old_questions
+    for s, ratings in zip(students, ([5, 4, 3], [4, 4, 5], [3, 2, 4])):
+        assert s.post(student_url, json={"ratings": ratings}).status_code == 200
+    teacher_url = f"/api/courses/{cid}/satisfaction"
+    assert t.post(f"{teacher_url}/close").status_code == 200
+    result = t.get(teacher_url).json()
+    assert len(result["results"]) == 3
+    assert result["results"][0]["average"] == 4.0
 
 
 def test_course_detail_page_public_info():

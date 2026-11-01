@@ -452,7 +452,8 @@ course_satisfaction_surveys = Table(
     Column("course_id", Integer, primary_key=True),
     Column("opened_at", Float, nullable=False),
     Column("closed_at", Float),
-    Column("questions", Text, nullable=False, default=""),  # 공개 시점에 확정한 문항 JSON (3개)
+    Column("questions", Text, nullable=False, default=""),  # 공개 시점에 확정한 문항 JSON (기존 3개·새 양식 12개)
+    Column("narrative_prompt", Text, nullable=False, default=""),
 )
 
 course_satisfaction_responses = Table(
@@ -463,6 +464,8 @@ course_satisfaction_responses = Table(
     Column("content", Integer, nullable=False),
     Column("communication", Integer, nullable=False),
     Column("environment", Integer, nullable=False),
+    Column("ratings", Text, nullable=False, default=""),  # 새 양식 12문항 점수 JSON
+    Column("comment", Text, nullable=False, default=""),  # 식별정보를 가린 선택 서술 의견
     Column("submitted_at", Float, nullable=False),
     UniqueConstraint("course_id", "user_id"),
 )
@@ -499,6 +502,9 @@ def init() -> None:
     # 예전 버전으로 만든 표에 새 칸 추가
     added = [("attendance", "left_reason", "VARCHAR(10)"),
              ("course_satisfaction_surveys", "questions", "TEXT NOT NULL DEFAULT ''"),
+             ("course_satisfaction_surveys", "narrative_prompt", "TEXT NOT NULL DEFAULT ''"),
+             ("course_satisfaction_responses", "ratings", "TEXT NOT NULL DEFAULT ''"),
+             ("course_satisfaction_responses", "comment", "TEXT NOT NULL DEFAULT ''"),
              ("score_confirmations", "expires_at", "FLOAT"),
              ("assignments", "weight", "FLOAT"),
              ("assignments", "max_score", "FLOAT"),

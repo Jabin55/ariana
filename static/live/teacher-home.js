@@ -381,37 +381,67 @@ async function renderCourseSatisfaction(c, box) {
   try {
     const data = await api(`/api/courses/${c.id}/satisfaction`);
     const canPublish = !data.started || (data.closed && !data.responses);
+    const scale = [[5, "매우 그렇다"], [4, "그렇다"], [3, "보통"], [2, "그렇지 않다"], [1, "전혀 그렇지 않다"]];
     const inputs = canPublish ? data.questions.map((q) => h("input", {
       type: "text", maxlength: 200, value: q.text,
       style: "display:block;width:100%;box-sizing:border-box;margin-top:4px"
     })) : [];
+    const promptInput = canPublish && data.narrative_prompt ? h("textarea", {
+      rows: 3, maxlength: 500, style: "width:100%;box-sizing:border-box;margin-top:8px"
+    }) : null;
+    if (promptInput) promptInput.value = data.narrative_prompt;
+    const groupSpan = (items, i) => {
+      if (i && items[i - 1].category === items[i].category) return 0;
+      let n = 1;
+      while (items[i + n]?.category === items[i].category) n++;
+      return n;
+    };
+    const questions = h("div", {}, data.questions.map((q, i) => h("div", {},
+      groupSpan(data.questions, i) ? h("h4", { style: "margin:16px 0 6px" }, q.category) : null,
+      h("label", { style: "display:block;margin:8px 0" },
+        `${data.questions.slice(0, i + 1).filter((x) => x.category === q.category).length}. `,
+        canPublish ? inputs[i] : q.text))));
+    const resultsRows = (data.results || []).map((r, i) => h("tr", {},
+      groupSpan(data.results, i) ? h("th", { rowspan: groupSpan(data.results, i) }, r.category) : null,
+      h("td", { class: "satisfaction-question" },
+        `${data.results.slice(0, i + 1).filter((x) => x.category === r.category).length}. ${r.question}`),
+      h("td", { class: "num" }, `${r.average}점`),
+      scale.map(([n]) => h("td", { class: "num" }, `${r.counts[n - 1]}명`))));
     const action = async (verb) => {
       if (verb === "close" && !confirm("조사를 마감할까요? 응답이 있으면 다시 열 수 없고, 3명 이상 응답한 경우에만 익명 집계 결과가 보입니다.")) return;
-      const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()) } : {};
+      const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()),
+        narrative_prompt: promptInput?.value.trim() || undefined } : {};
       try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, body); renderCourseSatisfaction(c, box); }
       catch (err) { toast(err.message, 6000); }
     };
     const status = data.open ? `진행 중 · ${data.responses}/${data.enrolled}명 응답`
       : data.closed ? `마감 · ${data.responses}/${data.enrolled}명 응답` : "아직 시작하지 않았어요.";
     fill(box,
-      h("h3", { class: "section-title" }, "만족도 조사"),
+      h("h3", { class: "section-title" }, "학교교육만족도 조사"),
       h("p", { class: "muted" }, "수강 확정 학생이 각 문항에 1~5점으로 답합니다. 학생별 응답은 공개되지 않습니다."),
       h("p", {}, status),
       h("h4", { style: "margin:16px 0 8px" }, "조사 문항"),
-      canPublish ? h("div", {},
-        data.questions.map((q, i) => h("label", { style: "display:block;margin:8px 0" },
-          h("span", {}, `${i + 1}. `), inputs[i])),
-        h("p", { class: "muted" }, "문항을 확인·수정한 뒤 학생에게 내보내세요. 공개 후에는 문항을 바꿀 수 없어요."))
-        : h("ol", {}, data.questions.map((q) => h("li", {}, q.text))),
+      h("p", { class: "muted" }, "응답 기준: 5 매우 그렇다 · 4 그렇다 · 3 보통 · 2 그렇지 않다 · 1 전혀 그렇지 않다"),
+      questions,
+      data.narrative_prompt ? h("div", { class: "box", style: "margin:12px 0" },
+        h("strong", {}, "서술 의견 (선택)"),
+        promptInput || h("p", { style: "margin:6px 0 0" }, data.narrative_prompt)) : null,
+      canPublish ? h("p", { class: "muted" }, "문항을 확인·수정한 뒤 학생에게 내보내세요. 공개 후에는 문항을 바꿀 수 없어요.") : null,
       canPublish ? h("button", { class: "primary", onclick: () => action("open") }, "학생에게 내보내기") : null,
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
       data.closed && !data.results_available && data.responses
         ? h("p", { class: "muted" }, "익명성 보호를 위해 응답이 3건 이상일 때만 집계 결과를 볼 수 있어요.") : null,
-      data.results_available ? h("div", { class: "table-wrap" }, h("table", { class: "att" },
-        h("thead", {}, h("tr", {}, ["문항", "평균", "1점", "2점", "3점", "4점", "5점"].map((x) => h("th", {}, x)))),
-        h("tbody", {}, data.results.map((r) => h("tr", {},
-          h("td", {}, r.question), h("td", { class: "num" }, `${r.average}점`),
-          ...r.counts.map((n) => h("td", { class: "num" }, `${n}명`))))))) : null);
+      data.results_available ? h("div", {}, h("h4", {}, "학교교육만족도 조사결과"),
+        h("div", { class: "table-wrap" }, h("table", { class: "att satisfaction-table" },
+        h("thead", {}, h("tr", {}, h("th", { rowspan: 2 }, "영역"), h("th", { rowspan: 2 }, "설문 내용"),
+          h("th", { rowspan: 2 }, "평균"), scale.map(([n]) => h("th", {}, n))),
+          h("tr", {}, scale.map(([, label]) => h("th", {}, label)))),
+        h("tbody", {}, resultsRows)))) : null,
+      data.results_available && data.narrative_prompt ? h("div", {},
+        h("h4", { style: "margin:20px 0 6px" }, "서술 의견"),
+        h("p", { class: "muted" }, data.narrative_prompt),
+        data.comments?.length ? h("ul", {}, data.comments.map((comment) => h("li", { style: "white-space:pre-wrap;margin-bottom:8px" }, comment)))
+          : h("p", { class: "muted" }, "작성된 서술 의견이 없어요.")) : null);
   } catch (err) { fill(box, h("p", { class: "error" }, err.message)); }
 }
 

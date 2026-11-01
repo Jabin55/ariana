@@ -994,12 +994,33 @@ async function loadStudentSatisfaction(courseId, box) {
       return;
     }
     const form = h("form", { class: "satisfaction-form" });
-    form.append(h("p", { class: "muted" }, "각 문항에 1점(전혀 그렇지 않다)부터 5점(매우 그렇다)까지 답해 주세요. 응답은 한 번만 제출할 수 있습니다."));
-    data.questions.forEach((q, i) => form.append(h("div", { class: "box", style: "margin-bottom:10px" },
-      h("strong", {}, `${i + 1}. ${q.text}`),
-      h("div", { class: "row", style: "margin-top:8px;gap:14px;flex-wrap:wrap" },
-        [1, 2, 3, 4, 5].map((n) => h("label", {},
-          h("input", { type: "radio", name: `satisfaction-${courseId}-${i}`, value: n }), ` ${n}점`))))));
+    const scale = [[5, "매우 그렇다"], [4, "그렇다"], [3, "보통"], [2, "그렇지 않다"], [1, "전혀 그렇지 않다"]];
+    const groupSpan = (i) => {
+      if (i && data.questions[i - 1].category === data.questions[i].category) return 0;
+      let n = 1;
+      while (data.questions[i + n]?.category === data.questions[i].category) n++;
+      return n;
+    };
+    const tableRows = data.questions.map((q, i) => {
+      const categoryNo = data.questions.slice(0, i + 1).filter((x) => x.category === q.category).length;
+      const ratingCells = scale.map(([n]) => h("td", {}, h("label", { "aria-label": `${i + 1}번 문항 ${n}점` },
+        h("input", { type: "radio", name: `satisfaction-${courseId}-${i}`, value: n }))));
+      return h("tr", {},
+        groupSpan(i) ? h("th", { rowspan: groupSpan(i) }, q.category) : null,
+        h("td", { class: "satisfaction-question" }, `${categoryNo}. ${q.text}`), ...ratingCells);
+    });
+    const table = h("div", { class: "table-wrap" }, h("table", { class: "att satisfaction-table" },
+      h("thead", {},
+        h("tr", {}, h("th", { rowspan: 2 }, "영역"), h("th", { rowspan: 2 }, "설문 내용"),
+          scale.map(([n]) => h("th", {}, n))),
+        h("tr", {}, scale.map(([, label]) => h("th", {}, label)))),
+      h("tbody", {}, tableRows)));
+    form.append(h("h3", { class: "section-title" }, "학교교육만족도 조사"),
+      h("p", { class: "muted" }, "각 문항에 5점(매우 그렇다)부터 1점(전혀 그렇지 않다)까지 답해 주세요. 응답은 한 번만 제출할 수 있습니다."), table);
+    const comment = data.narrative_prompt ? h("textarea", { rows: 6, maxlength: 2000, style: "width:100%;box-sizing:border-box" }) : null;
+    if (comment) form.append(h("label", { style: "display:block;margin:16px 0" },
+      h("strong", {}, "서술 의견 (선택)"), h("p", { class: "muted" }, data.narrative_prompt),
+      h("p", { class: "muted" }, "이름·학번·연락처 등 본인을 알 수 있는 정보는 적지 마세요."), comment));
     const submit = h("button", { type: "submit", class: "primary" }, "응답 제출");
     form.append(submit);
     form.addEventListener("submit", async (e) => {
@@ -1007,7 +1028,7 @@ async function loadStudentSatisfaction(courseId, box) {
       const ratings = data.questions.map((_, i) => Number(form.querySelector(`input[name="satisfaction-${courseId}-${i}"]:checked`)?.value || 0));
       if (ratings.some((n) => !n)) { toast("모든 문항에 답해 주세요."); return; }
       submit.disabled = true;
-      try { await api(`/api/my/courses/${courseId}/satisfaction`, { ratings }); loadStudentSatisfaction(courseId, box); }
+      try { await api(`/api/my/courses/${courseId}/satisfaction`, { ratings, comment: comment?.value || "" }); loadStudentSatisfaction(courseId, box); }
       catch (err) { toast(err.message, 6000); submit.disabled = false; }
     });
     box.replaceChildren(form);
