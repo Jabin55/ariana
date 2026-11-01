@@ -233,7 +233,7 @@ async def open_satisfaction(course_id: int, request: Request, body: SurveyPublis
                 count = c.execute(select(func.count()).select_from(db.course_satisfaction_responses).where(
                     db.course_satisfaction_responses.c.course_id == course_id)).scalar_one()
                 if count:
-                    raise HTTPException(409, "익명 집계 보호를 위해 마감한 조사는 다시 열 수 없어요.")
+                    raise HTTPException(409, "기존 응답이 있으므로 문항 수정 없이 '조사 다시 열기'를 이용해 주세요.")
                 c.execute(update(db.course_satisfaction_surveys).where(
                     db.course_satisfaction_surveys.c.course_id == course_id).values(
                         opened_at=time.time(), closed_at=None,
@@ -263,6 +263,26 @@ async def close_satisfaction(course_id: int, request: Request):
                     db.course_satisfaction_surveys.c.course_id == course_id).values(closed_at=time.time()))
 
     await db.run(close_survey)
+    return JSONResponse({"ok": True}, headers=PRIVATE)
+
+
+@router.post("/api/courses/{course_id}/satisfaction/reopen")
+async def reopen_satisfaction(course_id: int, request: Request):
+    teacher = await require_user(request, "teacher")
+    await db.run(owned_course, course_id, teacher)
+
+    def reopen_survey():
+        with db.engine.begin() as c:
+            survey = c.execute(select(db.course_satisfaction_surveys).where(
+                db.course_satisfaction_surveys.c.course_id == course_id)).first()
+            if not survey:
+                raise HTTPException(409, "먼저 만족도 조사를 시작해 주세요.")
+            if survey.closed_at is not None:
+                c.execute(update(db.course_satisfaction_surveys).where(
+                    db.course_satisfaction_surveys.c.course_id == course_id).values(
+                        opened_at=time.time(), closed_at=None))
+
+    await db.run(reopen_survey)
     return JSONResponse({"ok": True}, headers=PRIVATE)
 
 

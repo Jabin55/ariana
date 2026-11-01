@@ -3279,12 +3279,26 @@ def test_course_satisfaction_anonymous_aggregate():
     assert students[0].get(student_url).json()["submitted"]
     assert students[2].post(student_url, json={"ratings": [5] * 12}).status_code == 409
     assert t.post(f"{teacher_url}/open").status_code == 409
+    assert other_teacher.post(f"{teacher_url}/reopen").status_code == 404
+    assert t.post(f"{teacher_url}/reopen").status_code == 200
+    reopened = t.get(teacher_url).json()
+    assert reopened["open"] and reopened["responses"] == 3 and "results" not in reopened
+    assert [q["text"] for q in reopened["questions"]] == questions
+    assert students[0].get(student_url).json()["submitted"]
+    assert students[0].post(student_url, json={"ratings": [5] * 12}).status_code == 409
+    assert students[3].post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
+    assert students[3].post(student_url, json={"ratings": [5] * 12}).status_code == 200
+    assert t.post(f"{teacher_url}/close").status_code == 200
+    reclosed = t.get(teacher_url).json()
+    assert reclosed["results_available"] and reclosed["responses"] == 4
+    assert reclosed["results"][0]["average"] == 4.2
 
     uid = students[0].get("/api/me").json()["user"]["id"]
     with db.engine.begin() as conn:
         auth._purge_user_rows(conn, uid)
     after_withdrawal = t.get(teacher_url).json()
-    assert after_withdrawal["responses"] == 2 and after_withdrawal["results_available"]
+    assert after_withdrawal["responses"] == 3 and after_withdrawal["results_available"]
     assert len(after_withdrawal["results"]) == 12
 
     from datetime import date
@@ -3292,7 +3306,7 @@ def test_course_satisfaction_anonymous_aggregate():
     with db.engine.begin() as conn:
         conn.execute(db.courses.update().where(db.courses.c.id == cid).values(school_year=2026))
     assert purge_old_satisfaction(date(2032, 2, 29)) == 0
-    assert purge_old_satisfaction(date(2032, 3, 1)) == 2
+    assert purge_old_satisfaction(date(2032, 3, 1)) == 3
 
 
 def test_legacy_satisfaction_keeps_published_questions_and_responses():
@@ -3320,6 +3334,10 @@ def test_legacy_satisfaction_keeps_published_questions_and_responses():
     result = t.get(teacher_url).json()
     assert len(result["results"]) == 3
     assert result["results"][0]["average"] == 4.0
+    assert t.post(f"{teacher_url}/reopen").status_code == 200
+    reopened = t.get(teacher_url).json()
+    assert reopened["open"] and [q["text"] for q in reopened["questions"]] == old_questions
+    assert students[0].get(student_url).json()["submitted"]
 
 
 def test_empty_legacy_satisfaction_upgrades_for_students():

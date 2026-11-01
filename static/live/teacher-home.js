@@ -408,7 +408,8 @@ async function renderCourseSatisfaction(c, box) {
       h("td", { class: "num" }, `${r.average}점`),
       scale.map(([n]) => h("td", { class: "num" }, `${r.counts[n - 1]}명`))));
     const action = async (verb) => {
-      if (verb === "close" && !confirm("조사를 마감할까요? 응답이 있으면 다시 열 수 없고, 마감 후 결과가 보입니다.")) return;
+      if (verb === "close" && !confirm("조사를 마감할까요? 마감 후 결과를 확인할 수 있고, 나중에 다시 열 수 있습니다.")) return;
+      if (verb === "reopen" && !confirm("조사를 다시 열까요? 기존 응답과 문항은 유지되며, 이미 응답한 학생은 다시 제출할 수 없습니다.")) return;
       const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()),
         narrative_prompt: promptInput?.value.trim() || undefined } : {};
       try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, body); renderCourseSatisfaction(c, box); }
@@ -427,8 +428,10 @@ async function renderCourseSatisfaction(c, box) {
         h("strong", {}, "서술 의견 (선택)"),
         promptInput || h("p", { style: "margin:6px 0 0" }, data.narrative_prompt)) : null,
       canPublish ? h("p", { class: "muted" }, "문항을 확인·수정한 뒤 학생에게 내보내세요. 공개 후에는 문항을 바꿀 수 없어요.") : null,
-      canPublish ? h("button", { class: "primary", onclick: () => action("open") }, "학생에게 내보내기") : null,
+      canPublish ? h("button", { class: "primary", onclick: () => action("open") },
+        data.closed ? "문항 수정 후 다시 열기" : "학생에게 내보내기") : null,
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
+      data.closed ? h("button", { class: "small", onclick: () => action("reopen") }, "조사 다시 열기") : null,
       data.closed && !data.results_available
         ? h("p", { class: "muted" }, "아직 제출된 응답이 없어요.") : null,
       data.results_available ? h("div", {}, h("h4", {}, "학교교육만족도 조사결과"),
