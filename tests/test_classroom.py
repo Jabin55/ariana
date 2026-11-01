@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import time
+from io import BytesIO
 
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
@@ -13,6 +14,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 import pytest
 from fastapi.testclient import TestClient
 from google.oauth2 import id_token
+from openpyxl import load_workbook
 
 import app.auth as auth
 import app.classroom as cr
@@ -3248,6 +3250,9 @@ def test_course_satisfaction_anonymous_aggregate():
     assert students[3].get(student_url).status_code == 404
     assert other_teacher.get(teacher_url).status_code == 404
     assert other_teacher.post(f"{teacher_url}/open", json={}).status_code == 404
+    export_url = f"{teacher_url}/export.xlsx"
+    assert other_teacher.get(export_url).status_code == 404
+    assert t.get(export_url).status_code == 409
     from app.satisfaction import DEFAULT_QUESTIONS
     questions = [text for _, text in DEFAULT_QUESTIONS]
     questions[0] = "운영학교 수업의 난이도는 이해하기에 알맞았다."
@@ -3267,20 +3272,34 @@ def test_course_satisfaction_anonymous_aggregate():
     assert t.post(f"{teacher_url}/open", json={"questions": ["다른 질문으로 바꾸기", *questions[1:]]}).status_code == 409
     assert students[0].post(student_url, json={"ratings": [1] * 12}).status_code == 409
     assert students[1].post(student_url, json={"ratings": [0, 4, 5] * 4}).status_code == 400
-    assert students[1].post(student_url, json={"ratings": [4, 4, 5] * 4}).status_code == 200
+    assert students[1].post(student_url, json={"ratings": [4, 4, 5] * 4,
+                                              "comment": "=1+1"}).status_code == 200
     assert students[2].post(student_url, json={"ratings": [3, 2, 4] * 4}).status_code == 200
     active = t.get(teacher_url).json()
     assert active["responses"] == 3 and "results" not in active
+    assert t.get(export_url).status_code == 409
     assert t.post(f"{teacher_url}/close").status_code == 200
     closed = t.get(teacher_url).json()
     assert closed["results_available"] and closed["results"][0] == {
         "category": "교육과정",
         "question": questions[0],
         "average": 4.0, "counts": [0, 0, 1, 1, 1]}
-    assert len(closed["results"]) == 12 and len(closed["comments"]) == 1
-    assert "학생1" not in closed["comments"][0]
-    assert "010-1234-5678" not in closed["comments"][0]
+    assert len(closed["results"]) == 12 and len(closed["comments"]) == 2
+    assert all("학생1" not in comment and "010-1234-5678" not in comment for comment in closed["comments"])
     assert "user_id" not in str(closed)
+    download = t.get(export_url)
+    assert download.status_code == 200
+    assert download.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert download.headers["cache-control"] == "private, no-store"
+    book = load_workbook(BytesIO(download.content), read_only=True)
+    assert book.sheetnames == ["조사 결과", "서술 의견"]
+    assert book["조사 결과"]["B3"].value == 3
+    assert book["조사 결과"]["C5"].value == questions[0]
+    assert book["조사 결과"]["D5"].value == 4.0
+    assert book["조사 결과"]["E5"].value == 1
+    exported_comments = [book["서술 의견"].cell(row, 2).value for row in (5, 6)]
+    assert "'=1+1" in exported_comments
+    assert all("학생1" not in comment and "010-1234-5678" not in comment for comment in exported_comments)
     assert students[0].get(student_url).json()["submitted"]
     assert students[2].post(student_url, json={"ratings": [5] * 12}).status_code == 409
     assert t.post(f"{teacher_url}/open").status_code == 409
@@ -3288,6 +3307,7 @@ def test_course_satisfaction_anonymous_aggregate():
     assert t.post(f"{teacher_url}/reopen").status_code == 200
     reopened = t.get(teacher_url).json()
     assert reopened["open"] and reopened["responses"] == 3 and "results" not in reopened
+    assert t.get(export_url).status_code == 409
     assert [q["text"] for q in reopened["questions"]] == questions
     assert students[0].get(student_url).json()["submitted"]
     assert students[0].post(student_url, json={"ratings": [5] * 12}).status_code == 409
@@ -3339,6 +3359,9 @@ def test_legacy_satisfaction_keeps_published_questions_and_responses():
     result = t.get(teacher_url).json()
     assert len(result["results"]) == 3
     assert result["results"][0]["average"] == 4.0
+    old_book = load_workbook(BytesIO(t.get(f"{teacher_url}/export.xlsx").content), read_only=True)
+    assert old_book["조사 결과"].max_row == 7
+    assert old_book["조사 결과"]["C5"].value == old_questions[0]
     assert t.post(f"{teacher_url}/reopen").status_code == 200
     reopened = t.get(teacher_url).json()
     assert reopened["open"] and [q["text"] for q in reopened["questions"]] == old_questions

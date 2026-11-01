@@ -439,6 +439,8 @@ async function renderCourseSatisfaction(c, box) {
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
       data.closed ? h("button", { class: "small", onclick: () => action("reopen") }, "조사 다시 열기") : null];
     const resultPane = data.results_available ? [
+      h("p", { style: "text-align:right;margin:0 0 10px" },
+        h("a", { class: "button small", href: `/api/courses/${c.id}/satisfaction/export.xlsx` }, "⬇ 엑셀 다운로드")),
       h("div", { class: "table-wrap" }, h("table", { class: "att satisfaction-table" },
         h("thead", {}, h("tr", {}, h("th", { rowspan: 2 }, "영역"), h("th", { rowspan: 2 }, "설문 내용"),
           h("th", { rowspan: 2 }, "평균"), scale.map(([n]) => h("th", {}, n))),

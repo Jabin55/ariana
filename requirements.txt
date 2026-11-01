@@ -10,3 +10,4 @@ itsdangerous>=2.1
 cryptography>=46
 reportlab>=4.4
 Pillow>=11
+openpyxl>=3.1,<4

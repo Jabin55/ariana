@@ -6,10 +6,14 @@ import json
 import random
 import time
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
@@ -160,8 +164,7 @@ async def submit_satisfaction(course_id: int, body: SatisfactionAnswer, request:
     return JSONResponse({"ok": True}, headers=PRIVATE)
 
 
-@router.get("/api/courses/{course_id}/satisfaction")
-async def teacher_satisfaction(course_id: int, request: Request):
+async def teacher_satisfaction_data(course_id: int, request: Request):
     teacher = await require_user(request, "teacher")
     course = await db.run(owned_course, course_id, teacher)
     await db.run(upgrade_empty_legacy_survey, course_id)
@@ -208,7 +211,84 @@ async def teacher_satisfaction(course_id: int, request: Request):
             result["comments"] = comments
         return result
 
-    return JSONResponse(await db.run(read), headers=PRIVATE)
+    return await db.run(read), course
+
+
+@router.get("/api/courses/{course_id}/satisfaction")
+async def teacher_satisfaction(course_id: int, request: Request):
+    data, _ = await teacher_satisfaction_data(course_id, request)
+    return JSONResponse(data, headers=PRIVATE)
+
+
+def xlsx_text(value: str) -> str:
+    """설문 자유 입력이 엑셀 수식이나 잘못된 XML 문자가 되지 않게 한다."""
+    value = ILLEGAL_CHARACTERS_RE.sub("", value or "")
+    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
+
+
+def satisfaction_workbook(data: dict, course) -> bytes:
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "조사 결과"
+    sheet.merge_cells("A1:I1")
+    sheet["A1"] = "만족도 조사 결과"
+    sheet["A1"].font = Font(size=16, bold=True, color="245B45")
+    sheet["A2"], sheet["B2"] = "강좌", xlsx_text(course.title)
+    sheet["A3"], sheet["B3"] = "응답 인원", data["responses"]
+    sheet.append(["영역", "연번", "설문 내용", "평균", "5 매우 그렇다", "4 그렇다", "3 보통",
+                  "2 그렇지 않다", "1 전혀 그렇지 않다"])
+    category_numbers = {}
+    for item in data["results"]:
+        category = item["category"]
+        category_numbers[category] = category_numbers.get(category, 0) + 1
+        sheet.append([xlsx_text(category), category_numbers[category], xlsx_text(item["question"]),
+                      item["average"], *(item["counts"][score - 1] for score in range(5, 0, -1))])
+        sheet.cell(sheet.max_row, 4).number_format = "0.0"
+    for cell in sheet[4]:
+        cell.fill = PatternFill("solid", fgColor="DDEDE4")
+        cell.font = Font(bold=True, color="245B45")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    sheet.row_dimensions[4].height = 36
+    for column, width in {"A": 16, "B": 8, "C": 78, "D": 10, "E": 17, "F": 14,
+                          "G": 12, "H": 17, "I": 20}.items():
+        sheet.column_dimensions[column].width = width
+    for row in sheet.iter_rows(min_row=5):
+        for cell in row:
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+    sheet.freeze_panes = "D5"
+    sheet.auto_filter.ref = f"A4:I{sheet.max_row}"
+
+    comments = book.create_sheet("서술 의견")
+    comments["A1"] = "서술 의견"
+    comments["A1"].font = Font(size=15, bold=True, color="245B45")
+    comments["A2"] = xlsx_text(data["narrative_prompt"])
+    comments["A4"], comments["B4"] = "연번", "내용"
+    for index, comment in enumerate(data.get("comments", []), 1):
+        comments.append([index, xlsx_text(comment)])
+    for cell in comments[4]:
+        cell.fill = PatternFill("solid", fgColor="DDEDE4")
+        cell.font = Font(bold=True, color="245B45")
+    comments.column_dimensions["A"].width = 8
+    comments.column_dimensions["B"].width = 100
+    comments.merge_cells("A2:B2")
+    comments["A2"].alignment = Alignment(wrap_text=True, vertical="center")
+    comments.row_dimensions[2].height = 36
+    for row in comments.iter_rows(min_row=5, min_col=2, max_col=2):
+        row[0].alignment = Alignment(wrap_text=True, vertical="center")
+    comments.freeze_panes = "B5"
+    buffer = BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+@router.get("/api/courses/{course_id}/satisfaction/export.xlsx")
+async def export_satisfaction(course_id: int, request: Request):
+    data, course = await teacher_satisfaction_data(course_id, request)
+    if not data["results_available"]:
+        raise HTTPException(409, "조사를 마감하고 응답을 받은 뒤 결과를 내려받을 수 있어요.")
+    content = await db.run(satisfaction_workbook, data, course)
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={**PRIVATE, "Content-Disposition": f'attachment; filename="satisfaction-{course_id}.xlsx"'})
 
 
 @router.post("/api/courses/{course_id}/satisfaction/open")
