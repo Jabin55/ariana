@@ -234,14 +234,28 @@ async def open_satisfaction(course_id: int, request: Request, body: SurveyPublis
                     db.course_satisfaction_responses.c.course_id == course_id)).scalar_one()
                 if count:
                     raise HTTPException(409, "기존 응답이 있으므로 문항 수정 없이 '조사 다시 열기'를 이용해 주세요.")
+                reopened_questions = questions if body and body.questions is not None else [
+                    q["text"] for q in survey_questions(survey)]
+                reopened_prompt = prompt if body and body.narrative_prompt is not None else survey_narrative_prompt(
+                    survey, course.term, len(reopened_questions))
                 c.execute(update(db.course_satisfaction_surveys).where(
                     db.course_satisfaction_surveys.c.course_id == course_id).values(
                         opened_at=time.time(), closed_at=None,
-                        questions=json.dumps(questions, ensure_ascii=False), narrative_prompt=prompt))
-            elif body and body.questions is not None and questions != [q["text"] for q in survey_questions(survey)]:
-                raise HTTPException(409, "이미 공개한 조사 문항은 변경할 수 없어요.")
-            elif body and body.narrative_prompt is not None and prompt != survey_narrative_prompt(survey, course.term, 12):
-                raise HTTPException(409, "이미 공개한 서술 의견 문구는 변경할 수 없어요.")
+                        questions=json.dumps(reopened_questions, ensure_ascii=False), narrative_prompt=reopened_prompt))
+            else:
+                current_questions = [q["text"] for q in survey_questions(survey)]
+                current_prompt = survey_narrative_prompt(survey, course.term, len(current_questions))
+                new_questions = questions if body and body.questions is not None else current_questions
+                new_prompt = prompt if body and body.narrative_prompt is not None else current_prompt
+                changed = new_questions != current_questions or new_prompt != current_prompt
+                if changed:
+                    no_responses = ~exists(select(db.course_satisfaction_responses.c.id).where(
+                        db.course_satisfaction_responses.c.course_id == course_id))
+                    updated = c.execute(update(db.course_satisfaction_surveys).where(
+                        db.course_satisfaction_surveys.c.course_id == course_id, no_responses).values(
+                            questions=json.dumps(new_questions, ensure_ascii=False), narrative_prompt=new_prompt))
+                    if not updated.rowcount:
+                        raise HTTPException(409, "응답이 들어온 뒤에는 조사 문항을 수정할 수 없어요.")
 
     await db.run(open_survey)
     return JSONResponse({"ok": True}, headers=PRIVATE)

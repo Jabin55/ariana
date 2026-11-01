@@ -381,13 +381,13 @@ async function renderCourseSatisfaction(c, box) {
   fill(box, h("p", { class: "muted" }, "만족도 조사를 불러오는 중…"));
   try {
     const data = await api(`/api/courses/${c.id}/satisfaction`);
-    const canPublish = !data.started || (data.closed && !data.responses);
+    const canEdit = !data.responses;
     const scale = [[5, "매우 그렇다"], [4, "그렇다"], [3, "보통"], [2, "그렇지 않다"], [1, "전혀 그렇지 않다"]];
-    const inputs = canPublish ? data.questions.map((q) => h("input", {
+    const inputs = canEdit ? data.questions.map((q) => h("input", {
       type: "text", maxlength: 200, value: q.text,
       style: "display:block;width:100%;box-sizing:border-box;margin-top:4px"
     })) : [];
-    const promptInput = canPublish && data.narrative_prompt ? h("textarea", {
+    const promptInput = canEdit && data.narrative_prompt ? h("textarea", {
       rows: 3, maxlength: 500, style: "width:100%;box-sizing:border-box;margin-top:8px"
     }) : null;
     if (promptInput) promptInput.value = data.narrative_prompt;
@@ -401,7 +401,7 @@ async function renderCourseSatisfaction(c, box) {
       groupSpan(data.questions, i) ? h("h4", { style: "margin:16px 0 6px" }, q.category) : null,
       h("label", { style: "display:block;margin:8px 0" },
         `${data.questions.slice(0, i + 1).filter((x) => x.category === q.category).length}. `,
-        canPublish ? inputs[i] : q.text))));
+        canEdit ? inputs[i] : q.text))));
     const resultsRows = (data.results || []).map((r, i) => h("tr", {},
       groupSpan(data.results, i) ? h("th", { rowspan: groupSpan(data.results, i) }, r.category) : null,
       h("td", { class: "satisfaction-question" },
@@ -434,9 +434,8 @@ async function renderCourseSatisfaction(c, box) {
       data.narrative_prompt ? h("div", { class: "box", style: "margin:12px 0" },
         h("strong", {}, "서술 의견 (선택)"),
         promptInput || h("p", { style: "margin:6px 0 0" }, data.narrative_prompt)) : null,
-      canPublish ? h("p", { class: "muted" }, "문항을 확인·수정한 뒤 학생에게 내보내세요. 공개 후에는 문항을 바꿀 수 없어요.") : null,
-      canPublish ? h("button", { class: "primary", onclick: () => action("open") },
-        data.closed ? "문항 수정 후 다시 열기" : "학생에게 내보내기") : null,
+      canEdit ? h("button", { class: "primary", onclick: () => action("open") },
+        data.closed ? "문항 수정 후 다시 열기" : data.open ? "문항 수정 저장" : "학생에게 내보내기") : null,
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
       data.closed ? h("button", { class: "small", onclick: () => action("reopen") }, "조사 다시 열기") : null];
     const resultPane = data.results_available ? [

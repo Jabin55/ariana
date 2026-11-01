@@ -3257,9 +3257,14 @@ def test_course_satisfaction_anonymous_aggregate():
     assert [q["text"] for q in t.get(teacher_url).json()["questions"]] == questions
     assert [q["text"] for q in students[0].get(student_url).json()["questions"]] == questions
     assert students[0].get(student_url).json()["narrative_prompt"] == prompt
-    assert t.post(f"{teacher_url}/open", json={"questions": ["다른 질문으로 바꾸기", *questions[1:]]}).status_code == 409
+    questions[0] = "운영학교 수업 난이도가 이해하기에 적절했다."
+    prompt = "이번 학기 수업에서 도움이 된 점과 개선할 점을 자유롭게 적어 주세요."
+    assert t.post(f"{teacher_url}/open", json={"questions": questions, "narrative_prompt": prompt}).status_code == 200
+    assert [q["text"] for q in students[0].get(student_url).json()["questions"]] == questions
+    assert students[0].get(student_url).json()["narrative_prompt"] == prompt
     assert students[0].post(student_url, json={"ratings": [5, 4, 3] * 4,
                                               "comment": "학생1 010-1234-5678 수업 시간이 좋았어요."}).status_code == 200
+    assert t.post(f"{teacher_url}/open", json={"questions": ["다른 질문으로 바꾸기", *questions[1:]]}).status_code == 409
     assert students[0].post(student_url, json={"ratings": [1] * 12}).status_code == 409
     assert students[1].post(student_url, json={"ratings": [0, 4, 5] * 4}).status_code == 400
     assert students[1].post(student_url, json={"ratings": [4, 4, 5] * 4}).status_code == 200
