@@ -189,10 +189,10 @@ def _grading_note(snap: dict) -> str:
 
 def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     font = _font()
-    normal = ParagraphStyle("normal", fontName=font, fontSize=10, leading=16)
-    small = ParagraphStyle("small", parent=normal, fontSize=8.5, leading=13)
-    title = ParagraphStyle("title", parent=normal, fontSize=17, leading=24, alignment=TA_CENTER)
-    heading = ParagraphStyle("heading", parent=normal, fontSize=12, leading=20)
+    normal = ParagraphStyle("normal", fontName=font, fontSize=11, leading=17)
+    small = ParagraphStyle("small", parent=normal, fontSize=9.5, leading=14)
+    title = ParagraphStyle("title", parent=normal, fontSize=19, leading=26, alignment=TA_CENTER)
+    heading = ParagraphStyle("heading", parent=normal, fontSize=13, leading=21)
     centered_heading = ParagraphStyle("centered_heading", parent=heading, alignment=TA_CENTER)
     def p(value, style=normal):
         return Paragraph(escape(str(value or "-")).replace("\n", "<br/>"), style)
@@ -207,15 +207,15 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
             addressee = f"{hub_school}장 귀하"
             footer_size = min(25, 25 * (A4[0] - 120) / pdfmetrics.stringWidth(addressee, font, 25))
             canvas.setFont(font, footer_size)
-            canvas.drawCentredString(A4[0] / 2, 150, addressee)
-        footnote_style = ParagraphStyle("footnote", parent=normal, fontSize=10, leading=14)
+            canvas.drawCentredString(A4[0] / 2, 136, addressee)
+        footnote_style = ParagraphStyle("footnote", parent=normal, fontSize=10.5, leading=15)
         footnote = Paragraph(
             "※ 원점수는 지필평가 및 수행평가의 반영비율에 따른 환산 점수 합계를 "
             "소수 첫째 자리에서 반올림하여 정수로 기록함.<br/>"
             + escape(_grading_note(snap)), footnote_style)
-        footnote.wrapOn(canvas, A4[0] - 84, 70)
-        footnote.drawOn(canvas, 42, 94)
-        canvas.setFont(font, 8)
+        _, footnote_height = footnote.wrapOn(canvas, A4[0] - 84, 70)
+        footnote.drawOn(canvas, 42, min(80, 116 - footnote_height))
+        canvas.setFont(font, 9)
         canvas.drawRightString(A4[0] - 40, 35, str(doc.page))
 
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=42, rightMargin=42,
@@ -225,9 +225,14 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     document_title = " ".join(part for part in (f"{year}학년도" if year else "", term,
                                                  "공동교육과정 성적 확인서") if part)
     story = [p(document_title, title), Spacer(1, 16)]
-    info = [[p("강좌명", small), p(snap["course_title"]), p("학생 소속 학교", small), p(snap["student_school"])],
-            [p("거점학교", small), p(snap["hub_school"]), p("학생 학번", small), p(snap["student_no"])],
-            [p("강의 교사", small), p(snap["instructor"]), p("학생 이름", small), p(snap["student_name"])]]
+    centered_small = ParagraphStyle("centered_small", parent=small, alignment=TA_CENTER)
+    centered_normal = ParagraphStyle("centered_normal", parent=normal, alignment=TA_CENTER)
+    info = [[p("강좌명", centered_small), p(snap["course_title"], centered_normal),
+             p("학생 소속 학교", centered_small), p(snap["student_school"], centered_normal)],
+            [p("거점학교", centered_small), p(snap["hub_school"], centered_normal),
+             p("학생 학번", centered_small), p(snap["student_no"], centered_normal)],
+            [p("강의 교사", centered_small), p(snap["instructor"], centered_normal),
+             p("학생 이름", centered_small), p(snap["student_name"], centered_normal)]]
     info_table = Table(info, colWidths=[85, 170, 95, 160])
     info_table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#adbfc1")),
                                     ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
@@ -241,7 +246,7 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     bold_small = ParagraphStyle("bold_small", parent=numeric_small, fontName=_FONT_BOLD_NAME)
     def bold(value):
         return p(value, bold_small)
-    head = [p(x, small) for x in ("연번", "평가명", "영역 만점", "반영 비율", "원점수", "반영비율 환산 점수")]
+    head = [p(x, centered_small) for x in ("연번", "평가명", "영역 만점", "반영 비율", "원점수", "반영비율 환산 점수")]
     overview = [head] + [[p(i + 1, small), p(item["title"], small),
                          p(_number(item["max_score"]), numeric_small),
                          p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", numeric_small),
@@ -250,7 +255,6 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                          for i, item in enumerate(snap["items"])]
     converted = converted_performance_score(snap["items"])
     summary_index = len(overview)
-    centered_small = ParagraphStyle("centered_small", parent=small, alignment=TA_CENTER)
     overview.append([p("최종 원점수(총점)", centered_small), "", "", "", "",
                      bold(f"{converted}점") if converted is not None else p("산출 대기", numeric_small)])
     table = Table(overview, colWidths=[32, 174, 64, 64, 62, 114], repeatRows=1, hAlign="LEFT")
@@ -279,7 +283,9 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
     story.append(signature_row)
     if signature:
-        story.append(p(f'서명일시: {fmt(signed_at)}', small))
+        signature_date = ParagraphStyle("signature_date", parent=normal, fontSize=13,
+                                        leading=19, alignment=TA_CENTER)
+        story += [Spacer(1, 8), p(f'서명일시: {fmt(signed_at)}', signature_date)]
     doc.build(story, onFirstPage=frame, onLaterPages=frame)
     return buf.getvalue()
 
