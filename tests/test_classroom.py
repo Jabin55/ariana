@@ -3177,12 +3177,15 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
         "signature": signature, "snapshot_hash": detail["snapshot_hash"]}).status_code == 200
     signed = a.get(f"/api/my/courses/{cid}/score-confirmation/file")
     assert signed.status_code == 200 and signed.content.startswith(b"%PDF-")
+    assert signed.headers["content-disposition"].startswith("inline;")
     assert len(signed.content) > 5000
     stored = next((tmp_path / "score-confirmations" / str(cid) / str(uid)).iterdir())
     assert not stored.read_bytes().startswith(b"%PDF-")  # 서버 디스크에는 암호문만 저장
     roster = t.get(f"/api/courses/{cid}/score-confirmations").json()["confirmations"]
     assert next(x for x in roster if x["user_id"] == uid)["signed"]
-    assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").content == signed.content
+    teacher_file = t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file")
+    assert teacher_file.content == signed.content
+    assert teacher_file.headers["content-disposition"].startswith("attachment;")
     assert other_student.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 404
     assert other_teacher.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
 

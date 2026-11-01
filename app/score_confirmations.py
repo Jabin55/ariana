@@ -423,10 +423,10 @@ async def teacher_confirmation_file(course_id: int, user_id: int, request: Reque
     await db.run(owned_course, course_id, t)
     if not await db.run(is_enrolled, course_id, user_id):
         raise HTTPException(404, "수강생을 찾을 수 없어요.")
-    return await _file(course_id, user_id)
+    return await _file(course_id, user_id, download=True)
 
 
-async def _file(course_id: int, user_id: int):
+async def _file(course_id: int, user_id: int, download: bool = False):
     snap = await db.run(_snapshot, course_id, user_id)
     row = await db.run(_record, course_id, user_id)
     if not _status(snap, row)["signed"]:
@@ -438,5 +438,6 @@ async def _file(course_id: int, user_id: int):
     except (InvalidToken, OSError):
         raise HTTPException(503, "점수 확인서의 무결성을 확인해야 합니다.") from None
     name = safe_name(f'{snap["course_title"]}_{snap["student_name"]}_점수확인서.pdf')
-    headers = {**PRIVATE, "Content-Disposition": f"attachment; filename=score-confirmation.pdf; filename*=UTF-8''{quote(name)}"}
+    disposition = "attachment" if download else "inline"
+    headers = {**PRIVATE, "Content-Disposition": f"{disposition}; filename=score-confirmation.pdf; filename*=UTF-8''{quote(name)}"}
     return Response(pdf, media_type="application/pdf", headers=headers)
