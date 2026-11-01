@@ -553,7 +553,6 @@ body.site { background: var(--bg); }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: 0.85rem; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
-.course-more summary { cursor: pointer; font-size: 0.85rem; color: var(--brand); }
 .tag.off { background: var(--surface-2); color: var(--muted); }
 .ct-desc { white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 

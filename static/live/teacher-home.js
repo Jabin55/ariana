@@ -3,7 +3,7 @@
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 과목 운영에서 연 과목
-let runSub = "notice"; // 그 과목 안의 칸: notice(공지사항) open(수업 열기) assess(수행평가) learn(학습 관리) satisfaction(만족도 조사)
+let runSub = "info"; // 그 과목 안의 칸: info(과목 정보) open(수업 열기) notice(공지사항) assess(수행평가) learn(학습 관리) satisfaction(만족도 조사)
 let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
@@ -329,7 +329,7 @@ function renderRun() {
   $("#run-list").hidden = !!c;
   $("#run-course").hidden = !c;
   if (c) return renderRunCourse(c);
-  const tile = (x) => h("button", { class: "run-tile", type: "button", onclick: () => { runCourseId = x.id; runSub = "notice"; renderRun(); } },
+  const tile = (x) => h("button", { class: "run-tile", type: "button", onclick: () => { runCourseId = x.id; runSub = "info"; renderRun(); } },
     thumbOf(x),
     h("strong", {}, x.title),
     h("span", { class: "muted" }, `${x.hub_school || ""} · 수강 확정 ${x.approved}명`),
@@ -347,7 +347,7 @@ function renderRun() {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 과목 공지사항"], ["open", "▶ 온라인 수업 열기"], ["assess", "📝 수행평가"],
+  const subs = [["info", "과목 정보"], ["open", "▶ 온라인 수업 열기"], ["notice", "📢 과목 공지사항"], ["assess", "📝 수행평가"],
     ["learn", "📊 학습 관리"], ["satisfaction", "📋 만족도 조사"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
@@ -355,7 +355,7 @@ function renderRunCourse(c) {
       h("h2", { class: "grow", style: "margin:0" }, c.title, c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
       !c.locked && !c.archived && c.approval === "approved" ? h("label", { class: "switch", style: "font-size:0.9rem" }, h("input", { type: "checkbox", checked: c.open,
         onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
-      c.lead && !c.locked && !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); renderRun(); } }, "정보 수정") : null,
+      c.lead && !c.locked && !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); runSub = "info"; renderRun(); } }, "정보 수정") : null,
       c.lead && !c.locked ? h("button", { class: "small", onclick: () => {
         if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
       } }, c.archived ? "보관 해제" : "보관 (학기 끝)") : null),
@@ -363,14 +363,15 @@ function renderRunCourse(c) {
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
     c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '내 정보'에서 가입 유형·거점학교 변경을 신청하세요.`) : null,
-    editing.has(c.id) && !c.locked ? courseEditForm(c) : h("details", { class: "course-more" }, h("summary", {}, "과목 정보 자세히"), courseFacts(c),
-      c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null),
     c.locked ? null : h("nav", { class: "tabs sub-tabs" }, subs.map(([k, label]) => h("button", { class: runSub === k ? "active" : "",
       onclick: () => { runSub = k; renderRunCourse(c); } }, label))),
-    c.locked ? null : subBox);
+    c.locked ? h("div", { class: "run-sub" }, courseFacts(c),
+      c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null) : subBox);
   if (c.locked) return;
-  if (runSub === "notice") renderCourseNotices(c, subBox);
+  if (runSub === "info") fill(subBox, editing.has(c.id) ? courseEditForm(c) : [courseFacts(c),
+    c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null]);
   else if (runSub === "open") renderOpenClass(c, subBox);
+  else if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
   else if (runSub === "learn") renderLearning(c, subBox);
   else renderCourseSatisfaction(c, subBox);
