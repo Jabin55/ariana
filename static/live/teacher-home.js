@@ -4,6 +4,7 @@ let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 과목 운영에서 연 과목
 let runSub = "info"; // 그 과목 안의 칸: info(과목 정보) open(수업 열기) notice(공지사항) assess(수행평가) learn(학습 관리) satisfaction(만족도 조사)
+const satisfactionSub = new Map(); // 강좌별 만족도 조사 내부 탭
 let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
@@ -412,14 +413,22 @@ async function renderCourseSatisfaction(c, box) {
       if (verb === "reopen" && !confirm("조사를 다시 열까요? 기존 응답과 문항은 유지되며, 이미 응답한 학생은 다시 제출할 수 없습니다.")) return;
       const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()),
         narrative_prompt: promptInput?.value.trim() || undefined } : {};
-      try { await api(`/api/courses/${c.id}/satisfaction/${verb}`, body); renderCourseSatisfaction(c, box); }
+      try {
+        await api(`/api/courses/${c.id}/satisfaction/${verb}`, body);
+        satisfactionSub.set(c.id, verb === "close" ? "results" : "questions");
+        renderCourseSatisfaction(c, box);
+      }
       catch (err) { toast(err.message, 6000); }
     };
     const status = data.open ? `진행 중 · ${data.responses}/${data.enrolled}명 응답`
       : data.closed ? `마감 · ${data.responses}/${data.enrolled}명 응답` : "아직 시작하지 않았어요.";
-    fill(box,
-      h("p", {}, status),
-      h("h4", { style: "margin:16px 0 8px" }, "조사 문항"),
+    const selected = satisfactionSub.get(c.id) || "questions";
+    const tabs = h("nav", { class: "tabs sub-tabs", "aria-label": "만족도 조사 메뉴" },
+      [["questions", "조사 문항"], ["results", "조사 결과"]].map(([key, label]) => h("button", {
+        type: "button", class: selected === key ? "active" : "",
+        onclick: () => { satisfactionSub.set(c.id, key); renderCourseSatisfaction(c, box); }
+      }, label)));
+    const questionPane = [
       h("p", { class: "muted" }, "응답 기준: 5 매우 그렇다 · 4 그렇다 · 3 보통 · 2 그렇지 않다 · 1 전혀 그렇지 않다"),
       questions,
       data.narrative_prompt ? h("div", { class: "box", style: "margin:12px 0" },
@@ -429,20 +438,20 @@ async function renderCourseSatisfaction(c, box) {
       canPublish ? h("button", { class: "primary", onclick: () => action("open") },
         data.closed ? "문항 수정 후 다시 열기" : "학생에게 내보내기") : null,
       data.open ? h("button", { class: "small", onclick: () => action("close") }, "조사 마감 및 결과 확인") : null,
-      data.closed ? h("button", { class: "small", onclick: () => action("reopen") }, "조사 다시 열기") : null,
-      data.closed && !data.results_available
-        ? h("p", { class: "muted" }, "아직 제출된 응답이 없어요.") : null,
-      data.results_available ? h("div", {}, h("h4", {}, "학교교육만족도 조사결과"),
-        h("div", { class: "table-wrap" }, h("table", { class: "att satisfaction-table" },
+      data.closed ? h("button", { class: "small", onclick: () => action("reopen") }, "조사 다시 열기") : null];
+    const resultPane = data.results_available ? [
+      h("div", { class: "table-wrap" }, h("table", { class: "att satisfaction-table" },
         h("thead", {}, h("tr", {}, h("th", { rowspan: 2 }, "영역"), h("th", { rowspan: 2 }, "설문 내용"),
           h("th", { rowspan: 2 }, "평균"), scale.map(([n]) => h("th", {}, n))),
           h("tr", {}, scale.map(([, label]) => h("th", {}, label)))),
-        h("tbody", {}, resultsRows)))) : null,
+        h("tbody", {}, resultsRows))),
       data.results_available && data.narrative_prompt ? h("div", {},
         h("h4", { style: "margin:20px 0 6px" }, "서술 의견"),
         h("p", { class: "muted" }, data.narrative_prompt),
         data.comments?.length ? h("ul", {}, data.comments.map((comment) => h("li", { style: "white-space:pre-wrap;margin-bottom:8px" }, comment)))
-          : h("p", { class: "muted" }, "작성된 서술 의견이 없어요.")) : null);
+          : h("p", { class: "muted" }, "작성된 서술 의견이 없어요.")) : null]
+      : [h("p", { class: "muted" }, data.closed ? "아직 제출된 응답이 없어요." : "조사를 마감하면 결과를 볼 수 있어요.")];
+    fill(box, tabs, h("p", {}, status), selected === "questions" ? questionPane : resultPane);
   } catch (err) { fill(box, h("p", { class: "error" }, err.message)); }
 }
 
