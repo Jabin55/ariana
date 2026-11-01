@@ -359,16 +359,15 @@ function renderRunCourse(c) {
       c.lead && !c.locked ? h("button", { class: "small", onclick: () => {
         if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
       } }, c.archived ? "보관 해제" : "보관 (학기 끝)") : null),
-    courseInfo(c),
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
     c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '내 정보'에서 가입 유형·거점학교 변경을 신청하세요.`) : null,
     c.locked ? null : h("nav", { class: "tabs sub-tabs" }, subs.map(([k, label]) => h("button", { class: runSub === k ? "active" : "",
       onclick: () => { runSub = k; renderRunCourse(c); } }, label))),
-    c.locked ? h("div", { class: "run-sub" }, courseFacts(c),
+    c.locked ? h("div", { class: "run-sub" }, courseInfo(c), courseFacts(c),
       c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null) : subBox);
   if (c.locked) return;
-  if (runSub === "info") fill(subBox, editing.has(c.id) ? courseEditForm(c) : [courseFacts(c),
+  if (runSub === "info") fill(subBox, editing.has(c.id) ? courseEditForm(c) : [courseInfo(c), courseFacts(c),
     c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null]);
   else if (runSub === "open") renderOpenClass(c, subBox);
   else if (runSub === "notice") renderCourseNotices(c, subBox);
