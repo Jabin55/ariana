@@ -347,7 +347,7 @@ function renderRun() {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["info", "과목 정보"], ["open", "▶ 온라인 수업 열기"], ["notice", "📢 과목 공지사항"], ["assess", "📝 수행평가"],
+  const subs = [["info", "📘 과목 정보"], ["open", "▶ 온라인 수업 열기"], ["notice", "📢 과목 공지사항"], ["assess", "📝 수행평가"],
     ["learn", "📊 학습 관리"], ["satisfaction", "📋 만족도 조사"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
