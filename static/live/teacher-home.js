@@ -512,11 +512,11 @@ async function renderOpenClass(c, box) {
         plain()] : plain());
 }
 
-/* ───── 학습 관리: 위에 [수업참석률][공지][설문][퀴즈][활동] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
+/* ───── 학습 관리: 위에 [수업참석률][공지][퀴즈][설문][평가] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
 
 const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
-const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "활동" };
-const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '활동'은 수행평가(과제) 제출
+const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "평가" };
+const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '평가'는 수행평가(과제) 제출
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
@@ -528,9 +528,9 @@ async function renderLearning(c, box) {
   const cards = [
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
     ["notice", "📢 공지", `${S.notices}회`, `수업 중 ${S.class_notices} · 공지사항 ${S.course_notices}`],
-    ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
-    ["activity", "✍️ 활동", `${S.activity.count}회`, `과제 제출률 ${pct(S.activity.rate)} · 채점 ${S.activity.graded}건`],
+    ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
+    ["activity", "✍️ 평가", `${S.activity.count}회`, `과제 제출률 ${pct(S.activity.rate)} · 채점 ${S.activity.graded}건`],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
