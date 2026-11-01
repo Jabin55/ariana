@@ -82,21 +82,27 @@ async function renderCourseAssignments(c, box) {
     h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
     h("td", {}, a.due ? a.due.replaceAll("-", ".") : "없음",
       h("div", { class: "muted", style: "font-size:0.78rem" }, a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중"))));
+  const bulkButton = h("button", { class: "primary small", type: "button", disabled: true,
+    title: "서명 완료된 확인서를 한꺼번에 받습니다.",
+    onclick: () => { window.location.href = `/api/courses/${c.id}/score-confirmations/download.zip`; } }, "전체 받기");
   box.replaceChildren(
+    h("h3", { style: "margin:0 0 10px" }, "평가 활동"),
     h("div", { class: "row", style: "margin-bottom:8px" },
       list.length ? h("div", { class: "hub-grid-summary grow", style: "margin:0" }, `반영 비율 합계 ${fmtNum(total)}%`) : h("span", { class: "grow" }),
       h("button", { class: "primary", onclick: () => assignmentDialog(c, null, reload) }, "평가 올리기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
       h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "올린 평가가 없어요."))))),
-    h("h3", { style: "margin:24px 0 10px" }, "점수 확인서"),
+    h("div", { class: "row", style: "margin:24px 0 10px" },
+      h("h3", { class: "grow", style: "margin:0" }, "점수 확인서"), bulkButton),
     h("div", { class: "table-wrap", id: `score-confirmations-${c.id}` }, h("p", { class: "muted" }, "확인서를 불러오는 중…")));
-  loadTeacherConfirmations(c.id, box.querySelector(`#score-confirmations-${c.id}`));
+  loadTeacherConfirmations(c.id, box.querySelector(`#score-confirmations-${c.id}`), bulkButton);
 }
 
-async function loadTeacherConfirmations(courseId, box) {
+async function loadTeacherConfirmations(courseId, box, bulkButton) {
   try {
     const { confirmations } = await api(`/api/courses/${courseId}/score-confirmations`);
+    bulkButton.disabled = !confirmations.some((item) => item.signed);
     const rows = confirmations.map((item) => h("tr", {},
       h("td", { class: "num" }, item.number),
       h("td", { class: "center" }, item.school || "-"),

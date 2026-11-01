@@ -3145,6 +3145,7 @@ def test_assignment_weight_and_max_score(monkeypatch, tmp_path):
 def test_signed_score_confirmation(monkeypatch, tmp_path):
     """채점→학생 서명→교사 다운로드, 타인 차단, 성적 변경 시 재서명."""
     import io
+    import zipfile
     import app.score_confirmations as sc
     from PIL import Image, ImageDraw
 
@@ -3155,6 +3156,9 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
     a.post(f"/api/courses/{cid}/enroll")
     other_student.post(f"/api/courses/{cid}/enroll")
     t.post(f"/api/courses/{cid}/approve-all")
+    bulk_url = f"/api/courses/{cid}/score-confirmations/download.zip"
+    assert t.get(bulk_url).status_code == 404
+    assert other_teacher.get(bulk_url).status_code == 404
     aid = t.post(f"/api/courses/{cid}/assignments", json={
         "title": "경제 뉴스 분석", "description": "뉴스를 읽고 원인과 대안을 발표", "weight": 50, "max_score": 50}).json()["id"]
     uid = a.get("/api/me").json()["user"]["id"]
@@ -3189,8 +3193,25 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
     teacher_file = t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file")
     assert teacher_file.content == signed.content
     assert teacher_file.headers["content-disposition"].startswith("attachment;")
+    bulk = t.get(bulk_url)
+    assert bulk.status_code == 200 and bulk.headers["content-type"] == "application/zip"
+    assert bulk.headers["cache-control"] == "private, no-store"
+    with zipfile.ZipFile(io.BytesIO(bulk.content)) as archive:
+        assert len(archive.namelist()) == 1
+        assert "학생1" in archive.namelist()[0]
+        assert archive.read(archive.namelist()[0]) == signed.content
     assert other_student.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 404
     assert other_teacher.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
+
+    other_uid = other_student.get("/api/me").json()["user"]["id"]
+    assert t.post(f"/api/assignments/{aid}/grade", json={"user_id": other_uid, "score": 40}).status_code == 200
+    other_detail = other_student.get(f"/api/my/courses/{cid}/score-confirmation").json()
+    assert other_student.post(f"/api/my/courses/{cid}/score-confirmation", json={
+        "signature": signature, "snapshot_hash": other_detail["snapshot_hash"]}).status_code == 200
+    with zipfile.ZipFile(io.BytesIO(t.get(bulk_url).content)) as archive:
+        assert len(archive.namelist()) == 2
+        assert any("학생1" in name for name in archive.namelist())
+        assert any("학생2" in name for name in archive.namelist())
 
     # 양식 개정 전 서명된 확인서도 계속 열람할 수 있어야 한다.
     with db.engine.begin() as conn:
@@ -3202,18 +3223,24 @@ def test_signed_score_confirmation(monkeypatch, tmp_path):
     t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": 44, "feedback": "수정됨"})
     assert a.get(f"/api/my/courses/{cid}/score-confirmation").json()["needs_resign"]
     assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
+    with zipfile.ZipFile(io.BytesIO(t.get(bulk_url).content)) as archive:
+        assert len(archive.namelist()) == 1 and "학생2" in archive.namelist()[0]
     assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
         "signature": signature, "snapshot_hash": detail["snapshot_hash"]}).status_code == 409
     updated = a.get(f"/api/my/courses/{cid}/score-confirmation").json()
     assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
         "signature": signature, "snapshot_hash": updated["snapshot_hash"]}).status_code == 200
     assert a.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 200
+    with zipfile.ZipFile(io.BytesIO(t.get(bulk_url).content)) as archive:
+        assert len(archive.namelist()) == 2
     with db.engine.begin() as conn:
         conn.execute(db.score_confirmations.update().where(db.score_confirmations.c.user_id == uid)
                      .values(expires_at=time.time() - 1))
     assert a.get(f"/api/my/courses/{cid}/score-confirmation").json()["expired"]
     assert a.get(f"/api/my/courses/{cid}/score-confirmation/file").status_code == 404
     assert t.get(f"/api/courses/{cid}/score-confirmations/{uid}/file").status_code == 404
+    with zipfile.ZipFile(io.BytesIO(t.get(bulk_url).content)) as archive:
+        assert len(archive.namelist()) == 1 and "학생2" in archive.namelist()[0]
     assert a.post(f"/api/my/courses/{cid}/score-confirmation", json={
         "signature": signature, "snapshot_hash": updated["snapshot_hash"]}).status_code == 409
 

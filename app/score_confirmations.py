@@ -10,6 +10,7 @@ import os
 import threading
 import time
 import uuid
+import zipfile
 from datetime import date, datetime, time as day_time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html import escape
@@ -399,28 +400,46 @@ async def my_confirmation_file(course_id: int, request: Request):
     return await _file(course_id, u["id"])
 
 
+def confirmation_roster(course_id: int) -> list[dict]:
+    roster = course_roster(course_id)
+    with db.engine.connect() as c:
+        signed = {r.user_id: r for r in c.execute(select(db.score_confirmations).where(
+            db.score_confirmations.c.course_id == course_id))}
+    out = []
+    for i, u in enumerate(sorted(roster, key=lambda x: (x.school or "", student_no(dict(x._mapping)), x.name or "")), 1):
+        snap = _snapshot(course_id, u.id)
+        status = _status(snap, signed.get(u.id))
+        out.append({"number": i, "user_id": u.id, "school": u.school or "",
+                    "student_no": student_no(dict(u._mapping)), "name": u.name or u.google_name,
+                    "signed": status["signed"], "needs_resign": status["needs_resign"],
+                    "expired": status["expired"],
+                    "signed_at": status["signed_at"]})
+    return out
+
+
 @router.get("/api/courses/{course_id}/score-confirmations")
 async def teacher_confirmations(course_id: int, request: Request):
     t = await require_user(request, "teacher")
     await db.run(owned_course, course_id, t)
+    return JSONResponse({"confirmations": await db.run(confirmation_roster, course_id)}, headers=PRIVATE)
 
-    def run():
-        roster = course_roster(course_id)
-        with db.engine.connect() as c:
-            signed = {r.user_id: r for r in c.execute(select(db.score_confirmations).where(
-                db.score_confirmations.c.course_id == course_id))}
-        out = []
-        for i, u in enumerate(sorted(roster, key=lambda x: (x.school or "", student_no(dict(x._mapping)), x.name or "")), 1):
-            snap = _snapshot(course_id, u.id)
-            status = _status(snap, signed.get(u.id))
-            out.append({"number": i, "user_id": u.id, "school": u.school or "",
-                        "student_no": student_no(dict(u._mapping)), "name": u.name or u.google_name,
-                        "signed": status["signed"], "needs_resign": status["needs_resign"],
-                        "expired": status["expired"],
-                        "signed_at": status["signed_at"]})
-        return out
 
-    return JSONResponse({"confirmations": await db.run(run)}, headers=PRIVATE)
+@router.get("/api/courses/{course_id}/score-confirmations/download.zip")
+async def download_confirmations(course_id: int, request: Request):
+    t = await require_user(request, "teacher")
+    await db.run(owned_course, course_id, t)
+    signed = [item for item in await db.run(confirmation_roster, course_id) if item["signed"]]
+    if not signed:
+        raise HTTPException(404, "아직 내려받을 점수 확인서가 없어요.")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in signed:
+            file_response = await _file(course_id, item["user_id"], download=True)
+            name = f'{item["number"]:03d}_' + safe_name(
+                f'{item["school"]}_{item["student_no"]}_{item["name"]}_점수확인서.pdf')
+            archive.writestr(name, file_response.body)
+    return Response(buffer.getvalue(), media_type="application/zip", headers={
+        **PRIVATE, "Content-Disposition": f'attachment; filename="score-confirmations-{course_id}.zip"'})
 
 
 @router.get("/api/courses/{course_id}/score-confirmations/{user_id}/file")

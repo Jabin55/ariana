@@ -452,7 +452,8 @@ async function renderCourseSatisfaction(c, box) {
         data.comments?.length ? h("ul", {}, data.comments.map((comment) => h("li", { style: "white-space:pre-wrap;margin-bottom:8px" }, comment)))
           : h("p", { class: "muted" }, "작성된 서술 의견이 없어요.")) : null]
       : [h("p", { class: "muted" }, data.closed ? "아직 제출된 응답이 없어요." : "조사를 마감하면 결과를 볼 수 있어요.")];
-    fill(box, tabs, h("p", {}, status), selected === "questions" ? questionPane : resultPane);
+    fill(box, h("div", { class: "satisfaction-status" }, status), tabs,
+      selected === "questions" ? questionPane : resultPane);
   } catch (err) { fill(box, h("p", { class: "error" }, err.message)); }
 }
 
