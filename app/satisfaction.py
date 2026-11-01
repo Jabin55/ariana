@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictInt
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app import db
@@ -89,11 +89,28 @@ def survey_narrative_prompt(survey, term: str, question_count: int) -> str:
     return (survey.narrative_prompt or narrative_prompt(term, question_count)) if survey else narrative_prompt(term, question_count)
 
 
+def upgrade_empty_legacy_survey(course_id: int) -> None:
+    """응답이 전혀 없는 예전 3문항 조사만 현재 기본 양식으로 전환한다."""
+    with db.engine.begin() as c:
+        survey = c.execute(select(db.course_satisfaction_surveys).where(
+            db.course_satisfaction_surveys.c.course_id == course_id).with_for_update()).first()
+        if not survey or len(survey_questions(survey)) != 3:
+            return
+        term = c.execute(select(db.courses.c.term).where(db.courses.c.id == course_id)).scalar() or ""
+        no_responses = ~exists(select(db.course_satisfaction_responses.c.id).where(
+            db.course_satisfaction_responses.c.course_id == course_id))
+        c.execute(update(db.course_satisfaction_surveys).where(
+            db.course_satisfaction_surveys.c.course_id == course_id, no_responses).values(
+                questions=json.dumps([text for _, text in DEFAULT_QUESTIONS], ensure_ascii=False),
+                narrative_prompt=narrative_prompt(term, 12)))
+
+
 @router.get("/api/my/courses/{course_id}/satisfaction")
 async def my_satisfaction(course_id: int, request: Request):
     student = await require_user(request, "student")
     if not await db.run(is_enrolled, course_id, student["id"]):
         raise HTTPException(404, "수강 중인 강좌를 찾을 수 없어요.")
+    await db.run(upgrade_empty_legacy_survey, course_id)
 
     def read():
         with db.engine.connect() as c:
@@ -117,6 +134,7 @@ async def submit_satisfaction(course_id: int, body: SatisfactionAnswer, request:
     student = await require_user(request, "student")
     if not await db.run(is_enrolled, course_id, student["id"]):
         raise HTTPException(404, "수강 중인 강좌를 찾을 수 없어요.")
+    await db.run(upgrade_empty_legacy_survey, course_id)
     if any(score < 1 or score > 5 for score in body.ratings):
         raise HTTPException(400, "각 문항에 1~5점으로 답해 주세요.")
     comment = redact(body.comment.strip(), await db.run(known_member_names)) if body.comment.strip() else ""
@@ -146,6 +164,7 @@ async def submit_satisfaction(course_id: int, body: SatisfactionAnswer, request:
 async def teacher_satisfaction(course_id: int, request: Request):
     teacher = await require_user(request, "teacher")
     course = await db.run(owned_course, course_id, teacher)
+    await db.run(upgrade_empty_legacy_survey, course_id)
 
     def read():
         with db.engine.connect() as c:

@@ -3302,19 +3302,41 @@ def test_legacy_satisfaction_keeps_published_questions_and_responses():
         assert s.post(f"/api/courses/{cid}/enroll").status_code == 200
     assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 3
     old_questions = ["기존 수업 내용에 만족했나요?", "기존 소통 방식에 만족했나요?", "기존 수업 환경에 만족했나요?"]
+    old_responses = [(s.get("/api/me").json()["user"]["id"], ratings)
+                     for s, ratings in zip(students, ([5, 4, 3], [4, 4, 5], [3, 2, 4]))]
     with db.engine.begin() as conn:
         conn.execute(db.course_satisfaction_surveys.insert().values(
             course_id=cid, opened_at=time.time(),
             questions=json.dumps(old_questions, ensure_ascii=False)))
+        for uid, ratings in old_responses:
+            conn.execute(db.course_satisfaction_responses.insert().values(
+                course_id=cid, user_id=uid, content=ratings[0],
+                communication=ratings[1], environment=ratings[2], submitted_at=time.time()))
     student_url = f"/api/my/courses/{cid}/satisfaction"
     assert [q["text"] for q in students[0].get(student_url).json()["questions"]] == old_questions
-    for s, ratings in zip(students, ([5, 4, 3], [4, 4, 5], [3, 2, 4])):
-        assert s.post(student_url, json={"ratings": ratings}).status_code == 200
     teacher_url = f"/api/courses/{cid}/satisfaction"
     assert t.post(f"{teacher_url}/close").status_code == 200
     result = t.get(teacher_url).json()
     assert len(result["results"]) == 3
     assert result["results"][0]["average"] == 4.0
+
+
+def test_empty_legacy_satisfaction_upgrades_for_students():
+    t = teacher()
+    s = student(1)
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    assert s.post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
+    with db.engine.begin() as conn:
+        conn.execute(db.course_satisfaction_surveys.insert().values(
+            course_id=cid, opened_at=time.time(),
+            questions=json.dumps(["기존 질문 하나인가요?", "기존 질문 둘인가요?", "기존 질문 셋인가요?"])))
+    student_url = f"/api/my/courses/{cid}/satisfaction"
+    student_view = s.get(student_url).json()
+    assert student_view["open"] and len(student_view["questions"]) == 12
+    assert student_view["questions"][0]["category"] == "교육과정"
+    assert len(t.get(f"/api/courses/{cid}/satisfaction").json()["questions"]) == 12
+    assert s.post(student_url, json={"ratings": [5] * 12}).status_code == 200
 
 
 def test_course_detail_page_public_info():
