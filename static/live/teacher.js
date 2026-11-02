@@ -1522,11 +1522,6 @@ function renderActivity() {
         a.reveal ? "🙈 결과 숨기기" : "📊 학생에게 결과 공개"),
       h("button", { class: "danger", onclick: () => sock.send({ t: "activity_clear" }) }, "끝내기")));
   box.append(card);
-  // 결과를 공개하면 학생 화면에 어떻게 보이는지 선생님도 함께 본다 (학생 이름은 보이지 않음)
-  box.append(h("div", { class: "reveal-preview" },
-    h("div", { class: "muted", style: "font-size:0.85rem;margin-bottom:6px" },
-      a.reveal ? "📱 지금 학생 화면 (결과 공개 중)" : "📱 결과를 공개하면 학생 화면에 이렇게 보여요"),
-    revealPreview(a)));
   // 메인 화면에도 짧게 표시
   mini.append(h("div", { class: "banner" }, h("strong", {}, `📝 ${KIND_NAMES[a.kind]}`),
     h("span", { class: "grow" }, a.prompt), h("span", { class: "muted" }, `응답 ${a.total}/${online}`),
