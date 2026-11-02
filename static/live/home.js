@@ -1642,7 +1642,7 @@ async function loadClassSpeech(id) {
   fill(box,
     h("div", { class: "row" },
       h("h2", { class: "grow", style: "margin:0" }, `💬 발언 기록 ${entries.length}건`),
-      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button" }, "📥 발언 기록 엑셀") : null),
+      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button" }, "📥 스크립트 엑셀") : null),
     entries.length ? null : h("p", { class: "muted" }, "이 수업에서 [📝 발언 기록]을 켜지 않았어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 사람의 말이 글자로 남아요."),
     entries.length ? h("details", { open: true }, h("summary", {}, h("strong", {}, "🗒 전체 스크립트")),
       h("div", { class: "speech-script" }, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },

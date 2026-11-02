@@ -206,7 +206,7 @@ async function meetScript(id, box) {
   fill(box,
     h("div", { class: "row", style: "margin:8px 0" },
       h("span", { class: "grow muted" }, `발언 ${entries.length}건`),
-      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button small" }, "📥 발언 기록 엑셀") : null),
+      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button small" }, "📥 스크립트 엑셀") : null),
     entries.length ? h("div", { class: "speech-script" }, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },
       h("span", { class: "sp-time" }, e.time.slice(0, 5)),
       h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
