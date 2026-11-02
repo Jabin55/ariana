@@ -534,6 +534,71 @@ def _parse_standards(rows: list) -> list[dict]:
     return list(out.values())
 
 
+_LEVEL_KEY = {"상": "level_high", "중": "level_mid", "하": "level_low"}
+
+
+def _clean(v) -> str:
+    return _re.sub(r"\s+", " ", str(v or "")).strip()
+
+
+def _parse_vertical(rows: list) -> list[dict]:
+    """국가 평가기준 표를 그대로 붙여넣은 모양: [교육과정 성취기준 | (평가준거 성취기준) | 상·중·하 | 평가기준]
+    - 성취기준 칸은 병합돼 첫 줄(상)에만 있고, 중·하 줄은 비어 있다.
+    - 페이지가 넘어가며 성취기준 문장이나 평가기준이 다음 줄로 이어질 수 있다.
+    - 단원 제목·표 머리 줄은 건너뛴다."""
+    out: list[dict] = []
+    cur, last_key, closed = None, None, True
+    for r in rows:
+        cells = [_clean(x) for x in r]
+        if not any(cells):
+            continue
+        joined = "".join(cells).replace(" ", "")
+        if "교육과정성취기준" in joined or (joined in ("평가기준", "교육과정성취기준평가기준")):
+            continue  # 표 머리
+        at = next((i for i, x in enumerate(cells) if x in _LEVEL_KEY), None)
+        left = [x for x in (cells[:at] if at is not None else cells) if x]
+        right = " ".join(x for x in cells[at + 1:] if x) if at is not None else ""
+        code_cell = next((x for x in left if _CODE.search(x)), None)
+        if code_cell:  # 새 성취기준
+            if len(out) >= MAX_IMPORT:
+                raise HTTPException(400, f"성취기준은 한 번에 {MAX_IMPORT}개까지 올릴 수 있어요.")
+            m = _CODE.search(code_cell)
+            rest = [x for x in left if x is not code_cell]
+            cur = {"code": m.group(0).replace(" ", "")[:40], "text": _clean(code_cell[:m.start()] + code_cell[m.end():]),
+                   "criterion": " ".join(rest), "level_high": "", "level_mid": "", "level_low": "", "elements": []}
+            out.append(cur)
+            closed, last_key = False, None
+        elif cur and not closed and at is None and last_key and not cells[0]:
+            # 첫 칸이 비고 글만 있는 줄: 바로 위 평가기준(상·중·하)이 다음 줄로 이어진 것
+            cur[last_key] = _clean(cur[last_key] + " " + " ".join(left))
+            continue
+        elif cur and not closed and left and at is None and not right:
+            # 페이지가 넘어가며 이어진 성취기준 문장 (첫 칸) · 평가준거 성취기준 (둘째 칸)
+            cur["text"] = _clean(cur["text"] + " " + left[0])
+            if len(left) > 1:
+                cur["criterion"] = _clean(cur["criterion"] + " " + " ".join(left[1:]))
+            continue
+        elif cur and not closed and left and at is not None:
+            cur["text"] = _clean(cur["text"] + " " + left[0])
+            if len(left) > 1:
+                cur["criterion"] = _clean(cur["criterion"] + " " + " ".join(left[1:]))
+        if cur is None or closed:
+            continue
+        if at is not None:
+            last_key = _LEVEL_KEY[cells[at]]
+            cur[last_key] = _clean(cur[last_key] + " " + right)
+            if cells[at] == "하" and right:
+                closed = True  # 하까지 왔으면 이 성취기준은 끝 (뒤의 단원 제목 등은 붙이지 않는다)
+    for it in out:
+        crit = _clean(_re.sub(r"\[?\s*평가\s*준거\s*성취\s*기준\s*[①-⑳0-9]*\s*\]?", "", it["criterion"]))
+        if crit:  # 평가준거 성취기준이 따로 있으면 성취기준 문장 뒤에 덧붙여 둔다
+            it["text"] = f"{it['text']}\n[평가준거 성취기준] {crit}"
+        del it["criterion"]
+        for k in ("text", "level_high", "level_mid", "level_low"):
+            it[k] = it[k][:3000 if k != "text" else 2000]
+    return [it for it in out if it["text"] or it["level_high"]]
+
+
 def _parse_levels(rows: list) -> dict:
     """[과목 성취수준] 시트: 첫 칸이 A·B·C·D·E·P 인 줄의 설명 (첫 칸 '성취수준', 둘째 칸 '일반적 특성')"""
     levels = {}
@@ -558,7 +623,9 @@ def parse_standards_xlsx(data: bytes) -> tuple[list[dict], dict]:
         if "성취수준" in sheet.title.replace(" ", ""):
             levels.update(_parse_levels(rows))
         elif not standards:
-            standards = _parse_standards(rows)
+            # 국가 평가기준 표를 그대로 붙여넣은 모양(상·중·하가 세로로)이 먼저, 아니면 한 줄에 한 성취기준
+            vertical = any(_clean(x) in _LEVEL_KEY for r in rows for x in r)
+            standards = _parse_vertical(rows) if vertical else _parse_standards(rows)
     if not standards and not levels:
         raise HTTPException(400, "엑셀에서 성취기준이나 과목 성취수준을 찾지 못했어요. [엑셀 양식 받기]로 받은 양식에 채워 주세요.")
     return standards, levels
@@ -620,13 +687,13 @@ async def standards_template(course_id: int, request: Request):
     book = Workbook()
     sh = book.active
     sh.title = "성취기준"
-    sh.append(["성취기준 코드", "성취기준", "평가기준 상", "평가기준 중", "평가기준 하", "평가 요소(선택)", "요소 상", "요소 중", "요소 하"])
-    sh.append(["[12법사02-03]", "기본권 제한의 요건과 한계를 이해하고 구체적 사례에 적용하여 판단한다.",
-               "기본권 제한의 요건과 한계를 정확히 이해하고, 다양한 사례에 적용하여 타당하게 판단할 수 있다.",
-               "기본권 제한의 요건을 이해하고, 사례에 적용하여 판단할 수 있다.", "기본권 제한의 의미를 대략 설명할 수 있다.",
-               "근거 제시", "타당하고 구체적인 근거를 든다", "근거를 들지만 일부만 타당하다", "근거 없이 주장한다"])
-    sh.append(["[12법사02-03]", "", "", "", "", "반론 고려", "상대 주장을 이해하고 반박한다", "상대 주장을 언급한다", "상대 주장을 고려하지 않는다"])
-    for col, w in zip("ABCDEFGHI", (16, 50, 40, 40, 40, 16, 30, 30, 30)):
+    # 국가 평가기준 표와 같은 모양: 성취기준 하나에 상·중·하 세 줄 (표를 그대로 복사해 A1에 붙여넣어도 된다)
+    sh.append(["교육과정 성취기준", "수준", "평가기준"])
+    sh.append(["[12법사02-03] 기본권 제한의 요건과 한계를 이해하고 구체적 사례에 적용하여 판단할 수 있다.", "상",
+               "기본권 제한의 요건과 한계를 정확히 이해하고, 다양한 사례에 적용하여 타당하게 판단할 수 있다."])
+    sh.append([None, "중", "기본권 제한의 요건을 이해하고, 사례에 적용하여 판단할 수 있다."])
+    sh.append([None, "하", "기본권 제한의 의미를 설명할 수 있다."])
+    for col, w in zip("ABC", (50, 8, 90)):
         sh.column_dimensions[col].width = w
     lv = book.create_sheet("과목 성취수준")
     lv.append(["성취수준", "일반적 특성"])
@@ -642,11 +709,12 @@ async def standards_template(course_id: int, request: Request):
             for cell in row:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
     note = book.create_sheet("사용법")
-    for line in ("1. [성취기준] 시트: 한 줄에 성취기준 하나씩 적고, 그 성취기준의 평가기준을 상·중·하 칸에 적어요. (예시 두 줄은 지우고 쓰세요)",
-                 "2. 평가 요소는 비워 두면 올린 뒤 AI가 평가기준에서 뽑아 줄 수 있어요.",
-                 "3. 평가 요소를 직접 넣으려면 같은 성취기준 코드를 아래 줄에 다시 적고 평가 요소 칸만 채워요.",
-                 f"4. [과목 성취수준] 시트: 이 과목의 성취도({'·'.join(scale_of(course))})별 일반적 특성을 적어요.",
-                 "5. 이미 있는 성취기준 코드를 다시 올리면 내용이 새것으로 바뀌어요."):
+    for line in ("1. [성취기준] 시트: 교육과정 문서(PDF·한글)의 '교육과정 성취기준 | 평가기준' 표를 그대로 복사해 A1 칸에 붙여넣으면 돼요. (예시 줄은 지우세요)",
+                 "   성취기준 하나에 상·중·하 세 줄이고, 성취기준 칸은 첫 줄에만 있어도 돼요. 단원 제목이나 표 머리 줄이 섞여 있어도 알아서 건너뛰어요.",
+                 "   '평가준거 성취기준' 칸이 있는 표도 그대로 붙여넣어도 돼요. (성취기준 아래에 함께 저장돼요)",
+                 "2. 평가 요소는 올린 뒤 AI가 평가기준에서 뽑아 줘요. 나중에 [수정]에서 고칠 수 있어요.",
+                 f"3. [과목 성취수준] 시트: 이 과목의 성취도({'·'.join(scale_of(course))})별 일반적 특성을 적어요.",
+                 "4. 이미 있는 성취기준 코드를 다시 올리면 내용이 새것으로 바뀌어요."):
         note.append([line])
     note.column_dimensions["A"].width = 110
     out = _io.BytesIO()

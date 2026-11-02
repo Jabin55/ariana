@@ -3688,20 +3688,21 @@ def test_standards_import_from_excel():
     tpl = t.get(f"/api/courses/{cid}/standards/template.xlsx")
     assert tpl.status_code == 200
     wb = load_workbook(io.BytesIO(tpl.content))
-    assert wb["성취기준"]["C1"].value == "평가기준 상"
+    assert [c.value for c in wb["성취기준"][1]] == ["교육과정 성취기준", "수준", "평가기준"]
     assert [r[0].value for r in wb["과목 성취수준"].iter_rows(min_row=2)] == ["A", "B", "C"]  # 3단계 과목
     up = lambda content: t.post(f"/api/courses/{cid}/standards/import", content=content,
                                 headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
-    r = up(tpl.content).json()  # 양식 예시 그대로: 성취기준 1개, 평가 요소 2개
+    r = up(tpl.content).json()  # 양식 예시 그대로: 성취기준 1개 (상·중·하 세 줄)
     assert r["added"] == 1
     s = t.get(f"/api/courses/{cid}/standards").json()["standards"][0]
-    assert s["code"] == "[12법사02-03]" and [e["name"] for e in s["elements"]] == ["근거 제시", "반론 고려"]
-    assert s["level_mid"].startswith("기본권 제한의 요건을 이해하고")
+    assert s["code"] == "[12법사02-03]" and s["text"].startswith("기본권 제한의 요건과 한계를")
+    assert s["level_mid"].startswith("기본권 제한의 요건을 이해하고") and s["level_low"] == "기본권 제한의 의미를 설명할 수 있다."
+    t.post(f"/api/courses/{cid}/standards", json={**s, "elements": [{"name": "근거 제시"}, {"name": "반론 고려"}]})
     book = Workbook()
     sh = book.active
     sh.title = "성취기준"
     sh.append(["2022 개정 법과 사회"])  # 위에 제목 줄이 있어도 된다
-    sh.append(["성취기준", "상", "중", "하"])
+    sh.append(["성취기준", "평가기준 상", "평가기준 중", "평가기준 하"])  # 한 줄에 한 성취기준 모양도 읽는다
     sh.append(["[12법사01-01] 법의 의미를 탐구한다.", "가", "나", "다"])
     sh.append(["[12법사02-03] 바뀐 기본권 문장", "가2", "나2", "다2"])
     lv = book.create_sheet("과목 성취수준")
@@ -3717,5 +3718,26 @@ def test_standards_import_from_excel():
     assert got["[12법사02-03]"]["text"] == "바뀐 기본권 문장" and len(got["[12법사02-03]"]["elements"]) == 2  # 요소는 유지
     assert d["scale"] == ["A", "B", "C"] and d["course_levels"] == {"A": "매우 우수", "B": "보통", "C": "기초"}
     assert t.post(f"/api/courses/{cid}/achievement-levels", json={"levels": {"A": "수정", "E": "무시"}}).json()["levels"] == {"A": "수정", "B": "", "C": ""}
+    # 국가 평가기준 표(PDF)를 그대로 붙여넣은 모양: 병합 칸·평가준거 칸·페이지 넘김·단원 제목
+    book = Workbook()
+    sh = book.active
+    sh.title = "성취기준"
+    for row in (["가. 성취기준"], ["(1) 국제 경제의 이해"], ["교육과정 성취기준", "평가기준"],
+                ["[12국경01-01]\n세계화의 의미를 파악할 수 있다.", "상", "세계화의 의미를 시간, 공간과"],
+                [None, None, "관련지어 설명할 수 있다."], [None, "중", "세계화의 의미를 설명할 수 있다."],
+                [None, "하", "세계화 현상을 제시할 수 있다."], ["(4) 세계 속 한국 경제의 과제"],
+                ["[12국경04-05] 세계화로 인해 기업의", "[평가준거 성취기준 ①] 기업의 활동", "상", "다국적 기업을 설명한다."],
+                [None, None, "중", "다국적 기업의 등장 배경을 설명한다."], ["교육과정 성취기준", "평가기준"],
+                ["활동 범위가 넓어진다.", "범위 확대를 탐구한다.", None, None], [None, None, "하", "다국적 기업 사례를 조사한다."]):
+        sh.append(row)
+    buf = io.BytesIO(); book.save(buf)
+    assert up(buf.getvalue()).json()["added"] == 2
+    got = {x["code"]: x for x in t.get(f"/api/courses/{cid}/standards").json()["standards"]}
+    a1 = got["[12국경01-01]"]
+    assert a1["text"] == "세계화의 의미를 파악할 수 있다." and a1["level_high"] == "세계화의 의미를 시간, 공간과 관련지어 설명할 수 있다."
+    assert a1["level_low"] == "세계화 현상을 제시할 수 있다."
+    a5 = got["[12국경04-05]"]
+    assert a5["text"] == "세계화로 인해 기업의 활동 범위가 넓어진다.\n[평가준거 성취기준] 기업의 활동 범위 확대를 탐구한다."
+    assert (a5["level_mid"], a5["level_low"]) == ("다국적 기업의 등장 배경을 설명한다.", "다국적 기업 사례를 조사한다.")
     assert up(b"not excel").status_code == 400
     assert teacher("other@gmail.com").post(f"/api/courses/{cid}/standards/import", content=tpl.content).status_code == 404
