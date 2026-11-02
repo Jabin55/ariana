@@ -242,8 +242,7 @@ async function meetSpeakers(id, box) {
   const allCloud = h("div", { class: "word-cloud" });
   fill(box,
     h("div", { class: "row", style: "margin:8px 0" },
-      h("span", { class: "grow muted" }, `발언한 참석자 ${list.length}명`),
-      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button small" }, "📥 발언 기록 엑셀") : null),
+      h("span", { class: "grow muted" }, `발언한 참석자 ${list.length}명`)), // 엑셀은 [스크립트] 탭에
     list.length ? [
       h("h4", { class: "speech-h", style: "margin-top:4px" }, "☁️ 참석자 전체 워드클라우드"), allCloud,
       h("h4", { class: "speech-h" }, "🧑‍🎓 참석자별 발언 (이름을 누르면 자세히)"),
