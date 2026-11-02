@@ -139,7 +139,9 @@ async def list_standards(course_id: int, request: Request):
     from app import subjects
     standards, links = await db.run(standards_of, course_id)
     sessions = (await db.run(sessions_by_course, [course_id])).get(course_id, [])
+    class_links = await db.run(class_links_of, course_id)
     return {"standards": standards, "ai": ai_ready(), "scale": scale_of(course), "course_levels": course_levels(course),
+            "class_links": {str(k): v for k, v in class_links.items()},
             "achievement_text": subjects.ACHIEVEMENTS.get(course.achievement or "", "성취도 미정 (5단계로 표시)"),
             "sessions": [{**s, "standard_ids": links.get(s["no"], [])} for s in sessions]}
 
@@ -201,13 +203,47 @@ async def delete_standard(course_id: int, sid: int, request: Request):
                                                         db.course_standards.c.course_id == course_id))
             c.execute(delete(db.session_standards).where(db.session_standards.c.standard_id == sid,
                                                          db.session_standards.c.course_id == course_id))
+            c.execute(delete(db.class_standards).where(db.class_standards.c.standard_id == sid))
 
     await db.run(run)
     return {"ok": True}
 
 
+def class_links_of(course_id: int) -> dict[int, list[int]]:
+    """이 과목 수업(class)마다 직접 고른 성취기준"""
+    cs, cl = db.class_standards.c, db.classes.c
+    out: dict[int, list[int]] = {}
+    with db.engine.connect() as c:
+        for r in c.execute(select(cs.class_id, cs.standard_id).join(db.classes, cl.id == cs.class_id)
+                           .where(cl.course_id == course_id)):
+            out.setdefault(r.class_id, []).append(r.standard_id)
+    return out
+
+
 class SessionLinkReq(BaseModel):
     standard_ids: list[int] = Field(default_factory=list, max_length=30)
+
+
+@router.post("/api/courses/{course_id}/classes/{class_id}/standards")
+async def link_class(course_id: int, class_id: int, req: SessionLinkReq, request: Request):
+    """회차 외 수업(보강·특강)에 다룬 성취기준을 직접 고른다. 빈 목록이면 같은 날 회차 → 모든 성취기준으로 돌아간다"""
+    await _course(course_id, request)
+
+    def run():
+        cs = db.class_standards.c
+        with db.engine.begin() as c:
+            r = c.execute(select(db.classes.c.id).where(db.classes.c.id == class_id, db.classes.c.course_id == course_id)).first()
+            if not r:
+                raise HTTPException(404, "이 과목의 수업이 아니에요.")
+            mine = set(c.execute(select(db.course_standards.c.id).where(
+                db.course_standards.c.course_id == course_id)).scalars())
+            c.execute(delete(db.class_standards).where(cs.class_id == class_id))
+            for sid in dict.fromkeys(req.standard_ids):
+                if sid in mine:
+                    c.execute(insert(db.class_standards).values(class_id=class_id, standard_id=sid))
+
+    await db.run(run)
+    return {"ok": True}
 
 
 @router.post("/api/courses/{course_id}/sessions/{no}/standards")
@@ -372,8 +408,10 @@ def _student_material(course_id: int, user_id: int):
                                                 "texts": [], "notes": []})
         x["notes"].append(o["text"])
     every = [s["id"] for s in standards]
+    direct = class_links_of(course_id)
     for x in classes.values():
-        x["standard_ids"] = by_date.get(x["date"]) or every  # 회차와 연결되지 않은 수업은 모든 성취기준으로
+        # 수업에 직접 고른 성취기준 → 같은 날 회차의 성취기준 → 모든 성취기준
+        x["standard_ids"] = direct.get(x["class_id"]) or by_date.get(x["date"]) or every
     with db.engine.connect() as c:
         u = c.execute(select(db.users.c.name, db.users.c.google_name).where(db.users.c.id == user_id)).first()
     names = [n for n in ((u.name, u.google_name) if u else ()) if n]

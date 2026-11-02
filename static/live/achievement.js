@@ -179,11 +179,14 @@ async function renderSessionStandards(c, box) {
   const DAYNAMES = ["일", "월", "화", "수", "목", "금", "토"];
   const dow = (iso) => DAYNAMES[new Date(`${iso}T00:00:00Z`).getUTCDay()];
   if (!d.sessions.length) {
+    const extra0 = h("div");
     achFill(box, h("p", { class: "muted", style: "margin:12px 0" },
-      "과목 개설 때 넣은 회차 정보가 없어요. [📘 과목 정보] 오른쪽 위의 [정보 수정]에서 회차를 넣어 주세요. (회차가 없으면 AI 분석은 모든 성취기준으로 해요)"));
+      "과목 개설 때 넣은 회차 정보가 없어요. [📘 과목 정보] 오른쪽 위의 [정보 수정]에서 회차를 넣어 주세요. (아래에서 이미 연 수업마다 성취기준을 고를 수도 있어요)"), extra0);
+    extraClasses(c, d, extra0);
     return;
   }
   const linked = d.sessions.filter((x) => x.standard_ids.length).length;
+  const extra = h("div"); // 회차 외 보강·특강
   achFill(box,
     h("div", { class: "row", style: "margin:8px 0" },
       h("span", { class: "grow muted" }, `회차 ${d.sessions.length}개 · 성취기준을 연결한 회차 ${linked}개`)),
@@ -207,6 +210,38 @@ async function renderSessionStandards(c, box) {
         cell.append(picks.length ? h("div", { class: "std-pick-grid" }, ...picks) : h("span", { class: "muted" }, "-"));
         return h("tr", {}, h("td", { class: "num" }, `${x.no}회`), h("td", { class: "num" }, `${fmtDate(x.date)} (${dow(x.date)})`),
           h("td", { class: "num" }, x.start ? `${x.start}~${x.end || ""}` : "-"), h("td", {}, x.topic || "-"), cell);
+      })))),
+    extra);
+  extraClasses(c, d, extra);
+}
+
+/** [회차 정보] 아래: 회차표에 없는 날 연 수업(보강·특강)도 성취기준을 고른다 */
+async function extraClasses(c, d, box) {
+  let classes = [];
+  try { ({ classes } = await achApi(`/api/courses/${c.id}/classes`)); } catch { return; }
+  const days = new Set(d.sessions.map((x) => x.date));
+  const list = classes.filter((x) => !days.has(x.date)).reverse(); // 오래된 수업부터
+  if (!list.length || !d.standards.length) return;
+  achFill(box,
+    h("h4", { style: "margin:22px 0 6px" }, "➕ 회차 외 보강·특강"),
+    h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.85rem" }, "회차표에 없는 날 연 수업이에요. 다룬 성취기준을 체크하면 바로 저장돼요. (고르지 않으면 모든 성취기준으로 분석해요)"),
+    h("div", { class: "table-wrap" }, h("table", { class: "att std-links" },
+      h("thead", {}, h("tr", {}, ["", "날짜", "시간", "수업 주제", "성취기준"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, list.map((x) => {
+        const have = d.class_links[String(x.id)] || [];
+        const cell = h("td", {});
+        const picks = d.standards.map((s, i) => {
+          const tick = h("input", { type: "checkbox", checked: have.includes(s.id) });
+          tick.onchange = async () => {
+            const ids = [...cell.querySelectorAll("input")].map((el, j) => (el.checked ? d.standards[j].id : null)).filter(Boolean);
+            try { await achApi(`/api/courses/${c.id}/classes/${x.id}/standards`, { standard_ids: ids }); toast(`'${x.title}' 성취기준을 저장했어요.`); }
+            catch (err) { toast(err.message); tick.checked = !tick.checked; }
+          };
+          return h("label", { class: "std-pick", title: s.text }, tick, s.code || `성취기준 ${i + 1}`);
+        });
+        cell.append(h("div", { class: "std-pick-grid" }, ...picks));
+        return h("tr", {}, h("td", { class: "num" }, "보강"), h("td", { class: "num" }, fmtDate(x.date)),
+          h("td", { class: "num" }, (x.start || "").slice(0, 5) || "-"), h("td", {}, x.title || "-"), cell);
       })))));
 }
 

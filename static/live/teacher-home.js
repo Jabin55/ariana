@@ -798,18 +798,30 @@ async function renderOpenClass(c, box) {
     fill(box, approvalNote(c));
     return;
   }
-  const start = async (title) => {
+  // 회차 외 보강·특강에서 고를 성취기준 (과목 정보에 넣은 것)
+  let standards = [];
+  try { ({ standards } = await api(`/api/courses/${c.id}/standards`)); } catch { /* 성취기준 없이도 연다 */ }
+  const start = async (title, standardIds = []) => {
     if (notYet && !await appConfirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
     try {
       const res = await api("/api/live/classes", { title: title || c.title, course_id: c.id });
+      if (standardIds.length) {  // 보강·특강에서 고른 성취기준 (AI 분석은 회차보다 이것을 먼저 쓴다)
+        await api(`/api/courses/${c.id}/classes/${res.class_id}/standards`, { standard_ids: standardIds }).catch(() => {});
+      }
       location.href = `/live/teacher/${res.code}`;
     } catch (err) { toast(err.message); }
   };
   // 회차표가 없으면 주제만 적고 바로 연다
   const plain = () => {
     const name = h("input", { maxlength: 60, placeholder: "수업 주제 (예: 3차시 헌법과 기본권)" });
-    return h("div", { class: "open-box" }, h("label", { class: "grow" }, "수업 주제", name),
-      h("button", { class: "primary big", onclick: () => start(name.value.trim()) }, "▶ 지금 열기"));
+    const picks = standards.map((s, i) => h("label", { class: "std-pick", title: s.text }, h("input", { type: "checkbox", "data-id": s.id }), s.code || `성취기준 ${i + 1}`));
+    const chosen = () => picks.map((p) => p.querySelector("input")).filter((x) => x.checked).map((x) => Number(x.dataset.id));
+    return h("div", {},
+      h("div", { class: "open-box" }, h("label", { class: "grow" }, "수업 주제", name),
+        h("button", { class: "primary big", onclick: () => start(name.value.trim(), chosen()) }, "▶ 지금 열기")),
+      picks.length ? h("div", { class: "open-std" },
+        h("div", { class: "muted", style: "font-size:0.85rem;margin:8px 0 4px" }, "이 수업에서 다루는 성취기준 (선택 — 고르지 않으면 같은 날 회차, 없으면 모든 성취기준으로 분석해요)"),
+        h("div", { class: "std-pick-grid" }, ...picks)) : null);
   };
   // 회차표: 늘 펼쳐 두고, 회차를 누르면 그 줄의 '주제' 칸이 입력 칸(원래 주제가 적힌 채)으로 바뀌고 옆에 [지금 열기]
   const table = () => h("table", { class: "sess-table view sess-open" },

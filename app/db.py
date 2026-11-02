@@ -422,6 +422,14 @@ session_standards = Table(
     UniqueConstraint("course_id", "session_no", "standard_id"),
 )
 
+class_standards = Table(
+    "class_standards", metadata,  # 회차 외 수업(보강·특강)에 직접 고른 성취기준 (회차 연결보다 먼저 쓴다)
+    Column("id", Integer, primary_key=True),
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("standard_id", Integer, nullable=False),
+    UniqueConstraint("class_id", "standard_id"),
+)
+
 speech_analyses = Table(
     "speech_analyses", metadata,  # AI 성취 분석: 학생·수업마다 평가 요소별 수준과 근거 발언
     Column("id", Integer, primary_key=True),

@@ -3834,3 +3834,35 @@ def test_student_phone_saved_and_shown_to_teacher():
     s.post(f"/api/courses/{cid}/enroll")
     row = t.get("/api/my/enrollments").json()["enrollments"][0]
     assert row["phone"] == "010-1234-5678" and row["email"] == "st1@s.school.kr"
+
+
+def test_extra_class_standards_used_first(monkeypatch):
+    """회차 외 보강·특강에 고른 성취기준: 수업 직접 > 같은 날 회차 > 모든 성취기준"""
+    import app.achievement as ach
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    prompts = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        prompts.append(prompt)
+        return {"classes": [], "summary": "", "feedback": ""}
+    monkeypatch.setattr(ach, "ai_json", fake_ai)
+    t, other = teacher(), teacher("other@gmail.com")
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a = student(1)
+    a.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    s1 = t.post(f"/api/courses/{cid}/standards", json={"code": "[A]", "text": "가", "elements": [{"name": "요소1"}]}).json()["id"]
+    s2 = t.post(f"/api/courses/{cid}/standards", json={"code": "[B]", "text": "나", "elements": [{"name": "요소2"}]}).json()["id"]
+    k = create(t, title="보강", course_id=cid)
+    assert other.post(f"/api/courses/{cid}/classes/{k['class_id']}/standards", json={"standard_ids": [s2]}).status_code == 404
+    assert t.post(f"/api/courses/{cid}/classes/999999/standards", json={"standard_ids": [s2]}).status_code == 404
+    assert t.post(f"/api/courses/{cid}/classes/{k['class_id']}/standards", json={"standard_ids": [s2, 12345]}).json()["ok"]
+    assert t.get(f"/api/courses/{cid}/standards").json()["class_links"] == {str(k["class_id"]): [s2]}
+    code = k["code"]
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        aid = int(state(tw, lambda m: any(x["online"] for x in m["students"]))["students"][0]["id"])
+        t.post(f"/api/live/classes/{code}/observations", json={"user_id": aid, "text": "근거를 듦"})
+    t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze")
+    assert "연결된 성취기준: S2" in prompts[-1]  # 고른 [B]만 (모든 성취기준 S1, S2 가 아니라)
+    t.post(f"/api/courses/{cid}/standards/{s2}/delete")  # 성취기준을 지우면 연결도 지워진다
+    assert t.get(f"/api/courses/{cid}/standards").json()["class_links"] == {}

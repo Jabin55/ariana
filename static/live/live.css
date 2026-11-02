@@ -1873,3 +1873,4 @@ table.att.satisfaction-table .satisfaction-question { font-size: 0.9rem; overflo
 table.att.satisfaction-table thead tr:first-child th:first-child { width: 100px; }
 table.att.satisfaction-table tbody th { white-space: nowrap; }
 .open-title { margin: 6px 0 8px; font-size: 1.02rem; }
+.open-std { margin-top: 4px; }
