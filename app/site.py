@@ -191,7 +191,8 @@ async def sitemap_page():
     <li><a href="/live/notices">공지사항</a></li><li><a href="/live/guide">수강안내</a></li>
     <li><a href="/live/help">이용안내</a></li><li><a href="/live/community">소통마당</a></li></ul></section>
   <section class="info-block"><h2>수강신청</h2><ul>
-    <li><a href="/live/courses">수강신청</a></li><li><a href="/live/course-requests">희망과목 개설 신청</a></li></ul></section>
+    <li><a href="/live/courses">수강신청</a></li><li><a href="/live/course-requests">희망과목 개설 신청</a></li>
+    <li><a href="/live/past-courses">지난 개설 과목</a></li></ul></section>
   <section class="info-block"><h2>수업 공간</h2><ul>
     <li><a href="/live?classroom=1">강의실</a></li><li><a href="/live?office=1">교무실</a></li></ul></section>
 </div>
@@ -400,6 +401,31 @@ async def courses_page():
 </section>
 <section class="catalog" id="catalog"><p class="muted">불러오는 중…</p></section>
 """, "지금 신청할 수 있는 강좌", scripts='<script src="/static/live/enroll-page.js"></script>')
+
+
+@router.get("/api/courses/archived")
+async def archived_catalog():
+    """로그인 없이 보는, 개설 승인 후 보관한 강좌의 공개 정보만 반환한다."""
+    def run():
+        with db.engine.connect() as c:
+            co = db.courses.c
+            return c.execute(select(db.courses).where(co.archived == 1, co.approval == "approved")
+                             .order_by(co.school_year.desc(), co.created_at.desc())).all()
+
+    rows = await db.run(run)
+    return {"courses": [{"id": r.id, "title": r.title, "subject": r.subject or r.title,
+                         "subject_area": r.subject_area, "school_year": r.school_year, "term": r.term,
+                         "grades": course_grades(r), "credits": r.credits, "hub_school": r.hub_school,
+                         "instructor": r.instructor, "start_date": r.start_date, "end_date": r.end_date,
+                         "archived": True, "recruit": "closed"} for r in rows]}
+
+
+@router.get("/live/past-courses", response_class=HTMLResponse)
+async def past_courses_page():
+    return site_page("지난 개설 과목", """
+<section class="info-block"><div id="past-course-search"></div></section>
+<section class="catalog" id="past-catalog"><p class="muted">불러오는 중…</p></section>
+""", scripts='<script src="/static/live/past-courses.js"></script>')
 
 
 @router.get("/live/courses/{course_id}", response_class=HTMLResponse)

@@ -3434,6 +3434,30 @@ def test_course_detail_page_public_info():
     assert anon.get(f"/api/courses/{cid}/info").status_code == 404
 
 
+def test_archived_course_catalog_shows_only_approved_past_courses():
+    t = teacher()
+    active = t.post("/api/courses", json={**COURSE, "title": "운영 중 과목"}).json()["id"]
+    past = t.post("/api/courses", json={**COURSE, "title": "지난 개설 과목", "school_year": 2026, "term": "1학기"}).json()["id"]
+    unapproved = t.post("/api/courses", json={**COURSE, "title": "승인 전 과목"}).json()["id"]
+    assert t.post(f"/api/courses/{past}", json={"archived": True}).status_code == 200
+    assert t.post(f"/api/courses/{unapproved}", json={"archived": True}).status_code == 200
+    with db.engine.begin() as conn:
+        conn.execute(db.courses.update().where(db.courses.c.id == unapproved).values(approval="pending"))
+    anon = TestClient(app)
+    response = anon.get("/api/courses/archived")
+    assert response.status_code == 200
+    courses = response.json()["courses"]
+    assert [course["id"] for course in courses] == [past]
+    assert courses[0]["title"] == "지난 개설 과목" and courses[0]["archived"] is True
+    assert courses[0]["school_year"] == 2026 and courses[0]["term"] == "1학기"
+    assert "contact_email" not in courses[0] and "syllabus" not in courses[0]
+    assert active not in [course["id"] for course in courses]
+    page = anon.get("/live/past-courses")
+    assert page.status_code == 200 and "지난 개설 과목" in page.text
+    assert "/static/live/past-courses.js" in page.text
+    assert "/live/past-courses" in anon.get("/live/sitemap").text
+
+
 def test_custom_dialog_loaded_on_site_and_classroom_pages():
     client = TestClient(app)
     for path in ("/live/courses", "/static/live/index.html", "/static/live/teacher.html",

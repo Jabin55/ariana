@@ -16,12 +16,13 @@
   const SUBMENUS = {
     about: [["/live/about", "기본방향"], ["/live/joint", "공동교육과정"], ["/live/credit", "고교학점제"], ["/live/sitemap", "사이트맵"]],
     info: [["/live/notices", "공지사항"], ["/live/guide", "수강안내"], ["/live/help", "이용안내"], ["/live/community", "소통마당"]],
-    enroll: [["/live/courses", "수강신청"], ["/live/course-requests", "희망과목 개설 신청"]],
+    enroll: [["/live/courses", "수강신청"], ["/live/course-requests", "희망과목 개설 신청"],
+      ["/live/past-courses", "지난 개설 과목"]],
   };
   const params = new URLSearchParams(location.search);
   const group = ["/live/about", "/live/joint", "/live/credit", "/live/sitemap"].includes(path) ? "about"
     : ["/live/notices", "/live/guide", "/live/help", "/live/community"].includes(path) || path.startsWith("/live/notices/") || path.startsWith("/live/community/") ? "info"
-      : ["/live/courses", "/live/course-requests"].includes(path) || path.startsWith("/live/courses/") ? "enroll" : "";
+      : ["/live/courses", "/live/course-requests", "/live/past-courses"].includes(path) || path.startsWith("/live/courses/") ? "enroll" : "";
   const active = (href, u) => {
     if (policyMode) return href === path;
     if (href === "/live/about") return group === "about";
