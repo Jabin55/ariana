@@ -395,8 +395,11 @@ async def my_courses(request: Request):
             rows = c.execute(select(db.courses).where(taught_filter(t["id"]))
                              .order_by(db.courses.c.archived, db.courses.c.created_at.desc())).all()
             ids = {i for r in rows for i in [r.teacher_id, *co_teacher_ids(r)]}
-            names = {u.id: u.name or u.google_name for u in c.execute(
-                select(db.users.c.id, db.users.c.name, db.users.c.google_name).where(db.users.c.id.in_(ids or [-1])))}
+            people = {u.id: u for u in c.execute(
+                select(db.users.c.id, db.users.c.name, db.users.c.google_name, db.users.c.school)
+                .where(db.users.c.id.in_(ids or [-1])))}
+            names = {uid: u.name or u.google_name for uid, u in people.items()}
+            schools = {uid: u.school or "" for uid, u in people.items()}
             counts: dict = {}
             e = db.enrollments.c
             for cid, status, n in c.execute(
@@ -406,10 +409,12 @@ async def my_courses(request: Request):
                 key = {"approved": "approved", "pending": "pending"}.get(status)
                 if key:
                     counts[cid][key] = n
-            return rows, counts, names, sessions_of(c, [r.id for r in rows])
+            return rows, counts, names, schools, sessions_of(c, [r.id for r in rows])
 
-    rows, counts, names, sess = await db.run(run)
-    return {"courses": [{**course_row(r, counts), "locked": hub_locked(r, t), "description": r.description,
+    rows, counts, names, schools, sess = await db.run(run)
+    return {"courses": [{**course_row(r, counts), "instructor": r.instructor or names.get(r.teacher_id, ""),
+                         "instructor_school": schools.get(r.teacher_id, ""),
+                         "locked": hub_locked(r, t), "description": r.description,
                          "lead": r.teacher_id == t["id"], "owner_name": names.get(r.teacher_id, ""),
                          "sessions": sess.get(r.id, []), "show_email": bool(r.show_email), "show_phone": bool(r.show_phone),
                          "contact_email": r.contact_email, "contact_phone": r.contact_phone,

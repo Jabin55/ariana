@@ -687,6 +687,7 @@ def test_course_enrollment_join_without_code():
     assert outsider.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
     mine = t.get("/api/courses/mine").json()["courses"][0]
     assert mine["pending"] == 3 and mine["approved"] == 0
+    assert mine["instructor"] == "박선생" and mine["instructor_school"] == SCHOOL
     # 선생님: 학생1 승인, 학생3 거절, 나머지 모두 승인(학생2)
     uid = {e["student_no"]: e["user_id"] for e in t.get(f"/api/courses/{cid}/enrollments").json()["enrollments"]}
     assert t.post(f"/api/courses/{cid}/enrollments/{uid['20301']}", json={"status": "approved"}).status_code == 200

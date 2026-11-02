@@ -365,11 +365,9 @@ function renderRunCourse(c) {
     c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '내 정보'에서 가입 유형·거점학교 변경을 신청하세요.`) : null,
     c.locked ? null : h("nav", { class: "tabs sub-tabs" }, subs.map(([k, label]) => h("button", { class: runSub === k ? "active" : "",
       onclick: () => { runSub = k; renderRunCourse(c); } }, label))),
-    c.locked ? h("div", { class: "run-sub" }, courseInfo(c), courseFacts(c),
-      c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null) : subBox);
+    c.locked ? h("div", { class: "run-sub" }, courseInformationPanel(c)) : subBox);
   if (c.locked) return;
-  if (runSub === "info") fill(subBox, editing.has(c.id) ? courseEditForm(c) : [courseInfo(c), courseFacts(c),
-    c.description ? h("p", { class: "muted", style: "white-space:pre-wrap" }, c.description) : null]);
+  if (runSub === "info") fill(subBox, editing.has(c.id) ? courseEditForm(c) : courseInformationPanel(c));
   else if (runSub === "open") renderOpenClass(c, subBox);
   else if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
