@@ -1994,8 +1994,8 @@ def test_home_notices_and_banners(monkeypatch, tmp_path):
     assert "첫 공지(수정)" in anyone.get("/live/notices").text
     boss.post(f"/api/admin/notices/{a}/delete", json={})
     assert anyone.get(f"/live/notices/{a}").status_code == 404
-    # 배너: 비면 기본 배너. 그림을 올려 배경으로 쓸 수 있다
-    assert anyone.get("/api/banners").json()["banners"] == []
+    # 배너: 처음에는 기본 배너 4개. 그림을 올려 배경으로 쓸 수 있다
+    assert anyone.get("/api/banners").json()["banners"] == [{"preset": f"d{i}"} for i in range(1, 5)]
     assert boss.post("/api/admin/banners/image?name=x.svg", content=b"<svg/>").status_code == 415
     img = boss.post("/api/admin/banners/image?name=ad.png", content=b"\x89PNG fake").json()["image"]
     assert anyone.get(f"/api/banners/image/{img}").headers["content-type"] == "image/png"
@@ -2005,7 +2005,11 @@ def test_home_notices_and_banners(monkeypatch, tmp_path):
     saved = r.json()["banners"]
     assert [b["title"] for b in saved] == ["여름학기 신청", ""] and saved[0]["theme"] == "green" and saved[1]["image"] == img
     assert t.post("/api/admin/banners", json={"banners": []}).status_code == 403  # 전체 운영 관리자만 편집한다
-    assert boss.post("/api/admin/banners", json={"banners": []}).status_code == 200
+    assert boss.post("/api/admin/banners", json={"banners": []}).status_code == 400  # 하나는 남겨야 한다
+    # 기본 배너 일부를 남기고 새 배너를 더할 수 있다
+    r = boss.post("/api/admin/banners", json={"banners": [{"preset": "d3"}, {"title": "새 배너"}, {"preset": "d1"}, {"preset": "d9"}]}).json()
+    assert [b.get("preset") or b["title"] for b in r["banners"]] == ["d3", "새 배너", "d1"]
+    assert anyone.get("/api/banners").json()["banners"][0] == {"preset": "d3"}
     assert student(8).post("/api/admin/banners", json={"banners": []}).status_code == 403
 
 

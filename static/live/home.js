@@ -1340,7 +1340,7 @@ function staffBoard(id, list, today, reload, title) {
     const FIELD = { name: "이름", gender: "성별", school: "소속" };
     const changeNote = (x) => (x.changes || []).map((c) => h("div", { class: "change-note" },
       `${FIELD[c.field] || c.field} 변경: ${c.old || "(없음)"} → ${c.new}`));
-    const COLS = hubApproval ? 7 : 11;
+    const COLS = hubApproval ? 7 : 12;
     const trs = rows.flatMap((x, i) => {
       const open = st.open.has(x.id);
       const [cls, label] = MEMBER_STATUS[x.status] || ["pending", x.status];
@@ -1365,7 +1365,8 @@ function staffBoard(id, list, today, reload, title) {
           `${open ? "▾" : "▸"} ${x.name}`), changeNote(x)),
         h("td", {}, x.hub || "-"), h("td", {}, x.affiliation || "-"),
         h("td", {}, x.birth ? x.birth.replaceAll("-", ".") : "-"),
-        h("td", { class: "contact-cell" }, x.contact_email || x.email, h("br"), h("span", { class: "muted" }, x.contact || "-")),
+        h("td", { class: "contact-cell" }, x.contact_email || x.email || "-"),
+        h("td", { class: "contact-cell" }, x.contact || "-"),
         h("td", {}, day(x.requested_at)),
         h("td", {}, h("span", { class: `status ${cls}` }, label)),
         h("td", {}, h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")));
@@ -1381,7 +1382,7 @@ function staffBoard(id, list, today, reload, title) {
       h("div", { class: "table-wrap" }, h("table", { class: `att enroll-table ${hubApproval ? "instructor-approval-table" : ""}` },
         h("thead", {}, h("tr", {}, hubApproval
           ? ["연번", "신청일", "소속", "직위", "이름", "연락처", "상태"].map((t) => h("th", {}, t))
-          : [h("th", {}, all), ...["번호", "회원 구분", "이름", "학교", "소속", "생년월일", "이메일·연락처", "신청일", "상태", ""].map((t) => h("th", {}, t))])),
+          : [h("th", {}, all), ...["번호", "회원 구분", "이름", "학교", "소속", "생년월일", "이메일", "연락처", "신청일", "상태", ""].map((t) => h("th", {}, t))])),
         h("tbody", {}, trs.length ? trs
           : h("tr", {}, h("td", { colspan: COLS, class: "muted", style: "text-align:center;padding:24px" }, list.length ? "조건에 맞는 신청이 없어요." : "아직 신청이 없어요."))))));
   }
@@ -1406,14 +1407,33 @@ function staffBoard(id, list, today, reload, title) {
 
 
 /* 전체 관리자: 관리교사 승인 */
-/** 메인 전광판(배너): 전체 운영 관리에서 꾸민다. 비워 두면 기본 배너가 보여요 */
+/** 메인 전광판(배너): 전체 운영 관리에서 꾸민다.
+    처음부터 있던 기본 배너 4개도 목록에 들어 있어서, 남기거나 빼고, 새 배너를 더하거나 순서를 바꿀 수 있다 */
+const PRESET_BANNERS = {
+  d1: "실시간 온라인 수업 플랫폼 · 학교의 벽을 넘어, 함께 배우는 온라인 교실",
+  d2: "선생님 모집 · 외솔온닷에서 강의해 주세요",
+  d3: "수강방법안내 · 우리 학교 밖, 또 하나의 교실",
+  d4: "실시간 온라인 공동교육과정 · 어디서나, 함께 듣는 실시간 수업",
+};
 async function bannersEditor(reload) {
   const { banners } = await api("/api/banners");
   const list = banners.map((b) => ({ ...b }));
   const THEME_NAMES = { green: "초록", orange: "주황", blue: "파랑", purple: "보라", yellow: "노랑" };
   const box = h("div");
+  const tools = h("div", { class: "row" });
+  const head = (b, i, label) => h("div", { class: "row" }, h("strong", { class: "grow" }, `배너 ${i + 1}`, label ? h("span", { class: "muted", style: "font-weight:400" }, ` · ${label}`) : null),
+    i > 0 ? h("button", { class: "small", title: "위로", onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw(); } }, "▲") : null,
+    i < list.length - 1 ? h("button", { class: "small", title: "아래로", onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; draw(); } }, "▼") : null,
+    h("button", { class: "small danger", onclick: () => {
+      if (list.length === 1) { toast("배너는 하나 이상 남겨 주세요."); return; }
+      list.splice(i, 1); draw();
+    } }, "빼기"));
   const draw = () => {
     box.replaceChildren(...list.map((b, i) => {
+      if (b.preset) { // 기본 배너: 내용은 그대로 쓰고 순서·빼기만
+        return h("div", { class: "box banner-preset", style: "margin-bottom:10px" }, head(b, i, "기본 배너"),
+          h("p", { style: "margin:6px 0 0" }, PRESET_BANNERS[b.preset] || b.preset));
+      }
       const inp = (k, label, attrs = {}) => h("label", {}, label, h("input", { value: b[k] || "", ...attrs, oninput: (e) => { b[k] = e.target.value; } }));
       const file = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", onchange: async (e) => {
         const f = e.target.files[0];
@@ -1424,10 +1444,7 @@ async function bannersEditor(reload) {
         b.image = data.image;
         draw();
       } });
-      return h("div", { class: "box", style: "margin-bottom:10px" },
-        h("div", { class: "row" }, h("strong", { class: "grow" }, `배너 ${i + 1}`),
-          i > 0 ? h("button", { class: "small", onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw(); } }, "▲") : null,
-          h("button", { class: "small danger", onclick: () => { list.splice(i, 1); draw(); } }, "빼기")),
+      return h("div", { class: "box", style: "margin-bottom:10px" }, head(b, i, "새 배너"),
         h("div", { class: "course-form" },
           inp("kicker", "작은 머리글", { maxlength: 40, placeholder: "예: 2026 여름학기" }),
           inp("title", "제목", { maxlength: 60, placeholder: "예: 여름학기 수강신청 시작!" }),
@@ -1439,23 +1456,34 @@ async function bannersEditor(reload) {
           h("label", { class: "wide" }, "그림 (선택 — 가로로 긴 그림, 1600×500 정도 권장. 올리면 배경으로 꽉 차요)", file,
             b.image ? h("span", { class: "row" }, h("img", { src: `/api/banners/image/${b.image}`, alt: "", style: "height:60px;border-radius:8px" }),
               h("button", { class: "small", onclick: () => { b.image = ""; draw(); } }, "그림 빼기")) : null)));
-    }), list.length ? "" : h("p", { class: "muted" }, "지금은 기본 배너 4개가 보여요. 배너를 추가하면 그 배너만 보여요."));
-  };
-  draw();
-  return h("details", { class: "card", style: "margin:12px 0", open: true },
-    h("summary", {}, h("strong", {}, "🖼️ 메인 전광판(배너) "), h("span", { class: "muted" }, list.length ? `${list.length}개` : "기본 배너")),
-    h("p", { class: "muted", style: "font-size:0.9rem" }, "메인 화면 맨 위에 5초마다 넘어가며 보여요. 제목이나 그림 중 하나는 있어야 해요."),
-    box,
-    h("div", { class: "row" },
-      h("button", { onclick: () => { if (list.length < 10) { list.push({ theme: "green" }); draw(); } } }, "+ 배너 추가"),
+    }));
+    // 뺀 기본 배너는 다시 넣을 수 있다
+    const missing = Object.keys(PRESET_BANNERS).filter((k) => !list.some((b) => b.preset === k));
+    const back = h("select", { onchange: (e) => {
+      if (!e.target.value) return;
+      if (list.length >= 10) { toast("배너는 10개까지 둘 수 있어요."); return; }
+      list.push({ preset: e.target.value }); draw();
+    } }, h("option", { value: "" }, "+ 기본 배너 다시 넣기"), ...missing.map((k) => h("option", { value: k }, PRESET_BANNERS[k])));
+    tools.replaceChildren(
+      h("button", { onclick: () => { if (list.length < 10) { list.push({ theme: "green" }); draw(); } else toast("배너는 10개까지 둘 수 있어요."); } }, "+ 새 배너 추가"),
+      missing.length ? back : null,
+      h("span", { class: "grow" }),
       h("button", { class: "primary", onclick: async () => {
         try {
           const { banners: saved } = await api("/api/admin/banners", { banners: list });
-          toast(saved.length ? `배너 ${saved.length}개를 저장했어요.` : "기본 배너로 돌아갔어요.");
+          toast(`배너 ${saved.length}개를 저장했어요.`);
           reload();
         } catch (err) { toast(err.message); }
       } }, "저장"),
-      h("a", { href: "/live/home", target: "_blank" }, "메인 화면 보기")));
+      h("a", { href: "/live/home", target: "_blank" }, "메인 화면 보기"));
+    summaryCount.textContent = `${list.length}개`;
+  };
+  const summaryCount = h("span", { class: "muted" });
+  draw();
+  return h("details", { class: "card", style: "margin:12px 0", open: true },
+    h("summary", {}, h("strong", {}, "🖼️ 메인 전광판(배너) "), summaryCount),
+    h("p", { class: "muted", style: "font-size:0.9rem" }, "메인 화면 맨 위에 5초마다 넘어가며 보여요. 기본 배너 4개도 목록에 있어서 남기거나 뺄 수 있고, 새 배너를 더하거나 ▲▼로 순서를 바꿀 수 있어요. 새 배너는 제목이나 그림 중 하나는 있어야 해요. (최대 10개)"),
+    box, tools);
 }
 
 async function loadAdmin() {

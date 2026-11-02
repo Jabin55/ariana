@@ -890,6 +890,7 @@ async def delete_community_post(pid: int, request: Request):
 # ───────────────────────── 메인 배너(전광판) ─────────────────────────
 
 THEMES = ("green", "orange", "blue", "purple", "yellow")
+PRESET_BANNERS = ("d1", "d2", "d3", "d4")  # 처음부터 있던 기본 배너 4개
 IMAGE_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
 
 
@@ -901,6 +902,7 @@ class Banner(BaseModel):
     link: str = Field(default="", max_length=300)
     theme: str = Field(default="green", max_length=10)
     image: str = Field(default="", max_length=40)  # 올린 그림 (있으면 배경으로)
+    preset: str = Field(default="", max_length=4)  # 기본 배너(d1~d4)를 그대로 쓸 때. 내용은 화면(home-page.js)에 있다
 
 
 class BannersReq(BaseModel):
@@ -918,8 +920,9 @@ def get_banners() -> list[dict]:
 
 @router.get("/api/banners")
 async def banners():
-    """메인 전광판. 비어 있으면 화면이 기본 배너를 보여 준다."""
-    return {"banners": await db.run(get_banners)}
+    """메인 전광판. 한 번도 저장하지 않았으면 기본 배너 4개({"preset": "d1"}~"d4")"""
+    saved = await db.run(get_banners)
+    return {"banners": saved or [{"preset": p} for p in PRESET_BANNERS]}
 
 
 def banner_dir():
@@ -932,9 +935,16 @@ async def save_banners(req: BannersReq, request: Request):
     u = await require_teacher(request)
     if not u["is_admin"]:
         raise HTTPException(403, "전체 관리자만 할 수 있어요.")
+    if not req.banners:
+        raise HTTPException(400, "배너를 하나 이상 남겨 주세요.")
     out = []
     for b in req.banners:
+        if b.preset in PRESET_BANNERS:  # 기본 배너는 번호만 저장한다
+            if {"preset": b.preset} not in out:
+                out.append({"preset": b.preset})
+            continue
         d = b.model_dump()
+        d.pop("preset", None)
         d = {k: v.strip() for k, v in d.items()}
         if d["theme"] not in THEMES:
             d["theme"] = "green"
@@ -949,7 +959,7 @@ async def save_banners(req: BannersReq, request: Request):
         with db.engine.begin() as c:
             c.execute(delete(db.site_settings).where(db.site_settings.c.key == "banners"))
             c.execute(insert(db.site_settings).values(key="banners", value=json.dumps(out, ensure_ascii=False)))
-        used = {b["image"] for b in out}
+        used = {b.get("image") for b in out}
         if banner_dir().is_dir():  # 안 쓰는 그림은 지운다
             for f in banner_dir().iterdir():
                 if f.name not in used and f.stat().st_mtime < time.time() - 3600:

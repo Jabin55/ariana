@@ -41,16 +41,18 @@
     </svg>`,
   };
   const DEFAULTS = [
-    { kicker: "실시간 온라인 수업 플랫폼", title: "학교의 벽을 넘어, 함께 배우는 온라인 교실", text: "실시간으로 묻고 답하고 토론하는 쌍방향 수업 — 공동교육과정에도 잘 맞아요.", button: "외솔온닷 알아보기", link: "/live/about", theme: "orange", art: "books" },
-    { kicker: "선생님 모집", title: "외솔온닷에서 강의해 주세요", text: "거점학교 강사·팀티칭 보조교사로 등록을 신청할 수 있어요.", button: "선생님으로 시작", link: "/live?start=staff", theme: "blue", art: "rocket" },
-    { kicker: "수강방법안내", title: "우리 학교 밖,", accent: "또 하나의 교실", text: "컴퓨터나 휴대폰, 이어폰만 있으면 어디서든 선생님·친구들과 실시간으로 만나요.", button: "수강안내 보기", link: "/live/guide", theme: "guide", art: "guide" },
-    { kicker: "실시간 온라인 공동교육과정", title: "어디서나, 함께 듣는 실시간 수업", text: "우리 학교에 없는 과목도 집에서 거점학교 선생님과!", button: "수업 신청하기", link: "/live/courses", theme: "pink", art: "live" },
+    { id: "d1", kicker: "실시간 온라인 수업 플랫폼", title: "학교의 벽을 넘어, 함께 배우는 온라인 교실", text: "실시간으로 묻고 답하고 토론하는 쌍방향 수업 — 공동교육과정에도 잘 맞아요.", button: "외솔온닷 알아보기", link: "/live/about", theme: "orange", art: "books" },
+    { id: "d2", kicker: "선생님 모집", title: "외솔온닷에서 강의해 주세요", text: "거점학교 강사·팀티칭 보조교사로 등록을 신청할 수 있어요.", button: "선생님으로 시작", link: "/live?start=staff", theme: "blue", art: "rocket" },
+    { id: "d3", kicker: "수강방법안내", title: "우리 학교 밖,", accent: "또 하나의 교실", text: "컴퓨터나 휴대폰, 이어폰만 있으면 어디서든 선생님·친구들과 실시간으로 만나요.", button: "수강안내 보기", link: "/live/guide", theme: "guide", art: "guide" },
+    { id: "d4", kicker: "실시간 온라인 공동교육과정", title: "어디서나, 함께 듣는 실시간 수업", text: "우리 학교에 없는 과목도 집에서 거점학교 선생님과!", button: "수업 신청하기", link: "/live/courses", theme: "pink", art: "live" },
   ];
 
   // ── 전광판 ──
   async function billboard() {
     let list = [];
     try { list = (await (await fetch("/api/banners")).json()).banners; } catch { /* 기본 배너 */ }
+    // 기본 배너는 {preset: "d1"}처럼 번호로 저장된다 → 여기 있는 내용으로 바꿔 보여 준다
+    list = list.map((b) => (b.preset ? DEFAULTS.find((d) => d.id === b.preset) : b)).filter(Boolean);
     if (!list.length) list = DEFAULTS;
     const track = $("#bb-track");
     const dots = $("#bb-dots");
