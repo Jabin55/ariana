@@ -1799,6 +1799,10 @@ details.ach-box[open] > summary { margin-bottom: 8px; }
 .course-levels table.info-table th { width: 60px !important; text-align: center; }
 .course-levels table.info-table td { width: auto; }
 table.att.std-links { table-layout: fixed; }
-table.att.std-links th:nth-child(1) { width: 7%; } table.att.std-links th:nth-child(2) { width: 15%; }
-table.att.std-links th:nth-child(3) { width: 13%; } table.att.std-links th:nth-child(4) { width: 30%; }
+/* 회차 정보: 성취기준 체크 칸을 넓게 */
+table.att.std-links th:nth-child(1) { width: 6%; } table.att.std-links th:nth-child(2) { width: 14%; }
+table.att.std-links th:nth-child(3) { width: 11%; } table.att.std-links th:nth-child(4) { width: 21%; }
+table.att.std-links th:nth-child(5) { width: 48%; }
+table.att.std-links td:nth-child(4) { white-space: normal; word-break: keep-all; }
+table.att.std-links td:last-child { padding-left: 14px; }
 table.att.std-links th { text-align: center; }
