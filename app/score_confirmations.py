@@ -178,6 +178,34 @@ def _weighted_score(item: dict) -> str:
         return "-"
 
 
+def _sum_text(values) -> str:
+    """같은 열의 값 합계 (소수 둘째 자리까지, 끝의 0은 지운다). 빈 값이 하나라도 있으면 None"""
+    total = Decimal(0)
+    for v in values:
+        if v is None:
+            return None
+        try:
+            d = Decimal(str(v))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+        if not d.is_finite():
+            return None
+        total += d
+    return format(total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP).normalize(), "f")
+
+
+def score_totals(items: list[dict]) -> dict:
+    """성적일람표 '합계' 줄: 영역 만점 · 반영 비율 · 원점수 · 반영비율 환산 점수 각각의 합"""
+    weighted = []
+    for item in items:
+        w = _weighted_score(item) if item.get("score") is not None else "-"
+        weighted.append(None if w == "-" else w)
+    return {"max_score": _sum_text(i.get("max_score") for i in items) if items else None,
+            "weight": _sum_text(i.get("weight") for i in items) if items else None,
+            "score": _sum_text(i.get("score") for i in items) if items else None,
+            "weighted": _sum_text(weighted) if items else None}
+
+
 def _grading_note(snap: dict) -> str:
     achievement = snap.get("achievement")
     scale = {"5": "성취도 5단계(A/B/C/D/E)", "3": "성취도 3단계(A/B/C)",
@@ -254,17 +282,21 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
                          bold(_number(item["score"])) if item["score"] is not None else p("미채점", numeric_small),
                          bold(_weighted_score(item)) if item["score"] is not None else p("-", numeric_small)]
                          for i, item in enumerate(snap["items"])]
-    converted = converted_performance_score(snap["items"])
+    # 합계 줄: 열마다 합 (채점 안 된 평가가 있으면 원점수·환산 점수 합은 '산출 대기')
+    totals = score_totals(snap["items"])
+    wait = lambda: p("산출 대기", numeric_small)
     summary_index = len(overview)
-    overview.append([p("최종 원점수(총점)", centered_small), "", "", "", "",
-                     bold(f"{converted}점") if converted is not None else p("산출 대기", numeric_small)])
+    overview.append([p("합계", centered_small), "",
+                     bold(totals["max_score"]) if totals["max_score"] is not None else p("-", numeric_small),
+                     bold(f'{totals["weight"]}%') if totals["weight"] is not None else p("-", numeric_small),
+                     bold(totals["score"]) if totals["score"] is not None else wait(),
+                     bold(totals["weighted"]) if totals["weighted"] is not None else wait()])
     table = Table(overview, colWidths=[32, 174, 64, 64, 62, 114], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#94a8ac")),
                               ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
                               ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf5f2")),
                               ("BACKGROUND", (0, summary_index), (-1, summary_index), colors.HexColor("#f2f7f5")),
-                              ("BACKGROUND", (5, summary_index), (5, summary_index), colors.white),
-                              ("SPAN", (0, summary_index), (4, summary_index)),
+                              ("SPAN", (0, summary_index), (1, summary_index)),
                               ("LINEABOVE", (0, summary_index), (-1, summary_index), .7, colors.HexColor("#94a8ac")),
                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
                               ("TOPPADDING", (0, 0), (-1, -1), 7),

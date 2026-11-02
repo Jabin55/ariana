@@ -3770,3 +3770,13 @@ def test_ai_assistant_needs_api_key(monkeypatch):
         assert state(tw)["ai_available"] is True
         tw.send_json({"t": "settings", "ai": True})
         assert state(tw, lambda m: m["settings"]["ai"])["settings"]["ai"] is True
+
+
+def test_score_confirmation_totals_row():
+    """점수 확인서 성적일람표 '합계' 줄: 영역 만점·반영 비율·원점수·환산 점수 각각의 합"""
+    from app.score_confirmations import score_totals
+    items = [{"score": 45, "max_score": 50, "weight": 30}, {"score": 27, "max_score": 30, "weight": 20},
+             {"score": 88.5, "max_score": 100, "weight": 50}]
+    assert score_totals(items) == {"max_score": "180", "weight": "100", "score": "160.5", "weighted": "89.25"}
+    pending = score_totals([*items[:2], {"score": None, "max_score": 20, "weight": 50}])
+    assert pending == {"max_score": "100", "weight": "100", "score": None, "weighted": None}  # 미채점이 있으면 산출 대기
