@@ -3680,31 +3680,42 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
 
 
 def test_standards_import_from_excel():
-    """엑셀로 성취기준 넣기: 양식, A~E 다섯 단계, 성취기준 문장 안의 코드, 같은 코드는 새 내용으로"""
+    """엑셀로 성취기준 넣기: [성취기준] 시트(평가기준 상중하) + [과목 성취수준] 시트(성취도 단계별 일반적 특성)"""
     import io
-    from openpyxl import Workbook
+    from openpyxl import Workbook, load_workbook
     t = teacher()
-    cid = t.post("/api/courses", json=COURSE).json()["id"]
-    tpl = t.get("/api/standards/template.xlsx")
+    cid = t.post("/api/courses", json={**COURSE, "achievement": "3"}).json()["id"]
+    tpl = t.get(f"/api/courses/{cid}/standards/template.xlsx")
     assert tpl.status_code == 200
+    wb = load_workbook(io.BytesIO(tpl.content))
+    assert wb["성취기준"]["C1"].value == "평가기준 상"
+    assert [r[0].value for r in wb["과목 성취수준"].iter_rows(min_row=2)] == ["A", "B", "C"]  # 3단계 과목
     up = lambda content: t.post(f"/api/courses/{cid}/standards/import", content=content,
                                 headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
     r = up(tpl.content).json()  # 양식 예시 그대로: 성취기준 1개, 평가 요소 2개
     assert r["added"] == 1
     s = t.get(f"/api/courses/{cid}/standards").json()["standards"][0]
     assert s["code"] == "[12법사02-03]" and [e["name"] for e in s["elements"]] == ["근거 제시", "반론 고려"]
+    assert s["level_mid"].startswith("기본권 제한의 요건을 이해하고")
     book = Workbook()
     sh = book.active
-    sh.append(["2022 개정 법과 사회 성취수준"])  # 위에 제목 줄이 있어도 된다
-    sh.append(["성취기준", "A", "B", "C", "D", "E"])
-    sh.append(["[12법사01-01] 법의 의미를 탐구한다.", "가", "나", "다", "라", "마"])
-    sh.append(["[12법사02-03] 바뀐 기본권 문장", "가2", "나2", "다2", "라2", "마2"])
+    sh.title = "성취기준"
+    sh.append(["2022 개정 법과 사회"])  # 위에 제목 줄이 있어도 된다
+    sh.append(["성취기준", "상", "중", "하"])
+    sh.append(["[12법사01-01] 법의 의미를 탐구한다.", "가", "나", "다"])
+    sh.append(["[12법사02-03] 바뀐 기본권 문장", "가2", "나2", "다2"])
+    lv = book.create_sheet("과목 성취수준")
+    lv.append(["성취수준", "일반적 특성"])
+    for k, v in (("A", "매우 우수"), ("B", "보통"), ("C", "기초"), ("D", "3단계 과목에는 없음")):
+        lv.append([k, v])
     buf = io.BytesIO(); book.save(buf)
     r = up(buf.getvalue()).json()
-    assert (r["added"], r["updated"]) == (1, 1)
-    got = {x["code"]: x for x in t.get(f"/api/courses/{cid}/standards").json()["standards"]}
-    assert got["[12법사01-01]"]["text"] == "법의 의미를 탐구한다." and got["[12법사01-01]"]["level_high"] == "A: 가\nB: 나"
-    assert got["[12법사01-01]"]["level_mid"] == "C: 다" and got["[12법사01-01]"]["level_low"] == "D: 라\nE: 마"
+    assert (r["added"], r["updated"], r["levels"]) == (1, 1, 3)
+    d = t.get(f"/api/courses/{cid}/standards").json()
+    got = {x["code"]: x for x in d["standards"]}
+    assert got["[12법사01-01]"]["text"] == "법의 의미를 탐구한다." and got["[12법사01-01]"]["level_high"] == "가"
     assert got["[12법사02-03]"]["text"] == "바뀐 기본권 문장" and len(got["[12법사02-03]"]["elements"]) == 2  # 요소는 유지
+    assert d["scale"] == ["A", "B", "C"] and d["course_levels"] == {"A": "매우 우수", "B": "보통", "C": "기초"}
+    assert t.post(f"/api/courses/{cid}/achievement-levels", json={"levels": {"A": "수정", "E": "무시"}}).json()["levels"] == {"A": "수정", "B": "", "C": ""}
     assert up(b"not excel").status_code == 400
     assert teacher("other@gmail.com").post(f"/api/courses/{cid}/standards/import", content=tpl.content).status_code == 404

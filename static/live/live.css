@@ -1793,3 +1793,8 @@ details.ach-box[open] > summary { margin-bottom: 8px; }
 .ach-lv { display: inline-block; min-width: 26px; text-align: center; padding: 1px 6px; border-radius: 6px; margin-right: 6px; font-weight: 800; font-size: 0.8rem; color: #fff; }
 .ach-lv.lv3 { background: #1b6b4a; } .ach-lv.lv2 { background: #c79a1e; } .ach-lv.lv1 { background: #d0485f; }
 .my-feedback { border-color: #b9dcc9; background: #f6fbf8; margin-bottom: 14px; }
+.course-levels textarea { width: 100%; box-sizing: border-box; }
+.course-levels > summary { cursor: pointer; }
+.course-levels table.info-table { table-layout: fixed; }
+.course-levels table.info-table th { width: 60px !important; text-align: center; }
+.course-levels table.info-table td { width: auto; }

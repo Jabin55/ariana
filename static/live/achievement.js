@@ -1,5 +1,5 @@
 /* 성취기준 기반 발언 분석 화면
-   - 교사 [과목 정보]: 성취기준·성취수준(상중하)·평가 요소(AI 초안 → 수정) 입력, 회차마다 성취기준 연결
+   - 교사 [과목 정보]: 성취기준·평가기준(상중하)·평가 요소, 과목 성취수준(A~E·A~C·P)(AI 초안 → 수정) 입력, 회차마다 성취기준 연결
    - 교사 [학습 관리 > 학생별 발언 기록 > 학생]: AI 분석, 성취 변화 그래프, 종합 의견, 학생 피드백 공개
    - 학생 [내 강좌 > 학습 활동]: 선생님이 공개한 피드백과 성취 변화 그래프 */
 
@@ -21,11 +21,12 @@ async function renderStandards(c, box) {
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
       h("h3", { class: "grow", style: "margin:0" }, `🎯 성취기준 ${d.standards.length}개`),
-      editing ? null : h("a", { class: "button small", href: "/api/standards/template.xlsx" }, "📥 엑셀 양식 받기"),
+      editing ? null : h("a", { class: "button small", href: `/api/courses/${c.id}/standards/template.xlsx` }, "📥 엑셀 양식 받기"),
       editing ? null : importButton(c, d.ai, again),
       editing ? null : h("button", { class: "primary small", type: "button", onclick: () => { achEditing.set(c.id, "new"); again(); } }, "+ 성취기준 추가")),
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
-      "국가 고시 성취기준과 성취수준(상·중·하)을 넣고, 평가 요소를 정해 주세요. 학생 발언 AI 분석은 이 평가 요소를 기준으로 해요."),
+      "교육과정 성취기준과 성취기준별 평가기준(상·중·하)을 넣고, 평가 요소를 정해 주세요. 학생 발언 AI 분석은 이 평가 요소를 기준으로 해요."),
+    courseLevelsBox(c, d),
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
     editing === "new" ? standardForm(c, null, d.ai, again) : null,
@@ -47,7 +48,7 @@ function importButton(c, aiOn, again) {
         headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } });
       const r = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(r.detail || "엑셀을 올리지 못했어요.");
-      toast(`성취기준 ${r.added}개를 넣었어요${r.updated ? `, ${r.updated}개는 새 내용으로 바꿨어요` : ""}.`, 4000);
+      toast(`성취기준 ${r.added}개를 넣었어요${r.updated ? `, ${r.updated}개는 새 내용으로 바꿨어요` : ""}${r.levels ? ` · 과목 성취수준 ${r.levels}단계` : ""}.`, 5000);
       if (aiOn) await draftMissing(c, r.ids, btn);
     } catch (err) { toast(err.message, 6000); }
     btn.disabled = false; btn.textContent = "📤 엑셀로 올리기";
@@ -61,7 +62,7 @@ async function draftMissing(c, ids, btn) {
   const { standards } = await achApi(`/api/courses/${c.id}/standards`);
   const todo = standards.filter((s) => ids.includes(s.id) && !s.elements.length && (s.level_high || s.level_mid || s.level_low));
   if (!todo.length) return;
-  if (!confirm(`평가 요소가 없는 성취기준 ${todo.length}개는 AI가 성취수준에서 평가 요소를 뽑아 넣을까요?\n(하나에 10초쯤 걸려요. 나중에 [수정]에서 고칠 수 있어요)`)) return;
+  if (!confirm(`평가 요소가 없는 성취기준 ${todo.length}개는 AI가 평가기준에서 평가 요소를 뽑아 넣을까요?\n(하나에 10초쯤 걸려요. 나중에 [수정]에서 고칠 수 있어요)`)) return;
   let done = 0;
   for (const s of todo) {
     btn.textContent = `🤖 평가 요소 뽑는 중… ${done + 1}/${todo.length}`;
@@ -74,6 +75,25 @@ async function draftMissing(c, ids, btn) {
   toast(`AI가 성취기준 ${done}개의 평가 요소를 뽑았어요. 확인하고 필요하면 [수정]에서 고쳐 주세요.`, 6000);
 }
 
+/** 과목 전체의 성취수준별 일반적 특성 (성취도에 따라 A~E / A~C / P) */
+function courseLevelsBox(c, d) {
+  const inputs = d.scale.map((k) => { const t = h("textarea", { rows: 2, maxlength: 3000, placeholder: `${k} 수준의 일반적 특성` }); t.value = d.course_levels[k] || ""; return [k, t]; });
+  const filled = inputs.filter(([, t]) => t.value.trim()).length;
+  const save = h("button", { class: "primary small", type: "button" }, "과목 성취수준 저장");
+  save.onclick = async () => {
+    try {
+      await achApi(`/api/courses/${c.id}/achievement-levels`, { levels: Object.fromEntries(inputs.map(([k, t]) => [k, t.value])) });
+      toast("과목 성취수준을 저장했어요.");
+    } catch (err) { toast(err.message); }
+  };
+  return h("details", { class: "std-card course-levels", open: !filled },
+    h("summary", {}, h("strong", {}, "📚 과목 성취수준 "), h("span", { class: "muted", style: "font-size:0.85rem" },
+      `${d.achievement_text} · ${filled}/${d.scale.length}단계 입력`)),
+    h("p", { class: "muted", style: "margin:6px 0;font-size:0.85rem" }, "과목 전체의 성취수준별 일반적 특성이에요. AI 종합 의견에서 참고로만 써요."),
+    h("table", { class: "info-table" }, h("tbody", {}, inputs.map(([k, t]) => h("tr", {}, h("th", { style: "width:60px;text-align:center" }, k), h("td", {}, t))))),
+    h("div", { class: "row", style: "justify-content:flex-end;margin-top:8px" }, save));
+}
+
 function standardCard(c, s, i, again) {
   return h("div", { class: "std-card" },
     h("div", { class: "row" },
@@ -84,7 +104,7 @@ function standardCard(c, s, i, again) {
         await achApi(`/api/courses/${c.id}/standards/${s.id}/delete`, {});
         again();
       } }, "삭제")),
-    h("details", { class: "std-levels" }, h("summary", { class: "muted" }, "성취수준 (상·중·하) 보기"),
+    h("details", { class: "std-levels" }, h("summary", { class: "muted" }, "평가기준 (상·중·하) 보기"),
       h("table", { class: "info-table" }, h("tbody", {},
         [["상", s.level_high], ["중", s.level_mid], ["하", s.level_low]].map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { style: "white-space:pre-wrap" }, v || "-")))))),
     s.elements.length ? h("div", { class: "table-wrap" }, h("table", { class: "att std-elements" },
@@ -112,7 +132,7 @@ function standardForm(c, s, aiOn, again) {
   (s?.elements || []).forEach(addRow);
   if (!s?.elements?.length) addRow();
   const read = () => [...rows.children].map((tr) => Object.fromEntries([...tr.querySelectorAll("[data-k]")].map((el) => [el.dataset.k, el.value.trim()]))).filter((e) => e.name);
-  const draftBtn = h("button", { class: "small", type: "button", disabled: !aiOn, title: aiOn ? "" : "AI가 설정되지 않았어요" }, "🤖 성취수준에서 평가 요소 뽑기 (AI)");
+  const draftBtn = h("button", { class: "small", type: "button", disabled: !aiOn, title: aiOn ? "" : "AI가 설정되지 않았어요" }, "🤖 평가기준에서 평가 요소 뽑기 (AI)");
   draftBtn.onclick = async () => {
     if (read().length && !confirm("지금 적힌 평가 요소를 AI 초안으로 바꿀까요?")) return;
     draftBtn.disabled = true; draftBtn.textContent = "🤖 뽑는 중…";
@@ -122,7 +142,7 @@ function standardForm(c, s, aiOn, again) {
       r.elements.forEach(addRow);
       toast("AI가 평가 요소 초안을 만들었어요. 확인하고 고친 뒤 [저장]을 눌러 주세요.", 5000);
     } catch (err) { toast(err.message, 5000); }
-    draftBtn.disabled = false; draftBtn.textContent = "🤖 성취수준에서 평가 요소 뽑기 (AI)";
+    draftBtn.disabled = false; draftBtn.textContent = "🤖 평가기준에서 평가 요소 뽑기 (AI)";
   };
   const save = h("button", { class: "primary", type: "button" }, "저장");
   save.onclick = async () => {
@@ -140,9 +160,9 @@ function standardForm(c, s, aiOn, again) {
     h("div", { class: "std-form" },
       h("label", {}, "성취기준 코드", code),
       h("label", { class: "wide" }, "성취기준", text),
-      h("label", { class: "wide" }, "성취수준 상", lv[0]),
-      h("label", { class: "wide" }, "성취수준 중", lv[1]),
-      h("label", { class: "wide" }, "성취수준 하", lv[2])),
+      h("label", { class: "wide" }, "평가기준 상", lv[0]),
+      h("label", { class: "wide" }, "평가기준 중", lv[1]),
+      h("label", { class: "wide" }, "평가기준 하", lv[2])),
     h("div", { class: "row", style: "margin:12px 0 6px" }, h("strong", { class: "grow" }, "평가 요소"), draftBtn),
     h("div", { class: "table-wrap" }, h("table", { class: "att std-elements edit" },
       h("thead", {}, h("tr", {}, ["평가 요소", "상", "중", "하", ""].map((t) => h("th", {}, t)))), rows)),
