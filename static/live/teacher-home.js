@@ -531,8 +531,8 @@ function renderRunCourse(c) {
         onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
       c.lead && !c.locked && !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); runSub = "info"; renderRun(); } }, "정보 수정") : null,
       c.lead && !c.locked ? h("button", { class: "small", onclick: async () => {
-        if (c.archived || await appConfirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
-      } }, c.archived ? "보관 해제" : "보관 (학기 끝)") : null),
+        if (c.archived || await appConfirm("학기가 끝난 강좌를 종료할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
+      } }, c.archived ? "종료 해제" : "종료 (학기 끝)") : null),
     courseBanner(c),
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
@@ -760,7 +760,7 @@ async function renderOpenClass(c, box) {
     open.length ? h("div", { class: "banner ok" }, h("strong", {}, "진행 중인 수업"), ...open.map((x) =>
       h("a", { class: "button small primary", href: `/live/teacher/${x.code}` }, `▶ ${x.title} 들어가기`))) : null,
     notYet ? h("p", { class: "muted", style: "font-size:0.9rem" }, `⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.`) : null,
-    c.archived ? h("p", { class: "muted" }, "보관한 강좌에는 수업을 열 수 없어요. '보관 해제'를 먼저 눌러 주세요.")
+    c.archived ? h("p", { class: "muted" }, "종료한 강좌에는 수업을 열 수 없어요. '종료 해제'를 먼저 눌러 주세요.")
       : sessions.length ? [table(),
         // 회차표에 없는 날(보강·추가 수업)도 주제만 적고 바로 열 수 있게
         h("p", { class: "muted", style: "margin:14px 0 6px;font-size:0.9rem" }, "회차표에 없는 날 추가로 수업을 열 때 (보강·특강 등)"),
