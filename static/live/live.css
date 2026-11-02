@@ -1735,3 +1735,16 @@ table.att.meet-people td:last-child { min-width: 0; }
 .course-banner.archived .cb-area { color: #6f777d; }
 .cb-chip.ended { background: #e53935; }
 .course-banner.archived .cb-ico { filter: grayscale(1); }
+/* 수행평가 목록: 연번·평가명·평가 내용·영역 만점·반영 비율·마감일·상태 */
+table.att.assign-main th:nth-child(1) { width: 6%; }
+table.att.assign-main th:nth-child(2) { width: 14%; }
+table.att.assign-main th:nth-child(3) { width: 36%; }
+table.att.assign-main th:nth-child(4), table.att.assign-main th:nth-child(5) { width: 9%; }
+table.att.assign-main th:nth-child(6) { width: 14%; }
+table.att.assign-main th:nth-child(7) { width: 12%; }
+table.att.assign-main th { text-align: center; }
+table.att.assign-main th:nth-child(2), table.att.assign-main th:nth-child(3) { text-align: left; }
+.assign-state { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+.assign-state.open { background: #e3f3ea; color: #1b6b4a; }
+.assign-state.late { background: #fff1e0; color: #b4561f; }
+.assign-state.done { background: #fde8e8; color: #c62828; }
