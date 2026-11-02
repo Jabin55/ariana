@@ -215,7 +215,7 @@ async function meetScript(id, box) {
   await loadClassQuestions(id); // 질문답변은 스크립트 아래에 (detailTarget = box)
 }
 
-/* [발언기록]: 학생별 발언 수 표 → 이름을 누르면 워드클라우드와 발언 모음 */
+/* [발언기록]: 참석자 전체 워드클라우드 → 참석자별 발언 표 → 이름을 누르면 그 사람의 워드클라우드와 발언 모음 */
 async function meetSpeakers(id, box) {
   const { entries } = await api(`/api/live/history/${id}/speech`);
   const people = new Map();
@@ -230,7 +230,7 @@ async function meetSpeakers(id, box) {
   if (who) {
     const cloud = h("div", { class: "word-cloud" });
     fill(box,
-      h("div", { class: "row", style: "margin:8px 0" }, h("button", { class: "small", onclick: () => { meetSpeaker = null; meetSpeakers(id, box); } }, "← 학생 목록")),
+      h("div", { class: "row", style: "margin:8px 0" }, h("button", { class: "small", onclick: () => { meetSpeaker = null; meetSpeakers(id, box); } }, "← 참석자 목록")),
       h("div", { class: "hub-grid-summary" }, `${[who.school, who.student_no, who.name].filter(Boolean).join(" ")} · 발언 ${who.items.length}건 · ${who.chars.toLocaleString()}자`),
       h("h4", { class: "speech-h" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
       h("h4", { class: "speech-h" }, "🗒 발언 모음"),
@@ -242,18 +242,19 @@ async function meetSpeakers(id, box) {
   const allCloud = h("div", { class: "word-cloud" });
   fill(box,
     h("div", { class: "row", style: "margin:8px 0" },
-      h("span", { class: "grow muted" }, `발언한 학생 ${list.length}명`),
+      h("span", { class: "grow muted" }, `발언한 참석자 ${list.length}명`),
       entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button small" }, "📥 발언 기록 엑셀") : null),
     list.length ? [
+      h("h4", { class: "speech-h", style: "margin-top:4px" }, "☁️ 참석자 전체 워드클라우드"), allCloud,
+      h("h4", { class: "speech-h" }, "🧑‍🎓 참석자별 발언 (이름을 누르면 자세히)"),
       h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students" },
         h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "첫 발언"].map((t) => h("th", {}, t)))),
         h("tbody", {}, list.map((x, i) => h("tr", { class: "assign-row", onclick: () => { meetSpeaker = x.user_id; meetSpeakers(id, box); } },
           h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
           h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
           h("td", { class: "num" }, `${x.items.length}건`), h("td", { class: "num" }, `${x.chars.toLocaleString()}자`),
-          h("td", { class: "num" }, x.items[0].time.slice(0, 5))))))),
-      h("h4", { class: "speech-h" }, "☁️ 학생 전체 워드클라우드"), allCloud]
-      : h("p", { class: "muted" }, "학생 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 학생의 말이 글자로 남아요."));
+          h("td", { class: "num" }, x.items[0].time.slice(0, 5)))))))]
+      : h("p", { class: "muted" }, "참석자 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 참석자의 말이 글자로 남아요."));
   if (list.length) drawWordCloud(allCloud, list.flatMap((x) => x.items.map((e) => e.text)));
 }
 
