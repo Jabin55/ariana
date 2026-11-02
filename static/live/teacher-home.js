@@ -846,7 +846,7 @@ async function renderOpenClass(c, box) {
       : sessions.length ? [h("h3", { class: "open-title" }, "📅 회차별 수업"), table(),
         // 회차표에 없는 날(보강·추가 수업)도 주제만 적고 바로 열 수 있게
         h("h3", { class: "open-title", style: "margin-top:22px" }, "➕ 회차 외 보강·특강"),
-        plain()] : [h("h3", { class: "open-title" }, "➕ 회차 외 보강·특강"), plain()]);
+        plain()] : plain()); // 회차표가 없는 과목은 제목 없이 주제만 적고 열기
 }
 
 /* ───── 학습 관리: 위에 [수업참석률][공지][퀴즈][설문][평가] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
