@@ -21,6 +21,8 @@ async function renderStandards(c, box) {
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
       h("h3", { class: "grow", style: "margin:0" }, `🎯 성취기준 ${d.standards.length}개`),
+      editing ? null : h("a", { class: "button small", href: "/api/standards/template.xlsx" }, "📥 엑셀 양식 받기"),
+      editing ? null : importButton(c, d.ai, again),
       editing ? null : h("button", { class: "primary small", type: "button", onclick: () => { achEditing.set(c.id, "new"); again(); } }, "+ 성취기준 추가")),
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
       "국가 고시 성취기준과 성취수준(상·중·하)을 넣고, 평가 요소를 정해 주세요. 학생 발언 AI 분석은 이 평가 요소를 기준으로 해요."),
@@ -29,6 +31,47 @@ async function renderStandards(c, box) {
     editing === "new" ? standardForm(c, null, d.ai, again) : null,
     d.standards.length && d.sessions.length ? sessionLinks(c, d) : null,
     d.standards.length && !d.sessions.length ? h("p", { class: "muted", style: "margin-top:12px" }, "회차 정보가 없어 회차별 성취기준을 연결할 수 없어요. 회차가 없으면 모든 성취기준으로 분석해요.") : null);
+}
+
+/** 엑셀(.xlsx)로 성취기준 한꺼번에 넣기 → 평가 요소가 없는 것은 AI가 뽑아 저장 */
+function importButton(c, aiOn, again) {
+  const file = h("input", { type: "file", accept: ".xlsx", hidden: true });
+  const btn = h("button", { class: "small", type: "button", onclick: () => file.click() }, "📤 엑셀로 올리기");
+  file.onchange = async () => {
+    const f = file.files[0];
+    file.value = "";
+    if (!f) return;
+    btn.disabled = true; btn.textContent = "📤 올리는 중…";
+    try {
+      const res = await fetch(`/api/courses/${c.id}/standards/import`, { method: "POST", body: f,
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.detail || "엑셀을 올리지 못했어요.");
+      toast(`성취기준 ${r.added}개를 넣었어요${r.updated ? `, ${r.updated}개는 새 내용으로 바꿨어요` : ""}.`, 4000);
+      if (aiOn) await draftMissing(c, r.ids, btn);
+    } catch (err) { toast(err.message, 6000); }
+    btn.disabled = false; btn.textContent = "📤 엑셀로 올리기";
+    again();
+  };
+  return h("span", {}, btn, file);
+}
+
+/** 올린 성취기준 가운데 평가 요소가 없는 것은 AI 초안을 만들어 저장한다 (선생님이 나중에 [수정]으로 고친다) */
+async function draftMissing(c, ids, btn) {
+  const { standards } = await achApi(`/api/courses/${c.id}/standards`);
+  const todo = standards.filter((s) => ids.includes(s.id) && !s.elements.length && (s.level_high || s.level_mid || s.level_low));
+  if (!todo.length) return;
+  if (!confirm(`평가 요소가 없는 성취기준 ${todo.length}개는 AI가 성취수준에서 평가 요소를 뽑아 넣을까요?\n(하나에 10초쯤 걸려요. 나중에 [수정]에서 고칠 수 있어요)`)) return;
+  let done = 0;
+  for (const s of todo) {
+    btn.textContent = `🤖 평가 요소 뽑는 중… ${done + 1}/${todo.length}`;
+    try {
+      const r = await achApi(`/api/courses/${c.id}/standards/draft-elements`, s);
+      await achApi(`/api/courses/${c.id}/standards`, { ...s, elements: r.elements });
+      done += 1;
+    } catch (err) { toast(`${s.code || "성취기준"}: ${err.message}`, 5000); }
+  }
+  toast(`AI가 성취기준 ${done}개의 평가 요소를 뽑았어요. 확인하고 필요하면 [수정]에서 고쳐 주세요.`, 6000);
 }
 
 function standardCard(c, s, i, again) {

@@ -3677,3 +3677,34 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     from datetime import date
     assert file_retention.purge_expired_files(date(2100, 12, 20))["speech_logs"] >= 1
     assert t.get(f"{base}/speech/student/{uid}/analysis").json()["classes"] == []
+
+
+def test_standards_import_from_excel():
+    """엑셀로 성취기준 넣기: 양식, A~E 다섯 단계, 성취기준 문장 안의 코드, 같은 코드는 새 내용으로"""
+    import io
+    from openpyxl import Workbook
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    tpl = t.get("/api/standards/template.xlsx")
+    assert tpl.status_code == 200
+    up = lambda content: t.post(f"/api/courses/{cid}/standards/import", content=content,
+                                headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+    r = up(tpl.content).json()  # 양식 예시 그대로: 성취기준 1개, 평가 요소 2개
+    assert r["added"] == 1
+    s = t.get(f"/api/courses/{cid}/standards").json()["standards"][0]
+    assert s["code"] == "[12법사02-03]" and [e["name"] for e in s["elements"]] == ["근거 제시", "반론 고려"]
+    book = Workbook()
+    sh = book.active
+    sh.append(["2022 개정 법과 사회 성취수준"])  # 위에 제목 줄이 있어도 된다
+    sh.append(["성취기준", "A", "B", "C", "D", "E"])
+    sh.append(["[12법사01-01] 법의 의미를 탐구한다.", "가", "나", "다", "라", "마"])
+    sh.append(["[12법사02-03] 바뀐 기본권 문장", "가2", "나2", "다2", "라2", "마2"])
+    buf = io.BytesIO(); book.save(buf)
+    r = up(buf.getvalue()).json()
+    assert (r["added"], r["updated"]) == (1, 1)
+    got = {x["code"]: x for x in t.get(f"/api/courses/{cid}/standards").json()["standards"]}
+    assert got["[12법사01-01]"]["text"] == "법의 의미를 탐구한다." and got["[12법사01-01]"]["level_high"] == "A: 가\nB: 나"
+    assert got["[12법사01-01]"]["level_mid"] == "C: 다" and got["[12법사01-01]"]["level_low"] == "D: 라\nE: 마"
+    assert got["[12법사02-03]"]["text"] == "바뀐 기본권 문장" and len(got["[12법사02-03]"]["elements"]) == 2  # 요소는 유지
+    assert up(b"not excel").status_code == 400
+    assert teacher("other@gmail.com").post(f"/api/courses/{cid}/standards/import", content=tpl.content).status_code == 404

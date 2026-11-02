@@ -412,3 +412,176 @@ async def my_feedback(course_id: int, request: Request):
     if not view["published"]:
         return {"published": False}
     return {"published": True, "feedback": view["feedback"], "classes": view["classes"]}
+
+
+# ───────── 엑셀로 성취기준 한꺼번에 넣기 ─────────
+
+import io as _io
+import re as _re
+
+_CODE = _re.compile(r"\[[^\[\]]{3,30}\]")
+MAX_IMPORT = 60
+
+
+def _norm(v) -> str:
+    return _re.sub(r"\s+", "", str(v or "")).replace("·", "").lower()
+
+
+def _column_roles(header: list) -> dict:
+    """첫 줄 제목으로 칸의 쓰임을 찾는다. 양식이 조금 달라도 '코드·성취기준·상·중·하·A~E·평가 요소'를 알아본다."""
+    roles = {}
+    for i, raw in enumerate(header):
+        h = _norm(raw)
+        if not h:
+            continue
+        if "요소" in h:  # 평가 요소 칸들
+            for key, words in (("el_high", ("상",)), ("el_mid", ("중",)), ("el_low", ("하",))):
+                if h.endswith(words[0]) and h not in ("평가요소",):
+                    roles.setdefault(key, i)
+                    break
+            else:
+                roles.setdefault("el_name", i)
+        elif "코드" in h or h in ("번호", "성취기준번호"):
+            roles.setdefault("code", i)
+        elif h in ("상", "성취수준상", "수준상", "상수준") or (h.endswith("상") and "수준" in h):
+            roles.setdefault("high", i)
+        elif h in ("중", "성취수준중", "수준중", "중수준") or (h.endswith("중") and "수준" in h):
+            roles.setdefault("mid", i)
+        elif h in ("하", "성취수준하", "수준하", "하수준") or (h.endswith("하") and "수준" in h):
+            roles.setdefault("low", i)
+        elif h in ("a", "b", "c", "d", "e") or (len(h) >= 2 and h[0] in "abcde" and "수준" in h):
+            roles.setdefault(f"lv_{h[0]}", i)
+        elif "성취기준" in h:
+            roles.setdefault("text", i)
+    return roles
+
+
+def parse_standards_xlsx(data: bytes) -> list[dict]:
+    from openpyxl import load_workbook
+    try:
+        book = load_workbook(_io.BytesIO(data), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(400, "엑셀 파일(.xlsx)을 읽지 못했어요. 엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)'로 저장해 올려 주세요.") from None
+    sheet = book.worksheets[0]
+    rows = [list(r) for r in sheet.iter_rows(values_only=True)]
+    head_at, roles = None, {}
+    for i, r in enumerate(rows[:15]):  # 위쪽에 제목·설명 줄이 있어도 제목 줄을 찾는다
+        found = _column_roles(r)
+        if "text" in found:
+            head_at, roles = i, found
+            break
+    if head_at is None:
+        raise HTTPException(400, "첫 줄에서 '성취기준' 제목 칸을 찾지 못했어요. [양식 받기]로 받은 양식에 채워 주세요.")
+    cell = lambda r, key: str(r[roles[key]]).strip() if key in roles and roles[key] < len(r) and r[roles[key]] is not None else ""
+    out: dict[str, dict] = {}
+    last = None
+    for r in rows[head_at + 1:]:
+        text, code = cell(r, "text"), cell(r, "code")
+        if not code and text:
+            m = _CODE.search(text)
+            if m:
+                code, text = m.group(0), (text[:m.start()] + text[m.end():]).strip()
+        if code and code[0] != "[":
+            code = f"[{code.strip('[] ')}]"
+        key = code or text
+        if key:
+            if key not in out:
+                if len(out) >= MAX_IMPORT:
+                    raise HTTPException(400, f"성취기준은 한 번에 {MAX_IMPORT}개까지 올릴 수 있어요.")
+                high, mid, low = cell(r, "high"), cell(r, "mid"), cell(r, "low")
+                ae = {k: cell(r, f"lv_{k}") for k in "abcde"}
+                if any(ae.values()) and not (high or mid or low):  # A~E 다섯 단계 → 상(A·B)·중(C)·하(D·E)
+                    high = "\n".join(f"{k.upper()}: {ae[k]}" for k in "ab" if ae[k])
+                    mid = "\n".join(f"{k.upper()}: {ae[k]}" for k in "c" if ae[k])
+                    low = "\n".join(f"{k.upper()}: {ae[k]}" for k in "de" if ae[k])
+                out[key] = {"code": code[:40], "text": (text or code)[:2000], "level_high": high[:3000],
+                            "level_mid": mid[:3000], "level_low": low[:3000], "elements": []}
+            last = out[key]
+        elif not last:
+            continue
+        name = cell(r, "el_name")
+        if name and last is not None and len(last["elements"]) < 8 and name not in [e["name"] for e in last["elements"]]:
+            last["elements"].append({"name": name[:60], "high": cell(r, "el_high")[:1000], "mid": cell(r, "el_mid")[:1000],
+                                     "low": cell(r, "el_low")[:1000]})
+    if not out:
+        raise HTTPException(400, "엑셀에 성취기준이 없어요.")
+    return list(out.values())
+
+
+@router.post("/api/courses/{course_id}/standards/import")
+async def import_standards(course_id: int, request: Request):
+    """엑셀(.xlsx)의 성취기준을 넣는다. 같은 코드가 이미 있으면 내용을 새로 바꾼다(평가 요소는 엑셀에 있을 때만)."""
+    await _course(course_id, request)
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > 5 * 1024 * 1024:
+            raise HTTPException(413, "파일이 너무 커요. (5MB까지)")
+    items = await db.run(parse_standards_xlsx, bytes(data))
+
+    def run():
+        t = db.course_standards.c
+        added, updated, ids = 0, 0, []
+        with db.engine.begin() as c:
+            have = {r.code: r.id for r in c.execute(select(t.id, t.code).where(t.course_id == course_id)) if r.code}
+            n = len(c.execute(select(t.id).where(t.course_id == course_id)).all())
+            for it in items:
+                values = {k: it[k] for k in ("code", "text", "level_high", "level_mid", "level_low")}
+                if it["elements"]:
+                    values["elements"] = json.dumps(it["elements"], ensure_ascii=False)
+                if it["code"] in have:
+                    c.execute(update(db.course_standards).where(t.id == have[it["code"]]).values(**values))
+                    ids.append(have[it["code"]])
+                    updated += 1
+                else:
+                    sid = c.execute(insert(db.course_standards).values(
+                        course_id=course_id, sort=n, created_at=time.time(), elements=values.pop("elements", "[]"), **values)
+                    ).inserted_primary_key[0]
+                    have[it["code"]] = sid
+                    ids.append(sid)
+                    n += 1
+                    added += 1
+        return added, updated, ids
+
+    added, updated, ids = await db.run(run)
+    return {"added": added, "updated": updated, "ids": ids}
+
+
+@router.get("/api/standards/template.xlsx")
+async def standards_template(request: Request):
+    """성취기준 엑셀 양식: 한 줄에 성취기준 하나. 평가 요소를 미리 넣으려면 같은 성취기준을 아래 줄에 이어서."""
+    await require_user(request, "teacher")
+    from fastapi.responses import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    book = Workbook()
+    sh = book.active
+    sh.title = "성취기준"
+    head = ["성취기준 코드", "성취기준", "성취수준 상", "성취수준 중", "성취수준 하", "평가 요소(선택)", "요소 상", "요소 중", "요소 하"]
+    sh.append(head)
+    sh.append(["[12법사02-03]", "기본권 제한의 요건과 한계를 이해하고 구체적 사례에 적용하여 판단한다.",
+               "기본권 제한의 요건을 정확히 이해하고 다양한 사례에 적용하여 타당하게 판단할 수 있다.",
+               "기본권 제한의 요건을 이해하고 사례에 적용할 수 있다.", "기본권 제한의 의미를 대략 설명할 수 있다.",
+               "근거 제시", "타당하고 구체적인 근거를 든다", "근거를 들지만 일부만 타당하다", "근거 없이 주장한다"])
+    sh.append(["[12법사02-03]", "", "", "", "", "반론 고려", "상대 주장을 이해하고 반박한다", "상대 주장을 언급한다", "상대 주장을 고려하지 않는다"])
+    fill = PatternFill("solid", fgColor="E8F1EC")
+    for cell in sh[1]:
+        cell.font, cell.fill = Font(bold=True), fill
+    for col, w in zip("ABCDEFGHI", (16, 50, 40, 40, 40, 16, 30, 30, 30)):
+        sh.column_dimensions[col].width = w
+    for row in sh.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+    note = book.create_sheet("사용법")
+    for line in ("1. '성취기준' 시트에 한 줄에 성취기준 하나씩 적어요. (예시 두 줄은 지우고 쓰세요)",
+                 "2. 성취수준은 상·중·하 칸에 적어요. 성취수준이 A~E 다섯 단계면 제목을 A, B, C, D, E 로 바꿔 적어도 돼요. (A·B→상, C→중, D·E→하)",
+                 "3. 평가 요소는 비워 두면 올린 뒤 AI가 성취수준에서 뽑아 줄 수 있어요.",
+                 "4. 평가 요소를 직접 넣으려면 같은 성취기준 코드를 아래 줄에 다시 적고 평가 요소 칸만 채워요.",
+                 "5. 이미 있는 코드를 다시 올리면 내용이 새것으로 바뀌어요."):
+        note.append([line])
+    note.column_dimensions["A"].width = 110
+    out = _io.BytesIO()
+    book.save(out)
+    return Response(out.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment; filename=\"standards-template.xlsx\"; filename*=UTF-8''%EC%84%B1%EC%B7%A8%EA%B8%B0%EC%A4%80_%EC%96%91%EC%8B%9D.xlsx",
+                             "Cache-Control": "private, no-store"})
