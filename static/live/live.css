@@ -1813,3 +1813,11 @@ label.switch.disabled { opacity: 0.5; cursor: not-allowed; }
 .sess-open tr.pickable { cursor: pointer; }
 .sess-open tr.pickable:hover td { background: var(--surface-2); }
 .sess-open td.sess-topic-edit input { flex: 1; min-width: 0; }
+/* 온라인 수업 열기 회차표: 누르기 전부터 입력 칸이 열린 모양과 같은 칸 너비 (눌러도 표가 흔들리지 않게) */
+table.sess-open { width: 100%; table-layout: fixed; }
+table.sess-open th:nth-child(1) { width: 7%; }
+table.sess-open th:nth-child(2) { width: 22%; }
+table.sess-open th:nth-child(3) { width: 15%; }
+table.sess-open th:nth-child(4) { width: 56%; }
+table.sess-open td { overflow: hidden; text-overflow: ellipsis; }
+table.sess-open td.sess-topic-edit { overflow: visible; }
