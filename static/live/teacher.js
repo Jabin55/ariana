@@ -886,7 +886,10 @@ function render() {
   syncMonitors();
   tickTimer();
 
-  $("#set-ai").checked = S.settings.ai;
+  $("#set-ai").checked = S.settings.ai && S.ai_available;
+  $("#set-ai").disabled = !S.ai_available; // AI 키가 없으면 다른 AI 버튼처럼 회색으로
+  $("#set-ai").closest("label").classList.toggle("disabled", !S.ai_available);
+  $("#set-ai").closest("label").title = S.ai_available ? "학생 화면에 AI 조교 탭을 보여 줄지" : "AI가 설정되지 않았어요 (서버에 API 키가 없어요)";
   document.body.classList.toggle("no-mirror", S.settings.mirror === false);
   $("#mirror-btn").classList.toggle("on", S.settings.mirror !== false);
   renderLayout();

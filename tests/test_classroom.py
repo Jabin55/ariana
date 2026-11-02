@@ -3753,3 +3753,20 @@ def test_standards_import_from_excel():
     assert [e["name"] for e in got["[12국경01-01]"]["elements"]] == ["개념 이해", "사례 적용"]
     assert up(b"not excel").status_code == 400
     assert teacher("other@gmail.com").post(f"/api/courses/{cid}/standards/import", content=tpl.content).status_code == 404
+
+
+def test_ai_assistant_needs_api_key(monkeypatch):
+    """AI 키가 없으면 AI 조교를 켤 수 없고 교사 화면에 비활성으로 보인다"""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    t = teacher()
+    code = create(t)["code"]
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        assert state(tw)["ai_available"] is False
+        tw.send_json({"t": "settings", "ai": True})
+        tw.send_json({"t": "settings", "mirror": False})
+        assert state(tw, lambda m: m["settings"]["mirror"] is False)["settings"]["ai"] is False
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    with t.websocket_connect(f"/ws/live/{code}") as tw:
+        assert state(tw)["ai_available"] is True
+        tw.send_json({"t": "settings", "ai": True})
+        assert state(tw, lambda m: m["settings"]["ai"])["settings"]["ai"] is True

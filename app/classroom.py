@@ -577,6 +577,7 @@ def teacher_state(k: Klass) -> dict:
         "present": present_view(k), "files": k.files, "recording": k.recording,
         "captions_on": k.captions_on, "captions_available": captions_ready(),
         "captions_mode": "server" if captions_ready() else "browser", "transcript_on": k.transcript_on,
+        "ai_available": ai_key_ready(),
         "media": k.media, "media_files": k.media_files,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
@@ -1037,6 +1038,11 @@ def caption_worker_config() -> tuple[str, str] | None:
     if address.is_loopback:
         return url, token
     return None
+
+
+def ai_key_ready() -> bool:
+    """AI(Claude) API 키가 서버에 있는지. 없으면 AI 조교·AI 분석 버튼을 비활성으로 보인다"""
+    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
 
 
 def captions_ready() -> bool:
@@ -1875,7 +1881,7 @@ def handle_teacher(k: Klass, conn: Conn, m: dict) -> None:
     if t == "settings":
         for name in ("ai", "mirror", "board_draw"):  # 학생 채팅·데이터 절약 모드는 언제나 켜져 있다
             if name in m:
-                k.settings[name] = bool(m[name])
+                k.settings[name] = bool(m[name]) and (name != "ai" or ai_key_ready())  # AI 키가 없으면 AI 조교를 켤 수 없다
         if "mic_lock" in m:  # 통제를 바꾸면 남아 있는 마이크 요청은 지운다
             for s in k.students.values():
                 s.mic_req = False

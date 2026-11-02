@@ -1808,3 +1808,4 @@ table.att.std-links td:last-child { padding-left: 14px; }
 table.att.std-links th { text-align: center; }
 .std-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 4px 8px; }
 .std-pick-grid .std-pick { margin: 0; white-space: nowrap; }
+label.switch.disabled { opacity: 0.5; cursor: not-allowed; }
