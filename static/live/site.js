@@ -44,14 +44,16 @@
     el("span", { class: "brand-mark", "aria-hidden": "true" }),
     el("span", { class: "brand-a" }, "외솔"), el("span", { class: "brand-b" }, "온닷"));
   const policyTitle = policyMode ? el("span", { class: "policy-header-title" }, "이용 약관 및 개인정보 보호") : null;
+  const courseTitle = path === "/live" ? el("span", { class: "policy-header-title course-header-title", hidden: "" }) : null;
   const nav = el("nav", { class: "site-nav", "aria-label": "주 메뉴" },
     ...MENU.map(([href, label]) => el("a", { href }, label)));
+  const courseNav = path === "/live" ? el("nav", { class: "site-nav course-nav", "aria-label": "과목 운영 메뉴", hidden: "" }) : null;
   // 오른쪽 위: 로그인 전에는 '로그인'·'회원가입', 로그인하면 이름(역할) · 내 정보 · 로그아웃
   const user = el("div", { class: "site-user-box" });
   // 위: 외솔온닷 로고 + (오른쪽) 이름·내 정보·로그아웃 / 아래: 메뉴 바 (내려도 위에 붙어 있다)
   const header = el("header", { class: "site-header" }, el("div", { class: "site-header-in" },
-    logo, ...(policyTitle ? [policyTitle] : []), el("span", { class: "grow" }), user));
-  const menuInner = el("div", { class: "site-menu-in" }, nav);
+    logo, ...(policyTitle ? [policyTitle] : []), ...(courseTitle ? [courseTitle] : []), el("span", { class: "grow" }), user));
+  const menuInner = el("div", { class: "site-menu-in" }, nav, ...(courseNav ? [courseNav] : []));
   const menu = el("div", { class: "site-menu" }, menuInner);
   if (policyMode) menu.classList.add("policy-menu");
   document.body.prepend(header, menu);
@@ -83,6 +85,32 @@
     sub.style.setProperty("--sub-count", SUBMENUS[group].length);
     sub.style.setProperty("--sub-min-width", `${SUBMENUS[group].length * 68}px`);
     subInner.append(sub);
+  }
+
+  const courseSections = [["info", "과목 정보"], ["open", "온라인 수업 열기"], ["notice", "과목 공지사항"],
+    ["assess", "수행평가"], ["learn", "학습 관리"], ["satisfaction", "만족도 조사"]];
+  function showCourse(course, section = "info", onSelect = null) {
+    if (!courseNav) return;
+    const detail = !!course;
+    courseTitle.hidden = !detail;
+    courseNav.hidden = !detail;
+    nav.hidden = detail;
+    document.body.classList.toggle("course-detail", detail);
+    menu.classList.toggle("course-menu", detail);
+    if (subBand) subBand.hidden = detail || (officeTabs?.hidden && studentTabs?.hidden);
+    if (!detail) return;
+    courseTitle.replaceChildren(
+      el("a", { href: "/live?office=1" }, "교무실"),
+      el("span", { "aria-hidden": "true" }, " › "),
+      el("a", { href: "/live?office=1&tab=run" }, "과목 운영"),
+      el("span", { "aria-hidden": "true" }, " › "),
+      el("span", {}, course.title));
+    courseNav.replaceChildren(...courseSections.map(([key, label]) => {
+      const button = el("button", { type: "button", class: key === section ? "on" : "" }, label);
+      button.disabled = !!course.locked && key !== "info";
+      button.addEventListener("click", () => onSelect?.(key));
+      return button;
+    }));
   }
 
   const roleName = (u) => {
@@ -125,7 +153,7 @@
     user.append(name, info, out);
   }
   // 마이페이지에서 로그인·정보 수정을 하면 여기를 다시 그린다
-  window.WaesolHeader = { render };
+  window.WaesolHeader = { render, showCourse };
   fetch("/api/me").then((r) => r.json()).then(({ user: u }) => render(u)).catch(() => render(null));
 })();
 

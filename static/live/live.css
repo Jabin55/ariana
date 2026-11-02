@@ -1343,10 +1343,25 @@ img.me-avatar { object-fit: cover; }
 .policy-menu .site-nav a { color: #ffe3ce; }
 .policy-menu .site-nav a:hover { background: color-mix(in srgb, var(--accent-text) 12%, transparent); }
 .policy-menu .site-nav a.on { background: color-mix(in srgb, #c27c00 20%, var(--surface)); color: var(--brand-deep); font-weight: 800; }
+.course-header-title { min-width: 0; overflow-wrap: anywhere; }
+.course-header-title a { color: var(--brand-deep); text-decoration: none; }
+.course-header-title a:hover { text-decoration: underline; }
+.course-menu { background: var(--brand); border-color: var(--brand); }
+.site-menu.course-menu .course-nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; overflow: visible; }
+.site-menu.course-menu .course-nav button { width: 100%; min-width: 0; min-height: 48px; padding: 9px 6px; border: 0;
+  border-radius: 999px; background: transparent; color: #ffe3ce; font-size: clamp(0.84rem, 1.3vw, 1.04rem);
+  font-weight: 600; line-height: 1.25; text-align: center; white-space: normal; word-break: keep-all; cursor: pointer; }
+.site-menu.course-menu .course-nav button:hover { background: color-mix(in srgb, var(--accent-text) 12%, transparent); }
+.site-menu.course-menu .course-nav button.on { background: color-mix(in srgb, #c27c00 20%, var(--surface)); color: var(--brand-deep); font-weight: 800; }
+.site-menu.course-menu .course-nav button:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (max-width: 760px) {
   .policy-page .site-header-in { flex-wrap: wrap; }
   .policy-header-title { margin-left: 6px; padding-left: 10px; }
   .site-menu.policy-menu .site-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .site-menu.course-menu .course-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .site-menu.course-menu .course-nav button { font-size: 0.88rem; }
+  body.course-detail .site-header-in { flex-wrap: wrap; }
+  body.course-detail .course-header-title { order: 3; flex-basis: 100%; margin: 0; padding: 4px 0 0; border: 0; }
 }
 @media (max-width: 420px) {
   .policy-header-title { font-size: 0.9rem; }
