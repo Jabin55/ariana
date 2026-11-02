@@ -1862,3 +1862,13 @@ table.att.enroll-students td .status { white-space: nowrap; font-size: 0.75rem; 
 .std-levels table.info-table { table-layout: fixed; width: 100%; }
 .std-levels table.info-table th { width: 56px !important; text-align: center; }
 .std-levels table.info-table td { width: auto !important; line-height: 1.55; }
+/* 만족도 조사 결과: 설문 내용 칸을 넓게 (가능하면 한 줄), 영역·평균·응답 칸은 좁게 */
+table.att.satisfaction-table { min-width: 0; width: 100%; }
+table.att.satisfaction-table thead tr:first-child th:first-child { width: 70px; }
+table.att.satisfaction-table thead tr:first-child th:nth-child(3) { width: 58px; }
+table.att.satisfaction-table th:nth-last-child(-n+5), table.att.satisfaction-table td:nth-last-child(-n+5) { width: 62px; padding-left: 2px; padding-right: 2px; }
+table.att.satisfaction-table thead tr:nth-child(2) th { font-size: 0.72rem; line-height: 1.25; word-break: keep-all; }
+table.att.satisfaction-table tbody th { font-size: 0.85rem; word-break: keep-all; }
+table.att.satisfaction-table .satisfaction-question { font-size: 0.9rem; overflow-wrap: normal; word-break: keep-all; }
+table.att.satisfaction-table thead tr:first-child th:first-child { width: 100px; }
+table.att.satisfaction-table tbody th { white-space: nowrap; }
