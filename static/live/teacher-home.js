@@ -1135,7 +1135,7 @@ async function activitiesOf(classId, key, box) {
             ...(a.gradable ? [h("td", {}, r.correct === true ? "⭕" : r.correct === false ? "❌" : "-"), h("td", { class: "num" }, fmt(r.score))] : []))))));
     }),
     acts.length ? null : h("p", { class: "muted" }, "내역이 없어요."),
-    // 채점 칸만 연다 (출결·질문·발언 기록은 여기서 보이지 않게). 설문은 채점이 없어 버튼도 없다
+    // 채점 칸만 연다 (출결·발언 기록은 여기서 보이지 않게). 설문은 채점이 없어 버튼도 없다
     key === "survey" ? null : h("div", { class: "row" }, h("button", { class: "small", onclick: () => {
       const grades = h("section", { class: "card", style: "margin-top:12px" });
       if (key === "quiz") grades.dataset.only = "quiz";

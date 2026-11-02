@@ -951,7 +951,7 @@ function openStudentCourse(c) {
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" }, `${no}번 · 작성자 ${n.author || "-"} · 작성일 ${day(n.date)}`),
       h("div", { class: "notice-body" }, n.body || "(내용 없음)")));
   noticeList();
-  // 학습 활동: 게시판(연번·강의 주제·강의일·학습 자료) → 강의 주제를 누르면 그 수업의 자료·결과·질문
+  // 학습 활동: 게시판(연번·강의 주제·강의일·학습 자료) → 강의 주제를 누르면 그 수업의 자료·결과
   const learn = h("div", { class: "sc-panel" }, approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 학습 활동을 볼 수 있어요."));
   // 수행평가(과제)
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
@@ -1044,7 +1044,7 @@ $("#student-course-back").addEventListener("click", () => {
   $("#student-course-list").hidden = false;
 });
 
-/* 학습 활동 게시판: 이 강좌의 지난 수업마다 한 줄. 강의 주제를 누르면 그 수업의 학습 자료·퀴즈 결과·내 질문 */
+/* 학습 활동 게시판: 이 강좌의 지난 수업마다 한 줄. 강의 주제를 누르면 그 수업의 학습 자료·퀴즈 결과 */
 async function loadCourseMaterials(courseId, box) {
   box.replaceChildren(h("span", { class: "muted" }, "불러오는 중…"));
   try {
@@ -1566,7 +1566,7 @@ function accessLogBoard() {
     h("div", { class: "row" }, q, action, days, per, h("button", { type: "button", class: "small", onclick: () => { page = 1; load(); } }, "검색")), out);
 }
 
-/* 수업 기록 (출결·채점·질문) — 그릴 자리는 detailEl() */
+/* 수업 기록 (출결·채점·발언 기록) — 그릴 자리는 detailEl() */
 
 function fmtGap(min) {
   return min < 1 ? `${Math.round(min * 60)}초` : `${Math.round(min * 10) / 10}분`;
@@ -1709,5 +1709,4 @@ function gradeActivity(classId, a, box) {
       h("tbody", {}, rows))));
 }
 
-/* 이 수업의 '선생님께 질문'과 답변 */
 boot().catch((err) => { document.body.prepend(h("p", { class: "error" }, err.message)); });
