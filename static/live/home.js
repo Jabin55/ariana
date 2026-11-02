@@ -6,7 +6,6 @@ let CONFIG = null;
 const views = ["login-view", "consent-view", "done-view", "denied-view", "role-view", "profile-view", "guest-view", "student-view", "teacher-view"];
 function show(id) {
   for (const v of views) $(`#${v}`).hidden = v !== id;
-  window.WaesolHeader?.showCourse(null);
   $("#mypage-bar").hidden = ["login-view", "teacher-view", "student-view"].includes(id);
   $("#home-tabs").hidden = id !== "teacher-view";
   const officeBand = document.getElementById("office-submenu-band");
