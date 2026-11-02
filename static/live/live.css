@@ -1821,3 +1821,10 @@ table.sess-open th:nth-child(3) { width: 15%; }
 table.sess-open th:nth-child(4) { width: 56%; }
 table.sess-open td { overflow: hidden; text-overflow: ellipsis; }
 table.sess-open td.sess-topic-edit { overflow: visible; }
+/* 회차 정보: 성취기준을 한 줄에 5개 */
+table.att.std-links th:nth-child(1) { width: 5%; } table.att.std-links th:nth-child(2) { width: 13%; }
+table.att.std-links th:nth-child(3) { width: 10%; } table.att.std-links th:nth-child(4) { width: 15%; }
+table.att.std-links th:nth-child(5) { width: 57%; }
+table.att.std-links .std-pick-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; }
+table.att.std-links .std-pick { font-size: 0.8rem; gap: 3px; }
+@media (max-width: 900px) { table.att.std-links .std-pick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
