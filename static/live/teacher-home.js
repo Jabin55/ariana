@@ -612,6 +612,7 @@ async function renderLearning(c, box) {
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["activity", "✍️ 평가", `${S.activity.count}회`, `과제 제출률 ${pct(S.activity.rate)} · 채점 ${S.activity.graded}건`],
+    ["speech", "💬 발언 기록", `${S.speech?.count || 0}건`, `발언한 학생 ${S.speech?.students || 0}명`],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -620,10 +621,122 @@ async function renderLearning(c, box) {
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
   if (st.card === "activity") { learnAssignments(c, d, st, detail); return; }
+  if (st.card === "speech") { learnSpeech(c, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "attend") learnAttendance(d, st, detail);
   else if (st.card === "notice") learnNotices(d, detail);
   else learnActivities(d, st, st.card, detail);
+}
+
+/* ───── 학습 관리 > 💬 발언 기록: 수업별 스크립트 · 학생별 발언과 워드클라우드 · 엑셀 ─────
+   수업 화면에서 [📝 발언 기록]을 켠 동안의 발언만 쌓인다 (과목이 끝나고 1년 뒤 삭제) */
+async function learnSpeech(c, st, box) {
+  st.speechTab ||= "class";
+  let d;
+  try { d = await api(`/api/courses/${c.id}/speech`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
+  const again = () => learnSpeech(c, st, box);
+  const head = h("div", { class: "row", style: "margin:4px 0 10px" },
+    h("nav", { class: "tabs sub-tabs grow", style: "margin:0" }, [["class", "🗒 수업별 스크립트"], ["student", "🧑‍🎓 학생별 발언"]].map(([k, label]) =>
+      h("button", { type: "button", class: st.speechTab === k ? "active" : "", onclick: () => { st.speechTab = k; st.view = null; again(); } }, label))),
+    d.total ? h("a", { class: "button small", href: `/api/courses/${c.id}/speech.xlsx` }, "📥 엑셀 내려받기") : null);
+  if (!d.total) {
+    fill(box, head, h("p", { class: "muted" }, "아직 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면, 마이크를 켠 학생과 선생님의 말이 글자로 바뀌어 여기에 쌓여요. (크롬·엣지 사용자만 기록돼요)"));
+    return;
+  }
+  const empty = (n, text) => h("tr", {}, h("td", { colspan: n, class: "muted", style: "text-align:center;padding:18px" }, text));
+  if (st.speechTab === "class") {
+    const viewing = d.classes.find((x) => x.id === st.view);
+    if (viewing) {
+      const list = h("div", { class: "speech-script" }, h("p", { class: "muted" }, "불러오는 중…"));
+      fill(box, head,
+        h("div", { class: "row", style: "margin:0 0 8px" }, h("button", { class: "small", onclick: () => { st.view = null; again(); } }, "← 수업 목록")),
+        h("div", { class: "hub-grid-summary" }, `${fmtDate(viewing.date)} · ${viewing.title || "(주제 없음)"} · 발언 ${viewing.count}건 · 발언한 학생 ${viewing.speakers}명`),
+        list);
+      const { entries } = await api(`/api/courses/${c.id}/speech/class/${viewing.id}`);
+      fill(list, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },
+        h("span", { class: "sp-time" }, e.time.slice(0, 5)),
+        h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
+        h("span", { class: "sp-text" }, e.text))));
+      return;
+    }
+    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board" },
+      h("thead", {}, h("tr", {}, ["연번", "수업일", "수업 주제", "발언 수", "발언한 학생"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, d.classes.length ? d.classes.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.id; again(); } },
+        h("td", { class: "num" }, i + 1), h("td", { class: "num" }, fmtDate(x.date)),
+        h("td", {}, h("span", { class: "day-link" }, x.title || "(주제 없음)")),
+        h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.speakers}명`))) : empty(5, "기록이 없어요.")))));
+    return;
+  }
+  const who = d.students.find((x) => x.user_id === st.view);
+  if (who) {
+    const cloud = h("div", { class: "word-cloud" }, h("span", { class: "muted" }, "불러오는 중…"));
+    const list = h("div");
+    fill(box, head,
+      h("div", { class: "row", style: "margin:0 0 8px" }, h("button", { class: "small", onclick: () => { st.view = null; again(); } }, "← 학생 목록")),
+      h("div", { class: "hub-grid-summary" }, `${[who.school, who.student_no, who.name].filter(Boolean).join(" ")} · 발언 ${who.count}건 · ${who.chars.toLocaleString()}자 · ${who.classes}개 수업`),
+      h("h4", { class: "speech-h" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
+      h("h4", { class: "speech-h" }, "🗒 발언 모음 (날짜순)"), list);
+    const { entries } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}`);
+    drawWordCloud(cloud, entries.map((e) => e.text));
+    const days = [];
+    for (const e of entries) {
+      let g = days[days.length - 1];
+      if (!g || g.class_id !== e.class_id) days.push(g = { class_id: e.class_id, date: e.date, title: e.class_title, items: [] });
+      g.items.push(e);
+    }
+    fill(list, ...days.map((g) => h("div", { class: "speech-day" },
+      h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`, h("span", { class: "muted" }, ` ${g.items.length}건`)),
+      ...g.items.map((e) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text))))));
+    return;
+  }
+  fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board" },
+    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "발언한 수업"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; again(); } },
+      h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
+      h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
+      h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.chars.toLocaleString()}자`), h("td", { class: "num" }, `${x.classes}회`)))
+      : empty(7, "학생 발언 기록이 없어요.")))));
+}
+
+/* 워드클라우드: 조사·어미를 대강 떼어 낸 낱말의 빈도로 글자 크기를 정한다 */
+const WC_STOP = new Set(("그리고 그래서 그런데 하지만 그냥 진짜 너무 정말 이제 저는 제가 저희 우리 그거 이거 저거 그것 이것 저것 거기 여기 " +
+  "근데 약간 그러면 그럼 이렇게 그렇게 저렇게 어떻게 무슨 어떤 그런 이런 저런 같은 있는 없는 하는 되는 했던 하면 해서 " +
+  "그게 이게 저게 뭔가 혹시 아니 맞아 네네 아니요 그니까 그러니까 일단 때문 때문에 정도 지금 오늘 선생님 다시 많이 조금 " +
+  "있어요 없어요 같아요 생각 합니다 있습니다 했습니다 입니다 그래요 아마 또는 대해 대한 통해 위해 하지 있어 없어 있을 없을 " +
+  "있습 없습 따라 있다 없다 같다 하다 되다 됐다 했다 거예요 건데 거죠 해야 그렇 그런가 아닌가 아니라 아니고 맞는 그때 다른 모든 각각").split(" "));
+const WC_TAILS = ["에서는", "으로는", "에게서", "이라고", "이라는", "라고", "라는", "에서", "에게", "한테", "으로", "까지", "부터", "처럼", "보다",
+  "이랑", "이나", "이고", "이요", "은", "는", "이", "가", "을", "를", "의", "에", "도", "로", "와", "과", "만", "랑", "요"];
+const WC_ENDS = ["했습니다", "합니다", "입니다", "했어요", "해요", "이에요", "예요", "였어요", "있어요", "있습니다", "같아요", "거든요", "잖아요",
+  "하는데", "한다고", "했는데", "해야", "하면", "해서", "하고", "하는", "한다", "했다", "되는", "된다", "됩니다", "돼요", "니다", "어요", "아요",
+  "되면", "될", "할", "된", "한", "적인", "적으로"];
+
+function wordFreq(texts) {
+  const freq = new Map();
+  for (const t of texts) {
+    for (let w of t.toLowerCase().split(/[^0-9a-z가-힣]+/)) {
+      if (!w) continue;
+      for (const e of WC_ENDS) if (w.length - e.length >= 2 && w.endsWith(e)) { w = w.slice(0, -e.length); break; }
+      for (const e of WC_TAILS) if (w.length - e.length >= 2 && w.endsWith(e)) { w = w.slice(0, -e.length); break; }
+      if (w.length < 2 || WC_STOP.has(w) || /^\d+$/.test(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 1);
+    }
+  }
+  return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 45);
+}
+
+function drawWordCloud(box, texts) {
+  const words = wordFreq(texts);
+  if (!words.length) { fill(box, h("span", { class: "muted" }, "낱말이 아직 충분하지 않아요.")); return; }
+  const max = words[0][1], min = words[words.length - 1][1];
+  const colors = ["#1b6b4a", "#e8663d", "#2f7fb5", "#8a5cc2", "#c79a1e", "#3c9a6e", "#d0485f"];
+  // 큰 낱말이 가운데 오도록: 빈도순으로 가운데에서 양쪽으로 번갈아 놓는다
+  const order = [];
+  words.forEach((w, i) => (i % 2 ? order.push(w) : order.unshift(w)));
+  fill(box, ...order.map(([w, n], i) => {
+    const r = max === min ? 0.5 : Math.sqrt((n - min) / (max - min));
+    return h("span", { class: "wc-word", title: `${w} · ${n}번`,
+      style: `font-size:${Math.round(14 + r * 34)}px;color:${colors[i % colors.length]};font-weight:${r > 0.5 ? 800 : 600}` }, w);
+  }));
 }
 
 /** 펼침 줄: 버튼을 누르면 표 아래에 내용을 그린다 */

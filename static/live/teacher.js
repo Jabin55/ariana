@@ -243,9 +243,9 @@ function startBrowserCaption() {
   // 크롬은 일정 시간이 지나면 인식을 스스로 멈춘다 → 자막이 켜져 있는 동안 다시 시작
   rec.onend = () => {
     browserCaption.rec = null;
-    if (!browserCaption.want || !S?.captions_on) return;
+    if (!browserCaption.want || !(S?.captions_on || S?.transcript_on)) return;
     if (browserCaption.fails > 5) { toast("음성 인식이 계속 끊겨요. 인터넷 연결을 확인하고 자막을 다시 켜 주세요.", 6000); turnCaptionsOff(); return; }
-    setTimeout(() => { if (browserCaption.want && S?.captions_on) startBrowserCaption(); }, 300);
+    setTimeout(() => { if (browserCaption.want && (S?.captions_on || S?.transcript_on)) startBrowserCaption(); }, 300);
   };
   browserCaption.rec = rec;
   try { rec.start(); } catch { browserCaption.rec = null; }
@@ -263,7 +263,7 @@ async function turnCaptionsOff() {
 function syncCaptionCapture() {
   if (browserCaptionMode()) {
     stopCaptionCapture();
-    if (S?.captions_on && prefs.mic) startBrowserCaption();
+    if ((S?.captions_on || S?.transcript_on) && prefs.mic) startBrowserCaption(); // 발언 기록 중에는 선생님 말도 저장
     else stopBrowserCaption();
     return;
   }
@@ -333,6 +333,18 @@ $("#caption-btn").addEventListener("click", async () => {
     if (!enabled) { stopCaptionCapture(); stopBrowserCaption(); showCaption(""); }
     else { syncCaptionCapture(); if (browserCaptionMode()) toast("자막을 켰어요. 말하면 학생 화면 아래에 자막이 떠요.", 4000); }
     renderControls();
+  } catch (err) { toast(err.message); }
+});
+
+$("#transcript-btn").addEventListener("click", async () => {
+  const enabled = !S?.transcript_on;
+  if (enabled && !confirm("발언 기록을 시작할까요?\n\n마이크를 켠 학생과 선생님의 말이 글자로 바뀌어 저장돼요. 학생 화면에 '발언 기록 중'이 표시되고, 기록은 과목이 끝나고 1년 뒤 지워져요.\n(크롬·엣지를 쓰는 사람의 발언만 기록돼요)")) return;
+  try {
+    await api(`/api/live/classes/${CODE}/transcript/state`, { enabled });
+    S.transcript_on = enabled;
+    syncCaptionCapture();
+    renderControls();
+    toast(enabled ? "발언 기록을 시작했어요. 학습 관리 > 💬 발언 기록에서 볼 수 있어요." : "발언 기록을 끝냈어요.", 4000);
   } catch (err) { toast(err.message); }
 });
 
@@ -449,6 +461,9 @@ function renderControls() {
   $("#caption-btn").disabled = !ok;
   $("#caption-btn").textContent = S?.captions_on ? "💬 자막 끄기" : "💬 자막 켜기";
   $("#caption-btn").classList.toggle("on", !!S?.captions_on);
+  $("#transcript-btn").hidden = !S || (browserCaptionMode() && !SpeechRec);
+  $("#transcript-btn").textContent = S?.transcript_on ? "📝 기록 끄기" : "📝 발언 기록";
+  $("#transcript-btn").classList.toggle("on", !!S?.transcript_on);
 }
 
 /* ───── 강의 녹화 ─────

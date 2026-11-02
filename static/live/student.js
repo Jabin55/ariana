@@ -148,6 +148,67 @@ function renderCaptionControl() {
   if (!S?.captions_on) showCaption("");
 }
 
+/* ───── 발언 기록: 선생님이 켜면, 마이크를 켠 동안 내 브라우저(크롬·엣지)가 말을 글자로 바꿔 보낸다 ───── */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const speech = { rec: null, want: false, lastSent: 0, timer: null, fails: 0 };
+
+function sendSpeech(text, final) {
+  text = text.trim();
+  if (!text) return;
+  if (text.length > 200) text = text.slice(-200);
+  const go = () => {
+    speech.lastSent = Date.now();
+    fetch(`/api/live/classes/${CODE}/speech`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, final }) }).catch(() => {});
+  };
+  clearTimeout(speech.timer);
+  if (final || Date.now() - speech.lastSent > 500) go();
+  else speech.timer = setTimeout(go, 500);
+}
+
+function stopSpeech() {
+  speech.want = false;
+  clearTimeout(speech.timer);
+  const rec = speech.rec;
+  speech.rec = null;
+  if (rec) { rec.onend = null; try { rec.abort(); } catch { /* 이미 멈춤 */ } }
+}
+
+function startSpeech() {
+  speech.want = true;
+  if (speech.rec || !SpeechRec) return;
+  const rec = new SpeechRec();
+  rec.lang = "ko-KR";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    speech.fails = 0;
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) sendSpeech(r[0].transcript, true);
+      else interim += r[0].transcript;
+    }
+    if (interim) sendSpeech(interim, false);
+  };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") { speech.fails = 99; }
+    else if (e.error !== "no-speech" && e.error !== "aborted") speech.fails += 1;
+  };
+  rec.onend = () => { // 크롬은 일정 시간마다 인식을 멈춘다 → 계속 다시 시작
+    speech.rec = null;
+    if (!speech.want || speech.fails > 5) return;
+    setTimeout(() => { if (speech.want) startSpeech(); }, 300);
+  };
+  speech.rec = rec;
+  try { rec.start(); } catch { speech.rec = null; }
+}
+
+function syncSpeech() {
+  if (S?.transcript_on && prefs.mic && !S?.me?.observer) startSpeech();
+  else stopSpeech();
+}
+
 /* ───── 화상 방 들어가기·옮기기 ───── */
 
 /** 마이크는 자유. 다만 선생님이 내 마이크를 끈 동안(🔒)은 선생님이 다시 켜 줄 때까지 못 켠다 (모둠에서는 자유) */
@@ -218,6 +279,7 @@ async function setMic(on, quiet = false, attempt = 0) {
       if (!quiet || on) toast(mediaError(err), 5000);
     }
   }
+  syncSpeech();
   renderControls();
 }
 
@@ -351,6 +413,7 @@ const mediaShare = new MediaShare($("#media"), { code: CODE });
 
 function render() {
   renderCaptionControl();
+  syncSpeech();
   document.title = `${S.title} · 실시간 수업`;
   $("#title").textContent = S.title;
   $("#online").textContent = `👥 ${S.online_count}명`;
@@ -410,6 +473,9 @@ function renderBanners() {
     h("span", {}, "학생 화면을 보기만 해요. 참여자 목록·출결·채점에 나오지 않고, 채팅·답·손 들기는 보내지지 않아요.")));
   if (S.recording) box.append(h("div", { class: "banner rec" }, h("strong", {}, "🔴 녹화 중"),
     h("span", {}, "선생님이 수업을 녹화하고 있어요. 녹화본은 선생님 컴퓨터에 저장되고 수업 목적으로만 쓰여요.")));
+  if (S.transcript_on) box.append(h("div", { class: "banner rec" }, h("strong", {}, "📝 발언 기록 중"),
+    h("span", {}, SpeechRec ? "마이크를 켜고 한 말이 글자로 바뀌어 선생님께 보이고 학습 기록으로 저장돼요. (과목이 끝나고 1년 뒤 삭제)"
+      : "이 브라우저는 음성 인식을 지원하지 않아 내 발언은 기록되지 않아요. (크롬·엣지에서는 기록돼요)")));
   if (!S.livekit) box.append(h("div", { class: "banner warn" }, "화상 서버가 아직 설정되지 않아 영상 없이 진행돼요."));
   if (!S.teacher_online) box.append(h("div", { class: "banner warn" }, "선생님이 아직 들어오지 않았어요."));
   if (S.announce) box.append(h("div", { class: "banner" }, h("strong", {}, "📢 공지"), h("span", {}, S.announce.text)));

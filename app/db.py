@@ -398,6 +398,17 @@ boards = Table(
     UniqueConstraint("class_id", "key"),
 )
 
+speech_logs = Table(
+    "speech_logs", metadata,  # 수업 중 발언 기록 (선생님이 [발언 기록]을 켠 동안만). 과목이 끝나고 365일 뒤 지운다
+    Column("id", Integer, primary_key=True),
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("course_id", Integer, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("role", String(10), nullable=False),  # student | teacher
+    Column("text", Text, nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+
 assignments = Table(
     "assignments", metadata,  # 강좌 과제 (선생님이 내고, 수강 확정 학생이 파일·글로 제출)
     Column("id", Integer, primary_key=True),

@@ -159,10 +159,13 @@ async def course_learning(course_id: int, request: Request):
                 select(sub.assignment_id, func.count().label("n"), func.count(sub.graded_at).label("g"))
                 .where(sub.assignment_id.in_([x.id for x in tasks] or [-1]), sub.submitted_at.is_not(None))
                 .group_by(sub.assignment_id))}
+            sl = db.speech_logs.c
+            speech = c.execute(select(sl.user_id, sl.role).where(sl.class_id.in_(ids))).all()
+            speech = [x for x in speech if not (x.role == "student" and x.user_id in adm)]
             return (rows, present, acts, notes, len(enrolled), course_notices_of(c, [course_id]).get(course_id, []),
-                    tasks, done)
+                    tasks, done, speech)
 
-    rows, present, acts, notes, enrolled, course_notes, tasks, done = await db.run(run)
+    rows, present, acts, notes, enrolled, course_notes, tasks, done, speech = await db.run(run)
     by_class: dict = {}
     for a in acts:
         g = by_class.setdefault(a.class_id, {k: {"count": 0, "answered": 0, "possible": 0} for k in ("survey", "quiz", "activity")})
@@ -197,6 +200,7 @@ async def course_learning(course_id: int, request: Request):
         cnt = sum(x["acts"][k]["count"] for x in out)
         summary[k] = {"count": cnt, "classes": sum(1 for x in out if x["acts"][k]["count"]),
                       "rate": pct(sum(x["acts"][k]["answered"] for x in out), sum(x["acts"][k]["possible"] for x in out))}
+    summary["speech"] = {"count": len(speech), "students": len({x.user_id for x in speech if x.role == "student"})}
     return {"summary": summary, "classes": out, "course_notices": course_notes, "assignments": assignments}
 
 

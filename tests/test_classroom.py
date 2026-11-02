@@ -2655,13 +2655,13 @@ def test_old_course_files_are_deleted_after_a_year(monkeypatch, tmp_path):
         asg.file_path(aid, f"f{name}").parent.mkdir(parents=True, exist_ok=True)
         asg.file_path(aid, f"f{name}").write_bytes(b"hwp")
     # 과목 마지막 날까지는 그대로 → 다음 날 PDF·판서 삭제 → 1년 뒤 과제 파일 삭제
-    assert purge_expired_files(date(2024, 7, 20)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0}
-    assert purge_expired_files(date(2024, 7, 21)) == {"materials": 1, "submission_files": 0, "score_confirmations": 0}
+    assert purge_expired_files(date(2024, 7, 20)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0, "speech_logs": 0}
+    assert purge_expired_files(date(2024, 7, 21)) == {"materials": 1, "submission_files": 0, "score_confirmations": 0, "speech_logs": 0}
     assert asg.file_path(ids["old"][1], "fold").exists()
     with db.engine.connect() as c:
         assert sorted(r.key for r in c.execute(select(db.boards))) == ["mnew:1", "mold:1"]  # 판서는 남는다
-    assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0}
-    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1, "score_confirmations": 2}
+    assert purge_expired_files(date(2025, 7, 1)) == {"materials": 0, "submission_files": 0, "score_confirmations": 0, "speech_logs": 0}
+    assert purge_expired_files(date(2025, 7, 25)) == {"materials": 0, "submission_files": 1, "score_confirmations": 2, "speech_logs": 0}
     assert not score_path.exists() and not undated_path.exists()
     assert not (tmp_path / "slides" / str(ids["old"][0]) / "mold.pdf").exists()
     assert not asg.file_path(ids["old"][1], "fold").exists()
@@ -3548,3 +3548,55 @@ def test_custom_dialog_loaded_on_site_and_classroom_pages():
         response = client.get(path)
         assert response.status_code == 200
         assert '/static/live/dialogs.js' in response.text
+
+
+def test_speech_transcript_saved_viewed_exported_and_purged():
+    """발언 기록: 켠 동안만 학생·교사 발언이 저장되고, 수업별·학생별로 보고 엑셀로 받으며, 과목 종료 1년 뒤 지운다"""
+    import io
+    from datetime import date
+    from openpyxl import load_workbook
+    from app import file_retention
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a, b = student(1), student(2)
+    for s in (a, b):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    code = create(t, title="1차시 토론", course_id=cid)["code"]
+    base = f"/api/live/classes/{code}"
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa, \
+         b.websocket_connect(f"/ws/live/{code}") as sb:
+        state(tw, lambda m: sum(x["online"] for x in m["students"]) == 2)
+        assert a.post(f"{base}/speech", json={"text": "켜기 전", "final": True}).status_code == 403
+        assert a.post(f"{base}/transcript/state", json={"enabled": True}).status_code == 403
+        assert t.post(f"{base}/transcript/state", json={"enabled": True}).json() == {"enabled": True}
+        assert state(sa, lambda m: m["transcript_on"])["transcript_on"]
+        assert a.post(f"{base}/speech", json={"text": "사형제는 폐지해야 한다고 생각합니다", "final": True}).status_code == 200
+        msg = until(tw, lambda m: m["t"] == "caption")
+        assert "사형제는 폐지해야" in msg["text"] and msg["student"]
+        a.post(f"{base}/speech", json={"text": "중간 결과", "final": False})  # 끝나지 않은 문장은 저장하지 않는다
+        b.post(f"{base}/speech", json={"text": "인권 보호가 더 중요합니다", "final": True})
+        t.post(f"{base}/captions/text", json={"text": "좋은 근거네요", "final": True})
+        assert t.post(f"{base}/transcript/state", json={"enabled": False}).json() == {"enabled": False}
+        assert a.post(f"{base}/speech", json={"text": "끈 뒤", "final": True}).status_code == 403
+    summary = t.get(f"/api/courses/{cid}/speech").json()
+    assert summary["total"] == 3 and summary["classes"][0]["count"] == 3 and summary["classes"][0]["speakers"] == 2
+    assert {x["count"] for x in summary["students"]} == {1}
+    class_id = summary["classes"][0]["id"]
+    script = t.get(f"/api/courses/{cid}/speech/class/{class_id}").json()["entries"]
+    assert [x["role"] for x in script] == ["student", "student", "teacher"] and script[2]["text"] == "좋은 근거네요"
+    uid = next(x["user_id"] for x in summary["students"] if x["student_no"] == "20301")
+    mine = t.get(f"/api/courses/{cid}/speech/student/{uid}").json()["entries"]
+    assert [x["text"] for x in mine] == ["사형제는 폐지해야 한다고 생각합니다"]
+    assert t.get(f"/api/courses/{cid}/learning").json()["summary"]["speech"] == {"count": 3, "students": 2}
+    assert a.get(f"/api/courses/{cid}/speech").status_code == 403
+    xl = t.get(f"/api/courses/{cid}/speech.xlsx")
+    assert xl.status_code == 200
+    sheet = load_workbook(io.BytesIO(xl.content))["발언 기록"]
+    assert [sheet.cell(4 + i, 9).value for i in range(3)] == ["사형제는 폐지해야 한다고 생각합니다", "인권 보호가 더 중요합니다", "좋은 근거네요"]
+    # 과목이 끝나고 1년이 지나면 지운다
+    end = COURSE.get("end_date") or "2099-12-18"
+    y, m, d = (int(x) for x in end.split("-"))
+    assert file_retention.purge_expired_files(date(y + 1, m, d))["speech_logs"] == 0
+    assert file_retention.purge_expired_files(date(y + 1, m, min(d + 2, 28)) if d < 27 else date(y + 2, 1, 1))["speech_logs"] == 3
+    assert t.get(f"/api/courses/{cid}/speech").json()["total"] == 0

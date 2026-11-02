@@ -181,6 +181,7 @@ class Klass:
     caption_owner: int | None = None
     caption_busy: bool = False
     caption_generation: int = 0
+    transcript_on: bool = False  # 선생님이 [발언 기록]을 켬: 학생·교사 발언을 글자로 바꿔 저장한다
     events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)
     # 발표(PDF)·화이트보드: {"mode": "slides"|"board", "file": 파일 id, "page": 쪽} / 없으면 None
     present: dict | None = None
@@ -575,7 +576,7 @@ def teacher_state(k: Klass) -> dict:
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at, "started_at": k.created,
         "present": present_view(k), "files": k.files, "recording": k.recording,
         "captions_on": k.captions_on, "captions_available": captions_ready(),
-        "captions_mode": "server" if captions_ready() else "browser",
+        "captions_mode": "server" if captions_ready() else "browser", "transcript_on": k.transcript_on,
         "media": k.media, "media_files": k.media_files,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
@@ -604,7 +605,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "teacher_listening": room != "main" and (room in k.listening or k.talking == room),
         "teacher_talking": room != "main" and k.talking == room,
         "teacher_broadcast": k.broadcasting,
-        "recording": k.recording, "captions_on": k.captions_on,
+        "recording": k.recording, "captions_on": k.captions_on, "transcript_on": k.transcript_on and not s.observer,
         "layout": layout_for(k),
         "activity": activity_for_student(k, k.activity, s.id),
         "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
@@ -1073,19 +1074,67 @@ class CaptionTextReq(BaseModel):
     final: bool = False
 
 
+def _speech_insert(class_id: int, course_id: int | None, user_id: int, role: str, text: str) -> None:
+    with db.engine.begin() as c:
+        c.execute(insert(db.speech_logs).values(class_id=class_id, course_id=course_id, user_id=user_id,
+                                                role=role, text=text, created_at=time.time()))
+
+
 @router.post("/api/live/classes/{code}/captions/text")
 async def caption_text(code: str, req: CaptionTextReq, request: Request):
-    """브라우저 음성 인식 모드: 선생님 브라우저가 알아들은 글자를 그대로 자막으로 보낸다. 저장하지 않는다."""
+    """브라우저 음성 인식 모드: 선생님 브라우저가 알아들은 글자를 자막으로 보낸다.
+    자막(학생 화면)은 자막을 켠 선생님 것만, [발언 기록]이 켜져 있으면 끝난 문장을 저장한다."""
     u = await require_user(request)
     k = await get_class(code)
-    if not await is_class_teacher(k, u) or not k.captions_on or k.caption_owner != u["id"]:
-        raise HTTPException(403, "자막을 켠 강의교사만 자막을 보낼 수 있어요.")
+    captioning = k.captions_on and k.caption_owner == u["id"]
+    if not await is_class_teacher(k, u) or not (captioning or k.transcript_on):
+        raise HTTPException(403, "자막이나 발언 기록을 켠 강의교사만 보낼 수 있어요.")
     caption = clean(req.text, 300)
     if caption:
         for conn in list(k.conns):
-            if conn.role == "teacher" or (conn.sid in k.students and k.room_of(k.students[conn.sid]) == "main"):
+            if conn.role == "teacher" or (captioning and conn.sid in k.students and k.room_of(k.students[conn.sid]) == "main"):
                 send(conn, {"t": "caption", "text": caption, "final": req.final})
+        if req.final and k.transcript_on:
+            await db.run(_speech_insert, k.db_id, k.course_id, u["id"], "teacher", caption)
     return {"text": caption}
+
+
+class TranscriptStateReq(BaseModel):
+    enabled: bool
+
+
+@router.post("/api/live/classes/{code}/transcript/state")
+async def set_transcript_state(code: str, req: TranscriptStateReq, request: Request):
+    """[발언 기록] 켜기·끄기: 켜져 있는 동안 학생 화면에 '발언 기록 중'이 보이고 마이크를 켠 학생의 말이 저장된다"""
+    u = await require_user(request)
+    k = await get_class(code)
+    if not await is_class_teacher(k, u):
+        raise HTTPException(403, "이 수업의 강의교사만 발언 기록을 관리할 수 있어요.")
+    if k.transcript_on != req.enabled:
+        k.transcript_on = req.enabled
+        post_chat(k, {"id": k.next_id(), "role": "system", "sid": None, "name": "안내",
+                      "text": "📝 선생님이 발언 기록을 시작했어요. 마이크를 켜고 한 말이 글자로 저장돼요." if req.enabled
+                      else "📝 발언 기록이 끝났어요.", "scope": "main", "ts": time.time()})
+        push(k)
+    return {"enabled": k.transcript_on}
+
+
+@router.post("/api/live/classes/{code}/speech")
+async def student_speech(code: str, req: CaptionTextReq, request: Request):
+    """학생 브라우저가 알아들은 학생 발언: 선생님 화면에 자막으로 보이고, 끝난 문장은 저장한다"""
+    u = await require_user(request)
+    k = await get_class(code)
+    s = k.students.get(str(u["id"]))
+    if not s or s.observer or not k.transcript_on or str(u["id"]) in k.banned:
+        raise HTTPException(403, "발언 기록 중인 수업의 학생만 보낼 수 있어요.")
+    text = clean(req.text, 300)
+    if text:
+        for conn in list(k.conns):
+            if conn.role == "teacher":
+                send(conn, {"t": "caption", "text": f"{s.name}: {text}", "final": req.final, "student": True})
+        if req.final:
+            await db.run(_speech_insert, k.db_id, k.course_id, u["id"], "student", text)
+    return {"text": text}
 
 
 @router.post("/api/live/classes/{code}/captions/transcribe")
