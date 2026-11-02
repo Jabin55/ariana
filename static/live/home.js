@@ -435,6 +435,8 @@ function showProfile() {
   $("#p-student-birth").value = student ? (ME.birth || $("#login-birth").value || "") : "";
   $("#p-student-birth").max = new Date().toISOString().slice(0, 10);
   $("#p-student-gender").value = student ? (ME.gender || "") : "";
+  $("#p-student-phone").required = student;
+  $("#p-student-phone").value = student ? (ME.phone || "") : "";
   $("#profile-hint").hidden = !student;
   $("#profile-hint").textContent = student
     ? "선생님이 출석을 확인할 수 있도록 정확하게 적어 주세요. 새 학년이 되면 여기서 고칠 수 있어요."
@@ -523,7 +525,7 @@ $("#profile").addEventListener("submit", async (e) => {
   };
   if (ME.role === "student") {
     Object.assign(body, { grade: Number($("#p-grade").value), class_no: Number($("#p-class").value), number: Number($("#p-number").value),
-      birth: $("#p-student-birth").value, gender: $("#p-student-gender").value });
+      birth: $("#p-student-birth").value, gender: $("#p-student-gender").value, phone: $("#p-student-phone").value.trim() });
   } else {
     Object.assign(body, { birth: $("#p-birth").value, gender: $("#p-gender").value, email: $("#p-email").value.trim(), phone: $("#p-phone").value.trim() });
   }

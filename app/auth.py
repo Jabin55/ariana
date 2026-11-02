@@ -425,6 +425,11 @@ async def save_profile(p: Profile, request: Request):
         if not (school and p.grade and p.class_no and p.number):
             raise HTTPException(400, "학교, 학년, 반, 번호를 모두 입력해 주세요.")
         values.update(grade=p.grade, class_no=p.class_no, number=p.number)
+        if p.phone is not None:  # 학생 연락처 (휴대전화)
+            phone = p.phone.strip()
+            if not re.fullmatch(r"[0-9][0-9\- ]{7,18}[0-9]", phone):
+                raise HTTPException(400, "연락처(휴대전화 번호)를 정확히 적어 주세요. 예: 010-1234-5678")
+            values["phone"] = phone
     else:  # 선생님: 생년월일 · 성별 · 이메일 · 연락처
         if p.birth:
             check_student_age(p.birth)

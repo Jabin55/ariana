@@ -3822,3 +3822,15 @@ def test_observations_recorded_and_used_in_analysis(monkeypatch):
     assert got[0]["text"] == "상대 주장을 요약한 뒤 근거를 들어 반박함" and got[0]["class_title"] == "1차시"
     t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze")  # 발언이 없어도 관찰 기록만으로 분석
     assert "[교사 관찰 기록]" in prompts[-1] and "근거를 들어 반박함" in prompts[-1] and "(발언 기록 없음)" in prompts[-1]
+
+
+def test_student_phone_saved_and_shown_to_teacher():
+    """학생 가입 때 연락처를 받고, 수강생 관리 목록에 보인다"""
+    t, s = teacher(), student(1)
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    base = {"name": "학생1", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 1, "birth": "2009-03-01", "gender": "여", "agree": True}
+    assert s.post("/api/me/profile", json={**base, "phone": "전화없음"}).status_code == 400
+    assert s.post("/api/me/profile", json={**base, "phone": "010-1234-5678"}).json()["phone"] == "010-1234-5678"
+    s.post(f"/api/courses/{cid}/enroll")
+    row = t.get("/api/my/enrollments").json()["enrollments"][0]
+    assert row["phone"] == "010-1234-5678"
