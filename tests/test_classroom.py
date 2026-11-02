@@ -3833,4 +3833,4 @@ def test_student_phone_saved_and_shown_to_teacher():
     assert s.post("/api/me/profile", json={**base, "phone": "010-1234-5678"}).json()["phone"] == "010-1234-5678"
     s.post(f"/api/courses/{cid}/enroll")
     row = t.get("/api/my/enrollments").json()["enrollments"][0]
-    assert row["phone"] == "010-1234-5678"
+    assert row["phone"] == "010-1234-5678" and row["email"] == "st1@s.school.kr"

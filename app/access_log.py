@@ -41,7 +41,7 @@ _RULES = [
     ("GET", r"/api/admin/users", "조회", "회원 검색"),
     ("POST", r"/api/admin/users/(?P<user>\d+)/name", "수정", "회원 이름 수정"),
     ("GET", r"/api/admin/access-logs", "조회", "접속 기록"),
-    ("GET", r"/api/my/enrollments", "조회", "수강생 명단(연락처 포함)"),
+    ("GET", r"/api/my/enrollments", "조회", "수강생 명단(이메일·연락처 포함)"),
     ("GET", r"/api/courses/(?P<course>\d+)/learning", "조회", "학습 기록"),
     ("GET", r"/api/courses/(?P<course>\d+)/speech", "조회", "발언 기록 요약"),
     ("GET", r"/api/courses/(?P<course>\d+)/speech/class/(?P<class>\d+)", "조회", "수업 발언 스크립트"),
