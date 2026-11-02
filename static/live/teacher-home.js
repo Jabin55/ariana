@@ -68,7 +68,7 @@ function showHomeTab(name) {
   $("#no-access").hidden = ok;
   for (const p of document.querySelectorAll("#teacher-view [data-panel]")) p.hidden = !ok || p.dataset.panel !== name;
   if (!ok) return;
-  if (name === "meet") { meetView = null; loadLive(); loadMeetings(); loadMeetHistory(); }
+  if (name === "meet") { meetView = null; showMeetSub(meetSub); loadLive(); loadMeetings(); loadMeetHistory(); }
   if (name === "create") { if (!$("#course-create-box").dataset.ready) drawCreateForm(); }
   if (name === "students") renderStudents();
   if (name === "run") renderRun();
@@ -155,12 +155,25 @@ $("#meet-join").addEventListener("submit", async (e) => {
   } catch (err) { $("#meet-join-error").textContent = err.message; }
 });
 
+/* 특강/회의 안의 칸: [특강/회의 참여](참가·열기·예약·진행 중) / [지난 특강/회의](기록 게시판) */
+let meetSub = "join";
+function showMeetSub(k) {
+  meetSub = k;
+  $("#meet-join-box").hidden = k !== "join";
+  $("#meet-past-box").hidden = k !== "past";
+  for (const b of $("#meet-tabs").children) b.classList.toggle("active", b.dataset.meet === k);
+}
+for (const b of document.querySelectorAll("#meet-tabs button")) b.addEventListener("click", () => {
+  if (b.dataset.meet === "past" && meetView) { meetView = null; loadMeetHistory(); }
+  showMeetSub(b.dataset.meet);
+});
+
 /* 지난 특강/회의 기록: 게시판(연번·일시·이름·입장 코드·참여 인원·상태) → 누르면 별도 화면에서 출결·채점·질문·발언 기록 */
 let meetView = null; // 지금 열어 본 특강/회의 id
 async function loadMeetHistory() {
   const panel = $('[data-panel="meet"]');
   const showBoard = (on) => {
-    for (const el of panel.querySelectorAll(".meet-grid, .meet-mid")) el.hidden = !on;
+    $("#meet-tabs").hidden = !on;
     $("#meet-history").hidden = !on;
     $("#meet-history-title").textContent = on ? "지난 특강/회의 기록" : "특강/회의 기록 보기";
   };

@@ -261,6 +261,11 @@
       <p class="no-access" id="no-access" hidden>권한이 없습니다.</p>
 
       <div data-panel="meet" hidden>
+        <nav class="tabs sub-tabs meet-tabs" id="meet-tabs">
+          <button type="button" data-meet="join" class="active">🎥 특강/회의 참여</button>
+          <button type="button" data-meet="past">🗂 지난 특강/회의</button>
+        </nav>
+        <div id="meet-join-box">
         <div class="meet-grid">
           <section class="card">
             <h2>🔑 입장 코드로 참가</h2>
@@ -297,7 +302,8 @@
             <div id="meet-list"><span class="muted">불러오는 중…</span></div>
           </section>
         </div>
-        <section class="card" style="margin-top:16px">
+        </div>
+        <section class="card" id="meet-past-box" style="margin-top:16px" hidden>
           <h2 id="meet-history-title">지난 특강/회의 기록</h2>
           <div id="meet-history"></div>
           <div id="meet-detail"></div>
