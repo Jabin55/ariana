@@ -155,6 +155,117 @@ $("#meet-join").addEventListener("submit", async (e) => {
   } catch (err) { $("#meet-join-error").textContent = err.message; }
 });
 
+/* 지난 특강/회의 하나: 위에 제목 띠(이름·일시·입장 코드), 아래 [참석자][자료][퀴즈][설문][발언 기록] */
+let meetDetailTab = "people";
+async function renderMeetDetail(m, box) {
+  const back = () => { meetView = null; loadMeetHistory(); };
+  const time = (t) => (t || "").slice(0, 5);
+  let r;
+  try { r = await api(`/api/live/history/${m.id}`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
+  const c = r.class;
+  const when = `${fmtDate(m.date)} ${time(c.start)} ~ ${c.end ? time(c.end) : c.live ? "진행 중" : ""}`;
+  const banner = h("div", { class: "course-banner meet-banner", style: "--a:#5aa0e6;--b:#2f5fb3" },
+    h("span", { class: "cb-area" }, "특강", h("br"), "회의"),
+    h("div", { class: "cb-text" },
+      h("div", { class: "cb-kicker" }, "특강·회의 기록"),
+      h("h2", { class: "cb-title" }, c.title || "특강·회의"),
+      h("div", { class: "cb-facts" }, `🗓 ${when}`)),
+    h("div", { class: "cb-side" },
+      h("span", { class: "cb-ico", "aria-hidden": "true" }, "🎥"),
+      h("div", { class: "cb-chips" },
+        h("span", { class: "cb-chip" }, `입장 코드 ${c.code}`),
+        h("span", { class: "cb-chip" }, `참석 ${r.students.length}명`),
+        c.live ? h("span", { class: "cb-chip warn" }, "진행 중") : h("span", { class: "cb-chip" }, "종료"))));
+  const tabs = [["people", "🙋 참석자"], ["files", "📄 자료"], ["quiz", "✅ 퀴즈"], ["poll", "📊 설문"], ["speech", "💬 발언 기록"]];
+  const nav = h("nav", { class: "tabs sub-tabs" });
+  const pane = h("div", { class: "meet-pane" });
+  const show = (k) => {
+    meetDetailTab = k;
+    for (const b of nav.children) b.classList.toggle("active", b.dataset.k === k);
+    fill(pane, h("p", { class: "muted" }, "불러오는 중…"));
+    detailTarget = pane;
+    if (k === "people") meetPeople(m.id, r, pane);
+    else if (k === "files") meetFiles(m.id, pane);
+    else if (k === "quiz") { fill(pane); pane.dataset.only = "quiz"; renderGrades(m.id, pane); }
+    else if (k === "poll") meetPolls(m.id, pane);
+    else { fill(pane); loadClassSpeech(m.id).then(() => loadClassQuestions(m.id)); }
+    if (k !== "quiz") delete pane.dataset.only;
+  };
+  nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
+  fill(box,
+    h("div", { class: "row", style: "margin:4px 0 0" }, h("button", { class: "small", onclick: back }, "← 지난 기록 목록")),
+    banner, nav, pane);
+  show(meetDetailTab);
+}
+
+/* [참석자]: 들어오고 나간 기록 (학교 → 학번 → 이름) */
+function meetPeople(id, r, box) {
+  const listen = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, "0")}초` : `${sec}초`);
+  const rows = r.rows.map((x, i) => h("tr", {},
+    h("td", { class: "num" }, i + 1), h("td", {}, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"), h("td", {}, x.name),
+    h("td", { class: "num" }, x.joined), h("td", { class: "num" }, x.online ? h("strong", { class: "ok-text" }, "접속 중") : x.left),
+    h("td", { class: "num" }, listen(x.seconds))));
+  const absent = r.absent.map((a) => h("tr", { class: "absent" },
+    h("td", {}, ""), h("td", {}, a.school || "-"), h("td", { class: "num" }, a.student_no), h("td", {}, a.name), h("td", { colspan: 3, class: "num" }, "미접속")));
+  fill(box,
+    h("div", { class: "row", style: "margin:8px 0" },
+      h("span", { class: "grow muted" }, `참석 ${r.students.length}명${r.class.target_grade ? ` · 대상 ${r.class.target_grade}학년 ${r.class.target_class}반 (미접속 ${r.absent.length}명)` : ""}`),
+      h("a", { href: `/api/live/history/${id}/attendance.csv`, class: "button small" }, "📥 출결 CSV")),
+    h("div", { class: "table-wrap" }, h("table", { class: "att meet-people" },
+      h("thead", {}, h("tr", {}, ["연번", "학교", "학번", "이름", "접속 시각", "종료 시각", "청취 시간"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows, absent,
+        !rows.length && !absent.length ? h("tr", {}, h("td", { colspan: 7, class: "muted", style: "text-align:center;padding:18px" }, "접속한 사람이 없어요.")) : null))));
+}
+
+/* [자료]: 띄운 발표 자료(PDF)와 판서 */
+async function meetFiles(id, box) {
+  let d;
+  try { d = await api(`/api/materials/class/${id}`); }
+  catch { fill(box, h("p", { class: "muted", style: "margin:12px 0" }, "이 특강·회의에서 띄운 자료나 판서가 없어요.")); return; }
+  const items = d.files.map((f, i) => h("tr", {},
+    h("td", { class: "num" }, i + 1), h("td", {}, `📄 ${f.name}`), h("td", { class: "num" }, f.pages ? `${f.pages}쪽` : "-"),
+    h("td", { class: "num" }, h("a", { class: "button small", href: `/api/materials/file/${f.id}`, download: f.name }, "받기"))));
+  const removed = (d.removed || []).map((f) => h("tr", { class: "absent" },
+    h("td", {}, ""), h("td", {}, `🗑 ${f.name}`), h("td", { class: "num" }, f.pages ? `${f.pages}쪽` : "-"), h("td", { class: "num muted" }, "파기됨")));
+  fill(box,
+    h("div", { class: "row", style: "margin:8px 0" },
+      h("span", { class: "grow muted" }, `자료 ${d.files.length}개${d.board_pages ? ` · 화이트보드 ${d.board_pages}쪽` : ""}`),
+      d.files.length || d.board_pages ? h("a", { class: "button small", href: `/live/materials?class=${id}`, target: "_blank" }, "📖 자료·판서 화면으로 보기") : null),
+    items.length || removed.length ? h("div", { class: "table-wrap" }, h("table", { class: "att" },
+      h("thead", {}, h("tr", {}, ["연번", "파일", "쪽수", "내려받기"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, items, removed)))
+      : h("p", { class: "muted" }, d.board_pages ? "띄운 PDF 자료는 없고 화이트보드 판서만 있어요." : "이 특강·회의에서 띄운 자료가 없어요."),
+    removed.length ? h("p", { class: "muted", style: "font-size:0.85rem" }, "특강·회의가 끝나면 PDF 파일은 바로 지워지고 파일 이름만 남아요. 판서는 1년 동안 남아요.") : null);
+}
+
+/* [설문]: 보기마다 몇 명이 골랐는지 막대로 */
+async function meetPolls(id, box) {
+  const book = await api(`/api/live/history/${id}/grades`);
+  const polls = book.activities.filter((a) => a.kind === "poll");
+  if (!polls.length) { fill(box, h("p", { class: "muted", style: "margin:12px 0" }, "이 특강·회의에서 보낸 설문이 없어요.")); return; }
+  fill(box,
+    h("div", { class: "row", style: "margin:8px 0" }, h("span", { class: "grow muted" }, `설문 ${polls.length}개`),
+      h("a", { href: `/api/live/history/${id}/results.csv`, class: "button small" }, "📥 결과 CSV")),
+    ...polls.map((a, i) => {
+      const answered = a.rows.filter((x) => x.answered);
+      const total = a.rows.length;
+      const counts = (a.options || []).map((o) => answered.filter((x) => x.answer === o || x.answer.split(", ").includes(o)).length);
+      const max = Math.max(1, ...counts);
+      return h("div", { class: "box poll-result" },
+        h("strong", {}, `${i + 1}. ${a.prompt}`),
+        h("div", { class: "muted", style: "font-size:0.85rem;margin:2px 0 8px" }, `응답 ${answered.length}명${total ? ` / ${total}명` : ""}`),
+        ...(a.options || []).map((o, j) => h("div", { class: "poll-bar" },
+          h("span", { class: "pb-label" }, o),
+          h("span", { class: "pb-track" }, h("span", { class: "pb-fill", style: `width:${Math.round(counts[j] / max * 100)}%` })),
+          h("span", { class: "pb-n" }, `${counts[j]}명`))),
+        h("details", {}, h("summary", { class: "muted" }, "누가 무엇을 골랐는지"),
+          h("div", { class: "table-wrap" }, h("table", { class: "att" },
+            h("thead", {}, h("tr", {}, ["학번", "이름", "응답"].map((t) => h("th", {}, t)))),
+            h("tbody", {}, a.rows.map((x) => h("tr", {}, h("td", {}, x.student_no || "-"), h("td", {}, x.name),
+              h("td", {}, x.answered ? x.answer : h("span", { class: "muted" }, "(미응답)")))))))));
+    }));
+}
+
 /* 특강/회의 안의 칸: [특강/회의 참여](참가·열기·예약·진행 중) / [지난 특강/회의](기록 게시판) */
 let meetSub = "join";
 function showMeetSub(k) {
@@ -175,21 +286,14 @@ async function loadMeetHistory() {
   const showBoard = (on) => {
     $("#meet-tabs").hidden = !on;
     $("#meet-history").hidden = !on;
-    $("#meet-history-title").textContent = on ? "지난 특강/회의 기록" : "특강/회의 기록 보기";
+    $("#meet-history-title").hidden = !on; // 기록 화면에서는 제목 띠가 대신한다
   };
   const { classes } = await api("/api/live/meetings-history");
   const viewing = classes.find((c) => c.id === meetView);
   if (viewing) {
     showBoard(false);
-    const inner = h("div");
-    fill($("#meet-detail"),
-      h("div", { class: "row", style: "margin:4px 0 0" },
-        h("button", { class: "small", onclick: () => { meetView = null; loadMeetHistory(); } }, "← 지난 기록 목록"),
-        h("span", { class: "muted" }, `${fmtDate(viewing.date)} ${viewing.start.slice(0, 5)} · ${viewing.title}`)),
-      inner);
-    detailTarget = inner;
     panel.scrollIntoView({ block: "start" });
-    await loadDetail(viewing.id);
+    await renderMeetDetail(viewing, $("#meet-detail"));
     return;
   }
   meetView = null;

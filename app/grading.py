@@ -21,7 +21,7 @@ from app.auth import admin_user_ids, require_user, student_no
 from app.history import KST, _owned_class, csv_response
 
 router = APIRouter()
-KINDS = {"ox": "OX", "choice": "객관식", "poll": "투표", "text": "주관식"}
+KINDS = {"ox": "OX", "choice": "객관식", "poll": "설문", "text": "주관식"}
 
 
 def _activities(class_id: int):

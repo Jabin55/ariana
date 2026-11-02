@@ -1711,3 +1711,15 @@ table.att.meet-board td:last-child { min-width: 0; }
   table.info-table tr { display: grid; grid-template-columns: 38% 62%; }
   table.info-table th, table.info-table td { display: block; width: auto; white-space: normal; word-break: keep-all; }
 }
+/* 지난 특강/회의 기록 화면 */
+.meet-banner .cb-area { font-size: 0.8rem; }
+.meet-pane { margin-top: 6px; }
+.meet-pane > section.card { margin-top: 10px !important; }
+.poll-result { margin: 10px 0; padding: 12px 14px; }
+.poll-bar { display: grid; grid-template-columns: minmax(80px, 28%) 1fr 48px; align-items: center; gap: 10px; margin: 5px 0; }
+.pb-label { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-track { height: 14px; border-radius: 7px; background: var(--surface-2); overflow: hidden; }
+.pb-fill { display: block; height: 100%; border-radius: 7px; background: linear-gradient(90deg, #5aa0e6, #2f5fb3); }
+.pb-n { font-size: 0.85rem; font-weight: 700; text-align: right; }
+table.att.meet-people th, table.att.meet-people td { text-align: center; }
+table.att.meet-people td:last-child { min-width: 0; }

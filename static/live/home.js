@@ -1663,7 +1663,8 @@ async function loadGrades(id) {
 
 async function renderGrades(id, box) {
   const book = await api(`/api/live/history/${id}/grades`);
-  const acts = book.activities;
+  // 특강/회의 기록의 [퀴즈] 칸은 채점하는 문제만 (설문은 [설문] 칸에서)
+  const acts = box.dataset.only === "quiz" ? book.activities.filter((a) => a.gradable) : book.activities;
   const ungraded = book.summary.reduce((n, p) => n + p.ungraded, 0);
   box.replaceChildren(...[
     h("div", { class: "row" },
