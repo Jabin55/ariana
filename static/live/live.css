@@ -1809,3 +1809,7 @@ table.att.std-links th { text-align: center; }
 .std-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 4px 8px; }
 .std-pick-grid .std-pick { margin: 0; white-space: nowrap; }
 label.switch.disabled { opacity: 0.5; cursor: not-allowed; }
+/* 온라인 수업 열기: 회차를 누르면 그 줄 주제 칸에서 바로 고치고 열기 */
+.sess-open tr.pickable { cursor: pointer; }
+.sess-open tr.pickable:hover td { background: var(--surface-2); }
+.sess-open td.sess-topic-edit input { flex: 1; min-width: 0; }

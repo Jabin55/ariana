@@ -801,26 +801,32 @@ async function renderOpenClass(c, box) {
     return h("div", { class: "open-box" }, h("label", { class: "grow" }, "수업 주제", name),
       h("button", { class: "primary big", onclick: () => start(name.value.trim()) }, "▶ 지금 온라인 수업 열기"));
   };
-  // 회차표: 늘 펼쳐 두고, 날짜를 누르면 그 아래에서 주제를 적고 [지금 열기]
+  // 회차표: 늘 펼쳐 두고, 회차를 누르면 그 줄의 '주제' 칸이 입력 칸(원래 주제가 적힌 채)으로 바뀌고 옆에 [지금 열기]
   const table = () => h("table", { class: "sess-table view sess-open" },
     h("tr", {}, ["회차", "날짜", "시간", "주제"].map((x) => h("th", {}, x))),
-    sessions.flatMap((s) => {
+    sessions.map((s) => {
       const picked = openPick[c.id] === s.no;
       const toggle = () => { openPick[c.id] = picked ? null : s.no; renderOpenClass(c, box); };
-      const row = h("tr", { class: `${picked ? "on" : ""} ${next && next.no === s.no ? "next" : ""}` },
+      let topicCell;
+      if (picked) {
+        const topic = h("input", { maxlength: 50, value: s.topic || "", placeholder: "수업 주제 (예: 헌법과 기본권)" });
+        const go = () => start(`${s.no}회차${topic.value.trim() ? ` · ${topic.value.trim()}` : ""}`);
+        topic.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); go(); }
+          if (e.key === "Escape") toggle();
+        });
+        setTimeout(() => { topic.focus(); topic.setSelectionRange(topic.value.length, topic.value.length); }, 0); // 원래 주제 그대로, 커서는 끝에
+        topicCell = h("td", { class: "sess-topic-edit" },
+          h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, topic,
+            h("button", { class: "primary small", type: "button", onclick: go }, "▶ 지금 열기"),
+            h("button", { class: "small", type: "button", title: "취소", onclick: toggle }, "✕")));
+      } else topicCell = h("td", {}, s.topic);
+      return h("tr", { class: `${picked ? "on" : "pickable"} ${next && next.no === s.no ? "next" : ""}`,
+        onclick: picked ? null : toggle, title: picked ? "" : "누르면 이 회차 수업을 열 수 있어요" },
         h("td", {}, s.no),
-        h("td", {}, h("button", { type: "button", class: "link-btn", onclick: toggle },
+        h("td", {}, h("button", { type: "button", class: "link-btn", onclick: (e) => { e.stopPropagation(); toggle(); } },
           `${fmtDate(s.date)} (${DAYS[dayOf(s.date)]})`), s.date === t ? h("span", { class: "tag" }, "오늘") : null),
-        h("td", {}, s.start ? `${s.start}~${s.end}` : ""), h("td", {}, s.topic));
-      if (!picked) return [row];
-      const auto = !s.topic || s.topic === `${s.no}회차`;
-      const topic = h("input", { maxlength: 50, value: auto ? "" : s.topic, placeholder: "수업 주제 (예: 헌법과 기본권)" });
-      const go = () => start(`${s.no}회차${topic.value.trim() ? ` · ${topic.value.trim()}` : ""}`);
-      topic.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-      setTimeout(() => topic.focus(), 0);
-      return [row, h("tr", { class: "sess-start" }, h("td", { colspan: 4 },
-        h("div", { class: "open-box" }, h("label", { class: "grow" }, `${s.no}회차 수업 주제`, topic),
-          h("button", { class: "primary", onclick: go }, "▶ 지금 열기"))))];
+        h("td", {}, s.start ? `${s.start}~${s.end}` : ""), topicCell);
     }));
   fill(box,
     open.length ? h("div", { class: "banner ok" }, h("strong", {}, "진행 중인 수업"), ...open.map((x) =>
