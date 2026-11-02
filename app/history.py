@@ -160,7 +160,7 @@ async def course_learning(course_id: int, request: Request):
                 .where(sub.assignment_id.in_([x.id for x in tasks] or [-1]), sub.submitted_at.is_not(None))
                 .group_by(sub.assignment_id))}
             sl = db.speech_logs.c
-            speech = c.execute(select(sl.user_id, sl.role).where(sl.class_id.in_(ids))).all()
+            speech = c.execute(select(sl.user_id, sl.role, sl.class_id).where(sl.class_id.in_(ids))).all()
             speech = [x for x in speech if not (x.role == "student" and x.user_id in adm)]
             return (rows, present, acts, notes, len(enrolled), course_notices_of(c, [course_id]).get(course_id, []),
                     tasks, done, speech)
@@ -200,7 +200,9 @@ async def course_learning(course_id: int, request: Request):
         cnt = sum(x["acts"][k]["count"] for x in out)
         summary[k] = {"count": cnt, "classes": sum(1 for x in out if x["acts"][k]["count"]),
                       "rate": pct(sum(x["acts"][k]["answered"] for x in out), sum(x["acts"][k]["possible"] for x in out))}
-    summary["speech"] = {"count": len(speech), "students": len({x.user_id for x in speech if x.role == "student"})}
+    summary["speech"] = {"count": len(speech), "students": len({x.user_id for x in speech if x.role == "student"}),
+                         "classes": len({x.class_id for x in speech}),
+                         "student_count": sum(1 for x in speech if x.role == "student")}
     return {"summary": summary, "classes": out, "course_notices": course_notes, "assignments": assignments}
 
 

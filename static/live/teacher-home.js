@@ -775,7 +775,7 @@ const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '평�
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
-  if (st.card === "notice") st.card = "attend"; // 공지 카드는 없앴다
+  if (["notice", "activity", "speech"].includes(st.card)) st.card = "attend"; // 없앤 카드
   let d;
   try { d = await api(`/api/courses/${c.id}/learning`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   d.classes.reverse(); // 첫 수업(연번 1)부터 차례로
@@ -785,8 +785,8 @@ async function renderLearning(c, box) {
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
-    ["activity", "✍️ 평가", `${S.activity.count}회`, `과제 제출률 ${pct(S.activity.rate)} · 채점 ${S.activity.graded}건`],
-    ["speech", "💬 발언 기록", `${S.speech?.count || 0}건`, `발언한 학생 ${S.speech?.students || 0}명`],
+    ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
+    ["speakers", "🧑‍🎓 학생 발언", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -794,8 +794,7 @@ async function renderLearning(c, box) {
       onclick: () => { st.card = k; st.open.clear(); st.view = null; renderLearning(c, box); } },
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
-  if (st.card === "activity") { learnAssignments(c, d, st, detail); return; }
-  if (st.card === "speech") { learnSpeech(c, st, detail); return; }
+  if (st.card === "script" || st.card === "speakers") { st.speechTab = st.card === "script" ? "class" : "student"; learnSpeech(c, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "attend") learnAttendance(d, st, detail);
   else if (st.card === "notice") learnNotices(d, detail);
@@ -810,8 +809,7 @@ async function learnSpeech(c, st, box) {
   try { d = await api(`/api/courses/${c.id}/speech`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   const again = () => learnSpeech(c, st, box);
   const head = h("div", { class: "row", style: "margin:4px 0 10px" },
-    h("nav", { class: "tabs sub-tabs grow", style: "margin:0" }, [["class", "🗒 수업별 스크립트"], ["student", "🧑‍🎓 학생별 발언"]].map(([k, label]) =>
-      h("button", { type: "button", class: st.speechTab === k ? "active" : "", onclick: () => { st.speechTab = k; st.view = null; again(); } }, label))),
+    h("h3", { class: "grow", style: "margin:0" }, st.speechTab === "class" ? "🗒 수업별 스크립트" : "🧑‍🎓 학생별 발언"),
     d.total ? h("a", { class: "button small", href: `/api/courses/${c.id}/speech.xlsx` }, "📥 엑셀 내려받기") : null);
   if (!d.total) {
     fill(box, head, h("p", { class: "muted" }, "아직 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면, 마이크를 켠 학생과 선생님의 말이 글자로 바뀌어 여기에 쌓여요. (크롬·엣지 사용자만 기록돼요)"));

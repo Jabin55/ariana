@@ -3588,7 +3588,7 @@ def test_speech_transcript_saved_viewed_exported_and_purged():
     uid = next(x["user_id"] for x in summary["students"] if x["student_no"] == "20301")
     mine = t.get(f"/api/courses/{cid}/speech/student/{uid}").json()["entries"]
     assert [x["text"] for x in mine] == ["사형제는 폐지해야 한다고 생각합니다"]
-    assert t.get(f"/api/courses/{cid}/learning").json()["summary"]["speech"] == {"count": 3, "students": 2}
+    assert t.get(f"/api/courses/{cid}/learning").json()["summary"]["speech"] == {"count": 3, "students": 2, "classes": 1, "student_count": 2}
     assert a.get(f"/api/courses/{cid}/speech").status_code == 403
     xl = t.get(f"/api/courses/{cid}/speech.xlsx")
     assert xl.status_code == 200
