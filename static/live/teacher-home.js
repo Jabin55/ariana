@@ -482,8 +482,8 @@ function drawEnrollResult(box) {
     renderStudents();
   };
   const csv = () => {
-    const head = ["번호", "과목명", "거점학교", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"];
-    const lines = list.map((x, i) => [list.length - i, x.subject, x.hub_school, x.school,
+    const head = ["연번", "거점학교", "과목명", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"];
+    const lines = list.map((x, i) => [list.length - i, x.hub_school, x.subject, x.school,
       x.grade ? `${x.grade}학년` : "", x.class_no ? `${x.class_no}반` : "", x.name, x.email || "", fmtPhone(x.phone), kstDate(x.requested_at), ENROLL_NAME[x.status] || x.status]);
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const text = "﻿" + [head, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
@@ -505,13 +505,13 @@ function drawEnrollResult(box) {
       h("span", { class: "grow" }),
       h("button", { class: "small", onclick: csv, disabled: !list.length }, "📥 엑셀 다운로드")),
     h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["번호", "과목명", "거점학교", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "거점학교", "과목명", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, h("input", { type: "checkbox", checked: enrollPick.has(key(x)), onchange: (e) => {
           if (e.target.checked) enrollPick.add(key(x)); else enrollPick.delete(key(x));
         } })),
-        h("td", { class: "num" }, list.length - i), h("td", {}, x.subject),
-        h("td", {}, x.hub_school), h("td", {}, x.school || "-"),
+        h("td", { class: "num" }, list.length - i), h("td", {}, x.hub_school),
+        h("td", {}, x.subject), h("td", {}, x.school || "-"),
         h("td", { class: "num" }, x.grade ? `${x.grade}학년` : "-"), h("td", { class: "num" }, x.class_no ? `${x.class_no}반` : "-"),
         h("td", {}, x.name), h("td", { class: "contact-cell" }, x.email || "-"), h("td", { class: "contact-cell" }, fmtPhone(x.phone) || "-"), h("td", {}, kstDate(x.requested_at)),
         h("td", {}, h("span", { class: `status ${x.status === "rejected" ? "rejected" : x.status}`, title: x.note ? `사유: ${x.note}` : "" },
