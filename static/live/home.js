@@ -11,7 +11,6 @@ function show(id) {
   const officeBand = document.getElementById("office-submenu-band");
   if (officeBand) officeBand.hidden = id !== "teacher-view" && id !== "student-view";
   $("#student-tabs").hidden = id !== "student-view";
-  $("#student-questions").hidden = true;
   $("#student-results").hidden = true;
   $("#student-assignments").hidden = true;
 }
@@ -958,7 +957,7 @@ function openStudentCourse(c) {
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
   const assess = h("div", { class: "sc-panel" }, noAssign);
   const satisfaction = h("div", { class: "sc-panel" });
-  for (const id of ["student-results", "student-questions"]) $(`#${id}`).hidden = true;
+  $("#student-results").hidden = true;
   { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
   const panels = { info, notice, learn, assess, satisfaction };
   const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"],
@@ -1049,12 +1048,10 @@ $("#student-course-back").addEventListener("click", () => {
 async function loadCourseMaterials(courseId, box) {
   box.replaceChildren(h("span", { class: "muted" }, "불러오는 중…"));
   try {
-    const [{ classes }, res, qs] = await Promise.all([
+    const [{ classes }, res] = await Promise.all([
       api(`/api/materials?course_id=${courseId}&all=1`),
-      api("/api/live/my-results").catch(() => ({ classes: [] })),
-      api("/api/live/my-questions").catch(() => ({ questions: [] }))]);
+      api("/api/live/my-results").catch(() => ({ classes: [] }))]);
     const results = new Map(res.classes.filter((r) => r.class_id).map((r) => [r.class_id, r]));
-    const questions = qs.questions.filter((q) => q.course_id === courseId);
     const list = () => {
       const rows = classes.map((c, i) => {
         const mat = [c.files ? `📄 자료 ${c.files}개` : "", c.whiteboard ? "✏️ 판서" : ""].filter(Boolean).join(" · ");
@@ -1071,7 +1068,6 @@ async function loadCourseMaterials(courseId, box) {
     const post = async (c, no) => {
       const filesBox = h("div", {}, h("span", { class: "muted" }, "불러오는 중…"));
       const r = results.get(c.id);
-      const myQ = questions.filter((q) => q.class_id === c.id);
       box.replaceChildren(
         h("div", { class: "row", style: "margin-bottom:10px" }, h("button", { class: "small", type: "button", onclick: list }, "← 학습 활동 목록")),
         h("div", { class: "assign-post notice-post" },
@@ -1086,9 +1082,7 @@ async function loadCourseMaterials(courseId, box) {
               h("div", {}, h("span", { class: "muted" }, "내 답: "), it.answer || "(답하지 않음)"),
               it.correct_answer ? h("div", {}, h("span", { class: "muted" }, "정답: "), it.correct_answer) : null,
               it.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${it.feedback}`) : null)))
-            : h("p", { class: "muted" }, "공개된 결과가 없어요."),
-          h("h4", { class: "learn-h" }, "💬 내 질문과 답변"),
-          myQ.length ? h("div", {}, ...myQ.map((q) => qaItem(q, `${q.time.slice(0, 5)}`))) : h("p", { class: "muted" }, "이 수업에서 한 질문이 없어요.")));
+            : h("p", { class: "muted" }, "공개된 결과가 없어요.")));
       try {
         const d = await api(`/api/materials/class/${c.id}`);
         const items = d.files.map((f) => h("div", { class: "row learn-file" },
@@ -1121,17 +1115,6 @@ async function loadMyResults(courseId = null) {
         it.feedback ? h("div", { class: "reply" }, `👩‍🏫 ${it.feedback}`) : null)))));
     $("#student-results").hidden = false;
   } catch { /* 결과를 못 불러와도 입장에는 지장 없음 */ }
-}
-
-async function loadMyQuestions(courseId = null) {
-  try {
-    const { questions } = await api("/api/live/my-questions");
-    if (courseId !== null && selectedStudentCourseId !== courseId) return;
-    const mine = courseId === null ? questions : questions.filter((q) => q.course_id === courseId);
-    if (!mine.length) return;
-    $("#my-q").replaceChildren(...mine.map((q) => qaItem(q, `${q.date} ${q.time.slice(0, 5)} · ${q.class_title}`)));
-    $("#student-questions").hidden = false;
-  } catch { /* 기록을 못 불러와도 입장에는 지장 없음 */ }
 }
 
 async function join(code) {
@@ -1614,7 +1597,6 @@ async function loadDetail(id) {
       h("tbody", {}, rows, absent))),
     !rows.length && !absent.length ? h("p", { class: "muted" }, "접속한 학생이 없어요.") : null));
   await loadGrades(id);
-  await loadClassQuestions(id);
   loadClassSpeech(id);
 }
 
@@ -1728,15 +1710,4 @@ function gradeActivity(classId, a, box) {
 }
 
 /* 이 수업의 '선생님께 질문'과 답변 */
-async function loadClassQuestions(id) {
-  const { questions } = await api(`/api/live/history/${id}/questions`);
-  const replied = questions.filter((q) => q.reply).length;
-  detailEl().append(h("section", { class: "card", style: "margin-top:12px" },
-    h("div", { class: "row" },
-      h("h2", { class: "grow", style: "margin:0" }, `💬 질문답변 ${questions.length}건`),
-      questions.length ? h("a", { href: `/api/live/history/${id}/questions.csv`, class: "button" }, "📥 질문답변 CSV") : null),
-    h("p", { class: "muted" }, questions.length ? `답변한 질문 ${replied}건 · 답변 없는 질문 ${questions.length - replied}건` : "이 수업에서 받은 질문이 없어요."),
-    h("div", { class: "people" }, questions.map((q) => qaItem(q, `${q.time.slice(0, 5)} · ${q.student_no} ${q.name}${mixedSchools(questions) && q.school ? ` (${q.school})` : ""}`)))));
-}
-
 boot().catch((err) => { document.body.prepend(h("p", { class: "error" }, err.message)); });

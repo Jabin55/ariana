@@ -200,7 +200,7 @@ async function renderMeetDetail(m, box) {
   show(meetDetailTab);
 }
 
-/* [스크립트]: 선생님·학생 발언을 시간 순서대로 + 수업 중 질문답변 */
+/* [스크립트]: 선생님·학생 발언을 시간 순서대로 */
 async function meetScript(id, box) {
   const { entries } = await api(`/api/live/history/${id}/speech`);
   fill(box,
@@ -212,7 +212,6 @@ async function meetScript(id, box) {
       h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
       h("span", { class: "sp-text" }, e.text))))
       : h("p", { class: "muted" }, "이 특강·회의에서 [📝 발언 기록]을 켜지 않았어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 사람의 말이 글자로 남아요."));
-  await loadClassQuestions(id); // 질문답변은 스크립트 아래에 (detailTarget = box)
 }
 
 /* [발언기록]: 참석자 전체 워드클라우드 → 참석자별 발언 표 → 이름을 누르면 그 사람의 워드클라우드와 발언 모음 */
