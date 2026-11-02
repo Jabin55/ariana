@@ -908,12 +908,12 @@ function sessionTable(c) {
       h("td", {}, x.topic || "-"))))));
 }
 
-function courseInformationPanel(c) {
+function courseInformationPanel(c, withSessions = true) {
   return h("div", { class: "sc-panel" },
     h("section", {}, h("h3", {}, "기본 정보"), basicInfoTable(c),
       c.syllabus ? h("p", {}, h("a", { class: "button small", href: c.syllabus.url, target: "_blank", rel: "noopener" }, "📄 수업계획서 받기")) : null,
       c.note ? h("p", { class: "error" }, `반려 사유: ${c.note}`) : null),
-    h("section", {}, h("h3", {}, "회차정보"), sessionTable(c)));
+    withSessions ? h("section", {}, h("h3", {}, "회차정보"), sessionTable(c)) : null); // 교사 화면은 [회차 정보] 탭에서
 }
 
 let selectedStudentCourseId = null;

@@ -31,8 +31,7 @@ async function renderStandards(c, box) {
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
     editing === "new" ? standardForm(c, null, d.ai, again) : null,
-    d.standards.length && d.sessions.length ? sessionLinks(c, d) : null,
-    d.standards.length && !d.sessions.length ? h("p", { class: "muted", style: "margin-top:12px" }, "회차 정보가 없어 회차별 성취기준을 연결할 수 없어요. 회차가 없으면 모든 성취기준으로 분석해요.") : null);
+    d.standards.length ? h("p", { class: "muted", style: "margin-top:12px;font-size:0.88rem" }, "회차마다 다루는 성취기준은 [🗓 회차 정보] 탭에서 골라요.") : null);
 }
 
 /** 엑셀(.xlsx)로 성취기준 한꺼번에 넣기 → 평가 요소가 없는 것은 AI가 뽑아 저장 */
@@ -172,25 +171,41 @@ function standardForm(c, s, aiOn, again) {
       h("button", { type: "button", onclick: () => { achEditing.delete(c.id); again(); } }, "취소"), save));
 }
 
-/** 회차마다 다루는 성취기준 고르기 (바로 저장) */
-function sessionLinks(c, d) {
-  return h("div", { style: "margin-top:16px" },
-    h("h4", { style: "margin:0 0 6px" }, "📅 회차별 성취기준 연결"),
-    h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.85rem" }, "수업은 같은 날짜의 회차와 연결돼요. 연결하지 않은 회차의 수업은 모든 성취기준으로 분석해요."),
+/* ───────── 교사 [회차 정보] 탭: 과목 개설 때 넣은 회차 + 회차마다 다루는 성취기준 (체크하면 바로 저장) ───────── */
+async function renderSessionStandards(c, box) {
+  achFill(box, h("p", { class: "muted" }, "회차 정보를 불러오는 중…"));
+  let d;
+  try { d = await achApi(`/api/courses/${c.id}/standards`); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const DAYNAMES = ["일", "월", "화", "수", "목", "금", "토"];
+  const dow = (iso) => DAYNAMES[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+  if (!d.sessions.length) {
+    achFill(box, h("p", { class: "muted", style: "margin:12px 0" },
+      "과목 개설 때 넣은 회차 정보가 없어요. [📘 과목 정보] 오른쪽 위의 [정보 수정]에서 회차를 넣어 주세요. (회차가 없으면 AI 분석은 모든 성취기준으로 해요)"));
+    return;
+  }
+  const linked = d.sessions.filter((x) => x.standard_ids.length).length;
+  achFill(box,
+    h("div", { class: "row", style: "margin:8px 0" },
+      h("span", { class: "grow muted" }, `회차 ${d.sessions.length}개 · 성취기준을 연결한 회차 ${linked}개`)),
+    d.standards.length ? h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.85rem" },
+      "회차마다 다루는 성취기준을 체크하면 바로 저장돼요. 실시간 수업은 같은 날짜의 회차와 연결되고, 연결하지 않은 회차의 수업은 모든 성취기준으로 분석해요.")
+      : h("p", { class: "error", style: "margin:0 0 8px" }, "아직 성취기준이 없어요. [📘 과목 정보]에서 성취기준을 먼저 넣어 주세요."),
     h("div", { class: "table-wrap" }, h("table", { class: "att std-links" },
-      h("thead", {}, h("tr", {}, ["회차", "날짜", "수업 주제", "성취기준"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, ["회차", "날짜", "시간", "수업 주제", "성취기준"].map((t) => h("th", {}, t)))),
       h("tbody", {}, d.sessions.map((x) => {
+        const cell = h("td", {});
         const picks = d.standards.map((s, i) => {
-          const box = h("input", { type: "checkbox", checked: x.standard_ids.includes(s.id) });
-          box.onchange = async () => {
+          const tick = h("input", { type: "checkbox", checked: x.standard_ids.includes(s.id) });
+          tick.onchange = async () => {
             const ids = [...cell.querySelectorAll("input")].map((el, j) => (el.checked ? d.standards[j].id : null)).filter(Boolean);
-            try { await achApi(`/api/courses/${c.id}/sessions/${x.no}/standards`, { standard_ids: ids }); toast(`${x.no}회차 연결을 저장했어요.`); }
-            catch (err) { toast(err.message); }
+            try { await achApi(`/api/courses/${c.id}/sessions/${x.no}/standards`, { standard_ids: ids }); toast(`${x.no}회차 성취기준을 저장했어요.`); }
+            catch (err) { toast(err.message); tick.checked = !tick.checked; }
           };
-          return h("label", { class: "std-pick", title: s.text }, box, s.code || `성취기준 ${i + 1}`);
+          return h("label", { class: "std-pick", title: s.text }, tick, s.code || `성취기준 ${i + 1}`);
         });
-        const cell = h("td", {}, ...picks);
-        return h("tr", {}, h("td", { class: "num" }, `${x.no}회`), h("td", { class: "num" }, fmtDate(x.date)), h("td", {}, x.topic || "-"), cell);
+        cell.append(...(picks.length ? picks : [h("span", { class: "muted" }, "-")]));
+        return h("tr", {}, h("td", { class: "num" }, `${x.no}회`), h("td", { class: "num" }, `${fmtDate(x.date)} (${dow(x.date)})`),
+          h("td", { class: "num" }, x.start ? `${x.start}~${x.end || ""}` : "-"), h("td", {}, x.topic || "-"), cell);
       })))));
 }
 

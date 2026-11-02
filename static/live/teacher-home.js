@@ -579,7 +579,7 @@ function courseBanner(c) {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["info", "📘 과목 정보"], ["open", "▶ 온라인 수업 열기"], ["notice", "📢 과목 공지사항"], ["learn", "📊 학습 관리"],
+  const subs = [["info", "📘 과목 정보"], ["sessions", "🗓 회차 정보"], ["open", "▶ 온라인 수업 열기"], ["notice", "📢 과목 공지사항"], ["learn", "📊 학습 관리"],
     ["assess", "📝 수행평가"], ["satisfaction", "📋 만족도 조사"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
@@ -603,10 +603,11 @@ function renderRunCourse(c) {
     if (editing.has(c.id)) fill(subBox, courseEditForm(c));
     else {
       const std = h("section", { class: "std-section" }, h("p", { class: "muted" }, "성취기준을 불러오는 중…"));
-      fill(subBox, courseInformationPanel(c), std);
+      fill(subBox, courseInformationPanel(c, false), std);
       renderStandards(c, std); // 성취기준·성취수준·평가 요소 (achievement.js)
     }
   }
+  else if (runSub === "sessions") renderSessionStandards(c, subBox); // 회차 정보 + 회차별 성취기준 (achievement.js)
   else if (runSub === "open") renderOpenClass(c, subBox);
   else if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);

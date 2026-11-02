@@ -1798,3 +1798,7 @@ details.ach-box[open] > summary { margin-bottom: 8px; }
 .course-levels table.info-table { table-layout: fixed; }
 .course-levels table.info-table th { width: 60px !important; text-align: center; }
 .course-levels table.info-table td { width: auto; }
+table.att.std-links { table-layout: fixed; }
+table.att.std-links th:nth-child(1) { width: 7%; } table.att.std-links th:nth-child(2) { width: 15%; }
+table.att.std-links th:nth-child(3) { width: 13%; } table.att.std-links th:nth-child(4) { width: 30%; }
+table.att.std-links th { text-align: center; }
