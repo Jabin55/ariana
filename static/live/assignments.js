@@ -82,7 +82,7 @@ async function renderCourseAssignments(c, box) {
     h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
     h("td", {}, a.due ? a.due.replaceAll("-", ".") : "없음",
       h("div", { class: "muted", style: "font-size:0.78rem" }, a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중"))));
-  const bulkButton = h("button", { class: "primary small", type: "button", disabled: true,
+  const bulkButton = h("button", { class: "primary", type: "button", disabled: true,
     title: "서명 완료된 확인서를 한꺼번에 받습니다.",
     onclick: () => { window.location.href = `/api/courses/${c.id}/score-confirmations/download.zip`; } }, "전체 받기");
   box.replaceChildren(
