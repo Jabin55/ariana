@@ -1872,3 +1872,4 @@ table.att.satisfaction-table tbody th { font-size: 0.85rem; word-break: keep-all
 table.att.satisfaction-table .satisfaction-question { font-size: 0.9rem; overflow-wrap: normal; word-break: keep-all; }
 table.att.satisfaction-table thead tr:first-child th:first-child { width: 100px; }
 table.att.satisfaction-table tbody th { white-space: nowrap; }
+.open-title { margin: 6px 0 8px; font-size: 1.02rem; }
