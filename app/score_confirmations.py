@@ -276,21 +276,22 @@ def _pdf(snap: dict, signature: bytes | None, signed_at: float | None) -> bytes:
     def bold(value):
         return p(value, bold_small)
     head = [p(x, centered_small) for x in ("연번", "평가명", "영역 만점", "반영 비율", "원점수", "반영비율 환산 점수")]
-    overview = [head] + [[p(i + 1, small), p(item["title"], small),
-                         p(_number(item["max_score"]), numeric_small),
+    pt = lambda v: "-" if v in (None, "-") else f"{v}점"  # 점수 칸에는 '점'을 붙인다
+    overview = [head] + [[p(i + 1, centered_small), p(item["title"], small),
+                         p(pt(_number(item["max_score"]) if item["max_score"] is not None else None), numeric_small),
                          p(f'{_number(item["weight"])}%' if item["weight"] is not None else "-", numeric_small),
-                         bold(_number(item["score"])) if item["score"] is not None else p("미채점", numeric_small),
-                         bold(_weighted_score(item)) if item["score"] is not None else p("-", numeric_small)]
+                         bold(pt(_number(item["score"]))) if item["score"] is not None else p("미채점", numeric_small),
+                         bold(pt(_weighted_score(item))) if item["score"] is not None else p("-", numeric_small)]
                          for i, item in enumerate(snap["items"])]
     # 합계 줄: 열마다 합 (채점 안 된 평가가 있으면 원점수·환산 점수 합은 '산출 대기')
     totals = score_totals(snap["items"])
     wait = lambda: p("산출 대기", numeric_small)
     summary_index = len(overview)
     overview.append([p("합계", centered_small), "",
-                     bold(totals["max_score"]) if totals["max_score"] is not None else p("-", numeric_small),
+                     bold(pt(totals["max_score"])) if totals["max_score"] is not None else p("-", numeric_small),
                      bold(f'{totals["weight"]}%') if totals["weight"] is not None else p("-", numeric_small),
-                     bold(totals["score"]) if totals["score"] is not None else wait(),
-                     bold(totals["weighted"]) if totals["weighted"] is not None else wait()])
+                     bold(pt(totals["score"])) if totals["score"] is not None else wait(),
+                     bold(pt(totals["weighted"])) if totals["weighted"] is not None else wait()])
     table = Table(overview, colWidths=[32, 174, 64, 64, 62, 114], repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#94a8ac")),
                               ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#d6e1e1")),
