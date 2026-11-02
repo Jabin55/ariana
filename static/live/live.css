@@ -1671,3 +1671,10 @@ table.att.speech-board td:last-child { min-width: 0; }
 .word-cloud { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 14px; padding: 18px 14px; min-height: 120px;
   background: #ffffff; border: 1px solid var(--border); border-radius: 12px; }
 .wc-word { line-height: 1.15; cursor: default; }
+/* 교무실 > 특강/회의 > 지난 기록 게시판 */
+table.att.meet-board th { text-align: center; }
+table.att.meet-board th:nth-child(1) { width: 7%; }
+table.att.meet-board th:nth-child(2) { width: 17%; }
+table.att.meet-board th:nth-child(3) { width: 40%; text-align: left; }
+table.att.meet-board th:nth-child(4), table.att.meet-board th:nth-child(5), table.att.meet-board th:nth-child(6) { width: 12%; }
+table.att.meet-board td:last-child { min-width: 0; }

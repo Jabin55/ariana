@@ -68,7 +68,7 @@ function showHomeTab(name) {
   $("#no-access").hidden = ok;
   for (const p of document.querySelectorAll("#teacher-view [data-panel]")) p.hidden = !ok || p.dataset.panel !== name;
   if (!ok) return;
-  if (name === "meet") { loadLive(); loadMeetings(); loadMeetHistory(); }
+  if (name === "meet") { meetView = null; loadLive(); loadMeetings(); loadMeetHistory(); }
   if (name === "create") { if (!$("#course-create-box").dataset.ready) drawCreateForm(); }
   if (name === "students") renderStudents();
   if (name === "run") renderRun();
@@ -155,13 +155,44 @@ $("#meet-join").addEventListener("submit", async (e) => {
   } catch (err) { $("#meet-join-error").textContent = err.message; }
 });
 
+/* 지난 특강/회의 기록: 게시판(연번·일시·이름·입장 코드·참여 인원·상태) → 누르면 별도 화면에서 출결·채점·질문·발언 기록 */
+let meetView = null; // 지금 열어 본 특강/회의 id
 async function loadMeetHistory() {
+  const panel = $('[data-panel="meet"]');
+  const showBoard = (on) => {
+    for (const el of panel.querySelectorAll(".meet-grid, .meet-mid")) el.hidden = !on;
+    $("#meet-history").hidden = !on;
+    $("#meet-history-title").textContent = on ? "지난 특강/회의 기록" : "특강/회의 기록 보기";
+  };
   const { classes } = await api("/api/live/meetings-history");
-  const box = $("#meet-history");
-  fill(box, ...classes.map((c) => h("button", { class: "class-pick", "data-id": c.id, onclick: () => { detailTarget = $("#meet-detail"); loadDetail(c.id); } },
-    `${c.date.replaceAll("-", ".")} ${c.start.slice(0, 5)} · ${c.title} · 참여 ${c.attended}명${c.live ? " · 진행 중" : ""}`)));
-  if (!classes.length) box.append(h("span", { class: "muted" }, "아직 연 특강·회의가 없어요."));
-  fill($("#meet-detail"), );
+  const viewing = classes.find((c) => c.id === meetView);
+  if (viewing) {
+    showBoard(false);
+    const inner = h("div");
+    fill($("#meet-detail"),
+      h("div", { class: "row", style: "margin:4px 0 0" },
+        h("button", { class: "small", onclick: () => { meetView = null; loadMeetHistory(); } }, "← 지난 기록 목록"),
+        h("span", { class: "muted" }, `${fmtDate(viewing.date)} ${viewing.start.slice(0, 5)} · ${viewing.title}`)),
+      inner);
+    detailTarget = inner;
+    panel.scrollIntoView({ block: "start" });
+    await loadDetail(viewing.id);
+    return;
+  }
+  meetView = null;
+  if (detailTarget && !detailTarget.isConnected) detailTarget = null; // 과목 운영 쪽 기록 화면이 다시 기본 자리를 쓰게
+  showBoard(true);
+  fill($("#meet-detail"));
+  const rows = classes.map((c, i) => h("tr", { class: "assign-row", onclick: () => { meetView = c.id; loadMeetHistory(); } },
+    h("td", { class: "num" }, classes.length - i),
+    h("td", { class: "num" }, `${fmtDate(c.date)} ${c.start.slice(0, 5)}`),
+    h("td", {}, h("span", { class: "day-link" }, c.title || "특강·회의")),
+    h("td", { class: "num" }, c.code),
+    h("td", { class: "num" }, `${c.attended}명`),
+    h("td", { class: "num" }, c.live ? h("span", { class: "tag" }, "진행 중") : "종료")));
+  fill($("#meet-history"), h("div", { class: "table-wrap" }, h("table", { class: "att assign-board meet-board" },
+    h("thead", {}, h("tr", {}, ["연번", "일시", "특강/회의 이름", "입장 코드", "참여 인원", "상태"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "아직 연 특강·회의가 없어요."))))));
 }
 
 /* ───────────────────────── 강좌 개설 ───────────────────────── */
