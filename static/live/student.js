@@ -10,6 +10,8 @@ let unread = 0;
 let ai = null;
 let activitySig = "";
 let textDraft = "";
+let captionsVisible = true;
+let captionClearTimer = null;
 const MAX_PEER_VIDEOS = 6;
 let videoSlots = []; // 영상을 받는 친구들
 // 선생님 발표(PDF)·화이트보드: 이때는 자료 화면만 크게 보여 준다(선생님 목소리는 계속 들림)
@@ -84,6 +86,9 @@ function onMessage(msg) {
     case "chat":
       addChat(msg.msg, true);
       break;
+    case "caption":
+      if (captionsVisible && S?.captions_on) showCaption(msg.text);
+      break;
     case "cmd":
       if (msg.cmd === "mute" && prefs.mic) { setMic(false); toast("선생님이 마이크를 껐어요."); }
       if (msg.cmd === "cam_off" && prefs.cam) { setCam(false); toast("선생님이 카메라를 껐어요."); }
@@ -121,6 +126,26 @@ function finish(text) {
   document.body.append(h("div", { class: "overlay" },
     h("div", { class: "card" }, h("h2", { style: "margin:0" }, text),
       h("button", { class: "primary", onclick: () => { location.href = "/live"; } }, "처음 화면으로"))));
+}
+
+function showCaption(text) {
+  const panel = $("#caption-panel");
+  panel.textContent = text;
+  panel.hidden = !text;
+  clearTimeout(captionClearTimer);
+  captionClearTimer = setTimeout(() => { panel.hidden = true; panel.textContent = ""; }, 9000);
+}
+
+$("#caption-toggle").addEventListener("click", () => {
+  captionsVisible = !captionsVisible;
+  if (!captionsVisible) showCaption("");
+  renderCaptionControl();
+});
+
+function renderCaptionControl() {
+  $("#caption-toggle").hidden = !S?.captions_on;
+  $("#caption-toggle").textContent = captionsVisible ? "💬 자막 숨기기" : "💬 자막 보기";
+  if (!S?.captions_on) showCaption("");
 }
 
 /* ───── 화상 방 들어가기·옮기기 ───── */
@@ -325,6 +350,7 @@ function renderMedia(room) {
 const mediaShare = new MediaShare($("#media"), { code: CODE });
 
 function render() {
+  renderCaptionControl();
   document.title = `${S.title} · 실시간 수업`;
   $("#title").textContent = S.title;
   $("#online").textContent = `👥 ${S.online_count}명`;

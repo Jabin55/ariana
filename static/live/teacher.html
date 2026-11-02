@@ -35,6 +35,7 @@
       <a class="button small" id="history-link" target="_blank">출결 기록</a>
       <button class="small" id="sound" hidden>🔊 소리 켜기</button>
       <button class="small rec-btn" id="rec-btn" title="이 수업 화면과 소리를 선생님 컴퓨터에 녹화 (학생 화면에 '녹화 중' 표시)" hidden>⏺ REC</button>
+      <button class="small" id="caption-btn" title="교사 마이크 음성을 실시간 한국어 자막으로 보여 주기" hidden>💬 자막 켜기</button>
       <button class="danger small" id="end-class">수업 종료</button>
     </header>
 
@@ -68,6 +69,7 @@
           <div class="grid" id="grid"></div>
           <p class="muted" id="grid-empty" style="margin:0">학생이 들어오면 여기에 보여요. 위의 <strong>참여 링크 복사</strong>로 학생들에게 링크를 보내 주세요.</p>
         </div>
+        <div class="caption-panel" id="caption-panel" role="status" aria-live="polite" hidden></div>
 
         <div id="monitor-view" hidden>
           <div class="monitor-head">

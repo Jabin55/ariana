@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import ipaddress
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ import re
 import tempfile
 import time
 import uuid
+import requests
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -44,6 +46,7 @@ router = APIRouter()
 LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "")
 LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
+CAPTION_MAX_BYTES = 512 * 1024
 
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 헷갈리는 0/O, 1/I 제외
 MAX_STUDENTS = 60
@@ -174,6 +177,10 @@ class Klass:
     layout: dict = field(default_factory=lambda: {"mode": "grid", "pair": []})
     roster: list = field(default_factory=list)  # 강좌 수업: 수강 확정 학생 명단 [{id, name, school}] (안 들어온 학생도 보이게)
     recording: bool = False  # 선생님이 수업을 녹화하는 중 (학생 화면에 표시)
+    captions_on: bool = False  # 진행 중인 교사 음성 자막. 텍스트는 상태·DB에 저장하지 않는다
+    caption_owner: int | None = None
+    caption_busy: bool = False
+    caption_generation: int = 0
     events: list[dict] = field(default_factory=list)  # 최근 입·퇴장 (선생님 화면 알림용)
     # 발표(PDF)·화이트보드: {"mode": "slides"|"board", "file": 파일 id, "page": 쪽} / 없으면 None
     present: dict | None = None
@@ -567,6 +574,7 @@ def teacher_state(k: Klass) -> dict:
         "students": roster_rows(k),
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at, "started_at": k.created,
         "present": present_view(k), "files": k.files, "recording": k.recording,
+        "captions_on": k.captions_on, "captions_available": captions_ready(),
         "media": k.media, "media_files": k.media_files,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
@@ -595,7 +603,7 @@ def student_state(k: Klass, s: Student) -> dict:
         "teacher_listening": room != "main" and (room in k.listening or k.talking == room),
         "teacher_talking": room != "main" and k.talking == room,
         "teacher_broadcast": k.broadcasting,
-        "recording": k.recording,
+        "recording": k.recording, "captions_on": k.captions_on,
         "layout": layout_for(k),
         "activity": activity_for_student(k, k.activity, s.id),
         "present": present_view(k) if room == "main" else None,  # 모둠 활동 중에는 보이지 않음
@@ -1005,6 +1013,102 @@ async def is_class_teacher(k: Klass, u: dict) -> bool:
     if u["id"] == k.teacher_id:
         return True
     return bool(k.course_id) and await db.run(_teaches_course, k.course_id, u["id"])
+
+
+def caption_worker_config() -> tuple[str, str] | None:
+    """별도 서버의 음성 전송은 HTTPS만 허용한다. HTTP는 로컬 시험용이다."""
+    url = os.environ.get("CAPTION_WORKER_URL", "").strip().rstrip("/")
+    token = os.environ.get("CAPTION_WORKER_TOKEN", "").strip()
+    if not url or not token:
+        return None
+    parsed = urlparse(url)
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        return None
+    if parsed.scheme == "https" and parsed.hostname:
+        return url, token
+    if parsed.scheme != "http" or not parsed.hostname:
+        return None
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        return None
+    if address.is_loopback:
+        return url, token
+    return None
+
+
+def captions_ready() -> bool:
+    return caption_worker_config() is not None
+
+
+class CaptionStateReq(BaseModel):
+    enabled: bool
+
+
+@router.post("/api/live/classes/{code}/captions/state")
+async def set_caption_state(code: str, req: CaptionStateReq, request: Request):
+    u = await require_user(request)
+    k = await get_class(code)
+    if not await is_class_teacher(k, u):
+        raise HTTPException(403, "이 수업의 강의교사만 자막을 관리할 수 있어요.")
+    if req.enabled:
+        if not captions_ready():
+            raise HTTPException(503, "음성인식 서버가 아직 설정되지 않았어요.")
+        if k.captions_on and k.caption_owner != u["id"]:
+            raise HTTPException(409, "다른 강의교사가 자막을 사용 중이에요.")
+        k.caption_owner = u["id"]
+        k.captions_on = True
+    else:
+        if k.captions_on and k.caption_owner != u["id"]:
+            raise HTTPException(403, "자막을 시작한 강의교사만 끌 수 있어요.")
+        k.captions_on = False
+        k.caption_owner = None
+    k.caption_generation += 1
+    push(k)
+    return {"enabled": k.captions_on}
+
+
+@router.post("/api/live/classes/{code}/captions/transcribe")
+async def transcribe_caption(code: str, request: Request):
+    u = await require_user(request)
+    k = await get_class(code)
+    if not await is_class_teacher(k, u) or not k.captions_on or k.caption_owner != u["id"]:
+        raise HTTPException(403, "자막을 켠 강의교사만 음성을 보낼 수 있어요.")
+    config = caption_worker_config()
+    if not config:
+        raise HTTPException(503, "음성인식 서버가 아직 설정되지 않았어요.")
+    mime = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if mime not in {"audio/webm", "audio/mp4", "video/webm", "video/mp4"}:
+        raise HTTPException(415, "지원하지 않는 음성 형식이에요.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > CAPTION_MAX_BYTES:
+            raise HTTPException(413, "음성 조각이 너무 커요.")
+    if len(data) < 100:
+        raise HTTPException(400, "음성 조각이 비어 있어요.")
+    if k.caption_busy:
+        raise HTTPException(429, "이전 음성을 인식 중이에요.")
+    k.caption_busy = True
+    generation = k.caption_generation
+    try:
+        url, token = config
+        response = await asyncio.to_thread(requests.post, f"{url}/transcribe", data=bytes(data),
+                                           headers={"Authorization": f"Bearer {token}", "Content-Type": mime},
+                                           timeout=25)
+        response.raise_for_status()
+        caption = clean(response.json().get("text"), 300)
+    except (requests.RequestException, ValueError, TypeError, AttributeError):
+        raise HTTPException(502, "음성인식 서버가 응답하지 않았어요.") from None
+    finally:
+        k.caption_busy = False
+    if not k.captions_on or k.caption_owner != u["id"] or k.caption_generation != generation:
+        return {"text": ""}
+    if caption:
+        for conn in list(k.conns):
+            if conn.role == "teacher" or (conn.sid in k.students and k.room_of(k.students[conn.sid]) == "main"):
+                send(conn, {"t": "caption", "text": caption})
+    return {"text": caption}
 
 
 @router.post("/api/live/classes/{code}/token")
@@ -1622,6 +1726,12 @@ async def live_socket(ws: WebSocket, code: str):
         if conn.role == "teacher":
             if conn in k.conns:
                 k.conns.remove(conn)
+            if k.captions_on and k.caption_owner == ws.session.get("uid") and not any(
+                c.role == "teacher" and c.ws.session.get("uid") == k.caption_owner for c in k.conns
+            ):
+                k.captions_on = False
+                k.caption_owner = None
+                k.caption_generation += 1
             if not k.teacher_online():
                 k.listening, k.talking, k.broadcasting = [], None, False
                 if k.recording:  # 선생님 화면이 닫히면 녹화도 끝난다

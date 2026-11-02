@@ -1,0 +1,32 @@
+services:
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: [worker.env]
+    environment:
+      CAPTION_MODEL: small
+      CAPTION_CPU_THREADS: "4"
+    mem_limit: 6g
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    expose:
+      - "8090"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CAPTION_HOST: ${CAPTION_HOST}
+      SITE_PUBLIC_IP: ${SITE_PUBLIC_IP}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [worker]
+
+volumes:
+  model_cache:
+  caddy_data:
+  caddy_config:

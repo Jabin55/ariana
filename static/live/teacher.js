@@ -10,6 +10,8 @@ let S = null;
 let sock = null;
 let mainRoom = null;
 const prefs = { cam: true, mic: true, screen: false };
+const captionCapture = { recorder: null, track: null, timer: null, sending: false };
+let captionClearTimer = null;
 const studentLink = `${location.origin}/live?c=${CODE}`;
 
 // 모둠 관찰: 모둠마다 별도의 화상 연결을 연다
@@ -66,6 +68,9 @@ function onMessage(msg) {
     case "chat":
       addChat(msg.msg, true);
       break;
+    case "caption":
+      showCaption(msg.text);
+      break;
     case "sticker":
       showSticker(msg, false);
       break;
@@ -85,6 +90,7 @@ function onMessage(msg) {
 }
 
 function finish(text) {
+  stopCaptionCapture();
   sock?.stop();
   disposeRoom(mainRoom);
   mainRoom = null;
@@ -119,6 +125,7 @@ async function connectMain() {
     room.on(RoomEvent.Disconnected, () => {
       if (mainRoom !== room) return;
       mainRoom = null;
+      stopCaptionCapture();
       rtcState("📡 화상 끊김 · 다시 연결 중", true);
       toast("화상 연결이 끊겼어요. 다시 연결할게요.");
       setTimeout(connectMain, 2000);
@@ -130,6 +137,7 @@ async function connectMain() {
     $("#rtc-warn").hidden = true;
     await setCam(prefs.cam);
     await setMic(prefs.mic);
+    syncCaptionCapture();
     renderMain(room);
   } catch (err) {
     console.error(err);
@@ -156,7 +164,94 @@ async function setMic(on) {
   showMediaProblem();
   updateMicMeter();
   renderControls();
+  syncCaptionCapture();
 }
+
+function showCaption(text) {
+  const panel = $("#caption-panel");
+  panel.textContent = text;
+  panel.hidden = !text;
+  clearTimeout(captionClearTimer);
+  captionClearTimer = setTimeout(() => { panel.hidden = true; panel.textContent = ""; }, 9000);
+}
+
+function stopCaptionCapture() {
+  clearTimeout(captionCapture.timer);
+  captionCapture.timer = null;
+  const recorder = captionCapture.recorder;
+  captionCapture.recorder = null;
+  if (recorder?.state === "recording") recorder.stop();
+  captionCapture.track?.stop();
+  captionCapture.track = null;
+}
+
+function syncCaptionCapture() {
+  const source = prefs.mic && mainRoom?.state === "connected"
+    ? mainRoom.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack : null;
+  if (!S?.captions_on || !source?.enabled || source.readyState !== "live" || !window.MediaRecorder) {
+    stopCaptionCapture();
+    return;
+  }
+  if (captionCapture.track && captionCapture.track.readyState === "live") return;
+  stopCaptionCapture();
+  captionCapture.track = source.clone();
+  recordCaptionSegment();
+}
+
+function recordCaptionSegment() {
+  if (!captionCapture.track || !S?.captions_on || !prefs.mic) return;
+  const mime = ["audio/webm;codecs=opus", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
+  if (!mime) { stopCaptionCapture(); toast("이 브라우저는 실시간 자막용 음성 형식을 지원하지 않아요."); return; }
+  const recorder = new MediaRecorder(new MediaStream([captionCapture.track]), { mimeType: mime });
+  const chunks = [];
+  captionCapture.recorder = recorder;
+  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+  recorder.onstop = () => {
+    if (captionCapture.recorder !== recorder) return;
+    captionCapture.recorder = null;
+    const blob = new Blob(chunks, { type: mime });
+    if (blob.size > 100 && blob.size <= 512 * 1024 && !captionCapture.sending) sendCaptionAudio(blob);
+    recordCaptionSegment(); // 각 조각이 독립적으로 재생 가능한 파일이 되도록 새 녹음을 시작한다
+  };
+  recorder.start();
+  captionCapture.timer = setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 4000);
+}
+
+async function sendCaptionAudio(blob) {
+  captionCapture.sending = true;
+  try {
+    const response = await fetch(`/api/live/classes/${CODE}/captions/transcribe`, {
+      method: "POST", headers: { "Content-Type": blob.type.split(";")[0] }, body: blob,
+    });
+    if (!response.ok && response.status !== 429 && S?.captions_on) {
+      toast("자막 음성인식에 실패했어요. 잠시 후 다시 켜 주세요.", 5000);
+      stopCaptionCapture();
+      await api(`/api/live/classes/${CODE}/captions/state`, { enabled: false });
+    }
+  } catch {
+    if (S?.captions_on) {
+      toast("자막 서버에 연결하지 못했어요. 잠시 후 다시 켜 주세요.", 5000);
+      stopCaptionCapture();
+      try { await api(`/api/live/classes/${CODE}/captions/state`, { enabled: false }); } catch { /* 접속 복구 시 서버가 정리한다 */ }
+    }
+  } finally {
+    captionCapture.sending = false;
+  }
+}
+
+$("#caption-btn").addEventListener("click", async () => {
+  if (!S?.captions_on && (!prefs.mic || !mainRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track)) {
+    toast("교사 마이크를 먼저 켜 주세요."); return;
+  }
+  try {
+    const enabled = !S.captions_on;
+    await api(`/api/live/classes/${CODE}/captions/state`, { enabled });
+    S.captions_on = enabled;
+    if (!enabled) { stopCaptionCapture(); showCaption(""); }
+    else syncCaptionCapture();
+    renderControls();
+  } catch (err) { toast(err.message); }
+});
 
 // 마이크 버튼 옆 소리 막대: 내 목소리가 실제로 나가고 있는지 보여 준다
 let stopMicMeter = () => {};
@@ -267,6 +362,10 @@ function renderControls() {
   for (const id of ["#mic", "#cam", "#screen"]) $(id).disabled = !ok;
   if (rec.micGain) rec.micGain.gain.value = prefs.mic ? 1 : 0; // 마이크를 끄면 녹화에도 목소리가 안 들어간다
   $("#rec-btn").hidden = CFG ? !CFG.recording_allowed : true;
+  $("#caption-btn").hidden = !S?.captions_available;
+  $("#caption-btn").disabled = !ok;
+  $("#caption-btn").textContent = S?.captions_on ? "💬 자막 끄기" : "💬 자막 켜기";
+  $("#caption-btn").classList.toggle("on", !!S?.captions_on);
 }
 
 /* ───── 강의 녹화 ─────
@@ -656,6 +755,8 @@ function noticeLateJoin() {
 }
 
 function render() {
+  syncCaptionCapture();
+  if (!S.captions_on) showCaption("");
   noticeLateJoin();
   document.title = `${S.title} · 선생님`;
   $("#title").textContent = S.title;

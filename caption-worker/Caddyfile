@@ -1,0 +1,9 @@
+{$CAPTION_HOST} {
+    @site remote_ip {$SITE_PUBLIC_IP}
+    handle @site {
+        reverse_proxy worker:8090
+    }
+    handle {
+        respond "Forbidden" 403
+    }
+}

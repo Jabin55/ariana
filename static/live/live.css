@@ -98,6 +98,7 @@ label.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .status.bad { color: var(--danger); }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
 .mainarea { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; padding: 12px; gap: 12px; }
+.caption-panel { position: sticky; bottom: 8px; z-index: 12; align-self: center; max-width: min(900px, 96%); padding: 10px 18px; border-radius: 10px; background: #15191de8; color: #fff; font-size: 1.15rem; font-weight: 650; line-height: 1.5; text-align: center; box-shadow: 0 3px 12px #0005; }
 .sidebar { border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-height: 0; }
 .tabs { display: flex; border-bottom: 1px solid var(--border); overflow-x: auto; }
 .tabs button {

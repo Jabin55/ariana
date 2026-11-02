@@ -97,6 +97,62 @@ def state(ws, pred=lambda m: True):
     return until(ws, lambda m: m["t"] == "state" and pred(m))
 
 
+def test_live_captions_teacher_only_and_ephemeral(monkeypatch):
+    monkeypatch.setenv("CAPTION_WORKER_URL", "https://caption.example.test")
+    monkeypatch.setenv("CAPTION_WORKER_TOKEN", "test-secret")
+    t, s = teacher(), student(1)
+    code = create(t)["code"]
+
+    class CaptionResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"text": "오늘의 수업을 시작합니다."}
+
+    calls = []
+    def fake_post(url, data, headers, timeout):
+        calls.append((url, data, headers, timeout))
+        return CaptionResponse()
+    monkeypatch.setattr(cr.requests, "post", fake_post)
+
+    path = f"/api/live/classes/{code}/captions"
+    audio = b"webm-audio" * 30
+    assert s.post(f"{path}/state", json={"enabled": True}).status_code == 403
+    assert t.post(f"{path}/transcribe", content=audio, headers={"Content-Type": "audio/webm"}).status_code == 403
+    with t.websocket_connect(f"/ws/live/{code}") as tw, s.websocket_connect(f"/ws/live/{code}") as sw:
+        assert state(tw)["captions_available"]
+        state(sw)
+        assert t.post(f"{path}/state", json={"enabled": True}).json() == {"enabled": True}
+        assert state(sw, lambda m: m["captions_on"])["captions_on"]
+        result = t.post(f"{path}/transcribe", content=audio, headers={"Content-Type": "audio/webm"})
+        assert result.json() == {"text": "오늘의 수업을 시작합니다."}
+        assert until(sw, lambda m: m["t"] == "caption")["text"] == "오늘의 수업을 시작합니다."
+        assert calls[0][0] == "https://caption.example.test/transcribe"
+        assert calls[0][1] == audio
+        assert calls[0][2]["Authorization"] == "Bearer test-secret"
+        assert not cr.classes[code].chat
+        assert not hasattr(cr.classes[code], "captions")
+        assert t.post(f"{path}/state", json={"enabled": False}).json() == {"enabled": False}
+        assert t.post(f"{path}/transcribe", content=audio, headers={"Content-Type": "audio/webm"}).status_code == 403
+
+
+def test_live_captions_require_secure_worker_and_bounded_audio(monkeypatch):
+    monkeypatch.setenv("CAPTION_WORKER_TOKEN", "test-secret")
+    monkeypatch.setenv("CAPTION_WORKER_URL", "http://example.com:8090")
+    assert not cr.captions_ready()
+    monkeypatch.setenv("CAPTION_WORKER_URL", "http://192.168.1.5:8090")
+    assert not cr.captions_ready()
+    t = teacher()
+    code = create(t)["code"]
+    path = f"/api/live/classes/{code}/captions"
+    assert t.post(f"{path}/state", json={"enabled": True}).status_code == 503
+    monkeypatch.setenv("CAPTION_WORKER_URL", "https://caption.example.test")
+    assert t.post(f"{path}/state", json={"enabled": True}).status_code == 200
+    assert t.post(f"{path}/transcribe", content=b"x" * (cr.CAPTION_MAX_BYTES + 1),
+                  headers={"Content-Type": "audio/webm"}).status_code == 413
+
+
 @pytest.mark.parametrize("dev_login", [None, "0", "1"])
 def test_development_login_is_unavailable(monkeypatch, dev_login):
     if dev_login is None:
@@ -1179,6 +1235,8 @@ def test_policy_pages(monkeypatch):
     monkeypatch.setenv("PRIVACY_CONTACT", "02-123-4567")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     p = c.get("/live/privacy").text
+    assert "교사 마이크 음성 조각은 별도 EU 서버" in p
+    assert "음성 조각과 자막은 저장하지 않습니다" in p
     assert "가나고등학교&lt;script&gt;" in p and "<script>" not in p  # 설정 값은 그대로 출력하지 않는다
     assert "Hetzner" in p and "Anthropic, PBC" in p and "이전 국가" in p  # AI 조교 설정과 상관없이 미국 이전 항목은 늘 보인다
     assert "고객센터 +49 (0)9831 505-0" in p
