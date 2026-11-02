@@ -389,6 +389,30 @@ function renderRun() {
     archived.length ? h("details", { style: "margin-top:16px" }, h("summary", { class: "muted" }, `보관한 강좌 ${archived.length}개`), grid(archived)) : null);
 }
 
+/* 과목 운영 안: 과목 카드 머리 그림을 가로로 길게 늘인 제목 띠 */
+function courseBanner(c) {
+  const [a, b] = window.courseAreaColors ? window.courseAreaColors(c.subject_area) : ["#7fc8a9", "#1b6b4a"];
+  const icons = { 국어: "📖", 수학: "📐", 영어: "🔤", 사회: "🌏", 역사: "🏛️", 도덕: "⚖️", 과학: "🔬", 체육: "⚽", 음악: "🎵", 미술: "🎨",
+    연극: "🎭", "기술·가정": "🛠️", 정보: "💻", 제2외국어: "🗣️", 한문: "📜", 교양: "💡" };
+  const area = c.subject_area || "교양";
+  const term = [c.school_year ? `${c.school_year}학년도` : "", c.term || ""].filter(Boolean).join(" ");
+  const period = c.start_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
+  const facts = [c.hub_school, c.instructor ? `강의교사 ${c.instructor}` : "", term, period].filter(Boolean).join(" · ");
+  const [state] = window.courseState ? window.courseState(c) : [""];
+  return h("div", { class: "course-banner", style: `--a:${a};--b:${b}` },
+    h("span", { class: `cb-area${area.length > 3 ? " long" : ""}` }, area),
+    h("div", { class: "cb-text" },
+      h("div", { class: "cb-kicker" }, [c.subject_group, c.subject && c.subject !== c.title ? c.subject : "", c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")),
+      h("h2", { class: "cb-title" }, c.title),
+      h("div", { class: "cb-facts" }, facts)),
+    h("div", { class: "cb-side" },
+      h("span", { class: "cb-ico", "aria-hidden": "true" }, icons[area] || "📚"),
+      h("div", { class: "cb-chips" },
+        c.archived ? h("span", { class: "cb-chip" }, "보관됨") : state ? h("span", { class: "cb-chip" }, state) : null,
+        h("span", { class: "cb-chip" }, `수강 확정 ${c.approved || 0}명`),
+        c.pending ? h("span", { class: "cb-chip warn" }, `승인 대기 ${c.pending}`) : null)));
+}
+
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
@@ -397,13 +421,14 @@ function renderRunCourse(c) {
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
-      h("h2", { class: "grow", style: "margin:0" }, c.title, c.archived ? h("span", { class: "muted" }, " (보관됨)") : null),
+      h("span", { class: "grow" }),
       !c.locked && !c.archived && c.approval === "approved" ? h("label", { class: "switch", style: "font-size:0.9rem" }, h("input", { type: "checkbox", checked: c.open,
         onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
       c.lead && !c.locked && !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); runSub = "info"; renderRun(); } }, "정보 수정") : null,
       c.lead && !c.locked ? h("button", { class: "small", onclick: async () => {
         if (c.archived || await appConfirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
       } }, c.archived ? "보관 해제" : "보관 (학기 끝)") : null),
+    courseBanner(c),
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
     c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '내 정보'에서 가입 유형·거점학교 변경을 신청하세요.`) : null,
