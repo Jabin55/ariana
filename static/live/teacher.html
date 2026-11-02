@@ -89,6 +89,7 @@
         <nav class="tabs" id="tabs">
           <button data-tab="people" class="active">참여자 <span class="badge" id="hand-badge" hidden></span></button>
           <button data-tab="chat">채팅 <span class="badge" id="chat-badge" hidden></span></button>
+          <button data-tab="obs">관찰기록</button>
         </nav>
         <!-- 참여자 목록 (위) -->
         <section class="panel people-panel" data-panel="people">
@@ -116,6 +117,18 @@
             <textarea id="chatinput" rows="1" maxlength="500" placeholder="메시지"></textarea>
             <button class="primary" type="submit">보내기</button>
           </form>
+        </section>
+
+        <!-- 관찰기록: 수업 중 학생을 관찰해 적는다 (선생님만 봄, AI 성취 분석에 함께 씀) -->
+        <section class="panel obs-panel" data-panel="obs" hidden>
+          <div class="panel-h"><strong>관찰기록</strong> <span class="muted" id="obs-count"></span></div>
+          <form class="obs-form" id="obs-form">
+            <select id="obs-student" title="관찰한 학생"></select>
+            <textarea id="obs-text" rows="3" maxlength="2000" placeholder="관찰한 내용 (예: 상대 주장을 요약한 뒤 근거를 들어 반박함)"></textarea>
+            <button class="primary" type="submit">기록</button>
+          </form>
+          <p class="muted obs-hint">학생에게는 보이지 않아요. 과목 운영의 AI 성취 분석에 함께 쓰여요.</p>
+          <div class="obs-list" id="obs-list"></div>
         </section>
 
       </aside>

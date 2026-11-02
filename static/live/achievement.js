@@ -258,8 +258,12 @@ function achChart(classes) {
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
 
 async function renderAnalysis(courseId, who, box) {
-  let v;
-  try { v = await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/analysis`); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  let v, obs = [];
+  try {
+    [v, { observations: obs }] = await Promise.all([
+      achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/analysis`),
+      achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/observations`).catch(() => ({ observations: [] }))]);
+  } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
   const again = () => renderAnalysis(courseId, who, box);
   const run = h("button", { class: "primary small", type: "button", disabled: !v.ai, title: v.ai ? "" : "AI가 설정되지 않았어요" },
     v.analyzed_at ? "🤖 다시 분석하기" : "🤖 AI 분석하기");
@@ -283,7 +287,12 @@ async function renderAnalysis(courseId, who, box) {
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
       h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run),
-    v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
+    h("details", { class: "ach-box", open: obs.length > 0 && !v.analyzed_at },
+      h("summary", { class: "ach-box-head" }, `👀 선생님 관찰 기록 ${obs.length}건 `, h("span", { class: "muted", style: "font-weight:400" }, "(수업 중 [관찰기록] 탭에서 적은 것 · AI 분석에 함께 써요)")),
+      obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
+        h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`))))
+        : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),
+    v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언과 관찰 기록을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
     v.analyzed_at ? [
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (수업별 평가 요소 수준)"), achChart(v.classes)),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),

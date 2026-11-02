@@ -5,7 +5,7 @@
   파일 내용만 지우고 공유한 기록(파일명)은 남긴다.
 - 판서·화이트보드: 학생 복습용으로 남긴다. 과목이 끝나고(특강·회의는 연 날부터) 365일이 지나면 지운다
 - 과제에 학생이 낸 파일: 과목이 끝나고 365일이 지나면 (점수·피드백·글 제출은 남긴다)
-- 수업 중 발언 기록(자막 스크립트)과 그 AI 분석·피드백: 과목이 끝나고 365일 (과목 없는 수업은 연 날부터 365일)
+- 수업 중 발언 기록(자막 스크립트)·교사 관찰 기록과 그 AI 분석·피드백: 과목이 끝나고 365일 (과목 없는 수업은 연 날부터 365일)
 - 학생 서명 점수 확인서 PDF: 과목 종료일부터 365일 (종료일이 없으면 서명일부터 365일)
 탈퇴 학생의 분리 보관 증빙(evidence)은 따로 정한 보존 기간을 따른다.
 """
@@ -78,6 +78,7 @@ def purge_expired_files(today: date | None = None) -> dict:
                                              and_(cl.course_id.is_(None), cl.created_at < time.time() - KEEP_DAYS * 86400)))
         c.execute(delete(db.boards).where(db.boards.c.class_id.in_(old_boards)))
         removed_speech = c.execute(delete(db.speech_logs).where(db.speech_logs.c.class_id.in_(old_boards))).rowcount
+        c.execute(delete(db.observations).where(db.observations.c.class_id.in_(old_boards)))  # 교사 관찰 기록도 같은 기간
         # 발언 AI 분석·피드백도 과목이 끝나고 365일 뒤
         c.execute(delete(db.speech_analyses).where(db.speech_analyses.c.course_id.in_(done or [-1])))
         c.execute(delete(db.speech_feedback).where(db.speech_feedback.c.course_id.in_(done or [-1])))

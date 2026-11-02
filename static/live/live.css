@@ -1828,3 +1828,12 @@ table.att.std-links th:nth-child(5) { width: 57%; }
 table.att.std-links .std-pick-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; }
 table.att.std-links .std-pick { font-size: 0.8rem; gap: 3px; }
 @media (max-width: 900px) { table.att.std-links .std-pick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 수업 중 관찰기록 */
+.obs-panel { display: flex; flex-direction: column; gap: 8px; padding: 10px; overflow: auto; }
+.obs-panel[hidden] { display: none; }
+.obs-form { display: flex; flex-direction: column; gap: 6px; }
+.obs-form textarea { resize: vertical; }
+.obs-hint { margin: 0; font-size: 0.78rem; }
+.obs-list { display: flex; flex-direction: column; gap: 6px; }
+.obs-item { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 0.88rem; }
+.obs-item .obs-text { white-space: pre-wrap; margin-top: 2px; line-height: 1.45; }

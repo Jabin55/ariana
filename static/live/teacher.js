@@ -853,6 +853,7 @@ function noticeLateJoin() {
 }
 
 function render() {
+  if (activeTab === "obs") fillObsStudents(); // 학생이 들어오고 나가면 관찰기록의 학생 목록도
   syncCaptionCapture();
   renderControls(); // 자막 버튼은 수업 상태(S)가 온 뒤에 보인다
   if (!S.captions_on) showCaption("");
@@ -1715,7 +1716,47 @@ function showTab(name) {
   for (const b of $("#tabs").children) b.classList.toggle("active", b.dataset.tab === name);
   for (const p of document.querySelectorAll("[data-panel]")) p.hidden = p.dataset.panel !== name;
   if (name === "chat") { unreadChat = 0; $("#chat-badge").hidden = true; $("#chatlog").scrollTop = $("#chatlog").scrollHeight; }
+  if (name === "obs") { fillObsStudents(); loadObservations(); }
 }
+
+/* ───── 관찰기록: 학생을 골라 관찰한 내용을 적는다 (선생님만 봄 · AI 성취 분석에 함께 씀) ───── */
+function fillObsStudents() {
+  const sel = $("#obs-student");
+  const keep = sel.value;
+  const list = (S?.everyone || S?.students || []).slice().sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name, "ko")); // 안 들어온 수강생도
+  sel.replaceChildren(h("option", { value: "" }, "학생 고르기"),
+    ...list.map((x) => h("option", { value: x.id }, `${x.name}${x.online ? "" : " (미접속)"}`)));
+  if (keep && list.some((x) => String(x.id) === keep)) sel.value = keep;
+}
+
+function renderObservations(rows) {
+  $("#obs-count").textContent = rows.length ? `${rows.length}건` : "";
+  $("#obs-list").replaceChildren(...(rows.length ? rows.map((o) => h("div", { class: "obs-item" },
+    h("div", { class: "row" }, h("strong", { class: "grow" }, o.name), h("span", { class: "muted" }, o.time),
+      h("button", { class: "small", type: "button", title: "지우기", onclick: async () => {
+        if (!confirm("이 관찰 기록을 지울까요?")) return;
+        try { renderObservations((await api(`/api/live/classes/${CODE}/observations/${o.id}/delete`, {})).observations); } catch (err) { toast(err.message); }
+      } }, "✕")),
+    h("div", { class: "obs-text" }, o.text))) : [h("p", { class: "muted" }, "아직 적은 관찰 기록이 없어요.")]));
+}
+
+async function loadObservations() {
+  try { renderObservations((await api(`/api/live/classes/${CODE}/observations`)).observations); }
+  catch (err) { $("#obs-list").replaceChildren(h("p", { class: "error" }, err.message)); }
+}
+
+$("#obs-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const user = $("#obs-student").value, text = $("#obs-text").value.trim();
+  if (!user) { toast("관찰한 학생을 골라 주세요."); $("#obs-student").focus(); return; }
+  if (!text) { $("#obs-text").focus(); return; }
+  try {
+    renderObservations((await api(`/api/live/classes/${CODE}/observations`, { user_id: Number(user), text })).observations);
+    $("#obs-text").value = "";
+    toast("관찰 기록을 남겼어요.");
+  } catch (err) { toast(err.message); }
+});
+$("#obs-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("#obs-form").requestSubmit(); });
 $("#tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
   if (b) showTab(b.dataset.tab);

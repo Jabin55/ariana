@@ -446,6 +446,17 @@ speech_feedback = Table(
     UniqueConstraint("course_id", "user_id"),
 )
 
+observations = Table(
+    "observations", metadata,  # 수업 중 교사가 학생을 관찰해 적은 기록 (교사만 봄, AI 성취 분석에 함께 씀)
+    Column("id", Integer, primary_key=True),
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("course_id", Integer, index=True),
+    Column("user_id", Integer, nullable=False, index=True),  # 관찰한 학생
+    Column("teacher_id", Integer, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+
 speech_logs = Table(
     "speech_logs", metadata,  # 수업 중 발언 기록 (선생님이 [발언 기록]을 켠 동안만). 과목이 끝나고 365일 뒤 지운다
     Column("id", Integer, primary_key=True),

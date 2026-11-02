@@ -3780,3 +3780,41 @@ def test_score_confirmation_totals_row():
     assert score_totals(items) == {"max_score": "180", "weight": "100", "score": "160.5", "weighted": "89.25"}
     pending = score_totals([*items[:2], {"score": None, "max_score": 20, "weight": 50}])
     assert pending == {"max_score": "100", "weight": "100", "score": None, "weighted": None}  # 미채점이 있으면 산출 대기
+
+
+def test_observations_recorded_and_used_in_analysis(monkeypatch):
+    """수업 중 교사 관찰 기록: 교사만 쓰고 보며, AI 성취 분석에 학생 발언과 함께 들어간다"""
+    import app.achievement as ach
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    prompts = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        prompts.append(prompt)
+        return {"classes": [], "summary": "s", "feedback": "f"}
+    monkeypatch.setattr(ach, "ai_json", fake_ai)
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    a, b = student(1), student(2)
+    for s in (a, b):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    t.post(f"/api/courses/{cid}/standards", json={"code": "[12법사01-01]", "text": "법의 의미", "elements": [{"name": "근거 제시"}]})
+    code = create(t, title="1차시", course_id=cid)["code"]
+    base = f"/api/live/classes/{code}/observations"
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        uid = state(tw, lambda m: any(x["online"] for x in m["students"]))["students"]
+        aid = next(int(x["id"]) for x in uid if x["online"])
+        bid = next(int(x["id"]) for x in uid if not x["online"])  # 수강 명단에는 있지만 안 들어온 학생도 적을 수 있다
+        assert a.post(base, json={"user_id": aid, "text": "x"}).status_code == 403
+        assert t.post(base, json={"user_id": 999999, "text": "x"}).status_code == 400
+        assert t.post(base, json={"user_id": aid, "text": "  "}).status_code == 400
+        t.post(base, json={"user_id": aid, "text": "상대 주장을 요약한 뒤 근거를 들어 반박함"})
+        rows = t.post(base, json={"user_id": bid, "text": "결석"}).json()["observations"]
+        assert [r["text"] for r in rows] == ["결석", "상대 주장을 요약한 뒤 근거를 들어 반박함"]
+        oid = rows[0]["id"]
+        assert [r["text"] for r in t.post(f"{base}/{oid}/delete").json()["observations"]] == ["상대 주장을 요약한 뒤 근거를 들어 반박함"]
+        assert a.get(base).status_code == 403
+    got = t.get(f"/api/courses/{cid}/speech/student/{aid}/observations").json()["observations"]
+    assert got[0]["text"] == "상대 주장을 요약한 뒤 근거를 들어 반박함" and got[0]["class_title"] == "1차시"
+    t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze")  # 발언이 없어도 관찰 기록만으로 분석
+    assert "[교사 관찰 기록]" in prompts[-1] and "근거를 들어 반박함" in prompts[-1] and "(발언 기록 없음)" in prompts[-1]

@@ -267,6 +267,89 @@ async def draft_elements(course_id: int, req: DraftReq, request: Request):
                          for e in data.get("elements", [])][:6]}
 
 
+# ───────── 수업 중 교사 관찰 기록 ─────────
+
+class ObservationReq(BaseModel):
+    user_id: int
+    text: str = Field(max_length=2000)
+
+
+async def _live_teacher(code: str, request: Request):
+    from app.classroom import get_class, is_class_teacher
+    u = await require_user(request, "teacher")
+    k = await get_class(code)
+    if not await is_class_teacher(k, u):
+        raise HTTPException(403, "이 수업의 강의교사만 관찰 기록을 쓸 수 있어요.")
+    return k, u
+
+
+def _observation_rows(class_id: int) -> list[dict]:
+    o = db.observations.c
+    with db.engine.connect() as c:
+        rows = c.execute(select(db.observations, db.users.c.name, db.users.c.google_name)
+                         .join(db.users, db.users.c.id == o.user_id)
+                         .where(o.class_id == class_id).order_by(o.created_at.desc())).all()
+    return [{"id": r.id, "user_id": r.user_id, "name": r.name or r.google_name or "", "text": r.text,
+             "time": datetime.fromtimestamp(r.created_at, KST).strftime("%H:%M")} for r in rows]
+
+
+@router.get("/api/live/classes/{code}/observations")
+async def list_observations(code: str, request: Request):
+    k, _ = await _live_teacher(code, request)
+    return {"observations": await db.run(_observation_rows, k.db_id)}
+
+
+@router.post("/api/live/classes/{code}/observations")
+async def add_observation(code: str, req: ObservationReq, request: Request):
+    """수업 중 관찰 기록 한 건 (이 수업에 들어왔거나 수강 명단에 있는 학생만)"""
+    k, u = await _live_teacher(code, request)
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "관찰 내용을 적어 주세요.")
+    sid = str(req.user_id)
+    s = k.students.get(sid)
+    if not ((s and not s.observer) or any(str(r["id"]) == sid for r in k.roster)):
+        raise HTTPException(400, "이 수업의 학생을 골라 주세요.")
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(insert(db.observations).values(class_id=k.db_id, course_id=k.course_id, user_id=req.user_id,
+                                                     teacher_id=u["id"], text=text, created_at=time.time()))
+
+    await db.run(run)
+    return {"observations": await db.run(_observation_rows, k.db_id)}
+
+
+@router.post("/api/live/classes/{code}/observations/{oid}/delete")
+async def delete_observation(code: str, oid: int, request: Request):
+    k, _ = await _live_teacher(code, request)
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.observations).where(db.observations.c.id == oid, db.observations.c.class_id == k.db_id))
+
+    await db.run(run)
+    return {"observations": await db.run(_observation_rows, k.db_id)}
+
+
+def student_observations(course_id: int, user_id: int) -> list[dict]:
+    """과목 운영 화면용: 그 학생의 이 과목 관찰 기록 (수업 순서)"""
+    o, cl = db.observations.c, db.classes.c
+    with db.engine.connect() as c:
+        rows = c.execute(select(db.observations, cl.title, cl.created_at.label("class_created"))
+                         .join(db.classes, cl.id == o.class_id)
+                         .where(cl.course_id == course_id, o.user_id == user_id).order_by(o.created_at)).all()
+    return [{"class_id": r.class_id, "class_title": r.title or "", "text": r.text,
+             "date": datetime.fromtimestamp(r.class_created, KST).strftime("%Y-%m-%d"),
+             "time": datetime.fromtimestamp(r.created_at, KST).strftime("%H:%M")} for r in rows]
+
+
+@router.get("/api/courses/{course_id}/speech/student/{user_id}/observations")
+async def get_student_observations(course_id: int, user_id: int, request: Request):
+    await _course(course_id, request)
+    return {"observations": await db.run(student_observations, course_id, user_id)}
+
+
 # ───────── 학생 발언 AI 분석 ─────────
 
 def _student_material(course_id: int, user_id: int):
@@ -282,8 +365,12 @@ def _student_material(course_id: int, user_id: int):
     classes: dict[int, dict] = {}
     for e in entries:
         x = classes.setdefault(e["class_id"], {"class_id": e["class_id"], "date": e["date"], "title": e["class_title"],
-                                                "texts": []})
+                                                "texts": [], "notes": []})
         x["texts"].append(e["text"])
+    for o in student_observations(course_id, user_id):  # 교사 관찰 기록도 그 수업의 근거로
+        x = classes.setdefault(o["class_id"], {"class_id": o["class_id"], "date": o["date"], "title": o["class_title"],
+                                                "texts": [], "notes": []})
+        x["notes"].append(o["text"])
     every = [s["id"] for s in standards]
     for x in classes.values():
         x["standard_ids"] = by_date.get(x["date"]) or every  # 회차와 연결되지 않은 수업은 모든 성취기준으로
@@ -294,10 +381,11 @@ def _student_material(course_id: int, user_id: int):
 
 
 ANALYSIS_SYSTEM = (
-    "당신은 한국 고등학교 교사를 돕는 평가 보조자입니다. 한 학생이 여러 수업에서 한 발언(음성 인식 결과라 오탈자가 있을 수 있음)을 "
-    "성취기준의 평가 요소와 상·중·하 기준에 비추어 판단합니다.\n"
+    "당신은 한국 고등학교 교사를 돕는 평가 보조자입니다. 한 학생이 여러 수업에서 한 발언(음성 인식 결과라 오탈자가 있을 수 있음)과 "
+    "수업 중 교사가 그 학생을 관찰해 적은 기록을 성취기준의 평가 요소와 상·중·하 기준에 비추어 판단합니다.\n"
     "규칙:\n- 수업마다, 그 수업에 연결된 평가 요소 가운데 발언에서 근거를 찾을 수 있는 것만 판단합니다. 근거가 없으면 판단하지 않습니다.\n"
-    "- level 은 상=3, 중=2, 하=1 입니다. evidence 에는 판단 근거가 된 학생 발언을 짧게 그대로 인용합니다.\n"
+    "- level 은 상=3, 중=2, 하=1 입니다. evidence 에는 판단 근거가 된 학생 발언을 짧게 그대로 인용합니다. "
+    "교사 관찰 기록을 근거로 삼았으면 앞에 '(관찰)'을 붙여 인용합니다.\n"
     "- summary(교사용)는 수업이 이어지면서 성취가 어떻게 달라졌는지 4~6문장으로 씁니다. 과목 성취수준(일반적 특성)이 주어지면 "
     "지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되, 성취도를 확정하는 말은 하지 않습니다. 발언 수가 적으면 그 한계를 밝힙니다.\n"
     "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로, 잘한 점 1~2가지·보완할 점 1가지·다음 수업에서 해 볼 행동 1가지를 3~5문장으로 씁니다.\n"
@@ -336,7 +424,7 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     from app.privacy_filter import redact
     classes, standards, names = await db.run(_student_material, course_id, user_id)
     if not classes:
-        raise HTTPException(400, "이 학생의 발언 기록이 없어요.")
+        raise HTTPException(400, "이 학생의 발언 기록이나 관찰 기록이 없어요.")
     usable = [s for s in standards if s["elements"]]
     if not usable:
         raise HTTPException(400, "먼저 [과목 정보]에서 성취기준과 평가 요소를 넣어 주세요.")
@@ -355,12 +443,14 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     cls_lines = []
     for n, x in enumerate(classes, 1):
         linked = [f"S{sno[sid]}" for sid in x["standard_ids"] if sid in sno] or [f"S{i}" for i in range(1, len(usable) + 1)]
-        said = "\n".join(f"  · {redact(t, names)}" for t in x["texts"])
-        cls_lines.append(f"<수업 {n}> {x['date']} 주제: {x['title'] or '-'} / 연결된 성취기준: {', '.join(linked)}\n{said}")
+        said = "\n".join(f"  · {redact(t, names)}" for t in x["texts"]) or "  (발언 기록 없음)"
+        notes = "\n".join(f"  · {redact(t, names)}" for t in x["notes"])
+        cls_lines.append(f"<수업 {n}> {x['date']} 주제: {x['title'] or '-'} / 연결된 성취기준: {', '.join(linked)}\n"
+                         f"[학생 발언]\n{said}" + (f"\n[교사 관찰 기록]\n{notes}" if notes else ""))
     levels = {k: v for k, v in course_levels(course).items() if v}
     level_text = ("\n\n# 과목 성취수준별 일반적 특성 (참고)\n" + "\n".join(f"[{k}] {v}" for k, v in levels.items())) if levels else ""
     prompt = (f"과목: {course.subject or course.title}{level_text}\n\n# 성취기준과 평가 요소\n" + "\n".join(std_lines)
-              + "\n\n# 학생 발언 (수업 순서)\n" + "\n\n".join(cls_lines))
+              + "\n\n# 수업별 학생 발언과 교사 관찰 기록 (수업 순서)\n" + "\n\n".join(cls_lines))
     data = await ai_json(ANALYSIS_SYSTEM, prompt, analysis_schema(keys, len(classes)), 12000)
     now = time.time()
 
