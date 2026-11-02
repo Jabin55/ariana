@@ -141,7 +141,8 @@ function renderAssignmentPost(c, a, data, box, reload) {
         info("영역 만점", a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
         info("마감일", a.due ? a.due.replaceAll("-", ".") : "없음"),
         info("상태", a.closed ? "제출 마감함" : a.past_due ? (a.allow_late ? "마감 지남(지각 받음)" : "마감 지남") : "받는 중"),
-        info("제출·채점", `제출 ${a.submitted}/${data.students}명 · 채점 ${a.graded}명`)),
+        info("제출·채점", `제출 ${a.submitted}/${data.students}명 · 채점 ${a.graded}명`),
+        info("제출률", data.students ? `${Math.round(a.submitted / data.students * 100)}%` : "-")),
       a.description ? h("div", { class: "assign-desc" }, a.description) : null),
     h("h4", { style: "margin:14px 0 6px" }, "학생별 제출과 채점"),
     subsBox);
