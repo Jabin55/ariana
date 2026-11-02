@@ -398,6 +398,53 @@ boards = Table(
     UniqueConstraint("class_id", "key"),
 )
 
+course_standards = Table(
+    "course_standards", metadata,  # 강좌의 성취기준과 성취수준(상·중·하), 거기서 뽑은 평가 요소
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("sort", Integer, nullable=False, default=0),
+    Column("code", String(40), nullable=False, default=""),  # 예: [12법사02-03]
+    Column("text", Text, nullable=False, default=""),
+    Column("level_high", Text, nullable=False, default=""),
+    Column("level_mid", Text, nullable=False, default=""),
+    Column("level_low", Text, nullable=False, default=""),
+    Column("elements", Text, nullable=False, default="[]"),  # JSON [{name, high, mid, low}]
+    Column("created_at", Float, nullable=False),
+)
+
+session_standards = Table(
+    "session_standards", metadata,  # 회차(강좌 회차 번호)마다 다루는 성취기준
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("session_no", Integer, nullable=False),
+    Column("standard_id", Integer, nullable=False),
+    UniqueConstraint("course_id", "session_no", "standard_id"),
+)
+
+speech_analyses = Table(
+    "speech_analyses", metadata,  # AI 성취 분석: 학생·수업마다 평가 요소별 수준과 근거 발언
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("class_id", Integer, nullable=False),
+    Column("result", Text, nullable=False),  # JSON [{standard, element, level, evidence}]
+    Column("created_at", Float, nullable=False),
+    UniqueConstraint("course_id", "user_id", "class_id"),
+)
+
+speech_feedback = Table(
+    "speech_feedback", metadata,  # AI 종합 의견(교사용)과 학생에게 줄 피드백. 공개하기 전에는 학생에게 보이지 않는다
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("summary", Text, nullable=False, default=""),
+    Column("feedback", Text, nullable=False, default=""),
+    Column("published", Integer, nullable=False, default=0),
+    Column("analyzed_at", Float),
+    Column("updated_at", Float, nullable=False),
+    UniqueConstraint("course_id", "user_id"),
+)
+
 speech_logs = Table(
     "speech_logs", metadata,  # 수업 중 발언 기록 (선생님이 [발언 기록]을 켠 동안만). 과목이 끝나고 365일 뒤 지운다
     Column("id", Integer, primary_key=True),

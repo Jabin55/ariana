@@ -599,7 +599,14 @@ function renderRunCourse(c) {
       onclick: () => { runSub = k; renderRunCourse(c); } }, label))),
     c.locked ? h("div", { class: "run-sub" }, courseInformationPanel(c)) : subBox);
   if (c.locked) return;
-  if (runSub === "info") fill(subBox, editing.has(c.id) ? courseEditForm(c) : courseInformationPanel(c));
+  if (runSub === "info") {
+    if (editing.has(c.id)) fill(subBox, courseEditForm(c));
+    else {
+      const std = h("section", { class: "std-section" }, h("p", { class: "muted" }, "성취기준을 불러오는 중…"));
+      fill(subBox, courseInformationPanel(c), std);
+      renderStandards(c, std); // 성취기준·성취수준·평가 요소 (achievement.js)
+    }
+  }
   else if (runSub === "open") renderOpenClass(c, subBox);
   else if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
@@ -901,11 +908,14 @@ async function learnSpeech(c, st, box) {
   if (who) {
     const cloud = h("div", { class: "word-cloud" }, h("span", { class: "muted" }, "불러오는 중…"));
     const list = h("div");
+    const anal = h("div", { class: "ach-wrap" }, h("p", { class: "muted" }, "AI 분석을 불러오는 중…"));
     fill(box, head,
       h("div", { class: "row", style: "margin:0 0 8px" }, h("button", { class: "small", onclick: () => { st.view = null; again(); } }, "← 학생 목록")),
       h("div", { class: "hub-grid-summary" }, `${[who.school, who.student_no, who.name].filter(Boolean).join(" ")} · 발언 ${who.count}건 · ${who.chars.toLocaleString()}자 · ${who.classes}개 수업`),
+      anal,
       h("h4", { class: "speech-h" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
       h("h4", { class: "speech-h" }, "🗒 발언 모음 (날짜순)"), list);
+    renderAnalysis(c.id, who, anal); // AI 성취 분석·그래프·피드백 (achievement.js)
     const { entries } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}`);
     drawWordCloud(cloud, entries.map((e) => e.text));
     const days = [];

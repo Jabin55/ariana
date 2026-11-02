@@ -1760,3 +1760,36 @@ table.att.speech-students th:nth-child(5), table.att.speech-students th:nth-chil
 table.att.speech-students td, table.att.speech-classes td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 학생 화면 맨 위: 발언 기록 중 표시 (예전 안내 띠와 같은 색) */
 .transcript-badge { padding: 3px 10px; border-radius: 999px; background: #fde8e7; color: #8a1c13; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+/* 성취기준 입력 */
+.std-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.std-card { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.std-card.editing { border-color: var(--accent); box-shadow: 0 2px 10px rgba(27,107,74,0.08); }
+.std-code { display: inline-block; padding: 1px 8px; border-radius: 6px; background: #e3f3ea; color: #1b6b4a; font-size: 0.85rem; margin-right: 4px; }
+.std-levels { margin: 8px 0; }
+.std-levels table.info-table th { width: 50px; text-align: center; }
+table.att.std-elements { table-layout: fixed; }
+table.att.std-elements th:nth-child(1) { width: 18%; }
+table.att.std-elements td { white-space: normal; vertical-align: top; text-align: left; font-size: 0.88rem; }
+table.att.std-elements.edit th:last-child { width: 46px; }
+table.att.std-elements.edit textarea, table.att.std-elements.edit input { width: 100%; box-sizing: border-box; font-size: 0.85rem; }
+.std-form { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.std-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; font-size: 0.88rem; }
+.std-form textarea, .std-form input { font-weight: 400; }
+table.att.std-links td { white-space: normal; }
+table.att.std-links td:last-child { min-width: 0; text-align: left; }
+.std-pick { display: inline-flex; align-items: center; gap: 4px; margin: 2px 10px 2px 0; font-size: 0.85rem; cursor: pointer; }
+/* AI 성취 분석 */
+.ach-wrap { margin: 14px 0; }
+.ach-box { background: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.ach-box-head { font-weight: 800; margin-bottom: 8px; }
+details.ach-box > summary { cursor: pointer; margin-bottom: 0; }
+details.ach-box[open] > summary { margin-bottom: 8px; }
+.ach-box textarea { width: 100%; box-sizing: border-box; }
+.ach-chart { width: 100%; height: auto; display: block; }
+.ach-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 0.82rem; }
+.ach-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.ach-class { margin: 8px 0; }
+.ach-rate { padding: 4px 0; font-size: 0.9rem; line-height: 1.5; }
+.ach-lv { display: inline-block; min-width: 26px; text-align: center; padding: 1px 6px; border-radius: 6px; margin-right: 6px; font-weight: 800; font-size: 0.8rem; color: #fff; }
+.ach-lv.lv3 { background: #1b6b4a; } .ach-lv.lv2 { background: #c79a1e; } .ach-lv.lv1 { background: #d0485f; }
+.my-feedback { border-color: #b9dcc9; background: #f6fbf8; margin-bottom: 14px; }

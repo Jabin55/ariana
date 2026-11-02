@@ -3619,3 +3619,61 @@ def test_meeting_speech_viewed_in_class_history():
     assert t.get(f"/api/live/history/{class_id}/speech.xlsx").status_code == 200
     assert other.get(f"/api/live/history/{class_id}/speech").status_code == 404
     assert s.get(f"/api/live/history/{class_id}/speech").status_code == 403
+
+
+def test_achievement_standards_analysis_and_feedback(monkeypatch):
+    """성취기준·평가 요소 → 회차 연결 → 학생 발언 AI 분석 → 교사가 공개한 피드백만 학생에게"""
+    import app.achievement as ach
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    calls = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        calls.append((prompt, schema))
+        if "elements" in schema["properties"]:
+            return {"elements": [{"name": "근거 제시", "high": "타당한 근거", "mid": "근거 일부", "low": "근거 없음"}]}
+        key = schema["properties"]["classes"]["items"]["properties"]["ratings"]["items"]["properties"]["key"]["enum"][0]
+        return {"classes": [{"class_no": 1, "ratings": [{"key": key, "level": 3, "evidence": "오판 가능성"},
+                                                        {"key": "없는|요소", "level": 2, "evidence": "x"}]}],
+                "summary": "근거 제시가 뛰어납니다.", "feedback": "근거를 잘 들었어요."}
+    monkeypatch.setattr(ach, "ai_json", fake_ai)
+    t, other = teacher(), teacher("other@gmail.com")
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+    cid = t.post("/api/courses", json={**COURSE, "sessions": [{"no": 1, "date": today, "start": "16:00", "end": "17:00", "topic": "사형제"}]}).json()["id"]
+    a = student(1)
+    a.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    base = f"/api/courses/{cid}"
+    assert other.get(f"{base}/standards").status_code == 404
+    draft = t.post(f"{base}/standards/draft-elements", json={"code": "[12법사02-03]", "text": "기본권 제한", "level_high": "상", "level_mid": "중", "level_low": "하"}).json()
+    assert draft["elements"][0]["name"] == "근거 제시"
+    sid = t.post(f"{base}/standards", json={"code": "[12법사02-03]", "text": "기본권 제한의 요건", "level_high": "상", "level_mid": "중",
+                                            "level_low": "하", "elements": draft["elements"]}).json()["id"]
+    assert t.post(f"{base}/sessions/1/standards", json={"standard_ids": [sid, 999]}).json()["ok"]
+    got = t.get(f"{base}/standards").json()
+    assert got["sessions"][0]["standard_ids"] == [sid] and got["standards"][0]["elements"][0]["name"] == "근거 제시"
+    code = create(t, title="사형제 토론", course_id=cid)["code"]
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(tw, lambda m: sum(x["online"] for x in m["students"]) == 1)
+        t.post(f"/api/live/classes/{code}/transcript/state", json={"enabled": True})
+        state(sa, lambda m: m["transcript_on"])
+        a.post(f"/api/live/classes/{code}/speech", json={"text": "오판 가능성이 있어 폐지해야 합니다", "final": True})
+    uid = t.get(f"{base}/speech").json()["students"][0]["user_id"]
+    view = t.post(f"{base}/speech/student/{uid}/analyze").json()
+    assert view["classes"][0]["ratings"] == [{"standard_id": sid, "code": "[12법사02-03]", "element": "근거 제시", "level": 3, "evidence": "오판 가능성"}]
+    assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
+    prompt = calls[-1][0]
+    assert "오판 가능성이 있어 폐지해야" in prompt and "S1|근거 제시" in prompt and "연결된 성취기준: S1" in prompt
+    assert a.get(f"/api/my/courses/{cid}/feedback").json() == {"published": False}
+    assert other.post(f"{base}/speech/student/{uid}/feedback", json={"feedback": "x", "published": True}).status_code == 404
+    t.post(f"{base}/speech/student/{uid}/feedback", json={"feedback": "근거가 탄탄해요!", "published": True})
+    mine = a.get(f"/api/my/courses/{cid}/feedback").json()
+    assert mine["published"] and mine["feedback"] == "근거가 탄탄해요!" and mine["classes"][0]["ratings"][0]["level"] == 3
+    # 다시 분석해도 이미 공개한 피드백(선생님이 고친 글)은 그대로
+    t.post(f"{base}/speech/student/{uid}/analyze")
+    assert t.get(f"{base}/speech/student/{uid}/analysis").json()["feedback"] == "근거가 탄탄해요!"
+    from app import file_retention
+    from datetime import date
+    assert file_retention.purge_expired_files(date(2100, 12, 20))["speech_logs"] >= 1
+    assert t.get(f"{base}/speech/student/{uid}/analysis").json()["classes"] == []

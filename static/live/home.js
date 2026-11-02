@@ -952,7 +952,8 @@ function openStudentCourse(c) {
       h("div", { class: "notice-body" }, n.body || "(내용 없음)")));
   noticeList();
   // 학습 활동: 게시판(연번·강의 주제·강의일·학습 자료) → 강의 주제를 누르면 그 수업의 자료·결과
-  const learn = h("div", { class: "sc-panel" }, approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 학습 활동을 볼 수 있어요."));
+  const myFeedback = h("div", { hidden: true }); // 선생님이 공개한 발언 피드백 (achievement.js)
+  const learn = h("div", { class: "sc-panel" }, myFeedback, approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 학습 활동을 볼 수 있어요."));
   // 수행평가(과제)
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
   const assess = h("div", { class: "sc-panel" }, noAssign);
@@ -975,6 +976,7 @@ function openStudentCourse(c) {
   show(studentCourseTab);
   if (approved) {
     loadCourseMaterials(c.id, materials);
+    if (window.renderMyFeedback) renderMyFeedback(c.id, myFeedback);
     Promise.resolve(loadMyAssignments(c.id)).then(() => { noAssign.hidden = !$("#student-assignments").hidden; });
     loadStudentSatisfaction(c.id, satisfaction);
   } else {
