@@ -48,11 +48,11 @@
   if (remove && user?.is_admin) {
     remove.hidden = false;
     remove.addEventListener("click", async () => {
-      if (!confirm("이 글을 삭제할까요?")) return;
+      if (!await appConfirm("이 글을 삭제할까요?")) return;
       try {
         await post(`/api/admin/community/${remove.dataset.id}/delete`, {});
         location.href = "/live/community";
-      } catch (e) { alert(e.message); }
+      } catch (e) { await appAlert(e.message); }
     });
   }
 })();

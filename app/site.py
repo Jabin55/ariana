@@ -37,7 +37,7 @@ def site_page(title: str, body: str, lead: str = "", hero: bool = True, main_cla
 <main class="{main_class}">
 {head}
 {body}
-</main>{scripts}
+</main><script src="/static/live/dialogs.js"></script>{scripts}
 <footer class="site-footer">
   <a href="/live/terms">이용약관</a> · <a href="/live/privacy"><strong>개인정보 처리방침</strong></a> · <a href="/live/notice">보호자 안내문</a>
 </footer>

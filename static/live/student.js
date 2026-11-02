@@ -553,8 +553,8 @@ async function setScreen(on) {
 }
 $("#screen").addEventListener("click", () => setScreen(!prefs.screen));
 
-$("#leave").addEventListener("click", () => {
-  if (!confirm("수업에서 나갈까요? 코드로 다시 들어올 수 있어요.")) return;
+$("#leave").addEventListener("click", async () => {
+  if (!await appConfirm("수업에서 나갈까요? 코드로 다시 들어올 수 있어요.")) return;
   ended = true;
   sock?.send({ t: "leave" }, true); // 출결에 '나가기 버튼'으로 남긴다
   sock?.stop();

@@ -284,10 +284,10 @@ function recMime() {
 
 async function startRecording() {
   if (!navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder) {
-    alert("이 브라우저에서는 녹화할 수 없어요. 컴퓨터의 크롬이나 엣지에서 해 주세요.");
+    await appAlert("이 브라우저에서는 녹화할 수 없어요. 컴퓨터의 크롬이나 엣지에서 해 주세요.");
     return;
   }
-  if (!confirm("수업을 녹화할까요?\n\n· 이 수업 화면과 소리(선생님 목소리, 학생 목소리)가 이 컴퓨터에 동영상 파일로 저장돼요. 서버에는 올라가지 않아요.\n"
+  if (!await appConfirm("수업을 녹화할까요?\n\n· 이 수업 화면과 소리(선생님 목소리, 학생 목소리)가 이 컴퓨터에 동영상 파일로 저장돼요. 서버에는 올라가지 않아요.\n"
     + "· 녹화하는 동안 학생 화면에 '🔴 녹화 중'이 표시돼요.\n· 녹화본에는 학생의 얼굴·목소리·이름이 담기니 수업 목적으로만 쓰고, 다른 곳에 올리거나 공유하지 말고, 보관 기간이 지나면 지워 주세요.\n\n"
     + "다음 화면에서 녹화할 화면으로 '이 탭'을 고르고 '탭 오디오 공유'를 켜 주세요.")) return;
   const date = new Date().toISOString().slice(0, 10);
@@ -911,7 +911,7 @@ function renderPresent() {
       h("button", { class: "small", title: "쪽 전체 보기", disabled: presenter.zoomZ() <= 1, onclick: () => { presenter.setZoom(1, 0.5, 0.5); if (presenter.tool.kind === "pan") presenter.tool = { kind: "pen", color: PEN_COLORS[0] }; } }, "맞춤"),
     ] : []),
     h("button", { class: "small", title: "되돌리기", onclick: () => presenter.undo() }, "↶"),
-    h("button", { class: "small", title: "이 쪽 판서 모두 지우기", onclick: () => { if (confirm("이 쪽에 그린 것을 모두 지울까요?")) presenter.clear(); } }, "🗑"),
+    h("button", { class: "small", title: "이 쪽 판서 모두 지우기", onclick: async () => { if (await appConfirm("이 쪽에 그린 것을 모두 지울까요?")) presenter.clear(); } }, "🗑"),
     h("span", { class: "grow" }),
     v.mode === "board" ? h("label", { class: "switch small-switch", title: "켜 두면 학생도 화이트보드에 펜으로 쓸 수 있어요 (학생은 자기가 쓴 것만 지울 수 있고, 선생님은 모두 지울 수 있어요)" },
       h("input", { type: "checkbox", checked: S.settings.board_draw !== false, onchange: (e) => sock.send({ t: "settings", board_draw: e.target.checked }) }),
@@ -949,7 +949,7 @@ function openFiles() {
     h("span", { class: "grow" }, `📄 ${f.name}`, h("span", { class: "muted", style: "font-size:0.8rem" }, f.pages ? ` · ${f.pages}쪽` : "")),
     h("span", { class: "acts" },
       h("button", { class: "primary", onclick: () => { close(); startSlides(f.id); } }, "발표하기"),
-      h("button", { class: "danger", onclick: () => { if (confirm(`'${f.name}'을 지울까요?`)) { sock.send({ t: "file_remove", file: f.id }); close(); } } }, "지우기"))));
+      h("button", { class: "danger", onclick: async () => { if (await appConfirm(`'${f.name}'을 지울까요?`)) { sock.send({ t: "file_remove", file: f.id }); close(); } } }, "지우기"))));
   const dlg = h("div", { class: "overlay", id: "files-dialog", onclick: (e) => { if (e.target === dlg) close(); } },
     h("div", { class: "card" },
       h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, "📄 발표 자료"), h("button", { class: "small", onclick: close }, "닫기")),
@@ -995,7 +995,7 @@ $("#file-input").addEventListener("change", async (e) => {
   e.target.value = "";
   if (!file) return;
   if (/\.pptx?$/i.test(file.name)) {
-    alert("PowerPoint 파일은 바로 띄울 수 없어요.\n\nPowerPoint에서 '파일 → 내보내기 → PDF/XPS 문서 만들기'(또는 '다른 이름으로 저장 → PDF')로 저장한 뒤 그 PDF를 올려 주세요."
+    await appAlert("PowerPoint 파일은 바로 띄울 수 없어요.\n\nPowerPoint에서 '파일 → 내보내기 → PDF/XPS 문서 만들기'(또는 '다른 이름으로 저장 → PDF')로 저장한 뒤 그 PDF를 올려 주세요."
       + (CFG?.drive_picker ? "\n\n또는 PowerPoint 파일을 구글 드라이브에 올려 두고 '📁 구글 드라이브에서 열기'로 고르면 바로 띄울 수 있어요." : "")
       + "\n\n애니메이션·동영상이 꼭 필요하면 '🖥️ 화면 공유'로 PowerPoint 창을 공유하세요.");
     return;
@@ -1179,8 +1179,8 @@ function renderPeople() {
     h("span", { class: "acts" },
       s.hand ? h("button", { title: "손 내리기", onclick: () => sock.send({ t: "lower_hand", target: s.id }) }, "✋↓") : null,
       ...deviceButtons(s),
-      h("button", { title: "내보내기", class: "danger", onclick: () => {
-        if (confirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });
+      h("button", { title: "내보내기", class: "danger", onclick: async () => {
+        if (await appConfirm(`${s.name} 학생을 수업에서 내보낼까요?`)) sock.send({ t: "kick", target: s.id });
       } }, "✕")))));
   if (!list.length) $("#people").append(h("p", { class: "muted", style: "margin:0" }, S.course_id ? "수강 확정된 학생이 없어요." : "아직 들어온 학생이 없어요."));
   renderEvents();
@@ -1264,7 +1264,7 @@ $("#kind-picker").addEventListener("click", (e) => {
   renderActForm();
 });
 
-$("#act-form").addEventListener("submit", (e) => {
+$("#act-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const prompt = $("#act-prompt").value.trim();
   if (!prompt) return;
@@ -1281,7 +1281,7 @@ $("#act-form").addEventListener("submit", (e) => {
     msg.correct = ci >= 0 ? ci : null;
     if (actKind === "poll") msg.multi = document.querySelector("input[name=poll-multi]:checked")?.value === "1";
   }
-  if (S.activity?.open && !confirm("진행 중인 활동을 끝내고 새 활동을 보낼까요?")) return;
+  if (S.activity?.open && !await appConfirm("진행 중인 활동을 끝내고 새 활동을 보낼까요?")) return;
   if (sock.send(msg)) {
     $("#act-prompt").value = "";
     renderActForm();
@@ -1480,13 +1480,13 @@ function groupPlan() {
   return { n: Math.min(6, Math.max(1, want)) };
 }
 
-$("#bo-setup").addEventListener("click", () => {
-  if (S.breakout && !confirm("모둠 활동 중이에요. 모둠 수를 바꾸면 없어지는 모둠의 학생은 미배정이 돼요. 계속할까요?")) return;
+$("#bo-setup").addEventListener("click", async () => {
+  if (S.breakout && !await appConfirm("모둠 활동 중이에요. 모둠 수를 바꾸면 없어지는 모둠의 학생은 미배정이 돼요. 계속할까요?")) return;
   sock.send({ t: "breakout_setup", ...groupPlan() });
 });
-$("#bo-plan").addEventListener("click", () => {
+$("#bo-plan").addEventListener("click", async () => {
   const assigned = S.students.some((s) => s.group);
-  if ((S.breakout || assigned) && !confirm("지금 배정을 지우고 무작위로 다시 나눌까요?" + (S.breakout ? " 학생들이 바로 이동해요." : ""))) return;
+  if ((S.breakout || assigned) && !await appConfirm("지금 배정을 지우고 무작위로 다시 나눌까요?" + (S.breakout ? " 학생들이 바로 이동해요." : ""))) return;
   sock.send({ t: "breakout_plan", ...groupPlan() });
 });
 $("#bo-start").addEventListener("click", () => {
@@ -1560,12 +1560,12 @@ $("#copy-link").addEventListener("click", async () => {
     await navigator.clipboard.writeText(studentLink);
     toast("참여 링크를 복사했어요. 학생들에게 보내 주세요.");
   } catch {
-    prompt("이 링크를 복사해 학생들에게 보내 주세요.", studentLink);
+    await appPrompt("이 링크를 복사해 학생들에게 보내 주세요.", studentLink);
   }
 });
 
-$("#end-class").addEventListener("click", () => {
-  if (!confirm("수업을 종료할까요? 모든 학생이 나가요.\n출결과 퀴즈 결과는 '출결 기록'에서 계속 볼 수 있어요.")) return;
+$("#end-class").addEventListener("click", async () => {
+  if (!await appConfirm("수업을 종료할까요? 모든 학생이 나가요.\n출결과 퀴즈 결과는 '출결 기록'에서 계속 볼 수 있어요.")) return;
   stopRecording(); // 녹화 중이면 저장하고 끝낸다
   sock.send({ t: "end_class" });
 });

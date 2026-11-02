@@ -86,7 +86,7 @@ async function showViewer() {
       h("span", { class: "grow" }),
       it.mode === "slides" ? h("a", { class: "button small", href: `/api/materials/file/${it.file}`, target: "_blank" }, "PDF 열기") : null,
       data.can_delete && it.mode === "slides" ? h("button", { class: "small danger", onclick: async () => {
-        if (!confirm(`'${it.name}' 자료를 지울까요? 학생들도 더 이상 볼 수 없어요. (그 위 판서도 함께 지워져요)`)) return;
+        if (!await appConfirm(`'${it.name}' 자료를 지울까요? 학생들도 더 이상 볼 수 없어요. (그 위 판서도 함께 지워져요)`)) return;
         try { await api(`/api/materials/file/${it.file}/delete`, {}); location.reload(); } catch (err) { toast(err.message); }
       } }, "지우기") : null].filter(Boolean));
   }

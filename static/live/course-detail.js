@@ -82,10 +82,10 @@
   box.addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-act]");
     if (!b) return;
-    if (b.dataset.act === "cancel" && !confirm("수강신청을 취소할까요?")) return;
+    if (b.dataset.act === "cancel" && !await appConfirm("수강신청을 취소할까요?")) return;
     b.disabled = true;
     try { await read(`/api/courses/${id}/enroll`, b.dataset.act === "cancel" ? "DELETE" : "POST"); await load(); }
-    catch (err) { alert(err.message); b.disabled = false; }
+    catch (err) { await appAlert(err.message); b.disabled = false; }
   });
   await load();
 })();

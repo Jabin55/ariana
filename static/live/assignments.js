@@ -131,7 +131,7 @@ function renderAssignmentPost(c, a, data, box, reload) {
       h("button", { class: "small", onclick: async () => { await api(`/api/assignments/${a.id}`, { closed: !a.closed }); reload(); } },
         a.closed ? "다시 받기" : "제출 마감"),
       h("button", { class: "small danger", onclick: async () => {
-        if (!confirm(`'${a.title}' 평가를 지울까요? 학생들이 낸 파일과 점수도 모두 지워져요.`)) return;
+        if (!await appConfirm(`'${a.title}' 평가를 지울까요? 학생들이 낸 파일과 점수도 모두 지워져요.`)) return;
         await api(`/api/assignments/${a.id}/delete`, {});
         back();
       } }, "지우기")),
@@ -366,7 +366,7 @@ function renderMyAssignmentPost(a, box) {
       h("a", { class: "grow", href: `/api/submission-files/${f.id}`, target: "_blank" }, `📎 ${f.name} (낸 파일)`),
       h("span", { class: "muted", style: "font-size:0.75rem" }, fmtSize(f.size)),
       a.can_submit ? h("button", { class: "small", onclick: async () => {
-        if (!confirm(`${f.name} 파일을 지울까요?`)) return;
+        if (!await appConfirm(`${f.name} 파일을 지울까요?`)) return;
         try { await api(`/api/submission-files/${f.id}/delete`, {}); loadMyAssignments(); } catch (err) { toast(err.message); }
       } }, "지우기") : null))) : null,
     a.can_submit

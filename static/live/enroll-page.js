@@ -60,12 +60,12 @@
     }
     const button = event.target.closest("button[data-action]");
     if (!button || !student) return;
-    if (button.dataset.action === "cancel" && !confirm("수강신청을 취소할까요?")) return;
+    if (button.dataset.action === "cancel" && !await appConfirm("수강신청을 취소할까요?")) return;
     button.disabled = true;
     try {
       await read(`/api/courses/${button.dataset.id}/enroll`, button.dataset.action === "cancel" ? "DELETE" : "POST");
       await load();
-    } catch (e) { alert(e.message); button.disabled = false; }
+    } catch (e) { await appAlert(e.message); button.disabled = false; }
   });
   await load();
 })();

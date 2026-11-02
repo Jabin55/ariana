@@ -151,7 +151,7 @@ async function courseForm(c, done) {
   const file = h("input", { type: "file", accept: ".pdf,.hwp,.hwpx,.docx,.doc" });
   file.addEventListener("change", () => { // 수업계획서는 5MB까지 (서버와 같게)
     const f = file.files[0];
-    if (f && f.size > 5 * 1024 * 1024) { alert(`수업계획서 파일이 너무 커요 (${(f.size / 1024 / 1024).toFixed(1)}MB). 5MB 이하로 올려 주세요.`); file.value = ""; }
+    if (f && f.size > 5 * 1024 * 1024) { file.value = ""; void appAlert(`수업계획서 파일이 너무 커요 (${(f.size / 1024 / 1024).toFixed(1)}MB). 5MB 이하로 올려 주세요.`); }
   });
 
   // 수업 시수: 학점 × 16시간 (예: 3학점 → 48시간)
@@ -247,13 +247,13 @@ async function courseForm(c, done) {
       } }, "+ 회차 추가"),
       sessions.length ? h("span", { class: "muted", style: "font-size:0.85rem" }, `모두 ${sessions.length}회차 · ${sessions[0].date.replaceAll("-", ".")} ~ ${sessions[sessions.length - 1].date.replaceAll("-", ".")}`) : null));
   };
-  const generate = () => {
+  const generate = async () => {
     const picked = days.filter((d) => d.checked).map((d) => Number(d.value));
     if (!start.value) { toast("수업 시작일을 먼저 정해 주세요."); start.focus(); return; }
     if (!picked.length) { toast("수업 요일을 하나 이상 골라 주세요."); return; }
     if (minutes(tEnd.value) <= minutes(tStart.value)) { toast("수업 끝나는 시각이 시작 시각보다 늦어야 해요."); return; }
     const n = Number(count.value) || 1;
-    if (sessions.length && !confirm(`지금 회차표(${sessions.length}회차)를 지우고 새로 만들까요?`)) return;
+    if (sessions.length && !await appConfirm(`지금 회차표(${sessions.length}회차)를 지우고 새로 만들까요?`)) return;
     const out = [];
     for (let d = start.value, guard = 0; out.length < n && guard < 800; d = addDays(d, 1), guard++) {
       if (picked.includes(dayOf(d))) out.push({ date: d, start: tStart.value, end: tEnd.value, topic: "" });

@@ -91,7 +91,7 @@ async function loadTeacherCourses() {
 }
 
 const copy = async (text, msg) => {
-  try { await navigator.clipboard.writeText(text); toast(msg); } catch { prompt("복사해서 보내 주세요.", text); }
+  try { await navigator.clipboard.writeText(text); toast(msg); } catch { await appPrompt("복사해서 보내 주세요.", text); }
 };
 
 /* ───────────────────────── 특강/회의 ───────────────────────── */
@@ -137,7 +137,7 @@ async function loadMeetings() {
       try { const r = await api(`/api/meetings/${m.id}/open`, {}); location.href = `/live/teacher/${r.code}`; } catch (err) { toast(err.message); }
     } }, m.live ? "들어가기" : "열기"),
     m.opened ? null : h("button", { class: "small danger", onclick: async () => {
-      if (!confirm(`'${m.title}' 예약을 취소할까요?`)) return;
+      if (!await appConfirm(`'${m.title}' 예약을 취소할까요?`)) return;
       await api(`/api/meetings/${m.id}/delete`, {});
       loadMeetings();
     } }, "취소"))));
@@ -254,9 +254,9 @@ function drawEnrollResult(box) {
     if (!picked.length) { toast("먼저 학생을 체크해 주세요."); return; }
     let note = "";
     if (status === "rejected") {
-      note = prompt(`${picked.length}명의 수강신청을 반려해요. 사유 (학생에게 보여요, 비워도 돼요)`, "");
+      note = await appPrompt(`${picked.length}명의 수강신청을 반려해요. 사유 (학생에게 보여요, 비워도 돼요)`, "");
       if (note === null) return;
-    } else if (!confirm(`${picked.length}명을 수강 확정할까요?`)) return;
+    } else if (!await appConfirm(`${picked.length}명을 수강 확정할까요?`)) return;
     let ok = 0;
     for (const x of picked) {
       try { await api(`/api/courses/${x.course_id}/enrollments/${x.user_id}`, { status, note }); ok++; } catch (err) { toast(err.message); }
@@ -357,8 +357,8 @@ function renderRunCourse(c) {
       !c.locked && !c.archived && c.approval === "approved" ? h("label", { class: "switch", style: "font-size:0.9rem" }, h("input", { type: "checkbox", checked: c.open,
         onchange: (e) => update({ open: e.target.checked }) }), "수강신청 받기") : null,
       c.lead && !c.locked && !editing.has(c.id) ? h("button", { class: "small", onclick: () => { editing.add(c.id); runSub = "info"; renderRun(); } }, "정보 수정") : null,
-      c.lead && !c.locked ? h("button", { class: "small", onclick: () => {
-        if (c.archived || confirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
+      c.lead && !c.locked ? h("button", { class: "small", onclick: async () => {
+        if (c.archived || await appConfirm("학기가 끝난 강좌를 보관할까요? 수강신청이 닫히고 새 수업을 열 수 없어요. 기록은 남아요.")) update({ archived: !c.archived });
       } }, c.archived ? "보관 해제" : "보관 (학기 끝)") : null),
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
@@ -407,8 +407,8 @@ async function renderCourseSatisfaction(c, box) {
       h("td", { class: "num" }, `${r.average}점`),
       scale.map(([n]) => h("td", { class: "num" }, `${r.counts[n - 1]}명`))));
     const action = async (verb) => {
-      if (verb === "close" && !confirm("조사를 마감할까요? 마감 후 결과를 확인할 수 있고, 나중에 다시 열 수 있습니다.")) return;
-      if (verb === "reopen" && !confirm("조사를 다시 열까요? 기존 응답과 문항은 유지되며, 이미 응답한 학생은 다시 제출할 수 없습니다.")) return;
+      if (verb === "close" && !await appConfirm("조사를 마감할까요? 마감 후 결과를 확인할 수 있고, 나중에 다시 열 수 있습니다.")) return;
+      if (verb === "reopen" && !await appConfirm("조사를 다시 열까요? 기존 응답과 문항은 유지되며, 이미 응답한 학생은 다시 제출할 수 없습니다.")) return;
       const body = verb === "open" ? { questions: inputs.map((input) => input.value.trim()),
         narrative_prompt: promptInput?.value.trim() || undefined } : {};
       try {
@@ -509,7 +509,7 @@ async function renderCourseNotices(c, box) {
         h("span", { class: "grow" }),
         h("button", { class: "small", onclick: () => go({ write: n.id }) }, "수정"),
         h("button", { class: "small danger", onclick: async () => {
-          if (!confirm(`'${n.title}' 공지를 지울까요?`)) return;
+          if (!await appConfirm(`'${n.title}' 공지를 지울까요?`)) return;
           await api(`/api/courses/${c.id}/notices/${n.id}/delete`, {});
           go(null);
         } }, "삭제")),
@@ -549,7 +549,7 @@ async function renderOpenClass(c, box) {
     return;
   }
   const start = async (title) => {
-    if (notYet && !confirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
+    if (notYet && !await appConfirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
     try {
       const res = await api("/api/live/classes", { title: title || c.title, course_id: c.id });
       location.href = `/live/teacher/${res.code}`;
@@ -834,10 +834,10 @@ function hubCourseApprove(ov) {
   const decide = async (c, action) => {
     let note = "";
     if (action === "reject") {
-      note = prompt(`'${c.title}' 강좌 개설을 반려하는 사유 (강사에게 보여요)`, "");
+      note = await appPrompt(`'${c.title}' 강좌 개설을 반려하는 사유 (강사에게 보여요)`, "");
       if (note === null) return;
       if (!note.trim()) { toast("반려 사유를 적어 주세요."); return; }
-    } else if (!confirm(`'${c.title}' 강좌 개설을 승인할까요? 승인하면 모집 기간에 학생들이 수강신청할 수 있어요.`)) return;
+    } else if (!await appConfirm(`'${c.title}' 강좌 개설을 승인할까요? 승인하면 모집 기간에 학생들이 수강신청할 수 있어요.`)) return;
     try {
       await api(`/api/hub/courses/${c.id}/approval`, { action, note });
       toast(action === "approve" ? "강좌 개설을 승인했어요." : "반려했어요. 강사가 고치면 다시 올라와요.");
@@ -918,10 +918,10 @@ function hubCourseApprove(ov) {
     if (!targets.length) return;
     let note = "";
     if (action === "reject") {
-      note = prompt(`선택한 ${targets.length}개 강좌에 적용할 반려 사유 (강사에게 보여요)`, "");
+      note = await appPrompt(`선택한 ${targets.length}개 강좌에 적용할 반려 사유 (강사에게 보여요)`, "");
       if (note === null) return;
       if (!note.trim()) { toast("반려 사유를 적어 주세요."); return; }
-    } else if (!confirm(`선택한 ${targets.length}개 강좌 개설을 승인할까요?`)) return;
+    } else if (!await appConfirm(`선택한 ${targets.length}개 강좌 개설을 승인할까요?`)) return;
     approveSelected.disabled = true;
     rejectSelected.disabled = true;
     let done = 0;
@@ -1149,11 +1149,11 @@ function renderSchoolWithdrawals(box) {
     let note = "";
     if (action === "approve") {
       const studying = picked.filter((x) => x.studying.length);
-      if (!confirm(`${picked.length}명의 탈퇴를 승인할까요?\n` +
+      if (!await appConfirm(`${picked.length}명의 탈퇴를 승인할까요?\n` +
         (studying.length ? `⚠️ 아직 수강 중인 학생: ${studying.map((x) => x.name).join(", ")}\n` : "") +
         "일반 수업 기록은 제거하고 출결·활동·점수 등 증빙 기록은 암호화해 별도 보관합니다.")) return;
     } else {
-      note = prompt(`${picked.length}명의 탈퇴 신청을 반려해요. 사유 (학생에게 보여요)`, "");
+      note = await appPrompt(`${picked.length}명의 탈퇴 신청을 반려해요. 사유 (학생에게 보여요)`, "");
       if (note === null) return;
     }
     let done = 0;
@@ -1210,8 +1210,8 @@ async function renderStudentSchoolChanges(box) {
           h("td", {}, r.new_value || "-"),
           h("td", {}, h("div", { class: "row school-change-actions" }, ["approve", "reject"].map((action) => h("button", {
             type: "button", class: action === "approve" ? "small primary" : "small", onclick: async () => {
-              if (action === "approve" && !confirm(`${r.name} 학생의 소속학교를 ${r.new_value}(으)로 변경할까요?`)) return;
-              const note = action === "reject" ? prompt("반려 사유를 입력하세요. 학생에게 표시됩니다.", "") : "";
+              if (action === "approve" && !await appConfirm(`${r.name} 학생의 소속학교를 ${r.new_value}(으)로 변경할까요?`)) return;
+              const note = action === "reject" ? await appPrompt("반려 사유를 입력하세요. 학생에게 표시됩니다.", "") : "";
               if (note === null) return;
               try {
                 await api(`/api/school/change-requests/${r.id}`, { action, note });

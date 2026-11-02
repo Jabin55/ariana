@@ -3432,3 +3432,12 @@ def test_course_detail_page_public_info():
     assert anon.get(f"/api/courses/{cid}/info").json()["course"]["syllabus"]["url"] == f"/api/courses/{cid}/syllabus"
     t.post(f"/api/courses/{cid}", json={"archived": True})
     assert anon.get(f"/api/courses/{cid}/info").status_code == 404
+
+
+def test_custom_dialog_loaded_on_site_and_classroom_pages():
+    client = TestClient(app)
+    for path in ("/live/courses", "/static/live/index.html", "/static/live/teacher.html",
+                 "/static/live/student.html", "/static/live/materials.html"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert '/static/live/dialogs.js' in response.text

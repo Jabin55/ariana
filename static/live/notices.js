@@ -102,8 +102,8 @@
         view.after(editor(me, cur, () => location.reload()));
       } }, "✏️ 수정"),
       el("button", { class: "danger", onclick: async () => {
-        if (!confirm("이 공지를 지울까요? 되살릴 수 없어요.")) return;
-        try { await post(`/api/admin/notices/${id}/delete`, {}); location.href = "/live/notices"; } catch (e) { alert(e.message); }
+        if (!await appConfirm("이 공지를 지울까요? 되살릴 수 없어요.")) return;
+        try { await post(`/api/admin/notices/${id}/delete`, {}); location.href = "/live/notices"; } catch (e) { await appAlert(e.message); }
       } }, "🗑 삭제"));
   }
   start();

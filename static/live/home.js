@@ -284,8 +284,8 @@ async function setSelfRole(role) {
   catch (err) { toast(err.message); $("#role-error").textContent = err.message; }
 }
 document.querySelectorAll("#role-view .start-choice").forEach((b) => b.addEventListener("click", () => setSelfRole(b.dataset.self)));
-$("#to-staff").addEventListener("click", () => {
-  if (confirm("강사·관리교사 등록 신청 화면으로 갈까요? 승인되기 전까지는 학생 기능을 쓸 수 없어요.")) setSelfRole("staff");
+$("#to-staff").addEventListener("click", async () => {
+  if (await appConfirm("강사·관리교사 등록 신청 화면으로 갈까요? 승인되기 전까지는 학생 기능을 쓸 수 없어요.")) setSelfRole("staff");
 });
 $("#to-student").addEventListener("click", () => setSelfRole("student"));
 
@@ -334,7 +334,7 @@ function photoPicker() {
   return h("div", { class: "row me-photo" }, avatar, input,
     h("button", { type: "button", class: "small", onclick: () => input.click() }, ME.photo ? "사진 바꾸기" : "사진 올리기"),
     ME.photo ? h("button", { type: "button", class: "small", onclick: async () => {
-      if (!confirm("프로필 사진을 지울까요?")) return;
+      if (!await appConfirm("프로필 사진을 지울까요?")) return;
       const r = await fetch("/api/me/photo", { method: "DELETE" });
       if (r.ok) after(await r.json());
     } }, "사진 지우기") : null);
@@ -573,7 +573,7 @@ $("#withdraw").addEventListener("submit", async (e) => {
     return;
   }
   const student = ME.role === "student";
-  if (!confirm(student ? "탈퇴를 신청할까요? 승인되면 로그인할 수 없고 수업 증빙 기록은 별도로 보관됩니다."
+  if (!await appConfirm(student ? "탈퇴를 신청할까요? 승인되면 로그인할 수 없고 수업 증빙 기록은 별도로 보관됩니다."
     : "정말 탈퇴할까요? 내 정보가 지워지고 되살릴 수 없어요.\n\n직접 연 과목·수업이 있으면 학생 기록을 지키기 위해 그 기록은 남고, 강의한 선생님으로 이름이 기록에 남아요.")) return;
   try {
     const r = await api("/api/me/withdraw", { confirm: "탈퇴", reason: $("#withdraw-reason").value.trim(), keep_name_ok: !student });
@@ -585,7 +585,7 @@ $("#withdraw").addEventListener("submit", async (e) => {
       return;
     }
     try { google.accounts.id.disableAutoSelect(); } catch { /* 구글 스크립트 없음 */ }
-    alert("탈퇴했어요. 그동안 이용해 주셔서 고마워요.");
+    await appAlert("탈퇴했어요. 그동안 이용해 주셔서 고마워요.");
     location.href = "/live/about";
   } catch (err) { $("#withdraw-error").textContent = err.message; }
 });
@@ -1153,7 +1153,7 @@ $("#join").addEventListener("submit", (e) => {
 async function renderMembers(c, box) {
   const { enrollments } = await api(`/api/courses/${c.id}/enrollments`);
   const decide = async (e, status) => {
-    if (status === "removed" && !confirm(`${e.name} 학생을 이 강좌에서 뺄까요?`)) return;
+    if (status === "removed" && !await appConfirm(`${e.name} 학생을 이 강좌에서 뺄까요?`)) return;
     try {
       await api(`/api/courses/${c.id}/enrollments/${e.user_id}`, { status });
       if (status === "approved") toast(`${e.name} 학생이 수강 확정됐어요.`);
@@ -1249,8 +1249,8 @@ function staffCard(x, today, reload) {
         h("button", { class: "primary", onclick: () => decide({ action: "approve", hub_name: hubName.value, valid_from: from.value, valid_until: until.value, note: note.value }) },
           x.status === "pending" ? "승인" : active ? "고치기" : "다시 승인"),
         x.status === "pending" ? h("button", { class: "danger", onclick: () => decide({ action: "reject", note: note.value }) }, "거절") : null,
-        active ? h("button", { class: "danger", onclick: () => {
-          if (confirm(`${x.name}의 권한을 해제할까요? 수업 기록은 남아요.`)) decide({ action: "revoke", note: note.value });
+        active ? h("button", { class: "danger", onclick: async () => {
+          if (await appConfirm(`${x.name}의 권한을 해제할까요? 수업 기록은 남아요.`)) decide({ action: "revoke", note: note.value });
         } }, "권한 해제") : null)));
 }
 
@@ -1258,7 +1258,7 @@ function staffCard(x, today, reload) {
 function profileChangeCard(x, reload) {
   const FIELD = { name: "이름", gender: "성별", school: "소속" };
   const go = async (action) => {
-    if (!confirm(`${x.name}님의 변경 신청을 ${action === "approve" ? "승인" : "거절"}할까요?`)) return;
+    if (!await appConfirm(`${x.name}님의 변경 신청을 ${action === "approve" ? "승인" : "거절"}할까요?`)) return;
     try {
       await api(`/api/admin/profile-changes/${x.user_id}`, { action, note: "" });
       toast(action === "approve" ? "변경을 승인했어요." : "변경을 거절했어요.");
@@ -1326,7 +1326,7 @@ function staffBoard(id, list, today, reload, title) {
       if (!picked.length) { toast("승인 대기인 신청을 먼저 체크해 주세요."); return; }
       // 강의교사는 끝나는 날이 꼭 있어야 한다 → 신청서의 희망 기간으로 승인 (다르게 정하려면 '관리'에서 한 명씩)
       const noEnd = action === "approve" ? picked.filter((x) => x.role === "instructor" && !x.wish_until) : [];
-      if (!confirm(`${picked.length}건을 ${action === "approve" ? "승인" : "거절"}할까요?` +
+      if (!await appConfirm(`${picked.length}건을 ${action === "approve" ? "승인" : "거절"}할까요?` +
         (action === "approve" ? "\n학교 변경 요청은 기존 활동 기간을 유지합니다." : ""))) return;
       let ok = 0;
       for (const x of picked) {
