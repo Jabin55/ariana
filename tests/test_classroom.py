@@ -3600,3 +3600,22 @@ def test_speech_transcript_saved_viewed_exported_and_purged():
     assert file_retention.purge_expired_files(date(y + 1, m, d))["speech_logs"] == 0
     assert file_retention.purge_expired_files(date(y + 1, m, min(d + 2, 28)) if d < 27 else date(y + 2, 1, 1))["speech_logs"] == 3
     assert t.get(f"/api/courses/{cid}/speech").json()["total"] == 0
+
+
+def test_meeting_speech_viewed_in_class_history():
+    """특강·회의의 발언 기록은 교무실 > 특강/회의 > 지난 기록에서 본다"""
+    t, s, other = teacher(), student(1), teacher("other@gmail.com")
+    code = create(t, title="진로 특강")["code"]
+    base = f"/api/live/classes/{code}"
+    with t.websocket_connect(f"/ws/live/{code}") as tw, s.websocket_connect(f"/ws/live/{code}") as sw:
+        state(tw, lambda m: sum(x["online"] for x in m["students"]) == 1)
+        t.post(f"{base}/transcript/state", json={"enabled": True})
+        state(sw, lambda m: m["transcript_on"])
+        s.post(f"{base}/speech", json={"text": "저는 데이터 과학자가 되고 싶어요", "final": True})
+        t.post(f"{base}/captions/text", json={"text": "멋진 꿈이네요", "final": True})
+    class_id = cr.classes[code].db_id
+    entries = t.get(f"/api/live/history/{class_id}/speech").json()["entries"]
+    assert [(e["role"], e["text"]) for e in entries] == [("student", "저는 데이터 과학자가 되고 싶어요"), ("teacher", "멋진 꿈이네요")]
+    assert t.get(f"/api/live/history/{class_id}/speech.xlsx").status_code == 200
+    assert other.get(f"/api/live/history/{class_id}/speech").status_code == 404
+    assert s.get(f"/api/live/history/{class_id}/speech").status_code == 403

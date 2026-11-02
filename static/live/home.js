@@ -1614,7 +1614,44 @@ async function loadDetail(id) {
       h("tbody", {}, rows, absent))),
     !rows.length && !absent.length ? h("p", { class: "muted" }, "접속한 학생이 없어요.") : null));
   await loadGrades(id);
-  loadClassQuestions(id);
+  await loadClassQuestions(id);
+  loadClassSpeech(id);
+}
+
+/* 💬 발언 기록: 이 수업(특강·회의 포함)에서 [📝 발언 기록]을 켠 동안의 스크립트와 학생별 워드클라우드 */
+async function loadClassSpeech(id) {
+  const box = h("section", { class: "card", style: "margin-top:12px" });
+  detailEl().append(box);
+  let entries;
+  try { ({ entries } = await api(`/api/live/history/${id}/speech`)); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
+  const people = new Map();
+  for (const e of entries) if (e.role === "student") {
+    const p = people.get(e.user_id) || { name: [e.student_no, e.name].filter(Boolean).join(" "), school: e.school, texts: [] };
+    p.texts.push(e.text);
+    people.set(e.user_id, p);
+  }
+  const cloud = h("div", { class: "word-cloud", hidden: true });
+  const picks = h("div", { class: "row", style: "flex-wrap:wrap;gap:6px" });
+  const pick = (uid) => {
+    for (const b of picks.children) b.classList.toggle("primary", Number(b.dataset.uid) === uid);
+    cloud.hidden = false;
+    drawWordCloud(cloud, uid === 0 ? entries.filter((e) => e.role === "student").map((e) => e.text) : people.get(uid).texts);
+  };
+  picks.append(h("button", { class: "small", type: "button", "data-uid": 0, onclick: () => pick(0) }, "학생 전체"),
+    ...[...people.entries()].map(([uid, p]) => h("button", { class: "small", type: "button", "data-uid": uid, onclick: () => pick(uid) }, `${p.name} (${p.texts.length})`)));
+  fill(box,
+    h("div", { class: "row" },
+      h("h2", { class: "grow", style: "margin:0" }, `💬 발언 기록 ${entries.length}건`),
+      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button" }, "📥 발언 기록 엑셀") : null),
+    entries.length ? null : h("p", { class: "muted" }, "이 수업에서 [📝 발언 기록]을 켜지 않았어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 사람의 말이 글자로 남아요."),
+    entries.length ? h("details", { open: true }, h("summary", {}, h("strong", {}, "🗒 전체 스크립트")),
+      h("div", { class: "speech-script" }, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },
+        h("span", { class: "sp-time" }, e.time.slice(0, 5)),
+        h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
+        h("span", { class: "sp-text" }, e.text))))) : null,
+    people.size ? h("details", { open: true }, h("summary", {}, h("strong", {}, "☁️ 워드클라우드")),
+      h("p", { class: "muted", style: "margin:6px 0" }, "학생을 고르면 그 학생이 많이 쓴 낱말을 크게 보여 줘요."), picks, cloud) : null);
+  if (people.size) pick(0);
 }
 
 /* 퀴즈·활동 채점: 수업이 끝난 뒤에도 답을 보고 점수·피드백을 줄 수 있다 */

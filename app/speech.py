@@ -32,13 +32,14 @@ async def _course(course_id: int, request: Request):
     return course
 
 
-def _entries(course_id: int, class_id: int | None = None, user_id: int | None = None) -> list[dict]:
+def _entries(course_id: int | None, class_id: int | None = None, user_id: int | None = None) -> list[dict]:
     sl, u, cl = db.speech_logs.c, db.users.c, db.classes.c
     with db.engine.connect() as c:
         adm = admin_user_ids(c)
         q = (select(db.speech_logs, db.users, cl.title.label("class_title"), cl.created_at.label("class_created"))
-             .join(db.users, u.id == sl.user_id).join(db.classes, cl.id == sl.class_id)
-             .where(cl.course_id == course_id))
+             .join(db.users, u.id == sl.user_id).join(db.classes, cl.id == sl.class_id))
+        if course_id is not None:
+            q = q.where(cl.course_id == course_id)
         if class_id is not None:
             q = q.where(sl.class_id == class_id)
         if user_id is not None:
@@ -100,12 +101,12 @@ async def speech_of_student(course_id: int, user_id: int, request: Request):
     return {"entries": [e for e in await db.run(_entries, course_id, None, user_id) if e["role"] == "student"]}
 
 
-def speech_workbook(course, rows: list[dict]) -> bytes:
+def speech_workbook(course, rows: list[dict], label: str = "강좌") -> bytes:
     book = Workbook()
     head_fill = PatternFill("solid", fgColor="E8F1EC")
     sheet = book.active
     sheet.title = "발언 기록"
-    sheet.append(["강좌", xlsx_text(course.title)])
+    sheet.append([label, xlsx_text(course.title)])
     sheet.append([])
     sheet.append(["연번", "수업일", "수업 주제", "시각", "구분", "소속학교", "학번", "이름", "발언"])
     for i, e in enumerate(rows, 1):
@@ -146,3 +147,25 @@ async def speech_export(course_id: int, request: Request):
     name = quote(f"{course.title} 발언 기록.xlsx")
     return Response(speech_workbook(course, rows), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={**PRIVATE, "Content-Disposition": f"attachment; filename=\"speech-{course_id}.xlsx\"; filename*=UTF-8''{name}"})
+
+
+# ── 수업 하나(특강·회의 포함)의 발언 기록: 교무실 > 특강/회의 > 지난 기록에서 본다
+async def _class(class_id: int, request: Request):
+    from app.history import _owned_class
+    t = await require_user(request, "teacher")
+    return await db.run(_owned_class, class_id, t)
+
+
+@router.get("/api/live/history/{class_id}/speech")
+async def class_speech(class_id: int, request: Request):
+    await _class(class_id, request)
+    return {"entries": await db.run(_entries, None, class_id)}
+
+
+@router.get("/api/live/history/{class_id}/speech.xlsx")
+async def class_speech_export(class_id: int, request: Request):
+    r = await _class(class_id, request)
+    rows = await db.run(_entries, None, class_id)
+    name = quote(f"{r.title or '수업'} 발언 기록.xlsx")
+    return Response(speech_workbook(r, rows, "수업"), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={**PRIVATE, "Content-Disposition": f"attachment; filename=\"speech-class-{class_id}.xlsx\"; filename*=UTF-8''{name}"})

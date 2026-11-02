@@ -48,6 +48,8 @@ _RULES = [
     ("GET", r"/api/courses/(?P<course>\d+)/speech\.xlsx", "다운로드", "발언 기록 엑셀"),
     ("GET", r"/api/live/history/(?P<class>\d+)", "조회", "수업 기록(출결·답안)"),
     ("GET", r"/api/live/history/(?P<class>\d+)/questions", "조회", "수업 질문"),
+    ("GET", r"/api/live/history/(?P<class>\d+)/speech", "조회", "수업 발언 스크립트"),
+    ("GET", r"/api/live/history/(?P<class>\d+)/speech\.xlsx", "다운로드", "수업 발언 기록 엑셀"),
     ("GET", r"/api/live/history/(?P<class>\d+)/grades", "조회", "성적"),
     ("GET", r"/api/live/history/(?P<class>\d+)/(?P<file>[\w-]+\.csv)", "다운로드", "수업 기록 파일"),
     ("POST", r"/api/live/history/(?P<class>\d+)/activities/\d+/(points|grade)", "수정", "채점"),
