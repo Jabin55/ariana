@@ -203,7 +203,8 @@ async function renderSessionStandards(c, box) {
           };
           return h("label", { class: "std-pick", title: s.text }, tick, s.code || `성취기준 ${i + 1}`);
         });
-        cell.append(...(picks.length ? picks : [h("span", { class: "muted" }, "-")]));
+        // 줄마다 같은 칸 너비의 격자에 놓아 위아래 체크 상자가 한 줄로 맞는다
+        cell.append(picks.length ? h("div", { class: "std-pick-grid" }, ...picks) : h("span", { class: "muted" }, "-"));
         return h("tr", {}, h("td", { class: "num" }, `${x.no}회`), h("td", { class: "num" }, `${fmtDate(x.date)} (${dow(x.date)})`),
           h("td", { class: "num" }, x.start ? `${x.start}~${x.end || ""}` : "-"), h("td", {}, x.topic || "-"), cell);
       })))));

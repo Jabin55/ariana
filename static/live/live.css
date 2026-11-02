@@ -1806,3 +1806,5 @@ table.att.std-links th:nth-child(5) { width: 48%; }
 table.att.std-links td:nth-child(4) { white-space: normal; word-break: keep-all; }
 table.att.std-links td:last-child { padding-left: 14px; }
 table.att.std-links th { text-align: center; }
+.std-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 4px 8px; }
+.std-pick-grid .std-pick { margin: 0; white-space: nowrap; }
