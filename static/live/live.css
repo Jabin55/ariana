@@ -1728,6 +1728,10 @@ table.att.meet-people td:last-child { min-width: 0; }
 .run-tile.archived .thumb { filter: grayscale(1) brightness(1.05); opacity: 0.85; }
 .run-tile.archived strong, .run-tile.archived .muted { color: #7b848b; }
 .run-tile.archived .status { filter: grayscale(1); }
-.run-tile .archived-tag { margin-top: 8px !important; padding: 2px 8px; border-radius: 999px; background: #dfe3e6; color: #59636b; font-size: 0.78rem; font-weight: 700; }
+.run-tile .ended-tag { margin-left: 6px; padding: 1px 8px; border-radius: 999px; border: 1px solid #e53935; color: #e53935; background: #fff;
+  font-size: 0.75rem; font-weight: 800; vertical-align: 2px; white-space: nowrap; }
 .run-tile.archived:hover { border-color: #9aa3aa; }
-.course-banner.archived { filter: grayscale(1); }
+.course-banner.archived { background: linear-gradient(120deg, #a7adb2, #6f777d); }
+.course-banner.archived .cb-area { color: #6f777d; }
+.cb-chip.ended { background: #e53935; }
+.course-banner.archived .cb-ico { filter: grayscale(1); }

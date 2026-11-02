@@ -480,8 +480,7 @@ function renderRun() {
   if (c) return renderRunCourse(c);
   const tile = (x) => h("button", { class: `run-tile${x.archived ? " archived" : ""}`, type: "button", onclick: () => { runCourseId = x.id; runSub = "info"; renderRun(); } },
     thumbOf(x),
-    x.archived ? h("span", { class: "archived-tag" }, "🗄 보관됨") : null,
-    h("strong", {}, x.title),
+    h("strong", {}, x.title, x.archived ? h("span", { class: "ended-tag" }, "종료") : null),
     h("span", { class: "muted" }, `${x.hub_school || ""} · 수강 확정 ${x.approved}명`),
     approvalBadge(x),
     x.pending ? h("span", { class: "status pending" }, `수강 승인 대기 ${x.pending}`) : null,
@@ -514,7 +513,7 @@ function courseBanner(c) {
     h("div", { class: "cb-side" },
       h("span", { class: "cb-ico", "aria-hidden": "true" }, icons[area] || "📚"),
       h("div", { class: "cb-chips" },
-        c.archived ? h("span", { class: "cb-chip" }, "보관됨") : state ? h("span", { class: "cb-chip" }, state) : null,
+        c.archived ? h("span", { class: "cb-chip ended" }, "종료") : state ? h("span", { class: "cb-chip" }, state) : null,
         h("span", { class: "cb-chip" }, `수강 확정 ${c.approved || 0}명`),
         c.pending ? h("span", { class: "cb-chip warn" }, `승인 대기 ${c.pending}`) : null)));
 }
@@ -1250,20 +1249,19 @@ function hubCourseApprove(ov) {
 /** 과목 운영과 같은 카드에서 수업일 또는 출석부를 연다. */
 function hubRecordCards(ov, kind) {
   const courses = ov.courses.filter((c) => c.approval === "approved");
-  const tile = (c) => h("button", { class: "run-tile", type: "button", onclick: () => {
+  const tile = (c) => h("button", { class: `run-tile${c.archived ? " archived" : ""}`, type: "button", onclick: () => {
     hubRecordCourseId = c.id;
     loadHub();
   } },
-    thumbOf(c), h("strong", {}, c.title),
+    thumbOf(c), h("strong", {}, c.title, c.archived ? h("span", { class: "ended-tag" }, "종료") : null),
     h("span", { class: "muted" }, `${c.hub_school || ""} · 강의교사 ${c.instructor || "-"}`),
     h("span", { class: "muted" }, kind === "days"
       ? "수업 기록 보기" : `수강 확정 ${c.approved || 0}명`));
   const active = courses.filter((c) => !c.archived);
   const archived = courses.filter((c) => c.archived);
   const grid = (list) => h("div", { class: "run-tiles" }, list.map(tile));
-  return [active.length ? grid(active) : h("p", { class: "muted" }, "아직 개설 승인한 강좌가 없어요."),
-    archived.length ? h("details", { class: "hub-archived" },
-      h("summary", {}, `보관한 강좌 ${archived.length}개`), grid(archived)) : null];
+  // 보관한 강좌도 접지 않고 뒤에 이어서 회색 카드로
+  return [active.length || archived.length ? grid([...active, ...archived]) : h("p", { class: "muted" }, "아직 개설 승인한 강좌가 없어요.")];
 }
 
 function hubRecordHeading(c, label) {
