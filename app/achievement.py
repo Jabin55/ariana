@@ -599,6 +599,33 @@ def _parse_vertical(rows: list) -> list[dict]:
     return [it for it in out if it["text"] or it["level_high"]]
 
 
+def _parse_elements(rows: list) -> dict:
+    """[평가 요소] 시트: 성취기준 코드 · 평가 요소 · 요소 상 · 중 · 하 (한 줄에 평가 요소 하나)"""
+    head_at, roles = None, {}
+    for i, r in enumerate(rows[:10]):
+        found = _column_roles(r)
+        if "el_name" in found:
+            head_at, roles = i, found
+            break
+    if head_at is None:
+        return {}
+    out: dict[str, list] = {}
+    last_code = ""
+    for r in rows[head_at + 1:]:
+        code = _cell(r, roles, "code")
+        if code:
+            m = _CODE.search(code)
+            last_code = (m.group(0) if m else f"[{code.strip('[] ')}]").replace(" ", "")
+        name = _cell(r, roles, "el_name")
+        if not (last_code and name):
+            continue
+        items = out.setdefault(last_code, [])
+        if len(items) < 8 and name not in [e["name"] for e in items]:
+            items.append({"name": name[:60], "high": _clean(_cell(r, roles, "el_high"))[:1000],
+                          "mid": _clean(_cell(r, roles, "el_mid"))[:1000], "low": _clean(_cell(r, roles, "el_low"))[:1000]})
+    return out
+
+
 def _parse_levels(rows: list) -> dict:
     """[과목 성취수준] 시트: 첫 칸이 A·B·C·D·E·P 인 줄의 설명 (첫 칸 '성취수준', 둘째 칸 '일반적 특성')"""
     levels = {}
@@ -617,18 +644,24 @@ def parse_standards_xlsx(data: bytes) -> tuple[list[dict], dict]:
         book = load_workbook(_io.BytesIO(data), read_only=True, data_only=True)
     except Exception:
         raise HTTPException(400, "엑셀 파일(.xlsx)을 읽지 못했어요. 엑셀에서 '다른 이름으로 저장 → Excel 통합 문서(.xlsx)'로 저장해 올려 주세요.") from None
-    standards, levels = [], {}
+    standards, levels, elements = [], {}, {}
     for sheet in book.worksheets:
         rows = [list(r) for r in sheet.iter_rows(values_only=True)]
-        if "성취수준" in sheet.title.replace(" ", ""):
+        title = sheet.title.replace(" ", "")
+        if "성취수준" in title:
             levels.update(_parse_levels(rows))
+        elif "요소" in title:
+            elements.update(_parse_elements(rows))
         elif not standards:
             # 국가 평가기준 표를 그대로 붙여넣은 모양(상·중·하가 세로로)이 먼저, 아니면 한 줄에 한 성취기준
             vertical = any(_clean(x) in _LEVEL_KEY for r in rows for x in r)
             standards = _parse_vertical(rows) if vertical else _parse_standards(rows)
-    if not standards and not levels:
+    if not standards and not levels and not elements:
         raise HTTPException(400, "엑셀에서 성취기준이나 과목 성취수준을 찾지 못했어요. [엑셀 양식 받기]로 받은 양식에 채워 주세요.")
-    return standards, levels
+    for it in standards:  # [평가 요소] 시트에 적은 요소를 그 성취기준에 붙인다
+        if it["code"] in elements and not it["elements"]:
+            it["elements"] = elements.pop(it["code"])
+    return standards, levels, elements
 
 
 @router.post("/api/courses/{course_id}/standards/import")
@@ -641,7 +674,7 @@ async def import_standards(course_id: int, request: Request):
         data.extend(chunk)
         if len(data) > 5 * 1024 * 1024:
             raise HTTPException(413, "파일이 너무 커요. (5MB까지)")
-    items, levels = await db.run(parse_standards_xlsx, bytes(data))
+    items, levels, extra_elements = await db.run(parse_standards_xlsx, bytes(data))
     scale = scale_of(course)
 
     def run():
@@ -666,6 +699,13 @@ async def import_standards(course_id: int, request: Request):
                     ids.append(sid)
                     n += 1
                     added += 1
+            # [평가 요소] 시트에만 있는 코드: 이미 들어 있는 성취기준에 평가 요소를 넣는다
+            for code, els in extra_elements.items():
+                if code in have:
+                    c.execute(update(db.course_standards).where(t.id == have[code])
+                              .values(elements=json.dumps(els, ensure_ascii=False)))
+                    ids.append(have[code])
+                    updated += 1
             got = {k: v for k, v in levels.items() if k in scale}
             if got:
                 c.execute(update(db.courses).where(db.courses.c.id == course_id).values(
@@ -695,6 +735,12 @@ async def standards_template(course_id: int, request: Request):
     sh.append([None, "하", "기본권 제한의 의미를 설명할 수 있다."])
     for col, w in zip("ABC", (50, 8, 90)):
         sh.column_dimensions[col].width = w
+    el = book.create_sheet("평가 요소")
+    el.append(["성취기준 코드", "평가 요소", "요소 상", "요소 중", "요소 하"])
+    el.append(["[12법사02-03]", "근거 제시", "타당하고 구체적인 근거를 든다", "근거를 들지만 일부만 타당하다", "근거 없이 주장한다"])
+    el.append(["[12법사02-03]", "반론 고려", "상대 주장을 이해하고 반박한다", "상대 주장을 언급한다", "상대 주장을 고려하지 않는다"])
+    for col, w in zip("ABCDE", (16, 18, 40, 40, 40)):
+        el.column_dimensions[col].width = w
     lv = book.create_sheet("과목 성취수준")
     lv.append(["성취수준", "일반적 특성"])
     have = course_levels(course)
@@ -702,7 +748,7 @@ async def standards_template(course_id: int, request: Request):
         lv.append([k, have.get(k, "")])
     lv.column_dimensions["A"].width = 12
     lv.column_dimensions["B"].width = 110
-    for s in (sh, lv):
+    for s in (sh, el, lv):
         for cell in s[1]:
             cell.font, cell.fill = Font(bold=True), fill
         for row in s.iter_rows(min_row=2):
@@ -712,7 +758,8 @@ async def standards_template(course_id: int, request: Request):
     for line in ("1. [성취기준] 시트: 교육과정 문서(PDF·한글)의 '교육과정 성취기준 | 평가기준' 표를 그대로 복사해 A1 칸에 붙여넣으면 돼요. (예시 줄은 지우세요)",
                  "   성취기준 하나에 상·중·하 세 줄이고, 성취기준 칸은 첫 줄에만 있어도 돼요. 단원 제목이나 표 머리 줄이 섞여 있어도 알아서 건너뛰어요.",
                  "   '평가준거 성취기준' 칸이 있는 표도 그대로 붙여넣어도 돼요. (성취기준 아래에 함께 저장돼요)",
-                 "2. 평가 요소는 올린 뒤 AI가 평가기준에서 뽑아 줘요. 나중에 [수정]에서 고칠 수 있어요.",
+                 "2. [평가 요소] 시트(선택): 한 줄에 평가 요소 하나씩, 성취기준 코드 · 평가 요소 이름 · 요소 상 · 중 · 하를 적어요.",
+                 "   비워 두면 올린 뒤 AI가 평가기준에서 뽑아 줘요. 나중에 [수정]에서 고칠 수 있어요.",
                  f"3. [과목 성취수준] 시트: 이 과목의 성취도({'·'.join(scale_of(course))})별 일반적 특성을 적어요.",
                  "4. 이미 있는 성취기준 코드를 다시 올리면 내용이 새것으로 바뀌어요."):
         note.append([line])

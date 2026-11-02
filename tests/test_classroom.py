@@ -3697,7 +3697,8 @@ def test_standards_import_from_excel():
     s = t.get(f"/api/courses/{cid}/standards").json()["standards"][0]
     assert s["code"] == "[12법사02-03]" and s["text"].startswith("기본권 제한의 요건과 한계를")
     assert s["level_mid"].startswith("기본권 제한의 요건을 이해하고") and s["level_low"] == "기본권 제한의 의미를 설명할 수 있다."
-    t.post(f"/api/courses/{cid}/standards", json={**s, "elements": [{"name": "근거 제시"}, {"name": "반론 고려"}]})
+    assert [e["name"] for e in s["elements"]] == ["근거 제시", "반론 고려"]  # [평가 요소] 시트
+    assert s["elements"][0]["mid"] == "근거를 들지만 일부만 타당하다"
     book = Workbook()
     sh = book.active
     sh.title = "성취기준"
@@ -3739,5 +3740,16 @@ def test_standards_import_from_excel():
     a5 = got["[12국경04-05]"]
     assert a5["text"] == "세계화로 인해 기업의 활동 범위가 넓어진다.\n[평가준거 성취기준] 기업의 활동 범위 확대를 탐구한다."
     assert (a5["level_mid"], a5["level_low"]) == ("다국적 기업의 등장 배경을 설명한다.", "다국적 기업 사례를 조사한다.")
+    # [평가 요소] 시트만 올려도 이미 있는 성취기준에 평가 요소가 들어간다
+    book = Workbook()
+    sh = book.active
+    sh.title = "평가 요소"
+    sh.append(["성취기준 코드", "평가 요소", "요소 상", "요소 중", "요소 하"])
+    sh.append(["[12국경01-01]", "개념 이해", "정확", "대체로", "부분"])
+    sh.append([None, "사례 적용", "다양", "하나", "없음"])
+    buf = io.BytesIO(); book.save(buf)
+    assert up(buf.getvalue()).json()["updated"] == 1
+    got = {x["code"]: x for x in t.get(f"/api/courses/{cid}/standards").json()["standards"]}
+    assert [e["name"] for e in got["[12국경01-01]"]["elements"]] == ["개념 이해", "사례 적용"]
     assert up(b"not excel").status_code == 400
     assert teacher("other@gmail.com").post(f"/api/courses/{cid}/standards/import", content=tpl.content).status_code == 404

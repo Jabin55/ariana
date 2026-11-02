@@ -26,7 +26,7 @@ async function renderStandards(c, box) {
       editing ? null : h("button", { class: "primary small", type: "button", onclick: () => { achEditing.set(c.id, "new"); again(); } }, "+ 성취기준 추가")),
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
       "교육과정 성취기준과 성취기준별 평가기준(상·중·하)을 넣고, 평가 요소를 정해 주세요. 학생 발언 AI 분석은 이 평가 요소를 기준으로 해요. "
-      + "교육과정 문서의 '교육과정 성취기준 | 평가기준' 표를 그대로 복사해 [엑셀 양식]의 A1 칸에 붙여넣고 올리면 한 번에 들어가요."),
+      + "교육과정 문서의 '교육과정 성취기준 | 평가기준' 표를 그대로 복사해 [엑셀 양식]의 A1 칸에 붙여넣고 올리면 한 번에 들어가요. 평가 요소는 양식의 [평가 요소] 시트에 적거나, 비워 두면 AI가 뽑아 줘요."),
     courseLevelsBox(c, d),
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
