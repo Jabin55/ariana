@@ -809,7 +809,7 @@ async function renderOpenClass(c, box) {
   const plain = () => {
     const name = h("input", { maxlength: 60, placeholder: "수업 주제 (예: 3차시 헌법과 기본권)" });
     return h("div", { class: "open-box" }, h("label", { class: "grow" }, "수업 주제", name),
-      h("button", { class: "primary big", onclick: () => start(name.value.trim()) }, "▶ 지금 온라인 수업 열기"));
+      h("button", { class: "primary big", onclick: () => start(name.value.trim()) }, "▶ 지금 열기"));
   };
   // 회차표: 늘 펼쳐 두고, 회차를 누르면 그 줄의 '주제' 칸이 입력 칸(원래 주제가 적힌 채)으로 바뀌고 옆에 [지금 열기]
   const table = () => h("table", { class: "sess-table view sess-open" },
