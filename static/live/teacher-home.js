@@ -601,6 +601,7 @@ const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '평�
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
+  if (st.card === "notice") st.card = "attend"; // 공지 카드는 없앴다
   let d;
   try { d = await api(`/api/courses/${c.id}/learning`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   d.classes.reverse(); // 첫 수업(연번 1)부터 차례로
@@ -608,7 +609,6 @@ async function renderLearning(c, box) {
   const pct = (v) => (v == null ? "-" : `${v}%`);
   const cards = [
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
-    ["notice", "📢 공지", `${S.notices}회`, `수업 중 ${S.class_notices} · 공지사항 ${S.course_notices}`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["activity", "✍️ 평가", `${S.activity.count}회`, `과제 제출률 ${pct(S.activity.rate)} · 채점 ${S.activity.graded}건`],
