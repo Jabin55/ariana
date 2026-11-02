@@ -392,6 +392,16 @@ async function drawCreateForm() {
 /* ───────────────────────── 수강생 관리: 수업신청자 조회 ───────────────────────── */
 
 const ENROLL_NAME = { pending: "승인 대기", approved: "수강 확정", rejected: "반려" };
+/** 전화번호를 010-0000-0000 모양으로 (숫자만 적었어도). 모양을 알 수 없으면 적힌 그대로 */
+function fmtPhone(v) {
+  const d = String(v || "").replace(/\D/g, "");
+  if (!d) return v || "";
+  if (/^01\d{9}$/.test(d)) return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+  if (/^01\d{8}$/.test(d)) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  if (/^02\d{7,8}$/.test(d)) return `02-${d.slice(2, d.length - 4)}-${d.slice(-4)}`;
+  if (/^0\d{9,10}$/.test(d)) return `${d.slice(0, 3)}-${d.slice(3, d.length - 4)}-${d.slice(-4)}`;
+  return v;
+}
 const kstDate = (ts) => (ts ? new Date(ts * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "");
 let enrollRows = null; // 내 강좌의 수강신청 전체
 const enrollPick = new Set(); // 체크한 신청 (강좌id:학생id)
@@ -474,7 +484,7 @@ function drawEnrollResult(box) {
   const csv = () => {
     const head = ["번호", "과목명", "거점학교", "소속학교", "학년", "반", "학생이름", "연락처", "신청일", "신청상태"];
     const lines = list.map((x, i) => [list.length - i, x.subject, x.hub_school, x.school,
-      x.grade ? `${x.grade}학년` : "", x.class_no ? `${x.class_no}반` : "", x.name, x.phone || "", kstDate(x.requested_at), ENROLL_NAME[x.status] || x.status]);
+      x.grade ? `${x.grade}학년` : "", x.class_no ? `${x.class_no}반` : "", x.name, fmtPhone(x.phone), kstDate(x.requested_at), ENROLL_NAME[x.status] || x.status]);
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const text = "﻿" + [head, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
     const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: `수강생_${today()}.csv` });
@@ -503,7 +513,7 @@ function drawEnrollResult(box) {
         h("td", { class: "num" }, list.length - i), h("td", {}, x.subject),
         h("td", {}, x.hub_school), h("td", {}, x.school || "-"),
         h("td", { class: "num" }, x.grade ? `${x.grade}학년` : "-"), h("td", { class: "num" }, x.class_no ? `${x.class_no}반` : "-"),
-        h("td", {}, x.name), h("td", { class: "contact-cell" }, x.phone || "-"), h("td", {}, kstDate(x.requested_at)),
+        h("td", {}, x.name), h("td", { class: "contact-cell" }, fmtPhone(x.phone) || "-"), h("td", {}, kstDate(x.requested_at)),
         h("td", {}, h("span", { class: `status ${x.status === "rejected" ? "rejected" : x.status}`, title: x.note ? `사유: ${x.note}` : "" },
           ENROLL_NAME[x.status] || x.status))))
         : h("tr", {}, h("td", { colspan: 11, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 수강신청이 없어요."))))));
