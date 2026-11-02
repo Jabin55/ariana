@@ -504,7 +504,7 @@ function drawEnrollResult(box) {
       h("button", { class: "small", onclick: () => decide("rejected") }, "반려"),
       h("span", { class: "grow" }),
       h("button", { class: "small", onclick: csv, disabled: !list.length }, "📥 엑셀 다운로드")),
-    h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table" },
+    h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table enroll-students" },
       h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "거점학교", "과목명", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, h("input", { type: "checkbox", checked: enrollPick.has(key(x)), onchange: (e) => {
