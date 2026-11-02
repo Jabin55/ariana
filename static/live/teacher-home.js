@@ -157,8 +157,9 @@ $("#meet-join").addEventListener("submit", async (e) => {
 
 /* 지난 특강/회의 하나: 위에 제목 띠(이름·일시·입장 코드), 아래 [참석자][자료][퀴즈][설문][발언 기록] */
 let meetDetailTab = "people";
+let meetSpeaker = null; // [발언기록]에서 열어 본 학생 id
 async function renderMeetDetail(m, box) {
-  const back = () => { meetView = null; loadMeetHistory(); };
+  const back = () => { meetView = null; meetSpeaker = null; loadMeetHistory(); };
   const time = (t) => (t || "").slice(0, 5);
   let r;
   try { r = await api(`/api/live/history/${m.id}`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
@@ -176,7 +177,7 @@ async function renderMeetDetail(m, box) {
         h("span", { class: "cb-chip" }, `입장 코드 ${c.code}`),
         h("span", { class: "cb-chip" }, `참석 ${r.students.length}명`),
         c.live ? h("span", { class: "cb-chip warn" }, "진행 중") : h("span", { class: "cb-chip" }, "종료"))));
-  const tabs = [["people", "🙋 참석자"], ["files", "📄 자료"], ["quiz", "✅ 퀴즈"], ["poll", "📊 설문"], ["speech", "💬 발언 기록"]];
+  const tabs = [["people", "🙋 참석자"], ["files", "📄 자료"], ["quiz", "✅ 퀴즈"], ["poll", "📊 설문"], ["script", "🗒 스크립트"], ["speech", "🧑‍🎓 발언기록"]];
   const nav = h("nav", { class: "tabs sub-tabs" });
   const pane = h("div", { class: "meet-pane" });
   const show = (k) => {
@@ -188,7 +189,8 @@ async function renderMeetDetail(m, box) {
     else if (k === "files") meetFiles(m.id, pane);
     else if (k === "quiz") { fill(pane); pane.dataset.only = "quiz"; renderGrades(m.id, pane); }
     else if (k === "poll") meetPolls(m.id, pane);
-    else { fill(pane); loadClassSpeech(m.id).then(() => loadClassQuestions(m.id)); }
+    else if (k === "script") meetScript(m.id, pane);
+    else meetSpeakers(m.id, pane);
     if (k !== "quiz") delete pane.dataset.only;
   };
   nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
@@ -196,6 +198,63 @@ async function renderMeetDetail(m, box) {
     h("div", { class: "row", style: "margin:4px 0 0" }, h("button", { class: "small", onclick: back }, "← 지난 기록 목록")),
     banner, nav, pane);
   show(meetDetailTab);
+}
+
+/* [스크립트]: 선생님·학생 발언을 시간 순서대로 + 수업 중 질문답변 */
+async function meetScript(id, box) {
+  const { entries } = await api(`/api/live/history/${id}/speech`);
+  fill(box,
+    h("div", { class: "row", style: "margin:8px 0" },
+      h("span", { class: "grow muted" }, `발언 ${entries.length}건`),
+      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button small" }, "📥 발언 기록 엑셀") : null),
+    entries.length ? h("div", { class: "speech-script" }, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },
+      h("span", { class: "sp-time" }, e.time.slice(0, 5)),
+      h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
+      h("span", { class: "sp-text" }, e.text))))
+      : h("p", { class: "muted" }, "이 특강·회의에서 [📝 발언 기록]을 켜지 않았어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 사람의 말이 글자로 남아요."));
+  await loadClassQuestions(id); // 질문답변은 스크립트 아래에 (detailTarget = box)
+}
+
+/* [발언기록]: 학생별 발언 수 표 → 이름을 누르면 워드클라우드와 발언 모음 */
+async function meetSpeakers(id, box) {
+  const { entries } = await api(`/api/live/history/${id}/speech`);
+  const people = new Map();
+  for (const e of entries) if (e.role === "student") {
+    const p = people.get(e.user_id) || { user_id: e.user_id, school: e.school, student_no: e.student_no, name: e.name, items: [], chars: 0 };
+    p.items.push(e);
+    p.chars += e.text.length;
+    people.set(e.user_id, p);
+  }
+  const list = [...people.values()].sort((a, b) => (a.school + a.student_no + a.name).localeCompare(b.school + b.student_no + b.name, "ko"));
+  const who = people.get(meetSpeaker);
+  if (who) {
+    const cloud = h("div", { class: "word-cloud" });
+    fill(box,
+      h("div", { class: "row", style: "margin:8px 0" }, h("button", { class: "small", onclick: () => { meetSpeaker = null; meetSpeakers(id, box); } }, "← 학생 목록")),
+      h("div", { class: "hub-grid-summary" }, `${[who.school, who.student_no, who.name].filter(Boolean).join(" ")} · 발언 ${who.items.length}건 · ${who.chars.toLocaleString()}자`),
+      h("h4", { class: "speech-h" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
+      h("h4", { class: "speech-h" }, "🗒 발언 모음"),
+      h("div", { class: "speech-day" }, ...who.items.map((e) => h("div", { class: "speech-line student" },
+        h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text)))));
+    drawWordCloud(cloud, who.items.map((e) => e.text));
+    return;
+  }
+  const allCloud = h("div", { class: "word-cloud" });
+  fill(box,
+    h("div", { class: "row", style: "margin:8px 0" },
+      h("span", { class: "grow muted" }, `발언한 학생 ${list.length}명`),
+      entries.length ? h("a", { href: `/api/live/history/${id}/speech.xlsx`, class: "button small" }, "📥 발언 기록 엑셀") : null),
+    list.length ? [
+      h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students" },
+        h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "첫 발언"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, list.map((x, i) => h("tr", { class: "assign-row", onclick: () => { meetSpeaker = x.user_id; meetSpeakers(id, box); } },
+          h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
+          h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
+          h("td", { class: "num" }, `${x.items.length}건`), h("td", { class: "num" }, `${x.chars.toLocaleString()}자`),
+          h("td", { class: "num" }, x.items[0].time.slice(0, 5))))))),
+      h("h4", { class: "speech-h" }, "☁️ 학생 전체 워드클라우드"), allCloud]
+      : h("p", { class: "muted" }, "학생 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 학생의 말이 글자로 남아요."));
+  if (list.length) drawWordCloud(allCloud, list.flatMap((x) => x.items.map((e) => e.text)));
 }
 
 /* [참석자]: 들어오고 나간 기록 (학교 → 학번 → 이름) */
