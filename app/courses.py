@@ -716,7 +716,7 @@ async def my_enrollments(request: Request):
                     "hub_school": co.hub_school,
                     "user_id": m["user_id"], "student_no": student_no(m), "name": m["name"] or m["google_name"],
                     "grade": m["grade"], "class_no": m["class_no"], "phone": m["phone"] or "",
-                    "email": m["contact_email"] or m["email"] or "",
+                    "email": m["email"] or "",  # 가입할 때 쓴 구글 계정 이메일
                     "school": m["school"], "status": m["status"], "note": m["note"],
                     "requested_at": m["requested_at"], "decided_at": m["decided_at"]})
     out.sort(key=lambda x: -(x["requested_at"] or 0))
