@@ -1858,3 +1858,7 @@ table.att.enroll-students th:nth-child(7) { width: 4%; }
 table.att.enroll-students th:nth-child(9) { width: 15%; }
 table.att.enroll-students th:nth-child(11), table.att.enroll-students th:nth-child(12) { width: 9%; }
 table.att.enroll-students td .status { white-space: nowrap; font-size: 0.75rem; padding: 2px 6px; }
+/* 성취기준 카드의 평가기준(상·중·하) 표: 상중하 칸은 좁게, 내용 칸은 넓게 */
+.std-levels table.info-table { table-layout: fixed; width: 100%; }
+.std-levels table.info-table th { width: 56px !important; text-align: center; }
+.std-levels table.info-table td { width: auto !important; line-height: 1.55; }
