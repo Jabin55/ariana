@@ -86,9 +86,9 @@ async function renderCourseAssignments(c, box) {
     title: "서명 완료된 확인서를 한꺼번에 받습니다.",
     onclick: () => { window.location.href = `/api/courses/${c.id}/score-confirmations/download.zip`; } }, "전체 받기");
   box.replaceChildren(
-    h("h3", { style: "margin:0 0 10px" }, "평가 활동"),
+    ...(list.length ? [h("div", { class: "hub-grid-summary", style: "margin:0 0 12px" }, `반영 비율 합계 ${fmtNum(total)}%`)] : []),
     h("div", { class: "row", style: "margin-bottom:8px" },
-      list.length ? h("div", { class: "hub-grid-summary grow", style: "margin:0" }, `반영 비율 합계 ${fmtNum(total)}%`) : h("span", { class: "grow" }),
+      h("h3", { class: "grow", style: "margin:0" }, "평가 활동"),
       h("button", { class: "primary", onclick: () => assignmentDialog(c, null, reload) }, "평가 올리기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
       h("thead", {}, h("tr", {}, ["연번", "평가명", "평가 내용", "반영 비율", "영역 만점", "마감일"].map((x) => h("th", {}, x)))),
