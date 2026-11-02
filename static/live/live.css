@@ -1760,3 +1760,5 @@ table.att.speech-students th:nth-child(3) { width: 12%; }
 table.att.speech-students th:nth-child(4) { width: 14%; }
 table.att.speech-students th:nth-child(5), table.att.speech-students th:nth-child(6), table.att.speech-students th:nth-child(7) { width: 14%; }
 table.att.speech-students td, table.att.speech-classes td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 학생 화면 맨 위: 발언 기록 중 표시 (예전 안내 띠와 같은 색) */
+.transcript-badge { padding: 3px 10px; border-radius: 999px; background: #fde8e7; color: #8a1c13; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }

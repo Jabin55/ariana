@@ -473,9 +473,7 @@ function renderBanners() {
     h("span", {}, "학생 화면을 보기만 해요. 참여자 목록·출결·채점에 나오지 않고, 채팅·답·손 들기는 보내지지 않아요.")));
   if (S.recording) box.append(h("div", { class: "banner rec" }, h("strong", {}, "🔴 녹화 중"),
     h("span", {}, "선생님이 수업을 녹화하고 있어요. 녹화본은 선생님 컴퓨터에 저장되고 수업 목적으로만 쓰여요.")));
-  if (S.transcript_on) box.append(h("div", { class: "banner rec" }, h("strong", {}, "📝 발언 기록 중"),
-    h("span", {}, SpeechRec ? "마이크를 켜고 한 말이 글자로 바뀌어 선생님께 보이고 학습 기록으로 저장돼요. (과목이 끝나고 1년 뒤 삭제)"
-      : "이 브라우저는 음성 인식을 지원하지 않아 내 발언은 기록되지 않아요. (크롬·엣지에서는 기록돼요)")));
+  $("#transcript-badge").hidden = !S.transcript_on; // 맨 위 수업 이름 옆에 짧게
   if (!S.livekit) box.append(h("div", { class: "banner warn" }, "화상 서버가 아직 설정되지 않아 영상 없이 진행돼요."));
   if (!S.teacher_online) box.append(h("div", { class: "banner warn" }, "선생님이 아직 들어오지 않았어요."));
   if (S.announce) box.append(h("div", { class: "banner" }, h("strong", {}, "📢 공지"), h("span", {}, S.announce.text)));
