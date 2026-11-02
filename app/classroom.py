@@ -575,6 +575,7 @@ def teacher_state(k: Klass) -> dict:
         "groups": k.groups, "breakout": k.breakout, "ends_at": k.ends_at, "breakout_at": k.breakout_at, "started_at": k.created,
         "present": present_view(k), "files": k.files, "recording": k.recording,
         "captions_on": k.captions_on, "captions_available": captions_ready(),
+        "captions_mode": "server" if captions_ready() else "browser",
         "media": k.media, "media_files": k.media_files,
         "activity": activity_for_teacher(k, k.activity),
         "questions": k.questions[-100:],
@@ -1052,8 +1053,7 @@ async def set_caption_state(code: str, req: CaptionStateReq, request: Request):
     if not await is_class_teacher(k, u):
         raise HTTPException(403, "이 수업의 강의교사만 자막을 관리할 수 있어요.")
     if req.enabled:
-        if not captions_ready():
-            raise HTTPException(503, "음성인식 서버가 아직 설정되지 않았어요.")
+        # 자막 서버가 없으면 선생님 브라우저의 음성 인식으로 만든 글자를 받는다 (/captions/text)
         if k.captions_on and k.caption_owner != u["id"]:
             raise HTTPException(409, "다른 강의교사가 자막을 사용 중이에요.")
         k.caption_owner = u["id"]
@@ -1066,6 +1066,26 @@ async def set_caption_state(code: str, req: CaptionStateReq, request: Request):
     k.caption_generation += 1
     push(k)
     return {"enabled": k.captions_on}
+
+
+class CaptionTextReq(BaseModel):
+    text: str = Field(default="", max_length=1000)
+    final: bool = False
+
+
+@router.post("/api/live/classes/{code}/captions/text")
+async def caption_text(code: str, req: CaptionTextReq, request: Request):
+    """브라우저 음성 인식 모드: 선생님 브라우저가 알아들은 글자를 그대로 자막으로 보낸다. 저장하지 않는다."""
+    u = await require_user(request)
+    k = await get_class(code)
+    if not await is_class_teacher(k, u) or not k.captions_on or k.caption_owner != u["id"]:
+        raise HTTPException(403, "자막을 켠 강의교사만 자막을 보낼 수 있어요.")
+    caption = clean(req.text, 300)
+    if caption:
+        for conn in list(k.conns):
+            if conn.role == "teacher" or (conn.sid in k.students and k.room_of(k.students[conn.sid]) == "main"):
+                send(conn, {"t": "caption", "text": caption, "final": req.final})
+    return {"text": caption}
 
 
 @router.post("/api/live/classes/{code}/captions/transcribe")

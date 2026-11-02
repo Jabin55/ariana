@@ -91,6 +91,7 @@ function onMessage(msg) {
 
 function finish(text) {
   stopCaptionCapture();
+  stopBrowserCaption();
   sock?.stop();
   disposeRoom(mainRoom);
   mainRoom = null;
@@ -185,7 +186,88 @@ function stopCaptionCapture() {
   captionCapture.track = null;
 }
 
+/* ───── 자막 ①: 브라우저 음성 인식 (자막 서버가 없을 때) ─────
+   선생님 브라우저(크롬·엣지)가 말을 글자로 바꾸고, 그 글자만 수업 학생들에게 보낸다. */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const browserCaption = { rec: null, want: false, lastSent: 0, pending: "", timer: null, fails: 0 };
+const browserCaptionMode = () => S?.captions_mode !== "server";
+
+function sendBrowserCaption(text, final) {
+  text = text.trim();
+  if (!text) return;
+  if (text.length > 120) text = "…" + text.slice(-120); // 긴 문장은 끝부분만
+  const go = () => {
+    browserCaption.lastSent = Date.now();
+    browserCaption.pending = "";
+    fetch(`/api/live/classes/${CODE}/captions/text`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, final }) }).catch(() => {});
+  };
+  clearTimeout(browserCaption.timer);
+  // 말하는 중(중간 결과)은 0.4초에 한 번만, 문장이 끝나면 바로
+  if (final || Date.now() - browserCaption.lastSent > 400) go();
+  else { browserCaption.pending = text; browserCaption.timer = setTimeout(go, 400); }
+}
+
+function stopBrowserCaption() {
+  browserCaption.want = false;
+  clearTimeout(browserCaption.timer);
+  const rec = browserCaption.rec;
+  browserCaption.rec = null;
+  if (rec) { rec.onend = null; try { rec.abort(); } catch { /* 이미 멈춤 */ } }
+}
+
+function startBrowserCaption() {
+  if (!SpeechRec) return;
+  browserCaption.want = true;
+  if (browserCaption.rec) return;
+  const rec = new SpeechRec();
+  rec.lang = "ko-KR";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = (e) => {
+    browserCaption.fails = 0;
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) sendBrowserCaption(r[0].transcript, true);
+      else interim += r[0].transcript;
+    }
+    if (interim) sendBrowserCaption(interim, false);
+  };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      toast("브라우저가 음성 인식을 막았어요. 주소창의 마이크 권한을 허용해 주세요.", 6000);
+      turnCaptionsOff();
+    } else if (e.error !== "no-speech" && e.error !== "aborted") browserCaption.fails += 1;
+  };
+  // 크롬은 일정 시간이 지나면 인식을 스스로 멈춘다 → 자막이 켜져 있는 동안 다시 시작
+  rec.onend = () => {
+    browserCaption.rec = null;
+    if (!browserCaption.want || !S?.captions_on) return;
+    if (browserCaption.fails > 5) { toast("음성 인식이 계속 끊겨요. 인터넷 연결을 확인하고 자막을 다시 켜 주세요.", 6000); turnCaptionsOff(); return; }
+    setTimeout(() => { if (browserCaption.want && S?.captions_on) startBrowserCaption(); }, 300);
+  };
+  browserCaption.rec = rec;
+  try { rec.start(); } catch { browserCaption.rec = null; }
+}
+
+async function turnCaptionsOff() {
+  stopBrowserCaption();
+  stopCaptionCapture();
+  try { await api(`/api/live/classes/${CODE}/captions/state`, { enabled: false }); } catch { /* 접속 복구 시 서버가 정리한다 */ }
+  if (S) S.captions_on = false;
+  showCaption("");
+  renderControls();
+}
+
 function syncCaptionCapture() {
+  if (browserCaptionMode()) {
+    stopCaptionCapture();
+    if (S?.captions_on && prefs.mic) startBrowserCaption();
+    else stopBrowserCaption();
+    return;
+  }
+  stopBrowserCaption();
   const source = prefs.mic && mainRoom?.state === "connected"
     ? mainRoom.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack : null;
   if (!S?.captions_on || !source?.enabled || source.readyState !== "live" || !window.MediaRecorder) {
@@ -240,15 +322,16 @@ async function sendCaptionAudio(blob) {
 }
 
 $("#caption-btn").addEventListener("click", async () => {
-  if (!S?.captions_on && (!prefs.mic || !mainRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track)) {
+  if (!S?.captions_on && (!prefs.mic || (!browserCaptionMode() && !mainRoom?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track))) {
     toast("교사 마이크를 먼저 켜 주세요."); return;
   }
   try {
     const enabled = !S.captions_on;
+    if (enabled && browserCaptionMode() && !SpeechRec) { toast("이 브라우저는 음성 자막을 지원하지 않아요. 크롬이나 엣지에서 켜 주세요.", 6000); return; }
     await api(`/api/live/classes/${CODE}/captions/state`, { enabled });
     S.captions_on = enabled;
-    if (!enabled) { stopCaptionCapture(); showCaption(""); }
-    else syncCaptionCapture();
+    if (!enabled) { stopCaptionCapture(); stopBrowserCaption(); showCaption(""); }
+    else { syncCaptionCapture(); if (browserCaptionMode()) toast("자막을 켰어요. 말하면 학생 화면 아래에 자막이 떠요.", 4000); }
     renderControls();
   } catch (err) { toast(err.message); }
 });
@@ -362,7 +445,7 @@ function renderControls() {
   for (const id of ["#mic", "#cam", "#screen"]) $(id).disabled = !ok;
   if (rec.micGain) rec.micGain.gain.value = prefs.mic ? 1 : 0; // 마이크를 끄면 녹화에도 목소리가 안 들어간다
   $("#rec-btn").hidden = CFG ? !CFG.recording_allowed : true;
-  $("#caption-btn").hidden = !S?.captions_available;
+  $("#caption-btn").hidden = !(S?.captions_available || (S && browserCaptionMode() && SpeechRec));
   $("#caption-btn").disabled = !ok;
   $("#caption-btn").textContent = S?.captions_on ? "💬 자막 끄기" : "💬 자막 켜기";
   $("#caption-btn").classList.toggle("on", !!S?.captions_on);
@@ -756,6 +839,7 @@ function noticeLateJoin() {
 
 function render() {
   syncCaptionCapture();
+  renderControls(); // 자막 버튼은 수업 상태(S)가 온 뒤에 보인다
   if (!S.captions_on) showCaption("");
   noticeLateJoin();
   document.title = `${S.title} · 선생님`;

@@ -146,11 +146,36 @@ def test_live_captions_require_secure_worker_and_bounded_audio(monkeypatch):
     t = teacher()
     code = create(t)["code"]
     path = f"/api/live/classes/{code}/captions"
-    assert t.post(f"{path}/state", json={"enabled": True}).status_code == 503
+    # 자막 서버가 없으면 브라우저 음성 인식 모드로 켜지고, 음성 조각은 받지 않는다
+    assert t.post(f"{path}/state", json={"enabled": True}).status_code == 200
+    assert t.post(f"{path}/transcribe", content=b"x" * 200, headers={"Content-Type": "audio/webm"}).status_code == 503
     monkeypatch.setenv("CAPTION_WORKER_URL", "https://caption.example.test")
     assert t.post(f"{path}/state", json={"enabled": True}).status_code == 200
     assert t.post(f"{path}/transcribe", content=b"x" * (cr.CAPTION_MAX_BYTES + 1),
                   headers={"Content-Type": "audio/webm"}).status_code == 413
+
+
+def test_browser_captions_relay_text_only(monkeypatch):
+    monkeypatch.delenv("CAPTION_WORKER_URL", raising=False)
+    monkeypatch.delenv("CAPTION_WORKER_TOKEN", raising=False)
+    t, s = teacher(), student(1)
+    code = create(t)["code"]
+    path = f"/api/live/classes/{code}/captions"
+    assert t.post(f"{path}/text", json={"text": "안녕"}).status_code == 403  # 켜기 전
+    with t.websocket_connect(f"/ws/live/{code}") as tw, s.websocket_connect(f"/ws/live/{code}") as sw:
+        first = state(tw)
+        assert first["captions_mode"] == "browser" and not first["captions_available"]
+        state(sw)
+        assert s.post(f"{path}/state", json={"enabled": True}).status_code == 403
+        assert t.post(f"{path}/state", json={"enabled": True}).json() == {"enabled": True}
+        assert state(sw, lambda m: m["captions_on"])["captions_on"]
+        assert s.post(f"{path}/text", json={"text": "학생 글"}).status_code == 403
+        assert t.post(f"{path}/text", json={"text": "오늘은 헌법을 배워요", "final": True}).json() == {"text": "오늘은 헌법을 배워요"}
+        msg = until(sw, lambda m: m["t"] == "caption")
+        assert msg["text"] == "오늘은 헌법을 배워요" and msg["final"]
+        assert not cr.classes[code].chat
+        assert t.post(f"{path}/state", json={"enabled": False}).json() == {"enabled": False}
+        assert t.post(f"{path}/text", json={"text": "끈 뒤"}).status_code == 403
 
 
 @pytest.mark.parametrize("dev_login", [None, "0", "1"])
@@ -1235,8 +1260,8 @@ def test_policy_pages(monkeypatch):
     monkeypatch.setenv("PRIVACY_CONTACT", "02-123-4567")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     p = c.get("/live/privacy").text
-    assert "교사 마이크 음성 조각은 별도 EU 서버" in p
-    assert "음성 조각과 자막은 저장하지 않습니다" in p
+    assert "별도 EU 자막 서버 또는 교사 브라우저" in p
+    assert "음성과 자막은 저장하지 않습니다" in p
     assert "가나고등학교&lt;script&gt;" in p and "<script>" not in p  # 설정 값은 그대로 출력하지 않는다
     assert "Hetzner" in p and "Anthropic, PBC" in p and "이전 국가" in p  # AI 조교 설정과 상관없이 미국 이전 항목은 늘 보인다
     assert "고객센터 +49 (0)9831 505-0" in p
