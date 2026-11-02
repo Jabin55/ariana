@@ -1723,3 +1723,11 @@ table.att.meet-board td:last-child { min-width: 0; }
 .pb-n { font-size: 0.85rem; font-weight: 700; text-align: right; }
 table.att.meet-people th, table.att.meet-people td { text-align: center; }
 table.att.meet-people td:last-child { min-width: 0; }
+/* 과목 운영: 보관한 강좌는 회색 카드 */
+.run-tile.archived { background: #f1f3f4; border-color: #d5d9dc; }
+.run-tile.archived .thumb { filter: grayscale(1) brightness(1.05); opacity: 0.85; }
+.run-tile.archived strong, .run-tile.archived .muted { color: #7b848b; }
+.run-tile.archived .status { filter: grayscale(1); }
+.run-tile .archived-tag { margin-top: 8px !important; padding: 2px 8px; border-radius: 999px; background: #dfe3e6; color: #59636b; font-size: 0.78rem; font-weight: 700; }
+.run-tile.archived:hover { border-color: #9aa3aa; }
+.course-banner.archived { filter: grayscale(1); }

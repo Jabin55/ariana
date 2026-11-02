@@ -478,8 +478,9 @@ function renderRun() {
   $("#run-list").hidden = !!c;
   $("#run-course").hidden = !c;
   if (c) return renderRunCourse(c);
-  const tile = (x) => h("button", { class: "run-tile", type: "button", onclick: () => { runCourseId = x.id; runSub = "info"; renderRun(); } },
+  const tile = (x) => h("button", { class: `run-tile${x.archived ? " archived" : ""}`, type: "button", onclick: () => { runCourseId = x.id; runSub = "info"; renderRun(); } },
     thumbOf(x),
+    x.archived ? h("span", { class: "archived-tag" }, "🗄 보관됨") : null,
     h("strong", {}, x.title),
     h("span", { class: "muted" }, `${x.hub_school || ""} · 수강 확정 ${x.approved}명`),
     approvalBadge(x),
@@ -488,9 +489,10 @@ function renderRun() {
   const active = teacherCourses.filter((x) => !x.archived);
   const archived = teacherCourses.filter((x) => x.archived);
   const grid = (items) => h("div", { class: "run-tiles" }, items.map(tile));
-  fill($("#run-list"), 
-    active.length ? grid(active) : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. '과목 개설'에서 먼저 강좌를 만들어 주세요."),
-    archived.length ? h("details", { style: "margin-top:16px" }, h("summary", { class: "muted" }, `보관한 강좌 ${archived.length}개`), grid(archived)) : null);
+  // 보관한 강좌도 따로 접지 않고 뒤에 이어서, 회색 카드로 보여 준다
+  fill($("#run-list"),
+    active.length || archived.length ? grid([...active, ...archived])
+      : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. '과목 개설'에서 먼저 강좌를 만들어 주세요."));
 }
 
 /* 과목 운영 안: 과목 카드 머리 그림을 가로로 길게 늘인 제목 띠 */
@@ -503,7 +505,7 @@ function courseBanner(c) {
   const period = c.start_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
   const facts = [c.hub_school, c.instructor ? `강의교사 ${c.instructor}` : "", term, period].filter(Boolean).join(" · ");
   const [state] = window.courseState ? window.courseState(c) : [""];
-  return h("div", { class: "course-banner", style: `--a:${a};--b:${b}` },
+  return h("div", { class: `course-banner${c.archived ? " archived" : ""}`, style: `--a:${a};--b:${b}` },
     h("span", { class: `cb-area${area.length > 3 ? " long" : ""}` }, area),
     h("div", { class: "cb-text" },
       h("div", { class: "cb-kicker" }, [c.subject_group, c.subject && c.subject !== c.title ? c.subject : "", c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")),
