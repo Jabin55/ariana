@@ -85,7 +85,7 @@ async function renderCourseAssignments(c, box) {
       a.closed ? "제출 마감" : a.past_due ? (a.allow_late ? "지각 받는 중" : "마감 지남") : "받는 중"))));
   const bulkButton = h("button", { class: "primary", type: "button", disabled: true,
     title: "서명 완료된 확인서를 한꺼번에 받습니다.",
-    onclick: () => { window.location.href = `/api/courses/${c.id}/score-confirmations/download.zip`; } }, "확인서 전체 다운");
+    onclick: () => { window.location.href = `/api/courses/${c.id}/score-confirmations/download.zip`; } }, "확인서 전체 받기");
   box.replaceChildren(
     ...(list.length ? [h("div", { class: "hub-grid-summary", style: "margin:0 0 12px" }, `반영 비율 합계 ${fmtNum(total)}%`)] : []),
     h("div", { class: "row", style: "margin-bottom:8px" },
