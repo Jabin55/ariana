@@ -1748,3 +1748,15 @@ table.att.assign-main th:nth-child(2), table.att.assign-main th:nth-child(3) { t
 .assign-state.open { background: #e3f3ea; color: #1b6b4a; }
 .assign-state.late { background: #fff1e0; color: #b4561f; }
 .assign-state.done { background: #fde8e8; color: #c62828; }
+/* 학습 관리 > 스크립트·학생별 발언 기록 표 너비 (가로 스크롤 없이) */
+table.att.speech-classes, table.att.speech-students { table-layout: fixed; width: 100%; }
+table.att.speech-classes th:nth-child(1) { width: 8%; }
+table.att.speech-classes th:nth-child(2) { width: 16%; }
+table.att.speech-classes th:nth-child(3) { width: 48%; }
+table.att.speech-classes th:nth-child(4), table.att.speech-classes th:nth-child(5) { width: 14%; }
+table.att.speech-students th:nth-child(1) { width: 8%; }
+table.att.speech-students th:nth-child(2) { width: 24%; }
+table.att.speech-students th:nth-child(3) { width: 12%; }
+table.att.speech-students th:nth-child(4) { width: 14%; }
+table.att.speech-students th:nth-child(5), table.att.speech-students th:nth-child(6), table.att.speech-students th:nth-child(7) { width: 14%; }
+table.att.speech-students td, table.att.speech-classes td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

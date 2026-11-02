@@ -786,7 +786,7 @@ async function renderLearning(c, box) {
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
-    ["speakers", "🧑‍🎓 학생 발언", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
+    ["speakers", "🧑‍🎓 학생별 발언 기록", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -809,7 +809,7 @@ async function learnSpeech(c, st, box) {
   try { d = await api(`/api/courses/${c.id}/speech`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   const again = () => learnSpeech(c, st, box);
   const head = h("div", { class: "row", style: "margin:4px 0 10px" },
-    h("h3", { class: "grow", style: "margin:0" }, st.speechTab === "class" ? "🗒 수업별 스크립트" : "🧑‍🎓 학생별 발언"),
+    h("h3", { class: "grow", style: "margin:0" }, st.speechTab === "class" ? "🗒 수업별 스크립트" : "🧑‍🎓 학생별 발언 기록"),
     d.total ? h("a", { class: "button small", href: `/api/courses/${c.id}/speech.xlsx` }, "📥 엑셀 내려받기") : null);
   if (!d.total) {
     fill(box, head, h("p", { class: "muted" }, "아직 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면, 마이크를 켠 학생과 선생님의 말이 글자로 바뀌어 여기에 쌓여요. (크롬·엣지 사용자만 기록돼요)"));
@@ -831,7 +831,7 @@ async function learnSpeech(c, st, box) {
         h("span", { class: "sp-text" }, e.text))));
       return;
     }
-    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board" },
+    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-classes" },
       h("thead", {}, h("tr", {}, ["연번", "수업일", "수업 주제", "발언 수", "발언한 학생"].map((t) => h("th", {}, t)))),
       h("tbody", {}, d.classes.length ? d.classes.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.id; again(); } },
         h("td", { class: "num" }, i + 1), h("td", { class: "num" }, fmtDate(x.date)),
@@ -861,7 +861,7 @@ async function learnSpeech(c, st, box) {
       ...g.items.map((e) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text))))));
     return;
   }
-  fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board" },
+  fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students" },
     h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "발언한 수업"].map((t) => h("th", {}, t)))),
     h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; again(); } },
       h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
