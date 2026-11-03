@@ -443,8 +443,17 @@ ANALYSIS_SYSTEM = (
     "- summary(교사용)는 수업이 이어지면서 성취가 어떻게 달라졌는지 4~6문장으로 씁니다. 과목 성취수준(일반적 특성)이 주어지면 "
     "지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되, 성취도를 확정하는 말은 하지 않습니다. 발언 수가 적으면 그 한계를 밝힙니다.\n"
     "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로, 잘한 점 1~2가지·보완할 점 1가지·다음 수업에서 해 볼 행동 1가지를 3~5문장으로 씁니다.\n"
+    "- competencies 는 2022 개정 교육과정 핵심역량 6가지(자기관리, 지식정보처리, 창의적 사고, 심미적 감성, 협력적 소통, 공동체)를 "
+    "발언과 관찰 기록 전체에서 드러난 만큼 1~5점으로 매기고(3=보통), reason 에 근거를 한 문장으로 씁니다. "
+    "근거가 거의 없는 역량은 3점으로 두고 reason 에 '근거 부족'이라고 씁니다.\n"
     "- 이름·학번 등 개인정보를 쓰지 않습니다. 발언에 없는 사실을 지어내지 않습니다."
 )
+
+
+# 2022 개정 교육과정 핵심역량 (화면 6각형 차트 순서)
+COMPETENCIES = [("self_management", "자기관리 역량"), ("knowledge_info", "지식정보처리 역량"),
+                ("creative_thinking", "창의적 사고 역량"), ("aesthetic", "심미적 감성 역량"),
+                ("communication", "협력적 소통 역량"), ("community", "공동체 역량")]
 
 
 def analysis_schema(keys: list[str], n_classes: int) -> dict:
@@ -465,8 +474,13 @@ def analysis_schema(keys: list[str], n_classes: int) -> dict:
                 "required": ["class_no", "ratings"], "additionalProperties": False}},
             "summary": {"type": "string"},
             "feedback": {"type": "string"},
+            "competencies": {"type": "object", "properties": {
+                k: {"type": "object", "properties": {"score": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
+                                                     "reason": {"type": "string"}},
+                    "required": ["score", "reason"], "additionalProperties": False} for k, _ in COMPETENCIES},
+                "required": [k for k, _ in COMPETENCIES], "additionalProperties": False},
         },
-        "required": ["classes", "summary", "feedback"], "additionalProperties": False,
+        "required": ["classes", "summary", "feedback", "competencies"], "additionalProperties": False,
     }
 
 
@@ -529,7 +543,12 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
                                                             result=json.dumps(ratings, ensure_ascii=False), created_at=now))
             f = db.speech_feedback.c
             row = c.execute(select(db.speech_feedback).where(f.course_id == course_id, f.user_id == user_id)).first()
-            values = {"summary": str(data.get("summary", ""))[:4000], "analyzed_at": now, "updated_at": now}
+            comp = data.get("competencies") or {}
+            comp = {k: {"score": int(v.get("score", 3)) if str(v.get("score", "")).isdigit() and 1 <= int(v.get("score")) <= 5 else 3,
+                        "reason": str(v.get("reason", ""))[:300]}
+                    for k, v in comp.items() if k in dict(COMPETENCIES) and isinstance(v, dict)}
+            values = {"summary": str(data.get("summary", ""))[:4000], "analyzed_at": now, "updated_at": now,
+                      "competencies": json.dumps(comp, ensure_ascii=False) if comp else ""}
             if row:
                 # 이미 학생에게 공개한 피드백은 선생님이 고친 글일 수 있어 그대로 두고, 공개 전이면 새 초안으로 바꾼다
                 if not row.published:
@@ -554,7 +573,13 @@ def analysis_view(course_id: int, user_id: int) -> dict:
     classes = [{"class_id": r.class_id, "title": r.title or "",
                 "date": datetime.fromtimestamp(r.class_created, KST).strftime("%Y-%m-%d"),
                 "ratings": json.loads(r.result)} for r in rows]
+    try:
+        comp = json.loads(fb.competencies) if fb and fb.competencies else {}
+    except ValueError:
+        comp = {}
+    competencies = [{"key": k, "label": label, **comp[k]} for k, label in COMPETENCIES if k in comp]
     return {"classes": classes, "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
+            "competencies": competencies,
             "published": bool(fb and fb.published), "analyzed_at": fb.analyzed_at if fb else None, "ai": ai_ready()}
 
 

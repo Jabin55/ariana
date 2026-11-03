@@ -1874,3 +1874,9 @@ table.att.satisfaction-table thead tr:first-child th:first-child { width: 100px;
 table.att.satisfaction-table tbody th { white-space: nowrap; }
 .open-title { margin: 6px 0 8px; font-size: 1.02rem; }
 .open-std { margin-top: 4px; }
+/* 학생별 발언 기록: 핵심역량 6각형(왼쪽) + 성취 변화(오른쪽) */
+.ach-two { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 10px; align-items: stretch; }
+.ach-two > .ach-box { margin-bottom: 10px; }
+.ach-radar { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
+.ach-reasons { margin-top: 4px; font-size: 0.85rem; }
+@media (max-width: 860px) { .ach-two { grid-template-columns: 1fr; } }

@@ -271,7 +271,9 @@ function achChart(classes) {
     svg.append(el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "#e3e6e8", "stroke-dasharray": v === 2 ? "4 4" : "" }));
     svg.append(el("text", { x: L - 10, y: Y(v) + 4, "text-anchor": "end", "font-size": 13, fill: "#59636b", "font-weight": 700 }, ACH_LEVEL[v]));
   }
-  classes.forEach((x, i) => svg.append(el("text", { x: X(i), y: H - 14, "text-anchor": "middle", "font-size": 11, fill: "#59636b" },
+  // 양 끝 날짜는 안쪽으로 붙여 잘리지 않게
+  const anchorAt = (i) => (n > 1 && i === 0 ? "start" : n > 1 && i === n - 1 ? "end" : "middle");
+  classes.forEach((x, i) => svg.append(el("text", { x: X(i) + (anchorAt(i) === "start" ? -6 : anchorAt(i) === "end" ? 6 : 0), y: H - 14, "text-anchor": anchorAt(i), "font-size": 11, fill: "#59636b" },
     `${i + 1}회 ${x.date.slice(5).replace("-", ".")}`)));
   series.forEach((s, si) => {
     const off = (si - (series.length - 1) / 2) * 3; // 같은 점이 겹치지 않게 살짝 비킨다
@@ -288,6 +290,36 @@ function achChart(classes) {
   });
   const legend = h("div", { class: "ach-legend" }, series.map((s) => h("span", {}, h("i", { style: `background:${s.color}` }), s.key)));
   return h("div", { class: "ach-chart-wrap" }, svg, legend);
+}
+
+/* ───────── 핵심역량 6각형(레이더) 차트: 1~5점 ───────── */
+function achRadar(comps) {
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
+  const W = 460, H = 330, cx = W / 2, cy = H / 2 + 4, R = 108; // 양옆 글자가 잘리지 않게 가로 여백을 넉넉히
+  const n = comps.length;
+  const pt = (i, r) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / n; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+  const poly = (r) => comps.map((_, i) => pt(i, r).join(",")).join(" ");
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "ach-radar", role: "img", "aria-label": "핵심역량 밸런스 차트" });
+  for (let lv = 1; lv <= 5; lv++) svg.append(el("polygon", { points: poly((R * lv) / 5), fill: lv === 5 ? "#f6faf8" : "none", stroke: "#dfe6e3", "stroke-width": 1 }));
+  comps.forEach((_, i) => { const [x, y] = pt(i, R); svg.append(el("line", { x1: cx, y1: cy, x2: x, y2: y, stroke: "#dfe6e3" })); });
+  const shape = comps.map((c, i) => pt(i, (R * c.score) / 5).join(",")).join(" ");
+  svg.append(el("polygon", { points: shape, fill: "rgba(27,107,74,0.22)", stroke: "#1b6b4a", "stroke-width": 2.5, "stroke-linejoin": "round" }));
+  comps.forEach((c, i) => {
+    const [x, y] = pt(i, (R * c.score) / 5);
+    const dot = el("circle", { cx: x, cy: y, r: 4.5, fill: "#1b6b4a", stroke: "#fff", "stroke-width": 1.5 });
+    dot.append(el("title", {}, `${c.label} ${c.score}점 · ${c.reason || ""}`));
+    svg.append(dot);
+    const [lx, ly] = pt(i, R + 26);
+    const anchor = Math.abs(lx - cx) < 8 ? "middle" : lx > cx ? "start" : "end";
+    const t = el("text", { x: lx, y: ly + 4, "text-anchor": anchor, "font-size": 12.5, "font-weight": 700, fill: "#33403b" }, c.label.replace(" 역량", ""));
+    const s = el("tspan", { fill: "#1b6b4a", "font-weight": 800 }, ` ${c.score}`);
+    t.append(s);
+    svg.append(t);
+  });
+  const reasons = h("details", { class: "ach-reasons" }, h("summary", { class: "muted" }, "역량별 근거 보기"),
+    comps.map((c) => h("div", { class: "ach-rate" }, h("strong", {}, `${c.label} ${c.score}점`), h("span", { class: "muted" }, ` · ${c.reason || "-"}`))));
+  return h("div", {}, svg, reasons);
 }
 
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
@@ -329,7 +361,12 @@ async function renderAnalysis(courseId, who, box) {
         : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),
     v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언과 관찰 기록을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
     v.analyzed_at ? [
-      h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (수업별 평가 요소 수준)"), achChart(v.classes)),
+      // 왼쪽: 2022 개정 교육과정 핵심역량 6각형 · 오른쪽: 수업별 성취 변화(상·중·하)
+      h("div", { class: "ach-two" },
+        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스"),
+          v.competencies?.length ? achRadar(v.competencies)
+            : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요.")),
+        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (상·중·하)"), achChart(v.classes))),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
       h("details", { class: "ach-box" }, h("summary", { class: "ach-box-head" }, "🔎 수업별 판단 근거"),

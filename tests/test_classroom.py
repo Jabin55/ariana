@@ -3638,7 +3638,9 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
         key = schema["properties"]["classes"]["items"]["properties"]["ratings"]["items"]["properties"]["key"]["enum"][0]
         return {"classes": [{"class_no": 1, "ratings": [{"key": key, "level": 3, "evidence": "오판 가능성"},
                                                         {"key": "없는|요소", "level": 2, "evidence": "x"}]}],
-                "summary": "근거 제시가 뛰어납니다.", "feedback": "근거를 잘 들었어요."}
+                "summary": "근거 제시가 뛰어납니다.", "feedback": "근거를 잘 들었어요.",
+                "competencies": {**{k: {"score": 3, "reason": "근거 부족"} for k, _ in ach.COMPETENCIES},
+                                 "knowledge_info": {"score": 5, "reason": "근거를 정확히 듦"}, "community": {"score": 9, "reason": "x"}}}
     monkeypatch.setattr(ach, "ai_json", fake_ai)
     t, other = teacher(), teacher("other@gmail.com")
     from datetime import datetime
@@ -3667,6 +3669,10 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
     assert view["classes"][0]["ratings"] == [{"standard_id": sid, "code": "[12법사02-03]", "element": "근거 제시", "level": 3, "evidence": "오판 가능성"}]
     assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
+    comps = {c["key"]: c for c in view["competencies"]}
+    assert [c["label"] for c in view["competencies"]][:2] == ["자기관리 역량", "지식정보처리 역량"] and len(comps) == 6
+    assert comps["knowledge_info"]["score"] == 5 and comps["community"]["score"] == 3  # 범위 밖 점수는 3점으로
+    assert "competencies" in calls[-1][1]["properties"]
     prompt = calls[-1][0]
     assert "오판 가능성이 있어 폐지해야" in prompt and "S1|근거 제시" in prompt and "연결된 성취기준: S1" in prompt
     assert a.get(f"/api/my/courses/{cid}/feedback").json() == {"published": False}
