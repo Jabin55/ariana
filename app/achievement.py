@@ -28,8 +28,8 @@ from app.auth import require_user
 router = APIRouter()
 log = logging.getLogger(__name__)
 KST = ZoneInfo("Asia/Seoul")
-# 분석은 판단의 질이 중요해서 AI 조교보다 한 단계 좋은 모델을 쓴다. 바꾸려면 ANALYSIS_MODEL 설정
-ANALYSIS_MODEL = os.environ.get("ANALYSIS_MODEL", "claude-sonnet-5-5")
+# 비용을 아끼려고 AI 조교와 같은 가장 가벼운(저렴한) Haiku 를 쓴다. 바꾸려면 ANALYSIS_MODEL 설정
+ANALYSIS_MODEL = os.environ.get("ANALYSIS_MODEL", "claude-haiku-5-5")
 LEVELS = {3: "상", 2: "중", 1: "하"}
 _client = None
 
