@@ -106,16 +106,18 @@ function standardCard(c, s, i, again) {
     h("details", { class: "std-levels" }, h("summary", { class: "muted" }, "평가기준 (상·중·하) 보기"),
       h("table", { class: "info-table" }, h("tbody", {},
         [["상", s.level_high], ["중", s.level_mid], ["하", s.level_low]].map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { style: "white-space:pre-wrap" }, v || "-")))))),
-    s.elements.length ? h("div", { class: "table-wrap" }, h("table", { class: "att std-elements" },
-      h("colgroup", {}, Array.from({ length: 6 }, () => h("col"))),
-      h("thead", {},
-        h("tr", {}, ["범주", "평가 요소", "평가 자료"].map((t) => h("th", { rowspan: 2 }, t)),
-          h("th", { colspan: 3 }, "척도별 수행 수준")),
-        h("tr", {}, ["상", "중", "하"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, s.elements.map((e) => h("tr", {},
-        h("td", {}, h("span", { class: "std-element-category" }, e.category || "미분류")),
-        h("td", {}, h("strong", {}, e.name)), h("td", {}, e.evidence || "-"),
-        h("td", {}, e.high), h("td", {}, e.mid), h("td", {}, e.low))))))
+    s.elements.length ? h("details", { class: "std-levels" },
+      h("summary", { class: "muted" }, `평가 요소 · 척도별 수행 수준 보기 (${s.elements.length}개)`),
+      h("div", { class: "table-wrap" }, h("table", { class: "att std-elements" },
+        h("colgroup", {}, Array.from({ length: 6 }, () => h("col"))),
+        h("thead", {},
+          h("tr", {}, ["범주", "평가 요소", "평가 자료"].map((t) => h("th", { rowspan: 2 }, t)),
+            h("th", { colspan: 3 }, "척도별 수행 수준")),
+          h("tr", {}, ["상", "중", "하"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, s.elements.map((e) => h("tr", {},
+          h("td", {}, h("span", { class: "std-element-category" }, e.category || "미분류")),
+          h("td", {}, h("strong", {}, e.name)), h("td", {}, e.evidence || "-"),
+          h("td", {}, e.high), h("td", {}, e.mid), h("td", {}, e.low)))))))
       : h("p", { class: "error", style: "margin:6px 0 0" }, "평가 요소가 없어요. [수정]에서 평가 요소를 넣어야 AI 분석에 쓰여요."));
 }
 
