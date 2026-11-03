@@ -35,12 +35,14 @@
         ["평가방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-"],
       ];
       const status = { approved: "수강 확정", pending: "승인 대기", rejected: "신청 반려" }[c.status] || "";
+      const buttons = action(c);
       return `<article class="course-tile with-thumb clickable" data-href="/live/courses/${c.id}" title="눌러서 강좌 정보·수업계획서 보기">${window.courseThumb ? window.courseThumb(c) : ""}<div class="ct-body">
         <div class="ct-top">${grades.map((g) => `<span class="tag soft">${esc(g)}</span>`).join("")}</div>
         <h3>${esc(c.title)}</h3>
         <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-        ${status ? `<p class="status ${esc(c.status)}">${status}${c.note ? ` · ${esc(c.note)}` : ""}</p>` : ""}
-        <div class="row" style="margin-top:10px">${action(c)}</div>
+        ${status || buttons ? `<div class="row course-enroll-actions">
+          ${status ? `<span class="status ${esc(c.status)}" title="${esc(status + (c.note ? ` · ${c.note}` : ""))}">${status}${c.note ? ` · ${esc(c.note)}` : ""}</span>` : ""}
+          ${buttons}</div>` : ""}
       </div></article>`;
     }).join("") : '<p class="muted">조건에 맞는 강좌가 없어요.</p>';
   }
