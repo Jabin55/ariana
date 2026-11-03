@@ -570,12 +570,12 @@ function courseBanner(c) {
   const area = c.subject_area || "교양";
   const term = [c.school_year ? `${c.school_year}학년도` : "", c.term || ""].filter(Boolean).join(" ");
   const period = c.start_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
-  const facts = [c.hub_school, c.instructor ? `강의교사 ${c.instructor}` : "", term, period].filter(Boolean).join(" · ");
+  const facts = [c.hub_school, period].filter(Boolean).join(" · ");
   const [state] = window.courseState ? window.courseState(c) : [""];
   return h("div", { class: `course-banner${c.archived ? " archived" : ""}`, style: `--a:${a};--b:${b}` },
     h("span", { class: `cb-area${area.length > 3 ? " long" : ""}` }, area),
     h("div", { class: "cb-text" },
-      h("div", { class: "cb-kicker" }, [c.subject_group, c.subject && c.subject !== c.title ? c.subject : "", c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")),
+      h("div", { class: "cb-kicker" }, term),
       h("h2", { class: "cb-title" }, c.title),
       h("div", { class: "cb-facts" }, facts)),
     h("div", { class: "cb-side" },
