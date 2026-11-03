@@ -3634,7 +3634,9 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     async def fake_ai(system, prompt, schema, max_tokens=8000):
         calls.append((prompt, schema))
         if "elements" in schema["properties"]:
-            return {"elements": [{"name": "근거 제시", "high": "타당한 근거", "mid": "근거 일부", "low": "근거 없음"}]}
+            assert "발언만으로 판단할 요소로 제한하지 마세요" in system
+            return {"elements": [{"name": "근거 제시", "category": "과정·기능", "evidence": "토론·보고서",
+                                  "high": "타당한 근거", "mid": "근거 일부", "low": "근거 없음"}]}
         key = schema["properties"]["classes"]["items"]["properties"]["ratings"]["items"]["properties"]["key"]["enum"][0]
         return {"classes": [{"class_no": 1, "ratings": [{"key": key, "level": 3, "evidence": "오판 가능성"},
                                                         {"key": "없는|요소", "level": 2, "evidence": "x"}]}],
@@ -3653,12 +3655,14 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     base = f"/api/courses/{cid}"
     assert other.get(f"{base}/standards").status_code == 404
     draft = t.post(f"{base}/standards/draft-elements", json={"code": "[12법사02-03]", "text": "기본권 제한", "level_high": "상", "level_mid": "중", "level_low": "하"}).json()
-    assert draft["elements"][0]["name"] == "근거 제시"
+    assert draft["elements"][0]["name"] == "근거 제시" and draft["elements"][0]["category"] == "과정·기능"
     sid = t.post(f"{base}/standards", json={"code": "[12법사02-03]", "text": "기본권 제한의 요건", "level_high": "상", "level_mid": "중",
                                             "level_low": "하", "elements": draft["elements"]}).json()["id"]
     assert t.post(f"{base}/sessions/1/standards", json={"standard_ids": [sid, 999]}).json()["ok"]
     got = t.get(f"{base}/standards").json()
-    assert got["sessions"][0]["standard_ids"] == [sid] and got["standards"][0]["elements"][0]["name"] == "근거 제시"
+    assert got["sessions"][0]["standard_ids"] == [sid] and got["standards"][0]["elements"][0]["evidence"] == "토론·보고서"
+    assert t.post(f"{base}/standards", json={"id": sid, "text": "기본권 제한의 요건", "elements": [
+        {"name": "근거 제시", "category": "인지적 요소"}]}).status_code == 422
     code = create(t, title="사형제 토론", course_id=cid)["code"]
     with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
         state(tw, lambda m: sum(x["online"] for x in m["students"]) == 1)
@@ -3675,6 +3679,7 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert "competencies" in calls[-1][1]["properties"]
     prompt = calls[-1][0]
     assert "오판 가능성이 있어 폐지해야" in prompt and "S1|근거 제시" in prompt and "연결된 성취기준: S1" in prompt
+    assert "범주: 과정·기능 / 확인 자료: 토론·보고서" in prompt
     assert a.get(f"/api/my/courses/{cid}/feedback").json() == {"published": False}
     assert other.post(f"{base}/speech/student/{uid}/feedback", json={"feedback": "x", "published": True}).status_code == 404
     t.post(f"{base}/speech/student/{uid}/feedback", json={"feedback": "근거가 탄탄해요!", "published": True})
@@ -3699,6 +3704,7 @@ def test_standards_import_from_excel():
     assert tpl.status_code == 200
     wb = load_workbook(io.BytesIO(tpl.content))
     assert [c.value for c in wb["성취기준"][1]] == ["교육과정 성취기준", "수준", "평가기준"]
+    assert [c.value for c in wb["평가 요소"][1]] == ["성취기준 코드", "범주", "평가 요소", "확인 자료", "요소 상", "요소 중", "요소 하"]
     assert [r[0].value for r in wb["과목 성취수준"].iter_rows(min_row=2)] == ["A", "B", "C"]  # 3단계 과목
     up = lambda content: t.post(f"/api/courses/{cid}/standards/import", content=content,
                                 headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
@@ -3709,6 +3715,7 @@ def test_standards_import_from_excel():
     assert s["level_mid"].startswith("기본권 제한의 요건을 이해하고") and s["level_low"] == "기본권 제한의 의미를 설명할 수 있다."
     assert [e["name"] for e in s["elements"]] == ["근거 제시", "반론 고려"]  # [평가 요소] 시트
     assert s["elements"][0]["mid"] == "근거를 들지만 일부만 타당하다"
+    assert s["elements"][0]["category"] == "과정·기능" and s["elements"][0]["evidence"] == "발표·토론·보고서"
     book = Workbook()
     sh = book.active
     sh.title = "성취기준"
@@ -3761,6 +3768,7 @@ def test_standards_import_from_excel():
     assert up(buf.getvalue()).json()["updated"] == 1
     got = {x["code"]: x for x in t.get(f"/api/courses/{cid}/standards").json()["standards"]}
     assert [e["name"] for e in got["[12국경01-01]"]["elements"]] == ["개념 이해", "사례 적용"]
+    assert got["[12국경01-01]"]["elements"][0]["category"] == ""  # 예전 5열 양식도 계속 읽는다
     assert up(b"not excel").status_code == 400
     assert teacher("other@gmail.com").post(f"/api/courses/{cid}/standards/import", content=tpl.content).status_code == 404
 

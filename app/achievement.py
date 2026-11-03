@@ -15,6 +15,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
@@ -115,8 +116,13 @@ def standards_of(course_id: int) -> tuple[list[dict], dict[int, list[int]]]:
 
 # ───────── 성취기준·평가 요소 ─────────
 
+ELEMENT_CATEGORIES = ("지식·이해", "과정·기능", "가치·태도")
+
+
 class Element(BaseModel):
     name: str = Field(max_length=60)
+    category: Literal["", "지식·이해", "과정·기능", "가치·태도"] = ""  # 기존 요소는 미분류로 유지
+    evidence: str = Field(default="", max_length=300)  # 교사가 확인할 수업 기록·결과물
     high: str = Field(default="", max_length=1000)
     mid: str = Field(default="", max_length=1000)
     low: str = Field(default="", max_length=1000)
@@ -282,16 +288,20 @@ async def link_session(course_id: int, no: int, req: SessionLinkReq, request: Re
 
 ELEMENT_SYSTEM = (
     "당신은 한국 고등학교 교육과정 평가 전문가입니다. 교사가 준 성취기준과 그 성취기준의 평가기준(상·중·하)을 읽고, "
-    "수업 중 학생의 '말(발언)'로 관찰할 수 있는 평가 요소를 2~4개 뽑습니다. 각 요소는 짧은 이름(15자 이내)과 "
-    "상·중·하 수준에서 그 요소가 어떻게 드러나는지 한 문장씩으로 씁니다. 평가기준 문장에 근거하고, 없는 내용을 지어내지 마세요."
+    "학생이 실제로 보여 줄 수 있는 구체적인 평가 요소를 1~4개 제안합니다. 학생 발언만으로 판단할 요소로 제한하지 마세요. "
+    "각 요소에는 지식·이해, 과정·기능, 가치·태도 중 해당 범주 하나와 확인할 자료(퀴즈 답안, 보고서, 발표, 토론, 교사 관찰 등)를 적습니다. "
+    "모든 범주를 억지로 채우지 말고, 성취기준·평가기준에 근거가 없는 가치·태도나 일반적인 성실성은 추가하지 마세요. "
+    "요소 이름은 관찰 가능한 수행을 나타내는 짧은 말(15자 이내)로, 상·중·하에서 그 수행이 어떻게 드러나는지 한 문장씩 씁니다. "
+    "평가기준에 없는 내용을 지어내지 마세요. 교사가 검토할 초안입니다."
 )
 ELEMENT_SCHEMA = {
     "type": "object",
     "properties": {"elements": {"type": "array", "items": {
         "type": "object",
-        "properties": {"name": {"type": "string"}, "high": {"type": "string"}, "mid": {"type": "string"},
+        "properties": {"name": {"type": "string"}, "category": {"type": "string", "enum": list(ELEMENT_CATEGORIES)},
+                       "evidence": {"type": "string"}, "high": {"type": "string"}, "mid": {"type": "string"},
                        "low": {"type": "string"}},
-        "required": ["name", "high", "mid", "low"], "additionalProperties": False}}},
+        "required": ["name", "category", "evidence", "high", "mid", "low"], "additionalProperties": False}}},
     "required": ["elements"], "additionalProperties": False,
 }
 
@@ -315,8 +325,11 @@ async def draft_elements(course_id: int, req: DraftReq, request: Request):
     prompt = (f"과목: {course.subject or course.title}\n성취기준 {req.code}: {req.text}\n\n"
               f"[평가기준 상]\n{req.level_high}\n\n[평가기준 중]\n{req.level_mid}\n\n[평가기준 하]\n{req.level_low}")
     data = await ai_json(ELEMENT_SYSTEM, prompt, ELEMENT_SCHEMA, 4000)
-    return {"elements": [{k: str(e.get(k, ""))[:1000] for k in ("name", "high", "mid", "low")}
-                         for e in data.get("elements", [])][:6]}
+    return {"elements": [{"name": str(e.get("name", ""))[:60],
+                          "category": e.get("category") if e.get("category") in ELEMENT_CATEGORIES else "",
+                          "evidence": str(e.get("evidence") or "")[:300],
+                          **{k: str(e.get(k, ""))[:1000] for k in ("high", "mid", "low")}}
+                         for e in data.get("elements", []) if isinstance(e, dict)][:4]}
 
 
 # ───────── 수업 중 교사 관찰 기록 ─────────
@@ -471,6 +484,8 @@ ANALYSIS_SYSTEM = (
     "교사 관찰 기록, 퀴즈 문항과 그 학생의 답을 성취기준의 평가 요소와 상·중·하 기준에 비추어 판단합니다.\n"
     "규칙:\n- 수업마다 연결된 평가 요소 가운데 발언·관찰·퀴즈 답안에 직접 근거가 있는 것만 판단합니다. 근거가 없으면 판단하지 않습니다.\n"
     "- 퀴즈의 정오 여부 한 번만으로 학생의 전체 성취수준이나 발표·협력 역량을 단정하지 않습니다. 정답이 없는 문항은 답안 내용만 봅니다.\n"
+    "- 가치·태도는 학생의 말이 적거나 정답을 틀렸다는 이유로 추정하지 않습니다. 해당 성취기준과 관련된 행동의 관찰 근거가 있을 때만 판단합니다. "
+    "제안된 확인 자료가 입력에 없으면 그 자료를 본 것처럼 쓰지 않습니다.\n"
     "- level 은 상=3, 중=2, 하=1 입니다. evidence 에는 판단 근거를 짧게 인용하고 출처를 '(발언)', '(관찰)', '(퀴즈)'로 표시합니다.\n"
     "- summary(교사용)는 수업이 이어지면서 성취가 어떻게 달라졌는지 4~6문장으로 씁니다. 과목 성취수준(일반적 특성)이 주어지면 "
     "지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되, 성취도를 확정하는 말은 하지 않습니다. 근거가 적으면 그 한계를 밝힙니다.\n"
@@ -538,7 +553,10 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
             k = f"S{i}|{e['name']}"
             keys.append(k)
             key_of[k] = (s["id"], s["code"], e["name"])
-            std_lines.append(f"  - 요소 '{k}': 상) {e['high']} / 중) {e['mid']} / 하) {e['low']}")
+            category = e.get("category") or "미분류"
+            evidence = e.get("evidence") or "미지정"
+            std_lines.append(f"  - 요소 '{k}' / 범주: {category} / 확인 자료: {evidence}: "
+                             f"상) {e['high']} / 중) {e['mid']} / 하) {e['low']}")
     sno = {s["id"]: i for i, s in enumerate(usable, 1)}
     cls_lines = []
     for n, x in enumerate(classes, 1):
@@ -680,7 +698,11 @@ def _column_roles(header: list) -> dict:
         h = _norm(raw)
         if not h:
             continue
-        if "요소" in h:
+        if h in ("범주", "요소범주", "평가요소범주", "분류"):
+            roles.setdefault("el_category", i)
+        elif h in ("확인자료", "평가자료", "근거자료", "요소확인자료"):
+            roles.setdefault("el_evidence", i)
+        elif "요소" in h:
             for key, word in (("el_high", "상"), ("el_mid", "중"), ("el_low", "하")):
                 if h.endswith(word):
                     roles.setdefault(key, i)
@@ -699,6 +721,15 @@ def _column_roles(header: list) -> dict:
 def _cell(r, roles, key) -> str:
     i = roles.get(key)
     return str(r[i]).strip() if i is not None and i < len(r) and r[i] is not None else ""
+
+
+def _element_category(raw: str) -> str:
+    if not raw.strip():
+        return ""  # 기존 엑셀 양식의 평가 요소는 분류를 요구하지 않는다
+    category = next((x for x in ELEMENT_CATEGORIES if _norm(x) == _norm(raw)), None)
+    if category is None:
+        raise HTTPException(400, f"평가 요소 범주 '{raw}'를 확인해 주세요. 지식·이해, 과정·기능, 가치·태도 중에서 골라 주세요.")
+    return category
 
 
 def _parse_standards(rows: list) -> list[dict]:
@@ -732,7 +763,8 @@ def _parse_standards(rows: list) -> list[dict]:
             continue
         name = _cell(r, roles, "el_name")
         if name and len(last["elements"]) < 8 and name not in [e["name"] for e in last["elements"]]:
-            last["elements"].append({"name": name[:60], "high": _cell(r, roles, "el_high")[:1000],
+            last["elements"].append({"name": name[:60], "category": _element_category(_cell(r, roles, "el_category")),
+                                     "evidence": _cell(r, roles, "el_evidence")[:300], "high": _cell(r, roles, "el_high")[:1000],
                                      "mid": _cell(r, roles, "el_mid")[:1000], "low": _cell(r, roles, "el_low")[:1000]})
     return list(out.values())
 
@@ -803,7 +835,7 @@ def _parse_vertical(rows: list) -> list[dict]:
 
 
 def _parse_elements(rows: list) -> dict:
-    """[평가 요소] 시트: 성취기준 코드 · 평가 요소 · 요소 상 · 중 · 하 (한 줄에 평가 요소 하나)"""
+    """[평가 요소] 시트: 성취기준 코드 · 범주 · 평가 요소 · 확인 자료 · 요소 상·중·하"""
     head_at, roles = None, {}
     for i, r in enumerate(rows[:10]):
         found = _column_roles(r)
@@ -824,7 +856,9 @@ def _parse_elements(rows: list) -> dict:
             continue
         items = out.setdefault(last_code, [])
         if len(items) < 8 and name not in [e["name"] for e in items]:
-            items.append({"name": name[:60], "high": _clean(_cell(r, roles, "el_high"))[:1000],
+            items.append({"name": name[:60], "category": _element_category(_cell(r, roles, "el_category")),
+                          "evidence": _clean(_cell(r, roles, "el_evidence"))[:300],
+                          "high": _clean(_cell(r, roles, "el_high"))[:1000],
                           "mid": _clean(_cell(r, roles, "el_mid"))[:1000], "low": _clean(_cell(r, roles, "el_low"))[:1000]})
     return out
 
@@ -939,10 +973,10 @@ async def standards_template(course_id: int, request: Request):
     for col, w in zip("ABC", (50, 8, 90)):
         sh.column_dimensions[col].width = w
     el = book.create_sheet("평가 요소")
-    el.append(["성취기준 코드", "평가 요소", "요소 상", "요소 중", "요소 하"])
-    el.append(["[12법사02-03]", "근거 제시", "타당하고 구체적인 근거를 든다", "근거를 들지만 일부만 타당하다", "근거 없이 주장한다"])
-    el.append(["[12법사02-03]", "반론 고려", "상대 주장을 이해하고 반박한다", "상대 주장을 언급한다", "상대 주장을 고려하지 않는다"])
-    for col, w in zip("ABCDE", (16, 18, 40, 40, 40)):
+    el.append(["성취기준 코드", "범주", "평가 요소", "확인 자료", "요소 상", "요소 중", "요소 하"])
+    el.append(["[12법사02-03]", "과정·기능", "근거 제시", "발표·토론·보고서", "타당하고 구체적인 근거를 든다", "근거를 들지만 일부만 타당하다", "근거 없이 주장한다"])
+    el.append(["[12법사02-03]", "과정·기능", "반론 고려", "토론·교사 관찰", "상대 주장을 이해하고 반박한다", "상대 주장을 언급한다", "상대 주장을 고려하지 않는다"])
+    for col, w in zip("ABCDEFG", (16, 18, 18, 25, 40, 40, 40)):
         el.column_dimensions[col].width = w
     lv = book.create_sheet("과목 성취수준")
     lv.append(["성취수준", "일반적 특성"])
@@ -961,8 +995,8 @@ async def standards_template(course_id: int, request: Request):
     for line in ("1. [성취기준] 시트: 교육과정 문서(PDF·한글)의 '교육과정 성취기준 | 평가기준' 표를 그대로 복사해 A1 칸에 붙여넣으면 돼요. (예시 줄은 지우세요)",
                  "   성취기준 하나에 상·중·하 세 줄이고, 성취기준 칸은 첫 줄에만 있어도 돼요. 단원 제목이나 표 머리 줄이 섞여 있어도 알아서 건너뛰어요.",
                  "   '평가준거 성취기준' 칸이 있는 표도 그대로 붙여넣어도 돼요. (성취기준 아래에 함께 저장돼요)",
-                 "2. [평가 요소] 시트(선택): 한 줄에 평가 요소 하나씩, 성취기준 코드 · 평가 요소 이름 · 요소 상 · 중 · 하를 적어요.",
-                 "   비워 두면 올린 뒤 AI가 평가기준에서 뽑아 줘요. 나중에 [수정]에서 고칠 수 있어요.",
+                 "2. [평가 요소] 시트(선택): 성취기준 코드 · 범주(지식·이해/과정·기능/가치·태도) · 평가 요소 · 확인 자료 · 요소 상·중·하를 적어요.",
+                 "   해당하지 않는 범주를 억지로 채우지 마세요. 시트를 비워 두면 AI가 초안을 제안하며, [수정]에서 확인하고 고칠 수 있어요.",
                  f"3. [과목 성취수준] 시트: 이 과목의 성취도({'·'.join(scale_of(course))})별 일반적 특성을 적어요.",
                  "4. 이미 있는 성취기준 코드를 다시 올리면 내용이 새것으로 바뀌어요."):
         note.append([line])

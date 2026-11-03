@@ -25,8 +25,9 @@ async function renderStandards(c, box) {
       editing ? null : importButton(c, d.ai, again),
       editing ? null : h("button", { class: "primary small", type: "button", onclick: () => { achEditing.set(c.id, "new"); again(); } }, "+ 성취기준 추가")),
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
-      "교육과정 성취기준과 성취기준별 평가기준(상·중·하)을 넣고, 평가 요소를 정해 주세요. 학생 발언 AI 분석은 이 평가 요소를 기준으로 해요. "
-      + "교육과정 문서의 '교육과정 성취기준 | 평가기준' 표를 그대로 복사해 [엑셀 양식]의 A1 칸에 붙여넣고 올리면 한 번에 들어가요. 평가 요소는 양식의 [평가 요소] 시트에 적거나, 비워 두면 AI가 뽑아 줘요."),
+      "성취기준에 맞는 구체적인 평가 요소를 정하고, 해당하는 범주(지식·이해 / 과정·기능 / 가치·태도)와 확인할 자료를 적어 주세요. 모든 범주를 채울 필요는 없어요. "
+      + "AI 분석은 현재 학생 발언·교사 관찰·퀴즈 답안만 읽으며, 보고서·PDF 본문은 아직 읽지 않아요. "
+      + "교육과정 문서의 '교육과정 성취기준 | 평가기준' 표를 [엑셀 양식]의 A1 칸에 붙여넣어 올릴 수 있어요. 평가 요소는 [평가 요소] 시트에 적거나 AI 초안을 받아 교사가 확인·수정해 주세요."),
     courseLevelsBox(c, d),
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
@@ -62,7 +63,7 @@ async function draftMissing(c, ids, btn) {
   const { standards } = await achApi(`/api/courses/${c.id}/standards`);
   const todo = standards.filter((s) => ids.includes(s.id) && !s.elements.length && (s.level_high || s.level_mid || s.level_low));
   if (!todo.length) return;
-  if (!confirm(`평가 요소가 없는 성취기준 ${todo.length}개는 AI가 평가기준에서 평가 요소를 뽑아 넣을까요?\n(하나에 10초쯤 걸려요. 나중에 [수정]에서 고칠 수 있어요)`)) return;
+  if (!confirm(`평가 요소가 없는 성취기준 ${todo.length}개에 AI 초안을 넣을까요?\n성취기준·평가기준에 맞는 범주와 확인 자료를 제안합니다. [수정]에서 반드시 확인해 주세요. (하나에 10초쯤 걸려요)`)) return;
   let done = 0;
   for (const s of todo) {
     btn.textContent = `🤖 평가 요소 뽑는 중… ${done + 1}/${todo.length}`;
@@ -72,7 +73,7 @@ async function draftMissing(c, ids, btn) {
       done += 1;
     } catch (err) { toast(`${s.code || "성취기준"}: ${err.message}`, 5000); }
   }
-  toast(`AI가 성취기준 ${done}개의 평가 요소를 뽑았어요. 확인하고 필요하면 [수정]에서 고쳐 주세요.`, 6000);
+  toast(`AI가 성취기준 ${done}개의 평가 요소 초안을 넣었어요. [수정]에서 확인하고 고쳐 주세요.`, 6000);
 }
 
 /** 과목 전체의 성취수준별 일반적 특성 (성취도에 따라 A~E / A~C / P) */
@@ -108,8 +109,11 @@ function standardCard(c, s, i, again) {
       h("table", { class: "info-table" }, h("tbody", {},
         [["상", s.level_high], ["중", s.level_mid], ["하", s.level_low]].map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { style: "white-space:pre-wrap" }, v || "-")))))),
     s.elements.length ? h("div", { class: "table-wrap" }, h("table", { class: "att std-elements" },
-      h("thead", {}, h("tr", {}, ["평가 요소", "상", "중", "하"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, s.elements.map((e) => h("tr", {}, h("td", {}, h("strong", {}, e.name)), h("td", {}, e.high), h("td", {}, e.mid), h("td", {}, e.low))))))
+      h("thead", {}, h("tr", {}, ["범주·평가 요소·확인 자료", "상", "중", "하"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, s.elements.map((e) => h("tr", {}, h("td", {},
+        h("span", { class: "std-element-category" }, e.category || "미분류"), h("strong", {}, e.name),
+        e.evidence ? h("span", { class: "std-element-evidence" }, `확인 자료: ${e.evidence}`) : null),
+        h("td", {}, e.high), h("td", {}, e.mid), h("td", {}, e.low))))))
       : h("p", { class: "error", style: "margin:6px 0 0" }, "평가 요소가 없어요. [수정]에서 평가 요소를 넣어야 AI 분석에 쓰여요."));
 }
 
@@ -120,19 +124,24 @@ function standardForm(c, s, aiOn, again) {
   const lv = ["level_high", "level_mid", "level_low"].map((k) => { const t = h("textarea", { rows: 3, maxlength: 3000 }); t.value = s?.[k] || ""; return t; });
   const rows = h("tbody");
   const addRow = (e = {}) => {
-    const cells = ["name", "high", "mid", "low"].map((k) => {
-      const el = k === "name" ? h("input", { maxlength: 60, value: e[k] || "", placeholder: "예: 근거 제시" }) : h("textarea", { rows: 2, maxlength: 1000 });
-      if (k !== "name") el.value = e[k] || "";
+    const category = h("select", { "data-k": "category", "aria-label": "평가 요소 범주" },
+      [["", "범주 선택"], ["지식·이해", "지식·이해"], ["과정·기능", "과정·기능"], ["가치·태도", "가치·태도"]]
+        .map(([value, label]) => h("option", { value, selected: (e.category || "") === value }, label)));
+    const name = h("input", { "data-k": "name", "aria-label": "평가 요소 이름", maxlength: 60, value: e.name || "", placeholder: "예: 근거 제시" });
+    const evidence = h("input", { "data-k": "evidence", "aria-label": "확인 자료", maxlength: 300, value: e.evidence || "", placeholder: "확인 자료: 퀴즈·보고서 등" });
+    const cells = [h("td", { class: "std-element-fields" }, category, name, evidence), ...["high", "mid", "low"].map((k) => {
+      const el = h("textarea", { rows: 2, maxlength: 1000 });
+      el.value = e[k] || "";
       el.dataset.k = k;
       return h("td", {}, el);
-    });
+    })];
     const tr = h("tr", {}, ...cells, h("td", {}, h("button", { class: "small danger", type: "button", onclick: () => tr.remove() }, "✕")));
     rows.append(tr);
   };
   (s?.elements || []).forEach(addRow);
   if (!s?.elements?.length) addRow();
   const read = () => [...rows.children].map((tr) => Object.fromEntries([...tr.querySelectorAll("[data-k]")].map((el) => [el.dataset.k, el.value.trim()]))).filter((e) => e.name);
-  const draftBtn = h("button", { class: "small", type: "button", disabled: !aiOn, title: aiOn ? "" : "AI가 설정되지 않았어요" }, "🤖 평가기준에서 평가 요소 뽑기 (AI)");
+  const draftBtn = h("button", { class: "small", type: "button", disabled: !aiOn, title: aiOn ? "" : "AI가 설정되지 않았어요" }, "🤖 평가 요소 초안 제안 (AI)");
   draftBtn.onclick = async () => {
     if (read().length && !confirm("지금 적힌 평가 요소를 AI 초안으로 바꿀까요?")) return;
     draftBtn.disabled = true; draftBtn.textContent = "🤖 뽑는 중…";
@@ -142,7 +151,7 @@ function standardForm(c, s, aiOn, again) {
       r.elements.forEach(addRow);
       toast("AI가 평가 요소 초안을 만들었어요. 확인하고 고친 뒤 [저장]을 눌러 주세요.", 5000);
     } catch (err) { toast(err.message, 5000); }
-    draftBtn.disabled = false; draftBtn.textContent = "🤖 평가기준에서 평가 요소 뽑기 (AI)";
+    draftBtn.disabled = false; draftBtn.textContent = "🤖 평가 요소 초안 제안 (AI)";
   };
   const save = h("button", { class: "primary", type: "button" }, "저장");
   save.onclick = async () => {
@@ -165,7 +174,7 @@ function standardForm(c, s, aiOn, again) {
       h("label", { class: "wide" }, "평가기준 하", lv[2])),
     h("div", { class: "row", style: "margin:12px 0 6px" }, h("strong", { class: "grow" }, "평가 요소"), draftBtn),
     h("div", { class: "table-wrap" }, h("table", { class: "att std-elements edit" },
-      h("thead", {}, h("tr", {}, ["평가 요소", "상", "중", "하", ""].map((t) => h("th", {}, t)))), rows)),
+      h("thead", {}, h("tr", {}, ["범주·평가 요소·확인 자료", "상", "중", "하", ""].map((t) => h("th", {}, t)))), rows)),
     h("div", { class: "row", style: "margin-top:8px" },
       h("button", { class: "small", type: "button", onclick: () => addRow() }, "+ 평가 요소 추가"), h("span", { class: "grow" }),
       h("button", { type: "button", onclick: () => { achEditing.delete(c.id); again(); } }, "취소"), save));
