@@ -3843,7 +3843,9 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
                                                         {"key": "없는|요소", "level": 2, "evidence": "x"}]}],
                 "summary": "근거 제시가 뛰어납니다.", "feedback": "근거를 잘 들었어요.",
                 "competencies": {**{k: {"score": 3, "reason": "근거 부족"} for k, _ in ach.COMPETENCIES},
-                                 "knowledge_info": {"score": 5, "reason": "근거를 정확히 듦"}, "community": {"score": 9, "reason": "x"}}}
+                                 "knowledge_info": {"score": 5, "reason": "근거를 정확히 듦"}, "community": {"score": 9, "reason": "x"}},
+                "subject_competencies": [{"name": "비판적 사고력", "score": 4, "reason": "반론을 검토함"},
+                                         {"name": "목록에 없는 역량", "score": 5, "reason": "x"}]}
     monkeypatch.setattr(ach, "ai_json", fake_ai)
     t, other = teacher(), teacher("other@gmail.com")
     from datetime import datetime
@@ -3871,7 +3873,11 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
         state(sa, lambda m: m["transcript_on"])
         a.post(f"/api/live/classes/{code}/speech", json={"text": "오판 가능성이 있어 폐지해야 합니다", "final": True})
     uid = t.get(f"{base}/speech").json()["students"][0]["user_id"]
+    assert t.post(f"{base}/subject-competencies", json={"items": ["비판적 사고력", " 탐구력 ", "비판적 사고력", "의사소통 능력"]}).json()["items"] == ["비판적 사고력", "탐구력", "의사소통 능력"]
+    assert t.get(f"{base}/standards").json()["subject_competencies"] == ["비판적 사고력", "탐구력", "의사소통 능력"]
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
+    assert view["subject_competencies"] == [{"key": "비판적 사고력", "label": "비판적 사고력", "score": 4, "reason": "반론을 검토함"}]
+    assert calls[-1][1]["properties"]["subject_competencies"]["items"]["properties"]["name"]["enum"] == ["비판적 사고력", "탐구력", "의사소통 능력"]
     assert view["classes"][0]["ratings"] == [{"standard_id": sid, "code": "[12법사02-03]", "element": "근거 제시", "level": 3, "evidence": "오판 가능성"}]
     assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
     comps = {c["key"]: c for c in view["competencies"]}

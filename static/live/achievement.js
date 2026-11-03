@@ -27,6 +27,7 @@ async function renderStandards(c, box) {
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
       "평가 요소는 [평가 요소] 시트에 적거나 AI 초안을 받아 교사가 확인·수정해 주세요."),
     courseLevelsBox(c, d),
+    subjectCompetenciesBox(c, d),
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
     editing === "new" ? standardForm(c, null, d.ai, again) : null,
@@ -91,6 +92,33 @@ function courseLevelsBox(c, d) {
     h("p", { class: "muted", style: "margin:6px 0;font-size:0.85rem" }, "과목 전체의 성취수준별 일반적 특성이에요. AI 종합 의견에서 참고로만 써요."),
     h("table", { class: "info-table" }, h("tbody", {}, inputs.map(([k, t]) => h("tr", {}, h("th", { style: "width:60px;text-align:center" }, k), h("td", {}, t))))),
     h("div", { class: "row", style: "justify-content:flex-end;margin-top:8px" }, save));
+}
+
+/** 이 과목의 교과 역량 (3~8개): 학생 맞춤형 분석의 '교과 역량 밸런스 차트' 꼭짓점 */
+function subjectCompetenciesBox(c, d) {
+  const items = d.subject_competencies || [];
+  const text = h("textarea", { rows: 5, placeholder: "한 줄에 하나씩 (3~8개)\n예: 비판적 사고력\n탐구 및 문제 해결력\n의사소통 및 협업 능력" });
+  text.value = items.join("\n");
+  const save = h("button", { class: "primary small", type: "button" }, "교과 역량 저장");
+  save.onclick = async () => {
+    const list = text.value.split("\n").map((x) => x.trim()).filter(Boolean);
+    if (list.length && list.length < 3) { toast("차트를 그리려면 교과 역량을 3개 이상 적어 주세요."); return; }
+    try { const r = await achApi(`/api/courses/${c.id}/subject-competencies`, { items: list }); text.value = r.items.join("\n"); toast("교과 역량을 저장했어요. 학생 분석을 다시 하면 차트에 반영돼요.", 4000); }
+    catch (err) { toast(err.message); }
+  };
+  const draft = h("button", { class: "small", type: "button", disabled: !d.ai, title: d.ai ? "" : "AI가 설정되지 않았어요" }, "🤖 AI 초안");
+  draft.onclick = async () => {
+    if (text.value.trim() && !confirm("지금 적힌 교과 역량을 AI 초안으로 바꿀까요?")) return;
+    draft.disabled = true; draft.textContent = "🤖 만드는 중…";
+    try { const r = await achApi(`/api/courses/${c.id}/subject-competencies/draft`, {}); text.value = r.items.join("\n"); toast("AI 초안이에요. 교육과정 문서와 비교해 고친 뒤 [교과 역량 저장]을 눌러 주세요.", 5000); }
+    catch (err) { toast(err.message, 5000); }
+    draft.disabled = !d.ai; draft.textContent = "🤖 AI 초안";
+  };
+  return h("details", { class: "std-card course-levels", open: !items.length },
+    h("summary", {}, h("strong", {}, "🧩 교과 역량 "), h("span", { class: "muted", style: "font-size:0.85rem" }, items.length ? `${items.length}개 · ${items.join(" · ")}` : "아직 정하지 않았어요")),
+    h("p", { class: "muted", style: "margin:6px 0;font-size:0.85rem" }, "이 과목에서 기르는 교과 역량을 한 줄에 하나씩 적어요. 학생 맞춤형 분석의 '교과 역량 밸런스 차트'가 이 역량으로 그려져요."),
+    text,
+    h("div", { class: "row", style: "justify-content:flex-end;margin-top:8px;gap:6px" }, draft, save));
 }
 
 function standardCard(c, s, i, again) {
@@ -310,27 +338,28 @@ function achChart(classes) {
 }
 
 /* ───────── 핵심역량 6각형(레이더) 차트: 1~5점 ───────── */
-function achRadar(comps) {
+function achRadar(comps, color = "#1b6b4a", fill = "rgba(27,107,74,0.22)", aria = "핵심역량 밸런스 차트") {
   const ns = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
   const W = 460, H = 330, cx = W / 2, cy = H / 2 + 4, R = 108; // 양옆 글자가 잘리지 않게 가로 여백을 넉넉히
   const n = comps.length;
   const pt = (i, r) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / n; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
   const poly = (r) => comps.map((_, i) => pt(i, r).join(",")).join(" ");
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "ach-radar", role: "img", "aria-label": "핵심역량 밸런스 차트" });
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "ach-radar", role: "img", "aria-label": aria });
   for (let lv = 1; lv <= 5; lv++) svg.append(el("polygon", { points: poly((R * lv) / 5), fill: lv === 5 ? "#f6faf8" : "none", stroke: "#dfe6e3", "stroke-width": 1 }));
   comps.forEach((_, i) => { const [x, y] = pt(i, R); svg.append(el("line", { x1: cx, y1: cy, x2: x, y2: y, stroke: "#dfe6e3" })); });
   const shape = comps.map((c, i) => pt(i, (R * c.score) / 5).join(",")).join(" ");
-  svg.append(el("polygon", { points: shape, fill: "rgba(27,107,74,0.22)", stroke: "#1b6b4a", "stroke-width": 2.5, "stroke-linejoin": "round" }));
+  svg.append(el("polygon", { points: shape, fill, stroke: color, "stroke-width": 2.5, "stroke-linejoin": "round" }));
   comps.forEach((c, i) => {
     const [x, y] = pt(i, (R * c.score) / 5);
-    const dot = el("circle", { cx: x, cy: y, r: 4.5, fill: "#1b6b4a", stroke: "#fff", "stroke-width": 1.5 });
+    const dot = el("circle", { cx: x, cy: y, r: 4.5, fill: color, stroke: "#fff", "stroke-width": 1.5 });
     dot.append(el("title", {}, `${c.label} ${c.score}점 · ${c.reason || ""}`));
     svg.append(dot);
     const [lx, ly] = pt(i, R + 26);
     const anchor = Math.abs(lx - cx) < 8 ? "middle" : lx > cx ? "start" : "end";
-    const t = el("text", { x: lx, y: ly + 4, "text-anchor": anchor, "font-size": 12.5, "font-weight": 700, fill: "#33403b" }, c.label.replace(" 역량", ""));
-    const s = el("tspan", { fill: "#1b6b4a", "font-weight": 800 }, ` ${c.score}`);
+    const name = c.label.replace(" 역량", "");
+    const t = el("text", { x: lx, y: ly + 4, "text-anchor": anchor, "font-size": 12.5, "font-weight": 700, fill: "#33403b" }, name.length > 10 ? `${name.slice(0, 10)}…` : name);
+    const s = el("tspan", { fill: color, "font-weight": 800 }, ` ${c.score}`);
     t.append(s);
     svg.append(t);
   });
@@ -390,14 +419,21 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
           v.competencies?.length ? achRadar(v.competencies)
             : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요."),
           v.competencies?.length ? achRadarReasons(v.competencies) : null),
-        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (상·중·하)"), achChart(v.classes),
-          // 수업별 판단 근거: 왼쪽 역량 근거와 같은 그리드 행에서 시작
-          h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 수업별 판단 근거"),
-            v.classes.map((x) => h("div", { class: "ach-class" },
-              h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
-              x.ratings.length ? x.ratings.map((r) => h("div", { class: "ach-rate" },
-                h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
-                h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 수업 기록이 없었어요.")))))),
+        // 오른쪽: 이 과목의 교과 역량 밸런스 차트 (과목 정보에서 정한 교과 역량)
+        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧩 교과 역량 밸런스 차트"),
+          v.subject_competencies?.length ? achRadar(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량 밸런스 차트")
+            : h("p", { class: "muted" }, v.subject_competency_names?.length
+              ? "[다시 분석하기]를 누르면 교과 역량 차트가 생겨요."
+              : "[과목 정보]의 '🧩 교과 역량'에서 이 과목의 교과 역량을 먼저 정해 주세요."),
+          v.subject_competencies?.length ? achRadarReasons(v.subject_competencies) : null)),
+      // 수업별 판단 근거 (성취기준 평가 요소의 상·중·하)
+      h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준 평가 요소)"),
+        v.classes.length ? v.classes.map((x) => h("div", { class: "ach-class" },
+          h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
+          x.ratings.length ? x.ratings.map((r) => h("div", { class: "ach-rate" },
+            h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
+            h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 수업 기록이 없었어요.")))
+          : h("p", { class: "muted", style: "margin:4px 0" }, "판단한 수업이 없어요.")),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
     ] : null,

@@ -281,7 +281,8 @@ courses = Table(
     Column("credits", Integer),  # 학점
     Column("hours", Integer),  # 수업 시수 (학점 × 16)
     Column("achievement", String(2), nullable=False, default=""),  # 성취도: 5(A~E) 3(A~C) P(P/F)
-    Column("achievement_levels", Text, nullable=False, default=""),  # 과목 성취수준별 일반적 특성 JSON {"A": "...", ...}
+    Column("achievement_levels", Text, nullable=False, default=""),
+    Column("subject_competencies", Text, nullable=False, default=""),  # 교과 역량 이름 목록 JSON (학생 맞춤형 분석 차트)  # 과목 성취수준별 일반적 특성 JSON {"A": "...", ...}
     Column("rank_grade", String(4), nullable=False, default=""),  # 석차 등급: 산출·미산출 (비면 성취도로 정함)
     Column("capacity", Integer),  # 수강 인원 (비면 제한 없음)
     Column("recruit_start", String(10), nullable=False, default=""),  # 모집 기간 (비면 제한 없음)
@@ -466,6 +467,7 @@ speech_feedback = Table(
     Column("feedback", Text, nullable=False, default=""),
     Column("published", Integer, nullable=False, default=0),
     Column("analyzed_at", Float),
+    Column("subject_competencies", Text, nullable=False, default=""),  # 교과 역량별 1~5점과 근거 JSON
     Column("competencies", Text, nullable=False, default=""),  # 핵심역량 6개 1~5점과 근거 JSON (AI 분석)
     Column("updated_at", Float, nullable=False),
     UniqueConstraint("course_id", "user_id"),
@@ -649,6 +651,8 @@ def init() -> None:
              ("courses", "achievement", "VARCHAR(2) NOT NULL DEFAULT ''"),
              ("courses", "achievement_levels", "TEXT NOT NULL DEFAULT ''"),
              ("speech_feedback", "competencies", "TEXT NOT NULL DEFAULT ''"),
+             ("speech_feedback", "subject_competencies", "TEXT NOT NULL DEFAULT ''"),
+             ("courses", "subject_competencies", "TEXT NOT NULL DEFAULT ''"),
              ("courses", "rank_grade", "VARCHAR(4) NOT NULL DEFAULT ''"),
              ("courses", "capacity", "INTEGER"),
              ("courses", "recruit_start", "VARCHAR(10) NOT NULL DEFAULT ''"),

@@ -165,9 +165,58 @@ async def list_standards(course_id: int, request: Request):
     sessions = (await db.run(sessions_by_course, [course_id])).get(course_id, [])
     class_links = await db.run(class_links_of, course_id)
     return {"standards": standards, "ai": ai_ready(), "scale": scale_of(course), "course_levels": course_levels(course),
+            "subject_competencies": subject_competencies_of(course),
             "class_links": {str(k): v for k, v in class_links.items()},
             "achievement_text": subjects.ACHIEVEMENTS.get(course.achievement or "", "성취도 미정 (5단계로 표시)"),
             "sessions": [{**s, "standard_ids": links.get(s["no"], [])} for s in sessions]}
+
+
+def subject_competencies_of(course) -> list[str]:
+    try:
+        items = json.loads(getattr(course, "subject_competencies", "") or "[]")
+    except ValueError:
+        items = []
+    return [str(x) for x in items if str(x).strip()][:8]
+
+
+class SubjectCompetenciesReq(BaseModel):
+    items: list[str] = Field(default_factory=list, max_length=8)
+
+
+@router.post("/api/courses/{course_id}/subject-competencies")
+async def save_subject_competencies(course_id: int, req: SubjectCompetenciesReq, request: Request):
+    """이 과목의 교과 역량 (3~8개). 학생 맞춤형 분석의 '교과 역량 밸런스 차트' 꼭짓점이 된다"""
+    await _course(course_id, request)
+    items = list(dict.fromkeys(" ".join(x.split())[:30] for x in req.items if x.strip()))[:8]
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(update(db.courses).where(db.courses.c.id == course_id)
+                      .values(subject_competencies=json.dumps(items, ensure_ascii=False)))
+
+    await db.run(run)
+    return {"items": items}
+
+
+SUBJECT_COMP_SYSTEM = (
+    "당신은 한국 고등학교 교육과정 전문가입니다. 주어진 과목의 2022 개정 교육과정 문서가 제시하는 교과 역량(교과에서 기르고자 하는 역량)을 "
+    "3~6개의 짧은 이름(15자 이내)으로 적습니다. 문서의 표현을 우선하고, 확실하지 않으면 그 과목 성취기준에서 공통으로 드러나는 사고·탐구 능력으로 정리합니다. "
+    "교사가 확인하고 고칠 초안입니다."
+)
+
+
+@router.post("/api/courses/{course_id}/subject-competencies/draft")
+async def draft_subject_competencies(course_id: int, request: Request):
+    course, _ = await _course(course_id, request)
+    if not ai_ready():
+        raise HTTPException(503, "AI가 설정되지 않았어요. 교과 역량을 직접 적어 주세요.")
+    standards, _ = await db.run(standards_of, course_id)
+    prompt = (f"교과(군): {course.subject_group or '-'} / 과목: {course.subject or course.title}\n"
+              + ("성취기준:\n" + "\n".join(f"- {s['code']} {s['text']}" for s in standards[:30]) if standards else "(성취기준 없음)"))
+    data = await ai_json(SUBJECT_COMP_SYSTEM, prompt, {
+        "type": "object", "properties": {"items": {"type": "array", "items": {"type": "string"}}},
+        "required": ["items"], "additionalProperties": False}, 2000)
+    return {"items": [" ".join(str(x).split())[:30] for x in data.get("items", []) if str(x).strip()][:8]}
 
 
 class CourseLevelsReq(BaseModel):
@@ -537,6 +586,19 @@ def analysis_schema(keys: list[str], n_classes: int) -> dict:
     }
 
 
+def with_subject_comps(schema: dict, subject_comps: list[str]) -> dict:
+    """교과 역량이 정해진 과목이면 'subject_competencies'(역량 이름 → 1~5점·근거)도 받는다"""
+    if not subject_comps:
+        return schema
+    item = {"type": "object", "properties": {"name": {"type": "string", "enum": subject_comps},
+                                             "score": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
+                                             "reason": {"type": "string"}},
+            "required": ["name", "score", "reason"], "additionalProperties": False}
+    schema["properties"]["subject_competencies"] = {"type": "array", "items": item}
+    schema["required"] = schema["required"] + ["subject_competencies"]
+    return schema
+
+
 @router.post("/api/courses/{course_id}/speech/student/{user_id}/analyze")
 async def analyze_student(course_id: int, user_id: int, request: Request):
     course, _ = await _course(course_id, request)
@@ -577,7 +639,11 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     level_text = ("\n\n# 과목 성취수준별 일반적 특성 (참고)\n" + "\n".join(f"[{k}] {v}" for k, v in levels.items())) if levels else ""
     prompt = (f"과목: {course.subject or course.title}{level_text}\n\n# 성취기준과 평가 요소\n" + "\n".join(std_lines)
               + "\n\n# 수업별 학생 발언·교사 관찰 기록·학생 퀴즈 응답 (수업 순서)\n" + "\n\n".join(cls_lines))
-    data = await ai_json(ANALYSIS_SYSTEM, prompt, analysis_schema(keys, len(classes)), 12000)
+    subject_comps = subject_competencies_of(course)
+    if subject_comps:
+        prompt += ("\n\n# 이 과목의 교과 역량 (subject_competencies 에 각각 1~5점, 3=보통, 근거 한 문장. 근거가 거의 없으면 3점·'근거 부족')\n"
+                   + "\n".join(f"- {x}" for x in subject_comps))
+    data = await ai_json(ANALYSIS_SYSTEM, prompt, with_subject_comps(analysis_schema(keys, len(classes)), subject_comps), 12000)
     now = time.time()
 
     def save():
@@ -605,8 +671,14 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
             comp = {k: {"score": int(v.get("score", 3)) if str(v.get("score", "")).isdigit() and 1 <= int(v.get("score")) <= 5 else 3,
                         "reason": str(v.get("reason", ""))[:300]}
                     for k, v in comp.items() if k in dict(COMPETENCIES) and isinstance(v, dict)}
+            subj = {}
+            for v in data.get("subject_competencies") or []:
+                if isinstance(v, dict) and v.get("name") in subject_comps and v["name"] not in subj:
+                    sc = v.get("score")
+                    subj[v["name"]] = {"score": sc if isinstance(sc, int) and 1 <= sc <= 5 else 3, "reason": str(v.get("reason", ""))[:300]}
             values = {"summary": str(data.get("summary", ""))[:4000], "analyzed_at": now, "updated_at": now,
-                      "competencies": json.dumps(comp, ensure_ascii=False) if comp else ""}
+                      "competencies": json.dumps(comp, ensure_ascii=False) if comp else "",
+                      "subject_competencies": json.dumps(subj, ensure_ascii=False) if subj else ""}
             if row:
                 # 이미 학생에게 공개한 피드백은 선생님이 고친 글일 수 있어 그대로 두고, 공개 전이면 새 초안으로 바꾼다
                 if not row.published:
@@ -636,8 +708,16 @@ def analysis_view(course_id: int, user_id: int) -> dict:
     except ValueError:
         comp = {}
     competencies = [{"key": k, "label": label, **comp[k]} for k, label in COMPETENCIES if k in comp]
+    try:
+        subj = json.loads(fb.subject_competencies) if fb and fb.subject_competencies else {}
+    except ValueError:
+        subj = {}
+    with db.engine.connect() as c:
+        course = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
+    names = subject_competencies_of(course) if course else []
+    subject = [{"key": n, "label": n, **subj[n]} for n in names if n in subj]
     return {"classes": classes, "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
-            "competencies": competencies,
+            "competencies": competencies, "subject_competencies": subject, "subject_competency_names": names,
             "published": bool(fb and fb.published), "analyzed_at": fb.analyzed_at if fb else None, "ai": ai_ready()}
 
 
