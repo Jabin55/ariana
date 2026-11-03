@@ -1128,24 +1128,30 @@ async function submissionsOf(aid, box) {
 function learnActivities(d, st, key, box) {
   const label = ACT_LABEL[key];
   const list = d.classes.filter((x) => x.acts[key].count);
-  const COLS = 7;
   const rate = (x) => (x.possible ? `${Math.round((x.answered / x.possible) * 100)}%` : "-");
-  const draw = () => fill(box,
+  const go = (id) => { st.view = id; learnActivities(d, st, key, box); };
+  // 게시물 화면: 수업 하나의 문제별 응답 (아래로 펼치지 않고 따로 연다)
+  const i = list.findIndex((x) => x.id === st.view);
+  if (i >= 0) {
+    const x = list[i];
+    const sub = h("div");
+    fill(box,
+      h("div", { class: "row", style: "margin:4px 0 8px" }, h("button", { class: "small", onclick: () => go(null) }, "← 수업 목록")),
+      h("div", { class: "hub-grid-summary" }, `${i + 1}번 · ${fmtDate(x.date)} ${x.start} · ${x.title} · ${label} ${x.acts[key].count}개 · 응답률 ${rate(x.acts[key])}`),
+      sub);
+    activitiesOf(x.id, key, sub);
+    return;
+  }
+  fill(box,
     h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `${label}${key === "quiz" ? "를" : "을"} 한 수업 ${list.length}개`),
     list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
       h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", `${label} 수`, "응답률", ""].map((t) => h("th", {}, t)))),
-      h("tbody", {}, list.flatMap((x, i) => {
-        const open = st.open.has(x.id);
-        const sub = h("td", { colspan: COLS });
-        const row = h("tr", { class: open ? "on" : "" },
-          h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(x.date)), h("td", {}, x.start),
-          h("td", {}, x.title), h("td", { class: "num" }, `${x.acts[key].count}개`),
-          h("td", { class: "num" }, h("strong", {}, rate(x.acts[key]))),
-          h("td", {}, h("button", { class: `small ${open ? "on" : ""}`, onclick: () => toggleRow(st, x.id, draw) }, open ? "접기" : "내역 보기")));
-        if (open) activitiesOf(x.id, key, sub);
-        return open ? [row, h("tr", { class: "detail-row" }, sub)] : [row];
-      })))) : h("p", { class: "muted" }, `아직 ${label}${key === "quiz" ? "를" : "을"} 한 수업이 없어요. 수업 화면의 '📊 설문/퀴즈'에서 낼 수 있어요.`));
-  draw();
+      h("tbody", {}, list.map((x, n) => h("tr", { class: "assign-row", onclick: () => go(x.id) },
+        h("td", { class: "num" }, n + 1), h("td", {}, fmtDate(x.date)), h("td", {}, x.start),
+        h("td", {}, h("span", { class: "day-link" }, x.title)), h("td", { class: "num" }, `${x.acts[key].count}개`),
+        h("td", { class: "num" }, h("strong", {}, rate(x.acts[key]))),
+        h("td", {}, h("button", { class: "small", onclick: (e) => { e.stopPropagation(); go(x.id); } }, "내역 보기")))))))
+      : h("p", { class: "muted" }, `아직 ${label}${key === "quiz" ? "를" : "을"} 한 수업이 없어요. 수업 화면의 '📊 설문/퀴즈'에서 낼 수 있어요.`));
 }
 
 /** 한 수업에서 낸 설문·퀴즈·활동: 문제와 학생별 답 (채점은 '채점·피드백'에서) */
