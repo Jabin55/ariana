@@ -3572,6 +3572,7 @@ def test_course_detail_page_public_info():
     assert anon.get(f"/live/courses/{cid}").status_code == 200
     info = anon.get(f"/api/courses/{cid}/info").json()["course"]
     assert info["title"] == COURSE["title"] and info["description"] == "판례로 배워요" and info["syllabus"] is None
+    assert info["instructor_school"] == SCHOOL
     t.post(f"/api/courses/{cid}/syllabus?name=plan.pdf", content=b"%PDF-1.4\nsmall")
     assert anon.get(f"/api/courses/{cid}/info").json()["course"]["syllabus"]["url"] == f"/api/courses/{cid}/syllabus"
     t.post(f"/api/courses/{cid}", json={"archived": True})

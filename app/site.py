@@ -441,12 +441,15 @@ async def course_info(course_id: int):
     def run():
         with db.engine.connect() as c:
             r = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
-            return r, (sessions_of(c, [course_id]).get(course_id, []) if r else [])
+            sess = sessions_of(c, [course_id]).get(course_id, []) if r else []
+            instructor_school = c.execute(select(db.users.c.school).where(db.users.c.id == r.teacher_id)).scalar() if r else ""
+            return r, sess, instructor_school
 
-    r, sess = await db.run(run)
+    r, sess, instructor_school = await db.run(run)
     if not r or r.archived or (r.approval or "approved") != "approved":
         raise HTTPException(404, "강좌를 찾을 수 없어요.")
-    return {"course": {"id": r.id, "title": r.title, "instructor": r.instructor, "hub_school": r.hub_school,
+    return {"course": {"id": r.id, "title": r.title, "instructor": r.instructor,
+                       "instructor_school": instructor_school or "", "hub_school": r.hub_school,
                        "start_date": r.start_date, "end_date": r.end_date, "grades": course_grades(r),
                        "description": r.description, "sessions": sess, **subject_info(r)}}
 
