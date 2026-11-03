@@ -25,9 +25,7 @@ async function renderStandards(c, box) {
       editing ? null : importButton(c, d.ai, again),
       editing ? null : h("button", { class: "primary small", type: "button", onclick: () => { achEditing.set(c.id, "new"); again(); } }, "+ 성취기준 추가")),
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
-      "성취기준에 맞는 구체적인 평가 요소를 정하고, 해당하는 범주(지식·이해 / 과정·기능 / 가치·태도)와 확인할 자료를 적어 주세요. 모든 범주를 채울 필요는 없어요. "
-      + "AI 분석은 현재 학생 발언·교사 관찰·퀴즈 답안만 읽으며, 보고서·PDF 본문은 아직 읽지 않아요. "
-      + "교육과정 문서의 '교육과정 성취기준 | 평가기준' 표를 [엑셀 양식]의 A1 칸에 붙여넣어 올릴 수 있어요. 평가 요소는 [평가 요소] 시트에 적거나 AI 초안을 받아 교사가 확인·수정해 주세요."),
+      "평가 요소는 [평가 요소] 시트에 적거나 AI 초안을 받아 교사가 확인·수정해 주세요."),
     courseLevelsBox(c, d),
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
