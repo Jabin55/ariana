@@ -191,7 +191,7 @@ async def sitemap_page():
     <li><a href="/live/notices">공지사항</a></li><li><a href="/live/guide">수강안내</a></li>
     <li><a href="/live/help">이용안내</a></li><li><a href="/live/community">소통마당</a></li></ul></section>
   <section class="info-block"><h2>수강신청</h2><ul>
-    <li><a href="/live/courses">수강신청</a></li><li><a href="/live/course-requests">희망과목 개설 신청</a></li>
+    <li><a href="/live/courses">지금 신청할 수 있는 과목</a></li><li><a href="/live/course-requests">희망과목 개설 신청</a></li>
     <li><a href="/live/past-courses">지난 개설 과목</a></li></ul></section>
   <section class="info-block"><h2>수업 공간</h2><ul>
     <li><a href="/live?classroom=1">강의실</a></li><li><a href="/live?office=1">교무실</a></li></ul></section>
@@ -394,13 +394,13 @@ async def catalog():
 
 @router.get("/live/courses", response_class=HTMLResponse)
 async def courses_page():
-    return site_page("수강신청", """
+    return site_page("지금 신청할 수 있는 과목", """
 <section class="info-block">
   <div id="courses-access"></div>
   <div id="course-search"></div>
 </section>
 <section class="catalog" id="catalog"><p class="muted">불러오는 중…</p></section>
-""", "지금 신청할 수 있는 강좌", scripts='<script src="/static/live/enroll-page.js"></script>')
+""", hero=False, scripts='<script src="/static/live/enroll-page.js"></script>')
 
 
 @router.get("/api/courses/archived")
