@@ -39,9 +39,22 @@ async function assignmentDialog(c, a, done) {
   const dueDate = h("input", { type: "date", value: d0 || "" });
   const dueTime = h("input", { type: "time", value: t0 || "23:55", step: 300 });
   const late = h("input", { type: "checkbox", checked: a ? a.allow_late : true });
-  const standardChecks = standards.map((s, i) => h("label", { class: "std-pick", title: s.text },
-    h("input", { type: "checkbox", value: s.id, checked: (a?.standard_ids || []).includes(s.id) }),
-    `${s.code || `성취기준 ${i + 1}`} · ${s.text}`));
+  // 관련 성취기준: 한 줄에 하나씩 (체크 · 코드 · 내용), 고른 줄은 색으로 표시
+  const count = h("span", { class: "muted" });
+  const recount = () => {
+    const n = standardChecks.filter((label) => label.querySelector("input").checked).length;
+    count.textContent = n ? `${n}개 선택` : "선택 안 함";
+    for (const label of standardChecks) label.classList.toggle("on", label.querySelector("input").checked);
+  };
+  const standardChecks = standards.map((s, i) => h("label", { class: "std-choice", title: s.text },
+    h("input", { type: "checkbox", value: s.id, checked: (a?.standard_ids || []).includes(s.id), onchange: () => recount() }),
+    h("span", { class: "std-code" }, s.code || `성취기준 ${i + 1}`),
+    h("span", { class: "std-choice-text" }, (s.text || "").split("\n")[0])));
+  const filter = standards.length > 6 ? h("input", { type: "search", placeholder: "성취기준 코드나 내용으로 찾기", class: "std-filter",
+    oninput: (e) => {
+      const q = e.target.value.trim();
+      standardChecks.forEach((label, i) => { label.hidden = !!q && !`${standards[i].code} ${standards[i].text}`.includes(q); });
+    } }) : null;
   const row = (label, ...els) => h("label", { class: "assign-field" }, h("span", {}, label), ...els);
   const dlg = h("div", { class: "overlay", onclick: (e) => { if (e.target === dlg) close(); } },
     h("form", { class: "card assign-dialog", onsubmit: async (e) => {
@@ -66,14 +79,19 @@ async function assignmentDialog(c, a, done) {
       h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, a ? "평가 영역 수정" : "평가 올리기"), h("button", { type: "button", class: "small", onclick: close }, "닫기")),
       row("평가명", title),
       row("평가 내용", desc),
-      h("div", { class: "assign-field" }, h("span", {}, "관련 성취기준"), standardChecks.length
-        ? h("div", { class: "std-pick-grid" }, standardChecks)
-        : h("span", { class: "muted" }, "과목 정보에 등록된 성취기준이 없어요.")),
+      h("div", { class: "assign-field" },
+        h("div", { class: "row", style: "gap:8px" }, h("span", { class: "grow" }, "관련 성취기준"), standardChecks.length ? count : null,
+          standardChecks.length ? h("button", { type: "button", class: "small", onclick: () => {
+            standardChecks.forEach((label) => { label.querySelector("input").checked = false; }); recount();
+          } }, "모두 해제") : null),
+        standardChecks.length ? [filter, h("div", { class: "std-choice-list" }, standardChecks)]
+          : h("span", { class: "muted" }, "과목 정보에 등록된 성취기준이 없어요. [과목 정보]에서 먼저 넣어 주세요.")),
       h("div", { class: "row" }, row("반영 비율(%)", weight), row("영역 만점(점)", maxScore)),
       row("마감일", h("div", { class: "row" }, dueDate, dueTime)),
       h("label", { class: "switch" }, late, "마감 뒤에도 받기 (지각으로 표시)"),
       h("button", { class: "primary", type: "submit" }, a ? "고친 내용 저장" : "평가 올리기")));
   document.body.append(dlg);
+  recount();
   title.focus();
 }
 

@@ -1952,3 +1952,15 @@ table.att.satisfaction-table tbody th { white-space: nowrap; }
 .ach-sub-head { font-weight: 800; margin-bottom: 4px; font-size: 0.9rem; }
 .ach-reasons .ach-rate { padding: 3px 0; }
 .ach-reasons .ach-class { margin: 6px 0; }
+/* 수행평가 올리기·수정 창: 넉넉한 폭, 화면보다 길면 창 안에서 스크롤, 성취기준은 한 줄에 하나씩 */
+.assign-dialog { max-width: 720px; width: calc(100vw - 32px); max-height: 92vh; overflow-y: auto; box-sizing: border-box; }
+.std-filter { width: 100%; box-sizing: border-box; margin: 2px 0 6px; }
+.std-choice-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: #fafbfa; }
+.std-choice { display: grid; grid-template-columns: 20px auto 1fr; align-items: start; gap: 8px; padding: 7px 9px; border-radius: 8px; background: #fff; border: 1px solid transparent; cursor: pointer; font-size: 0.88rem; line-height: 1.45; }
+.std-choice:hover { border-color: var(--border); }
+.std-choice.on { border-color: #1b6b4a; background: #eef7f2; }
+.std-choice[hidden] { display: none; }
+.std-choice input { margin-top: 3px; }
+.std-choice .std-code { white-space: nowrap; margin: 0; }
+.std-choice-text { color: var(--text); word-break: keep-all; overflow-wrap: anywhere; }
+.overlay .card.assign-dialog { width: min(720px, calc(100vw - 32px)); max-width: none; }
