@@ -135,10 +135,10 @@ function standardCard(c, s, i, again) {
 }
 
 function standardForm(c, s, aiOn, again) {
-  const code = h("input", { maxlength: 40, value: s?.code || "", placeholder: "예: [12법사02-03]" });
-  const text = h("textarea", { rows: 2, maxlength: 2000, placeholder: "성취기준 내용" });
+  const code = h("input", { maxlength: 40, value: s?.code || "", placeholder: "[12법사02-03]", "aria-label": "성취기준 코드" });
+  const text = h("textarea", { rows: 2, maxlength: 2000, placeholder: "성취기준 내용", "aria-label": "성취기준" });
   text.value = s?.text || "";
-  const lv = ["level_high", "level_mid", "level_low"].map((k) => { const t = h("textarea", { rows: 3, maxlength: 3000 }); t.value = s?.[k] || ""; return t; });
+  const lv = ["level_high", "level_mid", "level_low"].map((k, i) => { const t = h("textarea", { rows: 2, maxlength: 3000, "aria-label": `평가기준 ${"상중하"[i]}` }); t.value = s?.[k] || ""; return t; });
   const rows = h("tbody");
   const addRow = (e = {}) => {
     const category = h("select", { "data-k": "category", "aria-label": "평가 요소 범주" },
@@ -183,12 +183,13 @@ function standardForm(c, s, aiOn, again) {
     } catch (err) { toast(err.message, 5000); save.disabled = false; }
   };
   return h("div", { class: "std-card editing" },
-    h("div", { class: "std-form" },
-      h("label", {}, "성취기준 코드", code),
-      h("label", { class: "wide" }, "성취기준", text),
-      h("label", { class: "wide" }, "평가기준 상", lv[0]),
-      h("label", { class: "wide" }, "평가기준 중", lv[1]),
-      h("label", { class: "wide" }, "평가기준 하", lv[2])),
+    // 표 모양: 성취기준 코드 / 성취기준, 그 아래 평가기준 상·중·하
+    h("div", { class: "table-wrap" }, h("table", { class: "att std-head-form" },
+      h("colgroup", {}, h("col", { class: "c-label" }), h("col", { class: "c-level" }), h("col")),
+      h("tbody", {},
+        h("tr", {}, h("th", { colspan: 2 }, "성취기준 코드"), h("th", {}, "성취기준")),
+        h("tr", {}, h("td", { colspan: 2 }, code), h("td", {}, text)),
+        ["상", "중", "하"].map((t, i) => h("tr", {}, i ? null : h("th", { rowspan: 3 }, "평가기준"), h("th", {}, t), h("td", {}, lv[i])))))),
     h("div", { class: "row", style: "margin:12px 0 6px" }, h("strong", { class: "grow" }, "평가 요소"), draftBtn),
     h("div", { class: "table-wrap" }, h("table", { class: "att std-elements edit" },
       h("colgroup", {}, Array.from({ length: 7 }, () => h("col"))),

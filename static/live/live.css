@@ -1967,3 +1967,13 @@ table.att.satisfaction-table tbody th { white-space: nowrap; }
 .hub-info-table th { width: 16%; white-space: nowrap; }
 .hub-info-table td { width: 34%; }
 @media (min-width: 861px) { .ach-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } } /* 두 역량 차트를 같은 폭으로 (좁은 화면은 위아래) */
+
+/* 성취기준 입력: 표 모양 (코드/성취기준, 평가기준 상·중·하) */
+.std-head-form { table-layout: fixed; width: 100%; }
+.std-head-form col.c-label { width: 6.5em; }
+.std-head-form col.c-level { width: 3em; }
+table.att.std-head-form th, table.att.std-head-form td { border: 1px solid var(--border); }
+table.att.std-head-form th { color: var(--text, #222); vertical-align: middle; background: #f4f6fa; text-align: center; white-space: nowrap; font-size: 0.9rem; }
+table.att.std-head-form td { padding: 4px; white-space: normal; vertical-align: top; }
+.std-head-form input, .std-head-form textarea { width: 100%; box-sizing: border-box; margin: 0; resize: vertical; }
+.std-head-form textarea { min-height: 2.6em; }
