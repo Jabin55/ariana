@@ -3866,3 +3866,11 @@ def test_extra_class_standards_used_first(monkeypatch):
     assert "연결된 성취기준: S2" in prompts[-1]  # 고른 [B]만 (모든 성취기준 S1, S2 가 아니라)
     t.post(f"/api/courses/{cid}/standards/{s2}/delete")  # 성취기준을 지우면 연결도 지워진다
     assert t.get(f"/api/courses/{cid}/standards").json()["class_links"] == {}
+
+
+def test_ai_error_messages_say_the_cause():
+    from app.achievement import ai_error_text
+    assert "크레딧" in ai_error_text(400, "Your credit balance is too low to access the Anthropic API.")
+    assert "API 키" in ai_error_text(401, "invalid x-api-key")
+    assert "모델" in ai_error_text(404, "model: not found")
+    assert "오류 500" in ai_error_text(500, "internal")
