@@ -356,7 +356,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     h("div", { class: "row", style: "margin:4px 0 8px" },
       h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run),
     opts.obs === false ? null : h("details", { class: "ach-box", open: obs.length > 0 && !v.analyzed_at },
-      h("summary", { class: "ach-box-head" }, `👀 선생님 관찰 기록 ${obs.length}건 `, h("span", { class: "muted", style: "font-weight:400" }, "(수업 중 [관찰기록] 탭에서 적은 것 · AI 분석에 함께 써요)")),
+      h("summary", { class: "ach-box-head" }, `👀 교사 관찰 기록 ${obs.length}건 `, h("span", { class: "muted", style: "font-weight:400" }, "(수업 중 [관찰기록] 탭에서 적은 것 · AI 분석에 함께 써요)")),
       obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`))))
         : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),

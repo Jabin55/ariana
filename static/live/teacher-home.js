@@ -954,7 +954,7 @@ async function learnSpeech(c, st, box) {
       drawWordCloud(cloud, entries.map((e) => e.text));
       return;
     }
-    // 관찰 및 발언기록: 선생님 관찰 기록 + 수업별 발언 모음
+    // 관찰 및 발언기록: 교사 관찰 기록 + 수업별 학생 발언 기록
     let obs = [];
     try { ({ observations: obs } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`)); } catch { /* 관찰 기록 없이 */ }
     const days = [];
@@ -964,12 +964,12 @@ async function learnSpeech(c, st, box) {
       g.items.push(e);
     }
     fill(pane,
-      h("h4", { class: "speech-h", style: "margin-top:4px" }, `👀 선생님 관찰 기록 ${obs.length}건`),
+      h("h4", { class: "speech-h", style: "margin-top:4px" }, `👀 교사 관찰 기록 ${obs.length}건`),
       obs.length ? h("div", { class: "speech-day" }, ...obs.map((o) => h("div", { class: "speech-line student" },
         h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)))))
         : h("p", { class: "muted" }, "아직 관찰 기록이 없어요. 수업 화면 오른쪽 [관찰기록] 탭에서 남길 수 있어요."),
-      h("h4", { class: "speech-h" }, `🗒 발언 모음 ${entries.length}건 (날짜순)`),
+      h("h4", { class: "speech-h" }, `🗒 학생 발언 기록 ${entries.length}건 (날짜순)`),
       days.length ? days.map((g) => h("div", { class: "speech-day" },
         h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`, h("span", { class: "muted" }, ` ${g.items.length}건`)),
         ...g.items.map((e) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text)))))
