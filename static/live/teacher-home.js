@@ -1398,13 +1398,13 @@ function hubRecordCards(ov, kind) {
   return [active.length || archived.length ? grid([...active, ...archived]) : h("p", { class: "muted" }, "아직 개설 승인한 강좌가 없어요.")];
 }
 
-function hubRecordHeading(c, label) {
-  return h("div", { class: "row hub-record-heading" },
+function hubRecordHeading(c) {
+  return h("div", { class: "hub-record-banner" },
     h("button", { type: "button", class: "small", onclick: () => {
       hubRecordCourseId = null;
       loadHub();
     } }, "← 과목 목록"),
-    h("h2", { class: "grow" }, `${c.title} · ${label}`));
+    courseBanner(c));
 }
 
 function hubCourseDays(ov, classes) {
@@ -1414,7 +1414,7 @@ function hubCourseDays(ov, classes) {
     return hubRecordCards(ov, "days");
   }
   const rows = classes.filter((x) => x.course_id === course.id);
-  return [hubRecordHeading(course, "수업일"),
+  return [hubRecordHeading(course),
     rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att hub-days-table" },
       h("thead", {}, h("tr", {}, ["연번", "수업일", "수업시간", "수업 주제", "참여 인원"].map((t) => h("th", {}, t)))),
       h("tbody", {}, rows.map((x, i) => h("tr", {},
@@ -1438,8 +1438,8 @@ async function hubClassAttendance(box, ov) {
   const present = d.rows.filter((r) => r.present).length;
   const mins = (m) => (m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`);
   fill(box,
-    h("div", { class: "row hub-record-heading" }, back,
-      h("h2", { class: "grow" }, `${course?.title || d.course.title} · 수강생 출석부`)),
+    h("div", { class: "hub-record-banner" }, back, courseBanner(course || d.course)),
+    h("h2", { class: "hub-day-title" }, "수강생 출석부"),
     h("p", { class: "muted" }, `${fmtDate(d.class.date)} ${d.class.start}${d.class.end ? ` ~ ${d.class.end}` : ""} · ${d.class.title || "(주제 없음)"} · 출석 ${present}/${d.rows.length}명`),
     h("div", { class: "table-wrap" }, h("table", { class: "att hub-day-table" },
       h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "출결", "참여 시간"].map((t) => h("th", {}, t)))),
@@ -1457,17 +1457,19 @@ async function hubCourseAttendance(box, ov) {
     fill(box, ...hubRecordCards(ov, "attendance"));
     return;
   }
-  fill(box, hubRecordHeading(course, "출석부"), h("p", { class: "muted" }, "출석부를 불러오는 중…"));
+  fill(box, hubRecordHeading(course), h("p", { class: "muted" }, "출석부를 불러오는 중…"));
   let sheet;
   try { sheet = await api(`/api/hub/courses/${course.id}/attendance`); }
-  catch (err) { fill(box, hubRecordHeading(course, "출석부"), h("p", { class: "error" }, err.message)); return; }
+  catch (err) { fill(box, hubRecordHeading(course), h("p", { class: "error" }, err.message)); return; }
   if (hubSub !== "attendance" || hubRecordCourseId !== course.id) return;
   const cls = sheet.classes; // 수업일 (먼저 연 수업부터)
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const counts = cls.map((_, j) => sheet.students.filter((st) => st.attendance[j]).length);
   const fixed = ["연번", "소속학교", "학번", "이름"];
-  fill(box, hubRecordHeading(course, "출석부"),
+  fill(box, hubRecordHeading(course),
     h("div", { class: "hub-grid-summary" }, `수강 확정 ${sheet.students.length}명 · 수업 ${cls.length}회 · 한 번이라도 들어오면 O`),
+    h("div", { class: "row hub-export-actions" },
+      h("a", { class: "button", href: `/api/hub/courses/${course.id}/attendance.xlsx` }, "📥 엑셀 받기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att hub-grid-table" },
       h("thead", {},
         h("tr", {}, fixed.map((t) => h("th", { rowspan: 2 }, t)),

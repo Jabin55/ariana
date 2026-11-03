@@ -7,16 +7,21 @@ import io
 import json
 import time
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy import and_, func, or_, select
 
 from app import db
 from app.auth import admin_user_ids, require_user, student_no
 from app.courses import course_roster, hub_locked, managed_hubs, taught_course_ids, taught_filter
 from app.classroom import CLASS_REVIVE_LIMIT, classes as live_classes
+from app.satisfaction import xlsx_text
 
 router = APIRouter()
 KST = ZoneInfo("Asia/Seoul")
@@ -297,6 +302,76 @@ async def hub_course_attendance(course_id: int, request: Request):
     students.sort(key=lambda x: (x["school"], x["student_no"] or "~", x["name"]))
     return {"course": {"id": course.id, "title": course.title}, "classes": class_rows,
             "students": students}
+
+
+def hub_attendance_workbook(data: dict) -> bytes:
+    """거점학교 강좌별 출석부의 학생·수업일·출결 표시를 엑셀로 저장한다."""
+    classes, students = data["classes"], data["students"]
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "강좌별 출석부"
+    last_col = 5 + max(1, len(classes))
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    sheet["A1"] = f"{xlsx_text(data['course']['title'])} 출석부"
+    sheet["A1"].font = Font(size=16, bold=True, color="245B45")
+    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+    sheet["A2"] = f"수강 확정 {len(students)}명 · 수업 {len(classes)}회 · 한 번이라도 들어오면 O"
+    for col, label in enumerate(("연번", "소속학교", "학번", "이름"), 1):
+        sheet.merge_cells(start_row=3, start_column=col, end_row=4, end_column=col)
+        sheet.cell(3, col, label)
+    if classes:
+        if len(classes) > 1:
+            sheet.merge_cells(start_row=3, start_column=5, end_row=3, end_column=4 + len(classes))
+        sheet.cell(3, 5, "수업일")
+        for col, cls in enumerate(classes, 5):
+            sheet.cell(4, col, cls["date"])
+    else:
+        sheet.merge_cells("E3:E4")
+        sheet["E3"] = "수업일"
+    sheet.merge_cells(start_row=3, start_column=last_col, end_row=4, end_column=last_col)
+    sheet.cell(3, last_col, "참여횟수")
+    for row_no, student in enumerate(students, 1):
+        values = [row_no, xlsx_text(student["school"]), xlsx_text(student["student_no"]), xlsx_text(student["name"])]
+        values.extend("O" if mark else "X" for mark in student["attendance"])
+        if not classes:
+            values.append("수업 기록 없음")
+        values.append(f"{student['attended_count']}/{len(classes)}회")
+        for col, value in enumerate(values, 1):
+            sheet.cell(4 + row_no, col, value)
+    if students and classes:
+        totals = ["참여 인원", "", "", ""] + [f"{sum(s['attendance'][i] for s in students)}명" for i in range(len(classes))] + [""]
+        total_row = 5 + len(students)
+        for col, value in enumerate(totals, 1):
+            sheet.cell(total_row, col, value)
+        sheet.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
+    fill = PatternFill("solid", fgColor="245B45")
+    for row in sheet.iter_rows(min_row=3, max_row=4):
+        for cell in row:
+            cell.fill = fill
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for row in sheet.iter_rows(min_row=5):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for col, width in enumerate((8, 24, 14, 16), 1):
+        sheet.column_dimensions[get_column_letter(col)].width = width
+    for col in range(5, last_col):
+        sheet.column_dimensions[get_column_letter(col)].width = 15
+    sheet.column_dimensions[get_column_letter(last_col)].width = 14
+    sheet.freeze_panes = "E5"
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+@router.get("/api/hub/courses/{course_id}/attendance.xlsx")
+async def hub_course_attendance_xlsx(course_id: int, request: Request):
+    data = await hub_course_attendance(course_id, request)
+    content = await db.run(hub_attendance_workbook, data)
+    name = quote(f"{data['course']['title']} 출석부.xlsx")
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+                             "Content-Disposition": f'attachment; filename="hub-attendance-{course_id}.xlsx"; filename*=UTF-8\'\'{name}'})
 
 
 @router.get("/api/hub/classes/{class_id}/attendance")

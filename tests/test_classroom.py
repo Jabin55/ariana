@@ -961,8 +961,20 @@ def test_hub_structure_and_course_approval(monkeypatch):
     assert [(x["title"], x["date"]) for x in sheet["classes"]] == [("1주차", log[0]["date"])]
     assert [(x["student_no"], x["attendance"]) for x in sheet["students"]] == [
         ("20301", [True]), ("20303", [False])]
+    from io import BytesIO
+    from openpyxl import load_workbook
+    export = coord.get(f"/api/hub/courses/{cid}/attendance.xlsx")
+    assert export.status_code == 200 and export.headers["cache-control"] == "private, no-store"
+    assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in export.headers["content-type"]
+    workbook = load_workbook(BytesIO(export.content))
+    sheet_export = workbook.active
+    assert sheet_export["E4"].value == log[0]["date"]
+    assert [(sheet_export[f"C{n}"].value, sheet_export[f"E{n}"].value, sheet_export[f"F{n}"].value) for n in (5, 6)] == [
+        ("20301", "O", "1/1회"), ("20303", "X", "0/1회")]
     assert prof.get(f"/api/hub/courses/{cid}/attendance").status_code == 403
+    assert prof.get(f"/api/hub/courses/{cid}/attendance.xlsx").status_code == 403
     assert coord.get("/api/hub/courses/999999/attendance").status_code == 404
+    assert coord.get("/api/hub/courses/999999/attendance.xlsx").status_code == 404
     # 수업일 하나의 수강생 출석부: 출결과 참여 시간 (12분 있었던 학생 / 결석 학생)
     with db.engine.begin() as conn:
         conn.execute(db.attendance.update().where(db.attendance.c.class_id == log[0]["id"]).values(
@@ -979,6 +991,27 @@ def test_hub_structure_and_course_approval(monkeypatch):
     admin.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_from": "2020-01-01", "valid_until": "2020-12-31"})
     pme = prof.get("/api/me").json()["user"]
     assert pme["role"] == "guest" and pme["memberships"][0]["status"] == "expired"
+
+
+def test_hub_attendance_workbook_handles_empty_and_multiple_class_days():
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from app.access_log import match
+    from app.history import hub_attendance_workbook
+
+    assert match("GET", "/api/hub/courses/7/attendance.xlsx") == ("다운로드", "출석부 엑셀", {"course": "7"})
+    base = {"course": {"title": "=SUM(1,1)"}, "students": [
+        {"school": "=1+1", "student_no": "20301", "name": "학생", "attendance": [], "attended_count": 0}]}
+    empty = load_workbook(BytesIO(hub_attendance_workbook({**base, "classes": []}))).active
+    assert empty["A1"].data_type != "f" and empty["B5"].data_type != "f"
+    assert empty["C5"].value == "20301" and empty["E5"].value == "수업 기록 없음"
+
+    days = [{"date": "2026-11-01"}, {"date": "2026-11-03"}]
+    student = {**base["students"][0], "attendance": [True, False], "attended_count": 1}
+    multiple = load_workbook(BytesIO(hub_attendance_workbook({**base, "classes": days, "students": [student]}))).active
+    assert [multiple[f"{col}4"].value for col in ("E", "F")] == ["2026-11-01", "2026-11-03"]
+    assert [multiple[f"{col}5"].value for col in ("E", "F", "G")] == ["O", "X", "1/2회"]
+    assert [multiple[f"{col}6"].value for col in ("E", "F")] == ["1명", "0명"]
 
 
 def test_same_person_both_roles_at_same_hub(monkeypatch):
@@ -1069,6 +1102,7 @@ def test_instructor_opens_courses_at_any_hub(monkeypatch):
     assert create(t, title="1주차", course_id=cid)["code"]
     assert coordinators["가나고"].get(f"/api/hub/courses/{cid}/attendance").status_code == 200
     assert coordinators["다라고"].get(f"/api/hub/courses/{cid}/attendance").status_code == 404
+    assert coordinators["다라고"].get(f"/api/hub/courses/{cid}/attendance.xlsx").status_code == 404
     assert coordinators["다라고"].get("/api/hub/class-log", params={"course_id": cid}).json()["classes"] == []
 
     # 강의교사 권한을 해제하면 과목이 잠기고, 다시 승인받으면 풀린다

@@ -1186,8 +1186,11 @@ table.att.hub-approval-table td:last-child { min-width: 0; }
 .hub-course-view .notice-body { margin-top: 0; }
 .hub-course-actions { margin: 12px 0; flex-wrap: wrap; }
 @media (max-width: 600px) { .hub-course-view .facts { grid-template-columns: 110px minmax(0, 1fr); } }
-.hub-record-heading { margin: 10px 0 18px; }
-.hub-record-heading h2 { margin: 0; }
+.hub-record-banner { margin: 10px 0 18px; }
+.hub-record-banner > button { margin-bottom: 8px; }
+.hub-record-banner .course-banner { margin-top: 0; }
+.hub-day-title { margin: 0 0 10px; }
+.hub-export-actions { justify-content: flex-end; margin: 0 0 10px; }
 .hub-archived { margin-top: 16px; }
 .hub-archived summary { color: var(--muted); cursor: pointer; margin-bottom: 10px; }
 table.att.hub-days-table th, table.att.hub-days-table td,
