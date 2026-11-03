@@ -351,15 +351,18 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
   };
   const fb = h("textarea", { rows: 5, maxlength: 4000, placeholder: "학생에게 보여 줄 피드백" });
   fb.value = v.feedback || "";
-  const pub = h("input", { type: "checkbox", checked: v.published });
-  const saveFb = h("button", { class: "primary small", type: "button" }, "피드백 저장");
-  saveFb.onclick = async () => {
+  const saveFb = h("button", { class: "small", type: "button" }, "피드백 저장");
+  const publishFb = h("button", { class: v.published ? "small" : "primary small", type: "button" }, v.published ? "공개 취소" : "학생에게 공개");
+  const saveFeedback = async (published, message) => {
+    saveFb.disabled = publishFb.disabled = true;
     try {
-      await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { feedback: fb.value, published: pub.checked });
-      toast(pub.checked ? "저장했어요. 학생의 [내 강좌 > 활동 피드백]에 보여요." : "저장했어요. 공개하기 전에는 학생에게 보이지 않아요.", 4000);
+      await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { feedback: fb.value, published });
+      toast(message, 4000);
       again();
-    } catch (err) { toast(err.message); }
+    } catch (err) { toast(err.message); saveFb.disabled = publishFb.disabled = false; }
   };
+  saveFb.onclick = () => saveFeedback(v.published, v.published ? "피드백을 저장했어요. 학생에게 공개 중이에요." : "피드백을 저장했어요. 공개하기 전에는 학생에게 보이지 않아요.");
+  publishFb.onclick = () => saveFeedback(!v.published, v.published ? "공개를 취소했어요. 이제 학생에게 보이지 않아요." : "학생의 [내 강좌 > 활동 피드백]에 공개했어요.");
   const when = v.analyzed_at ? new Date(v.analyzed_at * 1000).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" }) : "";
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
@@ -391,8 +394,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     h("div", { class: "ach-box" },
       h("div", { class: "ach-box-head" }, "💌 학생에게 줄 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 고쳐서 쓰세요)")),
       fb,
-      h("div", { class: "row", style: "margin-top:8px" },
-        h("label", { class: "switch grow" }, pub, "학생에게 공개 (피드백과 성취 변화 그래프)"), saveFb),
+      h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, saveFb, publishFb),
       v.published ? h("p", { class: "ok-text", style: "margin:6px 0 0;font-size:0.85rem" }, "✅ 지금 학생에게 공개 중이에요.") : null));
 }
 
