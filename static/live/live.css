@@ -1983,8 +1983,9 @@ table.att.std-head-form td { padding: 4px; white-space: normal; vertical-align: 
 .std-head-form textarea { min-height: 2.6em; }
 /* 학생 맞춤형 분석: 교사가 역량 점수·판단 근거 수정 */
 table.att.ach-reason-table { table-layout: fixed; width: 100%; font-size: 0.86rem; }
-table.att.ach-reason-table col.c-name { width: 28%; }
-table.att.ach-reason-table col.c-score { width: 4.6em; }
+table.att.ach-reason-table col.c-name { width: 20%; }
+table.att.ach-reason-table td:first-child { text-align: center; vertical-align: middle; word-break: keep-all; }
+table.att.ach-reason-table col.c-score { width: 4.2em; }
 table.att.ach-reason-table th, table.att.ach-reason-table td { white-space: normal; border: 1px solid var(--border); padding: 5px 6px; }
 table.att.ach-reason-table th { background: #f4f6fa; text-align: center; color: var(--text); }
 table.att.ach-reason-table td.c-score { text-align: center; white-space: nowrap; }
