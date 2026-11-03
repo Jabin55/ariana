@@ -861,7 +861,7 @@ async function renderOpenClass(c, box) {
         plain()] : plain()); // 회차표가 없는 과목은 제목 없이 주제만 적고 열기
 }
 
-/* ───── 학습 관리: 위에 [수업참석률][공지][퀴즈][설문][평가] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
+/* ───── 학습 관리: 위에 [수업참석률][설문][퀴즈][스크립트][학생 맞춤형 피드백] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
 
 const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
 const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "평가" };
@@ -877,8 +877,8 @@ async function renderLearning(c, box) {
   const pct = (v) => (v == null ? "-" : `${v}%`);
   const cards = [
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
-    ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
+    ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
     ["speakers", "🧑‍🎓 학생 맞춤형 피드백", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
   ];
