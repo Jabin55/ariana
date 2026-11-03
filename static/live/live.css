@@ -1100,6 +1100,49 @@ button, input, select, .button, .status, .tag, .chip, .badge, .wz-toggle { line-
 .quit-cell { display: inline-flex; align-items: center; gap: 4px; }
 .enroll-table td.contact-cell { white-space: nowrap; font-size: 0.85rem; text-align: left; line-height: 1.4; }
 .enroll-table tr.detail-row .box { max-width: 1040px; }
+/* 전체 운영 관리 > 교사 승인: 긴 이메일·학교명도 표 너비 안에서 줄바꿈 */
+table.att.staff-approval-table { width: 100%; min-width: 0; table-layout: fixed; font-size: clamp(0.76rem, 0.85vw, 0.9rem); }
+table.att.staff-approval-table th, table.att.staff-approval-table td {
+  box-sizing: border-box; min-width: 0; padding: 7px 4px; text-align: center; vertical-align: middle;
+  white-space: normal; overflow-wrap: anywhere; word-break: keep-all;
+}
+table.att.staff-approval-table th:nth-child(1) { width: 3%; }
+table.att.staff-approval-table th:nth-child(2) { width: 4%; }
+table.att.staff-approval-table th:nth-child(3) { width: 8%; }
+table.att.staff-approval-table th:nth-child(4) { width: 8%; }
+table.att.staff-approval-table th:nth-child(5) { width: 9%; }
+table.att.staff-approval-table th:nth-child(6) { width: 8%; }
+table.att.staff-approval-table th:nth-child(7) { width: 8%; }
+table.att.staff-approval-table th:nth-child(8) { width: 19%; }
+table.att.staff-approval-table th:nth-child(9) { width: 10%; }
+table.att.staff-approval-table th:nth-child(10) { width: 10%; }
+table.att.staff-approval-table th:nth-child(11) { width: 7%; }
+table.att.staff-approval-table th:nth-child(12) { width: 6%; }
+table.att.staff-approval-table td.contact-cell { white-space: normal; overflow-wrap: anywhere; text-align: center; }
+table.att.staff-approval-table .name-btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+table.att.staff-approval-table .status { white-space: normal; overflow-wrap: anywhere; }
+table.att.staff-approval-table td:last-child { min-width: 0; }
+table.att.staff-approval-table tr.detail-row > td { text-align: left; }
+@media (max-width: 800px) {
+  table.att.staff-approval-table, table.att.staff-approval-table tbody { display: block; }
+  table.att.staff-approval-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  table.att.staff-approval-table tbody tr:not(.detail-row) {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden;
+  }
+  table.att.staff-approval-table tbody tr:not(.detail-row) td {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    min-width: 0; text-align: right; border-bottom: 1px solid var(--border);
+  }
+  table.att.staff-approval-table tbody tr:not(.detail-row) td::before {
+    content: attr(data-label); flex: none; color: var(--muted); font-weight: 600;
+  }
+  table.att.staff-approval-table tbody tr.detail-row, table.att.staff-approval-table tbody tr.detail-row > td { display: block; width: 100%; box-sizing: border-box; }
+  table.att.staff-approval-table tbody tr.detail-row .box { max-width: 100%; }
+}
+@media (max-width: 520px) {
+  table.att.staff-approval-table tbody tr:not(.detail-row) { grid-template-columns: minmax(0, 1fr); }
+}
 table.att.instructor-approval-table { min-width: 900px; }
 table.att.instructor-approval-table th, table.att.instructor-approval-table td { vertical-align: middle; white-space: nowrap; }
 table.att.instructor-approval-table td:last-child { min-width: 150px; }

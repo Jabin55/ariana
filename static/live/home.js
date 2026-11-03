@@ -1360,18 +1360,18 @@ function staffBoard(id, list, today, reload, title) {
         h("td", {}, h("span", { class: `status ${cls}` }, label), " ",
           h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")))
         : h("tr", { class: open ? "open-row" : "" },
-        h("td", {}, pick),
-        h("td", { class: "num" }, rows.length - i),
-        h("td", {}, STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (보조)" : "")),
-        h("td", {}, h("button", { class: "link-btn name-btn", onclick: toggle },
+        h("td", { "data-label": "선택" }, pick),
+        h("td", { class: "num", "data-label": "번호" }, rows.length - i),
+        h("td", { "data-label": "회원 구분" }, STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (보조)" : "")),
+        h("td", { "data-label": "이름" }, h("button", { class: "link-btn name-btn", onclick: toggle },
           `${open ? "▾" : "▸"} ${x.name}`), changeNote(x)),
-        h("td", {}, x.hub || "-"), h("td", {}, x.affiliation || "-"),
-        h("td", {}, x.birth ? x.birth.replaceAll("-", ".") : "-"),
-        h("td", { class: "contact-cell" }, x.contact_email || x.email || "-"),
-        h("td", { class: "contact-cell" }, x.contact || "-"),
-        h("td", {}, day(x.requested_at)),
-        h("td", {}, h("span", { class: `status ${cls}` }, label)),
-        h("td", {}, h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")));
+        h("td", { "data-label": "학교" }, x.hub || "-"), h("td", { "data-label": "소속" }, x.affiliation || "-"),
+        h("td", { "data-label": "생년월일" }, x.birth ? x.birth.replaceAll("-", ".") : "-"),
+        h("td", { class: "contact-cell", "data-label": "이메일" }, x.contact_email || x.email || "-"),
+        h("td", { class: "contact-cell", "data-label": "연락처" }, x.contact || "-"),
+        h("td", { "data-label": "신청일" }, day(x.requested_at)),
+        h("td", { "data-label": "상태" }, h("span", { class: `status ${cls}` }, label)),
+        h("td", { "data-label": "관리" }, h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")));
       return open ? [main, h("tr", { class: "detail-row" }, h("td", { colspan: COLS }, staffCard(x, today, reload)))] : [main];
     });
     result.replaceChildren(
@@ -1381,7 +1381,7 @@ function staffBoard(id, list, today, reload, title) {
         hubApproval ? h("label", { class: "switch" }, all, "전체 선택") : null,
         h("button", { class: "small primary", onclick: () => decide("approve") }, "승인"),
         h("button", { class: "small", onclick: () => decide("reject") }, "거절")),
-      h("div", { class: "table-wrap" }, h("table", { class: `att enroll-table ${hubApproval ? "instructor-approval-table" : ""}` },
+      h("div", { class: "table-wrap" }, h("table", { class: `att enroll-table ${hubApproval ? "instructor-approval-table" : "staff-approval-table"}` },
         h("thead", {}, h("tr", {}, hubApproval
           ? ["연번", "신청일", "소속", "직위", "이름", "연락처", "상태"].map((t) => h("th", {}, t))
           : [h("th", {}, all), ...["번호", "회원 구분", "이름", "학교", "소속", "생년월일", "이메일", "연락처", "신청일", "상태", ""].map((t) => h("th", {}, t))])),
