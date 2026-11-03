@@ -16,7 +16,7 @@
   const SUBMENUS = {
     about: [["/live/about", "기본방향"], ["/live/joint", "공동교육과정"], ["/live/credit", "고교학점제"], ["/live/sitemap", "사이트맵"]],
     info: [["/live/notices", "공지사항"], ["/live/guide", "수강안내"], ["/live/help", "이용안내"], ["/live/community", "소통마당"]],
-    enroll: [["/live/courses", "지금 신청할 수 있는 과목"], ["/live/course-requests", "희망과목 개설 신청"],
+    enroll: [["/live/courses", "지금 신청할 수 있는 과목"], ["/live/course-requests", "희망 과목 개설 신청"],
       ["/live/past-courses", "지난 개설 과목"]],
   };
   const params = new URLSearchParams(location.search);

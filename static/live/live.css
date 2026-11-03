@@ -1414,7 +1414,7 @@ img.me-avatar { object-fit: cover; }
 #wish-page-form label { display: block; margin: 10px 0; }
 #wish-page-form input { width: 100%; }
 #wish-page-form select { width: 100%; }
-#wish-page-open { margin-bottom: 12px; }
+.wish-page-open-row { display: flex; justify-content: flex-end; margin: 16px 0 12px; }
 .wish-table { width: 100%; min-width: 650px; border-collapse: collapse; }
 .wish-table th, .wish-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
 .wish-table th { background: var(--surface-2); color: var(--brand-deep); font-weight: 700; white-space: nowrap; }

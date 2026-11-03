@@ -150,7 +150,7 @@
           <div class="wish-bar"><i style="width:${Math.round((w.count / top) * 100)}%"></i></div>
           <span class="muted">${[...Object.entries(w.grades).map(([g, n]) => `${g}학년 신청 ${n}`), ...(w.likes ? [`공감 ${w.likes}`] : [])].join(" · ") || "&nbsp;"}</span></div>`;
       }).join("")
-        : '<p class="muted">아직 요청한 과목이 없어요. 듣고 싶은 과목은 [희망과목 개설 신청]에서 요청해 주세요!</p>';
+        : '<p class="muted">아직 요청한 과목이 없어요. 듣고 싶은 과목은 [희망 과목 개설 신청]에서 요청해 주세요!</p>';
     } catch { box.innerHTML = '<p class="muted">불러오지 못했어요.</p>'; }
   }
 

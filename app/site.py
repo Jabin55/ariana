@@ -191,7 +191,7 @@ async def sitemap_page():
     <li><a href="/live/notices">공지사항</a></li><li><a href="/live/guide">수강안내</a></li>
     <li><a href="/live/help">이용안내</a></li><li><a href="/live/community">소통마당</a></li></ul></section>
   <section class="info-block"><h2>수강신청</h2><ul>
-    <li><a href="/live/courses">지금 신청할 수 있는 과목</a></li><li><a href="/live/course-requests">희망과목 개설 신청</a></li>
+    <li><a href="/live/courses">지금 신청할 수 있는 과목</a></li><li><a href="/live/course-requests">희망 과목 개설 신청</a></li>
     <li><a href="/live/past-courses">지난 개설 과목</a></li></ul></section>
   <section class="info-block"><h2>수업 공간</h2><ul>
     <li><a href="/live?classroom=1">강의실</a></li><li><a href="/live?office=1">교무실</a></li></ul></section>
@@ -484,14 +484,14 @@ async def help_page():
 
 @router.get("/live/course-requests", response_class=HTMLResponse)
 async def course_requests_page():
-    return site_page("희망과목 개설 신청", """
+    return site_page("희망 과목 개설 신청", """
 <section class="info-block"><h2>학생들이 신청한 과목</h2>
   <div id="wish-page-summary">불러오는 중…</div>
   <p class="error" id="wish-page-board-error" role="alert"></p>
 </section>
 <section class="info-block" id="wish-page-own" hidden><h2>내가 신청한 과목</h2>
   <div id="wish-page-mine"></div>
-  <button class="primary" type="button" id="wish-page-open">신청서 작성</button>
+  <div class="wish-page-open-row"><button class="primary" type="button" id="wish-page-open">신청서 작성</button></div>
   <form id="wish-page-form" hidden>
     <label>연도 <input id="wish-page-year" type="number" min="2020" max="2100" required></label>
     <label>학기 <select id="wish-page-term" required><option value="">학기 선택</option>
@@ -549,7 +549,7 @@ async def home_page():
     <div class="home-courses" id="home-courses"><p class="muted">불러오는 중…</p></div>
   </section>
   <section class="home-box">
-    <div class="home-box-h"><h2>🙋 학생들이 듣고 싶은 과목</h2><a href="/live/course-requests" id="wish-link">희망과목 개설 신청 +</a></div>
+    <div class="home-box-h"><h2>🙋 학생들이 듣고 싶은 과목</h2><a href="/live/course-requests" id="wish-link">희망 과목 개설 신청 +</a></div>
     <div class="wish-cloud" id="home-wishes"><p class="muted">불러오는 중…</p></div>
   </section>
 </div>

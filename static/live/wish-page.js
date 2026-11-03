@@ -1,4 +1,4 @@
-/* 희망과목 개설 신청 게시판: 공개 글·공감, 학생·전체 관리자의 신청 목록. */
+/* 희망 과목 개설 신청 게시판: 공개 글·공감, 학생·전체 관리자의 신청 목록. */
 (async function () {
   const $ = (id) => document.getElementById(id);
   const item = (tag, text, className = "") => {
