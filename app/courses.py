@@ -403,7 +403,9 @@ async def my_courses(request: Request):
             counts: dict = {}
             e = db.enrollments.c
             for cid, status, n in c.execute(
-                    select(e.course_id, e.status, func.count()).where(e.course_id.in_([r.id for r in rows] or [-1]))
+                    select(e.course_id, e.status, func.count()).where(
+                        e.course_id.in_([r.id for r in rows] or [-1]),
+                        e.user_id.not_in(auth.admin_user_ids(c)))
                     .group_by(e.course_id, e.status)):
                 counts.setdefault(cid, {"approved": 0, "pending": 0})
                 key = {"approved": "approved", "pending": "pending"}.get(status)
@@ -680,7 +682,8 @@ async def course_enrollments(course_id: int, request: Request):
         with db.engine.connect() as c:
             return c.execute(select(db.enrollments, db.users)
                              .join(db.users, db.users.c.id == db.enrollments.c.user_id)
-                             .where(db.enrollments.c.course_id == course_id)).all()
+                             .where(db.enrollments.c.course_id == course_id,
+                                    db.enrollments.c.user_id.not_in(auth.admin_user_ids(c)))).all()
 
     out = []
     for r in await db.run(run):
@@ -702,7 +705,8 @@ async def my_enrollments(request: Request):
             courses = {r.id: r for r in c.execute(select(db.courses).where(taught_filter(t["id"]))).all()}
             ok = [i for i, r in courses.items() if not hub_locked(r, t)]
             rows = c.execute(select(db.enrollments, db.users).join(db.users, db.users.c.id == db.enrollments.c.user_id)
-                             .where(db.enrollments.c.course_id.in_(ok or [-1]))).all()
+                             .where(db.enrollments.c.course_id.in_(ok or [-1]),
+                                    db.enrollments.c.user_id.not_in(auth.admin_user_ids(c)))).all()
             return courses, rows
 
     courses, rows = await db.run(run)
@@ -863,7 +867,8 @@ async def enroll(course_id: int, request: Request):
                 raise HTTPException(409, "수강신청이 마감된 강좌예요.")
             if co.capacity:
                 n = c.execute(select(func.count()).select_from(db.enrollments).where(
-                    e.course_id == course_id, e.status.in_(["pending", "approved"]))).scalar()
+                    e.course_id == course_id, e.status.in_(["pending", "approved"]),
+                    e.user_id.not_in(auth.admin_user_ids(c)))).scalar()
                 if n >= co.capacity:
                     raise HTTPException(409, f"수강 인원({co.capacity}명)이 다 찼어요.")
             joined = [x for x in (co.schools or "").split("\n") if x]
@@ -925,10 +930,11 @@ async def live_now(request: Request):
 
 
 def course_roster(course_id: int) -> list:
-    """출결의 '미접속' 계산용: 승인된 수강생"""
+    """참여자·출결 명단: 승인된 수강생 중 전체 관리자 계정은 제외."""
     with db.engine.connect() as c:
         return c.execute(select(db.users).join(db.enrollments, db.enrollments.c.user_id == db.users.c.id)
-                         .where(db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved")).all()
+                         .where(db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved",
+                                db.users.c.id.not_in(auth.admin_user_ids(c)))).all()
 
 
 # ───────────────────────── 거점학교 관리교사 ─────────────────────────
@@ -958,7 +964,8 @@ async def hub_overview(request: Request):
                 q = q.where(co.hub_id.in_(hubs))
             courses = c.execute(q.order_by(co.archived, co.start_date.desc())).all()
             rows = c.execute(select(db.enrollments, db.users).join(db.users, db.users.c.id == e.user_id)
-                             .where(e.course_id.in_([x.id for x in courses] or [-1]))).all()
+                             .where(e.course_id.in_([x.id for x in courses] or [-1]),
+                                    e.user_id.not_in(auth.admin_user_ids(c)))).all()
             return courses, rows
 
     courses, rows = await db.run(run)
@@ -1124,7 +1131,8 @@ def school_students(schools: set[str] | None) -> list[dict]:
     """우리 학교 학생과 수강신청 (수업신청자 관리와 같은 칸: 교육과정·과목·거점학교·담당교사·신청일·상태)"""
     with db.engine.connect() as c:
         u = db.users.c
-        q = select(db.users).where(u.role == "student", u.account_state == "active")
+        q = select(db.users).where(u.role == "student", u.account_state == "active",
+                                   u.id.not_in(auth.admin_user_ids(c)))
         if schools is not None:
             q = q.where(u.school.in_(schools))
         users = c.execute(q).all()

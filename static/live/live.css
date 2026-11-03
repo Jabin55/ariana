@@ -1776,18 +1776,18 @@ table.att.speech-students td, table.att.speech-classes td { overflow: hidden; te
 .std-levels { margin: 8px 0; }
 .std-levels table.info-table th { width: 50px; text-align: center; }
 table.att.std-elements { table-layout: fixed; min-width: 850px; }
-table.att.std-elements:not(.edit) th:nth-child(1) { width: 13%; }
-table.att.std-elements:not(.edit) th:nth-child(2) { width: 16%; }
-table.att.std-elements:not(.edit) th:nth-child(3) { width: 20%; }
-table.att.std-elements:not(.edit) th:nth-child(n+4) { width: 17%; }
+table.att.std-elements:not(.edit) col:nth-child(1) { width: 13%; }
+table.att.std-elements:not(.edit) col:nth-child(2) { width: 16%; }
+table.att.std-elements:not(.edit) col:nth-child(3) { width: 20%; }
+table.att.std-elements:not(.edit) col:nth-child(n+4) { width: 17%; }
 table.att.std-elements td { white-space: normal; vertical-align: top; text-align: left; font-size: 0.88rem; }
 table.att.std-elements td:last-child { min-width: 0; }
 table.att.std-elements.edit { min-width: 1050px; }
-table.att.std-elements.edit th:nth-child(1) { width: 12%; }
-table.att.std-elements.edit th:nth-child(2) { width: 14%; }
-table.att.std-elements.edit th:nth-child(3) { width: 18%; }
-table.att.std-elements.edit th:nth-child(n+4):nth-child(-n+6) { width: 16%; }
-table.att.std-elements.edit th:last-child { width: 8%; }
+table.att.std-elements.edit col:nth-child(1) { width: 12%; }
+table.att.std-elements.edit col:nth-child(2) { width: 14%; }
+table.att.std-elements.edit col:nth-child(3) { width: 18%; }
+table.att.std-elements.edit col:nth-child(n+4):nth-child(-n+6) { width: 16%; }
+table.att.std-elements.edit col:last-child { width: 8%; }
 table.att.std-elements.edit textarea, table.att.std-elements.edit input, table.att.std-elements.edit select { width: 100%; box-sizing: border-box; font-size: 0.85rem; }
 .std-element-category { color: #1b6b4a; font-weight: 700; }
 .std-form { display: grid; grid-template-columns: 1fr; gap: 8px; }

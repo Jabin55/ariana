@@ -19,7 +19,7 @@ from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.auth import require_user
+from app.auth import admin_user_ids, require_user
 from app.courses import is_enrolled, owned_course
 from app.privacy_filter import known_member_names, redact
 
@@ -175,13 +175,15 @@ async def teacher_satisfaction_data(course_id: int, request: Request):
                 db.course_satisfaction_surveys.c.course_id == course_id)).first()
             enrolled = c.execute(select(func.count()).select_from(db.enrollments).where(
                 db.enrollments.c.course_id == course_id,
-                db.enrollments.c.status == "approved")).scalar_one()
+                db.enrollments.c.status == "approved",
+                db.enrollments.c.user_id.not_in(admin_user_ids(c)))).scalar_one()
             responses = c.execute(select(db.course_satisfaction_responses.c.content,
                                          db.course_satisfaction_responses.c.communication,
                                          db.course_satisfaction_responses.c.environment,
                                          db.course_satisfaction_responses.c.ratings,
                                          db.course_satisfaction_responses.c.comment).where(
-                db.course_satisfaction_responses.c.course_id == course_id)).all()
+                db.course_satisfaction_responses.c.course_id == course_id,
+                db.course_satisfaction_responses.c.user_id.not_in(admin_user_ids(c)))).all()
         questions = survey_questions(survey)
         scored = []
         for row in responses:

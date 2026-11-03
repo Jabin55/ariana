@@ -23,7 +23,7 @@ from sqlalchemy import delete, func, insert, select, update
 
 from app import db
 from app.wipe import wipe
-from app.auth import KST, require_user, student_no
+from app.auth import KST, admin_user_ids, require_user, student_no
 from app.courses import course_roster, is_enrolled, owned_course
 
 router = APIRouter()
@@ -62,12 +62,33 @@ def file_path(assignment_id: int, fid: str) -> Path:
     return FILES_DIR / "assignments" / str(assignment_id) / fid
 
 
-def assignment_view(a, now: float) -> dict:
+def assignment_view(a, now: float, standard_ids: list[int] | None = None) -> dict:
     return {"id": a.id, "course_id": a.course_id, "title": a.title, "description": a.description,
             "due_at": a.due_at, "due": fmt(a.due_at), "due_input": due_input(a.due_at),
             "allow_late": bool(a.allow_late), "closed": bool(a.closed),
             "past_due": bool(a.due_at and now > a.due_at), "created_at": a.created_at,
-            "weight": a.weight, "max_score": a.max_score}
+            "weight": a.weight, "max_score": a.max_score,
+            "standard_ids": standard_ids or []}
+
+
+def assignment_standard_links(c, assignment_ids: list[int]) -> dict[int, list[int]]:
+    links: dict[int, list[int]] = {}
+    for row in c.execute(select(db.assignment_standards.c.assignment_id, db.assignment_standards.c.standard_id)
+                         .where(db.assignment_standards.c.assignment_id.in_(assignment_ids or [-1]))):
+        links.setdefault(row.assignment_id, []).append(row.standard_id)
+    return links
+
+
+def save_assignment_standards(c, aid: int, course_id: int, standard_ids: list[int]) -> None:
+    chosen = set(standard_ids)
+    valid = set(c.execute(select(db.course_standards.c.id).where(
+        db.course_standards.c.course_id == course_id,
+        db.course_standards.c.id.in_(chosen or {-1}))).scalars())
+    if chosen != valid:
+        raise HTTPException(400, "이 강좌에 속한 성취기준만 선택할 수 있어요.")
+    c.execute(delete(db.assignment_standards).where(db.assignment_standards.c.assignment_id == aid))
+    for sid in sorted(chosen):
+        c.execute(insert(db.assignment_standards).values(assignment_id=aid, standard_id=sid))
 
 
 def can_submit(a, now: float) -> tuple[bool, str]:
@@ -108,6 +129,7 @@ class AssignmentReq(BaseModel):
     allow_late: bool = True
     weight: float | None = Field(default=None, ge=0, le=100)  # 반영 비율(%)
     max_score: float | None = Field(default=None, gt=0, le=1000)  # 영역 만점(점)
+    standard_ids: list[int] = Field(default_factory=list, max_length=100)
 
 
 class AssignmentUpdate(BaseModel):
@@ -118,6 +140,7 @@ class AssignmentUpdate(BaseModel):
     closed: bool | None = None
     weight: float | None = Field(default=None, ge=0, le=100)
     max_score: float | None = Field(default=None, gt=0, le=1000)
+    standard_ids: list[int] | None = Field(default=None, max_length=100)
 
 
 @router.get("/api/courses/{course_id}/assignments")
@@ -133,13 +156,14 @@ async def course_assignments(course_id: int, request: Request):
             s = db.submissions.c
             stats = {r.assignment_id: (r.n, r.g) for r in c.execute(
                 select(s.assignment_id, func.count().label("n"), func.count(s.graded_at).label("g"))
-                .where(s.assignment_id.in_([r.id for r in rows] or [-1]), s.submitted_at.is_not(None))
+                .where(s.assignment_id.in_([r.id for r in rows] or [-1]), s.submitted_at.is_not(None),
+                       s.user_id.not_in(admin_user_ids(c)))
                 .group_by(s.assignment_id))}
-            return rows, stats, len(course_roster(course_id))
+            return rows, stats, len(course_roster(course_id)), assignment_standard_links(c, [a.id for a in rows])
 
-    rows, stats, students = await db.run(run)
+    rows, stats, students, links = await db.run(run)
     return {"students": students, "assignments": [
-        {**assignment_view(a, now), "submitted": stats.get(a.id, (0, 0))[0], "graded": stats.get(a.id, (0, 0))[1]}
+        {**assignment_view(a, now, links.get(a.id)), "submitted": stats.get(a.id, (0, 0))[0], "graded": stats.get(a.id, (0, 0))[1]}
         for a in rows]}
 
 
@@ -151,10 +175,12 @@ async def create_assignment(course_id: int, req: AssignmentReq, request: Request
 
     def run():
         with db.engine.begin() as c:
-            return c.execute(insert(db.assignments).values(
+            aid = c.execute(insert(db.assignments).values(
                 course_id=course_id, teacher_id=t["id"], title=req.title.strip(), description=req.description.strip(),
                 due_at=due, allow_late=int(req.allow_late), closed=0, created_at=time.time(),
                 weight=req.weight, max_score=req.max_score)).inserted_primary_key[0]
+            save_assignment_standards(c, aid, course_id, req.standard_ids)
+            return aid
 
     return {"id": await db.run(run)}
 
@@ -162,10 +188,12 @@ async def create_assignment(course_id: int, req: AssignmentReq, request: Request
 @router.post("/api/assignments/{aid}")
 async def update_assignment(aid: int, req: AssignmentUpdate, request: Request):
     t = await require_user(request, "teacher")
-    await teacher_assignment(aid, t)
+    assignment = await teacher_assignment(aid, t)
     values = {}
     for k, v in req.model_dump().items():
         if v is None:
+            continue
+        if k == "standard_ids":
             continue
         if k == "due":
             values["due_at"] = parse_due(v)
@@ -178,9 +206,12 @@ async def update_assignment(aid: int, req: AssignmentUpdate, request: Request):
 
     def run():
         with db.engine.begin() as c:
-            c.execute(update(db.assignments).where(db.assignments.c.id == aid).values(**values))
+            if values:
+                c.execute(update(db.assignments).where(db.assignments.c.id == aid).values(**values))
+            if req.standard_ids is not None:
+                save_assignment_standards(c, aid, assignment.course_id, req.standard_ids)
 
-    if values:
+    if values or req.standard_ids is not None:
         await db.run(run)
     return {"ok": True}
 
@@ -196,6 +227,7 @@ async def delete_assignment(aid: int, request: Request):
             subs = [r.id for r in c.execute(select(db.submissions.c.id).where(db.submissions.c.assignment_id == aid))]
             c.execute(delete(db.submission_files).where(db.submission_files.c.submission_id.in_(subs or [-1])))
             c.execute(delete(db.submissions).where(db.submissions.c.assignment_id == aid))
+            c.execute(delete(db.assignment_standards).where(db.assignment_standards.c.assignment_id == aid))
             c.execute(delete(db.assignments).where(db.assignments.c.id == aid))
         folder = FILES_DIR / "assignments" / str(aid)
         if folder.is_dir():
@@ -211,7 +243,9 @@ def _submissions(a) -> list[dict]:
     """수강 확정 학생 모두 + (수강이 취소됐지만) 이미 낸 학생"""
     with db.engine.connect() as c:
         roster = {u.id: u for u in course_roster(a.course_id)}
-        subs = {s.user_id: s for s in c.execute(select(db.submissions).where(db.submissions.c.assignment_id == a.id))}
+        subs = {s.user_id: s for s in c.execute(select(db.submissions).where(
+            db.submissions.c.assignment_id == a.id,
+            db.submissions.c.user_id.not_in(admin_user_ids(c))))}
         extra = [uid for uid in subs if uid not in roster]
         if extra:
             roster.update({u.id: u for u in c.execute(select(db.users).where(db.users.c.id.in_(extra)))})
@@ -242,7 +276,11 @@ def _submissions(a) -> list[dict]:
 async def assignment_submissions(aid: int, request: Request):
     t = await require_user(request, "teacher")
     a = await teacher_assignment(aid, t)
-    return {"assignment": assignment_view(a, time.time()), "submissions": await db.run(_submissions, a)}
+    def links():
+        with db.engine.connect() as c:
+            return assignment_standard_links(c, [aid]).get(aid, [])
+    return {"assignment": assignment_view(a, time.time(), await db.run(links)),
+            "submissions": await db.run(_submissions, a)}
 
 
 class GradeReq(BaseModel):
@@ -334,15 +372,15 @@ async def my_assignments(request: Request):
                         db.submission_files.c.submission_id.in_([s.id for s in subs.values()]))
                         .order_by(db.submission_files.c.created_at)):
                     files.setdefault(f.submission_id, []).append({"id": f.id, "name": f.name, "size": f.size})
-            return courses, rows, subs, files
+            return courses, rows, subs, files, assignment_standard_links(c, [a.id for a in rows])
 
-    courses, rows, subs, files = await db.run(run)
+    courses, rows, subs, files, links = await db.run(run)
     out = []
     for a in rows:
         s = subs.get(a.id)
         ok, why = can_submit(a, now)
         done = bool(s and s.submitted_at)
-        out.append({**assignment_view(a, now), "course_title": courses.get(a.course_id, ""),
+        out.append({**assignment_view(a, now, links.get(a.id)), "course_title": courses.get(a.course_id, ""),
                     "can_submit": ok, "why_not": why,
                     "mine": {"submitted": done, "submitted_at": fmt(s.submitted_at) if done else "",
                              "late": bool(done and a.due_at and s.submitted_at > a.due_at),

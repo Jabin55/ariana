@@ -226,6 +226,7 @@ async def delete_standard(course_id: int, sid: int, request: Request):
             c.execute(delete(db.session_standards).where(db.session_standards.c.standard_id == sid,
                                                          db.session_standards.c.course_id == course_id))
             c.execute(delete(db.class_standards).where(db.class_standards.c.standard_id == sid))
+            c.execute(delete(db.assignment_standards).where(db.assignment_standards.c.standard_id == sid))
 
     await db.run(run)
     return {"ok": True}

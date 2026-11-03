@@ -430,6 +430,14 @@ class_standards = Table(
     UniqueConstraint("class_id", "standard_id"),
 )
 
+assignment_standards = Table(
+    "assignment_standards", metadata,  # 수행평가마다 교사가 연결한 성취기준
+    Column("id", Integer, primary_key=True),
+    Column("assignment_id", Integer, nullable=False, index=True),
+    Column("standard_id", Integer, nullable=False),
+    UniqueConstraint("assignment_id", "standard_id"),
+)
+
 speech_analyses = Table(
     "speech_analyses", metadata,  # AI 성취 분석: 학생·수업마다 평가 요소별 수준과 근거 발언
     Column("id", Integer, primary_key=True),

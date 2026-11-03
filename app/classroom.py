@@ -594,7 +594,7 @@ def student_state(k: Klass, s: Student) -> dict:
         g = next(g for g in k.groups if g["id"] == room)
         group = {
             "id": g["id"], "name": g["name"],
-            "members": [m.name for m in k.students.values() if m.group == g["id"]],
+            "members": [m.name for m in k.students.values() if m.group == g["id"] and not m.observer],
         }
     return {
         "t": "state", "role": "student", "code": k.code, "title": k.title,
@@ -961,10 +961,10 @@ def add_student(k: Klass, u: dict) -> Student:
     if s:
         s.name, s.school = display_name(u), u.get("school") or ""
         return s
-    if len(k.students) >= MAX_STUDENTS:
+    if not u.get("is_admin") and sum(not member.observer for member in k.students.values()) >= MAX_STUDENTS:
         raise HTTPException(409, "수업 인원이 가득 찼어요.")
     s = Student(id=sid, name=display_name(u), school=u.get("school") or "", observer=bool(u.get("is_admin")))
-    if k.breakout and k.groups:  # 모둠 활동 중에 들어오면 인원이 가장 적은 모둠으로
+    if not s.observer and k.breakout and k.groups:  # 모둠 활동 중에 들어오면 인원이 가장 적은 모둠으로
         s.group = smallest_group(k)
     k.students[sid] = s
     return s
@@ -1538,7 +1538,8 @@ def groups_needed(k: Klass, m: dict) -> int:
     """모둠 수를 정하거나(n), 모둠당 인원(size)을 정하면 필요한 모둠 수를 계산한다."""
     size = m.get("size")
     if isinstance(size, int) and size >= 1:
-        count = sum(1 for s in k.students.values() if s.online) or len(k.students)
+        count = (sum(1 for s in k.students.values() if s.online and not s.observer)
+                 or sum(1 for s in k.students.values() if not s.observer))
         return max(1, math.ceil(count / size))
     n = m.get("n")
     return n if isinstance(n, int) and n >= 1 else 4
@@ -1562,7 +1563,8 @@ def plan_groups(k: Klass, n: int) -> None:
     """모둠을 만들고 접속한 학생을 무작위로 고르게 나눈다."""
     n = max(1, min(MAX_GROUPS, n))
     k.groups = [{"id": f"g{i}", "name": group_name(i)} for i in range(1, n + 1)]
-    members = [s for s in k.students.values() if s.online] or list(k.students.values())
+    members = ([s for s in k.students.values() if s.online and not s.observer]
+               or [s for s in k.students.values() if not s.observer])
     random.shuffle(members)
     for s in k.students.values():
         s.group = None

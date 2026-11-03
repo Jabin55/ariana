@@ -26,7 +26,10 @@ async function uploadRaw(url, file) {
 const fmtNum = (v) => (v === null || v === undefined ? "-" : String(Math.round(v * 100) / 100));
 
 /** 평가 올리기·고치기 창: 평가명 · 평가 내용 · 반영 비율(%) · 영역 만점(점) · 마감일 */
-function assignmentDialog(c, a, done) {
+async function assignmentDialog(c, a, done) {
+  let standards;
+  try { ({ standards } = await api(`/api/courses/${c.id}/standards`)); }
+  catch (err) { toast(err.message); return; }
   const close = () => dlg.remove();
   const title = h("input", { maxlength: 80, required: true, placeholder: "예: 선거 제도 비교 보고서", value: a?.title || "" });
   const desc = h("textarea", { rows: 4, maxlength: 5000, placeholder: "과제 안내, 분량·형식, 평가 기준 등" }, a?.description || "");
@@ -36,6 +39,9 @@ function assignmentDialog(c, a, done) {
   const dueDate = h("input", { type: "date", value: d0 || "" });
   const dueTime = h("input", { type: "time", value: t0 || "23:55", step: 300 });
   const late = h("input", { type: "checkbox", checked: a ? a.allow_late : true });
+  const standardChecks = standards.map((s, i) => h("label", { class: "std-pick", title: s.text },
+    h("input", { type: "checkbox", value: s.id, checked: (a?.standard_ids || []).includes(s.id) }),
+    `${s.code || `성취기준 ${i + 1}`} · ${s.text}`));
   const row = (label, ...els) => h("label", { class: "assign-field" }, h("span", {}, label), ...els);
   const dlg = h("div", { class: "overlay", onclick: (e) => { if (e.target === dlg) close(); } },
     h("form", { class: "card assign-dialog", onsubmit: async (e) => {
@@ -46,6 +52,8 @@ function assignmentDialog(c, a, done) {
         allow_late: late.checked,
         weight: weight.value === "" ? null : Number(weight.value),
         max_score: maxScore.value === "" ? null : Number(maxScore.value),
+        standard_ids: standardChecks.filter((label) => label.querySelector("input").checked)
+          .map((label) => Number(label.querySelector("input").value)),
       };
       try {
         if (a) await api(`/api/assignments/${a.id}`, body);
@@ -58,6 +66,9 @@ function assignmentDialog(c, a, done) {
       h("div", { class: "row" }, h("h2", { class: "grow", style: "margin:0" }, a ? "평가 영역 수정" : "평가 올리기"), h("button", { type: "button", class: "small", onclick: close }, "닫기")),
       row("평가명", title),
       row("평가 내용", desc),
+      h("div", { class: "assign-field" }, h("span", {}, "관련 성취기준"), standardChecks.length
+        ? h("div", { class: "std-pick-grid" }, standardChecks)
+        : h("span", { class: "muted" }, "과목 정보에 등록된 성취기준이 없어요.")),
       h("div", { class: "row" }, row("반영 비율(%)", weight), row("영역 만점(점)", maxScore)),
       row("마감일", h("div", { class: "row" }, dueDate, dueTime)),
       h("label", { class: "switch" }, late, "마감 뒤에도 받기 (지각으로 표시)"),
@@ -67,12 +78,14 @@ function assignmentDialog(c, a, done) {
 }
 
 async function renderCourseAssignments(c, box) {
-  let data;
-  try { data = await api(`/api/courses/${c.id}/assignments`); } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
+  let data, standardData;
+  try { [data, standardData] = await Promise.all([
+    api(`/api/courses/${c.id}/assignments`), api(`/api/courses/${c.id}/standards`)
+  ]); } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
   const reload = () => renderCourseAssignments(c, box);
   const list = data.assignments; // 최근에 올린 것이 위
   const viewing = list.find((x) => x.id === viewAssign.get(c.id));
-  if (viewing) { renderAssignmentPost(c, viewing, data, box, reload); return; }
+  if (viewing) { renderAssignmentPost(c, viewing, data, standardData.standards, box, reload); return; }
   const total = list.reduce((sum, a) => sum + (a.weight || 0), 0);
   const rows = list.map((a, i) => h("tr", { class: "assign-row", onclick: () => { viewAssign.set(c.id, a.id); reload(); }, title: "누르면 제출 현황·채점" },
     h("td", { class: "num" }, list.length - i),
@@ -119,7 +132,7 @@ async function loadTeacherConfirmations(courseId, box, bulkButton) {
 }
 
 /** 게시물 화면: 평가 한 건의 내용·관리 버튼·학생별 제출과 채점. [← 평가 목록]으로 돌아간다 */
-function renderAssignmentPost(c, a, data, box, reload) {
+function renderAssignmentPost(c, a, data, standards, box, reload) {
   const back = () => { viewAssign.delete(c.id); reload(); };
   const subsBox = h("div", {}, h("p", { class: "muted" }, "제출 현황을 불러오는 중…"));
   const info = (label, value) => h("div", { class: "assign-info" }, h("span", {}, label), h("strong", {}, value));
@@ -145,7 +158,12 @@ function renderAssignmentPost(c, a, data, box, reload) {
         info("제출", `${a.submitted}/${data.students}명`),
         info("제출률", data.students ? `${Math.round(a.submitted / data.students * 100)}%` : "-"),
         info("채점", `${a.graded}명`)),
-      a.description ? h("div", { class: "assign-desc" }, a.description) : null),
+      a.description ? h("div", { class: "assign-desc" }, a.description) : null,
+      h("div", { class: "assign-desc" }, h("strong", {}, "관련 성취기준"),
+        h("div", {}, a.standard_ids.length
+          ? standards.filter((s) => a.standard_ids.includes(s.id)).map((s) =>
+              h("div", {}, `${s.code || "성취기준"} · ${s.text}`))
+          : "선택하지 않음"))),
     h("h4", { style: "margin:14px 0 6px" }, "학생별 제출과 채점"),
     subsBox);
   renderSubmissions(a, subsBox, reload);

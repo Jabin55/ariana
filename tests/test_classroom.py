@@ -1759,10 +1759,21 @@ def test_admin_student_actions_require_enrollment(monkeypatch):
     assert boss.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
     assert cr.load_roster(cid) == []
     assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
-    assert [int(r["id"]) for r in cr.load_roster(cid)] == [boss_id]
+    s = student(1)
+    student_id = s.get("/api/me").json()["user"]["id"]
+    assert s.post(f"/api/courses/{cid}/enroll").json()["status"] == "pending"
+    assert t.post(f"/api/courses/{cid}/approve-all").json()["approved"] == 1
+    assert [int(r["id"]) for r in cr.load_roster(cid)] == [student_id]
+    assert [r["user_id"] for r in t.get(f"/api/courses/{cid}/enrollments").json()["enrollments"]] == [student_id]
+    assert [r["user_id"] for r in t.get("/api/my/enrollments").json()["enrollments"]] == [student_id]
+    assert t.get("/api/courses/mine").json()["courses"][0]["approved"] == 1
+    assert [r["user_id"] for r in boss.get("/api/school/overview").json()["students"]] == [student_id]
+    assert all(r["email"] != "boss@gmail.com" for r in boss.get("/api/hub/overview").json()["enrollments"])
     assert [x["title"] for x in boss.get("/api/my/assignments").json()["assignments"]] == ["수업 과제"]
     assert boss.post(f"/api/assignments/{aid}/text", json={"text": "관리자 제출"}).status_code == 200
     assert boss.get("/api/my/assignments").json()["assignments"][0]["mine"]["text"] == "관리자 제출"
+    assert t.get(f"/api/courses/{cid}/assignments").json()["students"] == 1
+    assert [r["user_id"] for r in t.get(f"/api/assignments/{aid}/submissions").json()["submissions"]] == [student_id]
     assert boss.post(f"/api/live/classes/{code}/join?as_student=1").status_code == 200
     # 전체 관리자는 학생 화면으로 보기만 한다: 선생님 명단·접속 수·출결에 나오지 않고, 채팅·답도 남지 않는다
     with t.websocket_connect(f"/ws/live/{code}") as tw, boss.websocket_connect(f"/ws/live/{code}?as_student=1") as ws:
@@ -1772,9 +1783,23 @@ def test_admin_student_actions_require_enrollment(monkeypatch):
         ws.send_json({"t": "hand", "up": True})
         ts = state(tw)
         assert all(x["id"] != str(boss_id) for x in ts["students"])
+        assert [x["id"] for x in ts["students"]] == [str(student_id)]
         assert not any(m.get("text") == "관리자 채팅" for m in cr.classes[code].chat)
     with db.engine.connect() as c:
         assert not c.execute(db.attendance.select().where(db.attendance.c.user_id == boss_id)).first()
+
+
+def test_admin_not_in_hub_course_participants(monkeypatch):
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    student_client = student(1)
+    course_id = boss.post("/api/courses", json=COURSE).json()["id"]
+    assert boss.post(f"/api/courses/{course_id}/enroll").status_code == 200
+    assert student_client.post(f"/api/courses/{course_id}/enroll").status_code == 200
+    assert boss.post(f"/api/courses/{course_id}/approve-all").json()["approved"] == 2
+    overview = boss.get("/api/hub/overview").json()
+    assert [row["email"] for row in overview["enrollments"]] == ["st1@s.school.kr"]
+    assert overview["courses"][0]["approved"] == 1
 
 
 @pytest.mark.parametrize("role", ["participant", "coordinator"])
@@ -3228,6 +3253,38 @@ def test_assignment_weight_and_max_score(monkeypatch, tmp_path):
     assert t.post(f"/api/assignments/{aid}", json={"weight": 25, "max_score": 40}).status_code == 200
     row = t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]
     assert (row["weight"], row["max_score"]) == (25, 40)
+
+
+def test_assignment_standards_can_be_checked_and_changed():
+    t = teacher()
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    other = t.post("/api/courses", json={**COURSE, "title": "다른 강좌"}).json()["id"]
+    def standard(course_id, code):
+        response = t.post(f"/api/courses/{course_id}/standards", json={"code": code, "text": f"{code} 내용"})
+        assert response.status_code == 200, response.text
+        return response.json()["id"]
+    first, second, foreign = standard(cid, "A"), standard(cid, "B"), standard(other, "C")
+
+    bad = t.post(f"/api/courses/{cid}/assignments", json={"title": "보고서", "standard_ids": [foreign]})
+    assert bad.status_code == 400
+    assert t.get(f"/api/courses/{cid}/assignments").json()["assignments"] == []
+
+    aid = t.post(f"/api/courses/{cid}/assignments", json={
+        "title": "보고서", "standard_ids": [first, second]}).json()["id"]
+    def linked():
+        return t.get(f"/api/courses/{cid}/assignments").json()["assignments"][0]["standard_ids"]
+    assert linked() == [first, second]
+    assert t.post(f"/api/assignments/{aid}", json={"standard_ids": [foreign]}).status_code == 400
+    assert linked() == [first, second]
+    assert t.post(f"/api/assignments/{aid}", json={"standard_ids": [second]}).status_code == 200
+    assert linked() == [second]
+    assert t.post(f"/api/assignments/{aid}", json={"title": "수정된 보고서"}).status_code == 200
+    assert linked() == [second]
+    assert t.post(f"/api/courses/{cid}/standards/{second}/delete").status_code == 200
+    assert linked() == []
+    assert t.post(f"/api/assignments/{aid}", json={"standard_ids": [first]}).status_code == 200
+    assert t.post(f"/api/assignments/{aid}", json={"standard_ids": []}).status_code == 200
+    assert linked() == []
 
 
 def test_signed_score_confirmation(monkeypatch, tmp_path):

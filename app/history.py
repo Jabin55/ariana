@@ -151,13 +151,15 @@ async def course_learning(course_id: int, request: Request):
             notes = c.execute(select(db.announcements).where(db.announcements.c.class_id.in_(ids))
                               .order_by(db.announcements.c.created_at)).all()
             enrolled = c.execute(select(db.enrollments.c.user_id).where(
-                db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved")).all()
+                db.enrollments.c.course_id == course_id, db.enrollments.c.status == "approved",
+                db.enrollments.c.user_id.not_in(adm))).all()
             tasks = c.execute(select(db.assignments).where(db.assignments.c.course_id == course_id)
                               .order_by(db.assignments.c.created_at)).all()
             sub = db.submissions.c
             done = {r.assignment_id: (r.n, r.g) for r in c.execute(
                 select(sub.assignment_id, func.count().label("n"), func.count(sub.graded_at).label("g"))
-                .where(sub.assignment_id.in_([x.id for x in tasks] or [-1]), sub.submitted_at.is_not(None))
+                .where(sub.assignment_id.in_([x.id for x in tasks] or [-1]), sub.submitted_at.is_not(None),
+                       sub.user_id.not_in(adm))
                 .group_by(sub.assignment_id))}
             sl = db.speech_logs.c
             speech = c.execute(select(sl.user_id, sl.role, sl.class_id).where(sl.class_id.in_(ids))).all()
