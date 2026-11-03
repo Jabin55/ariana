@@ -363,7 +363,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     v.analyzed_at ? [
       // 왼쪽: 2022 개정 교육과정 핵심역량 6각형 · 오른쪽: 수업별 성취 변화(상·중·하)
       h("div", { class: "ach-two" },
-        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스"),
+        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트"),
           v.competencies?.length ? achRadar(v.competencies)
             : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요.")),
         h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (상·중·하)"), achChart(v.classes))),
