@@ -438,12 +438,13 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       (drawCharts(), charts),
       // 수업별 판단 근거 (성취기준 평가 요소의 상·중·하)
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준 평가 요소)"),
-        v.classes.length ? v.classes.map((x) => h("div", { class: "ach-class" },
+        // 판단 근거가 되는 기록이 없는 회차는 아예 보여 주지 않는다
+        v.classes.some((x) => x.ratings.length) ? v.classes.filter((x) => x.ratings.length).map((x) => h("div", { class: "ach-class" },
           h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
-          x.ratings.length ? x.ratings.map((r) => h("div", { class: "ach-rate" },
+          x.ratings.map((r) => h("div", { class: "ach-rate" },
             h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
-            h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 수업 기록이 없었어요.")))
-          : h("p", { class: "muted", style: "margin:4px 0" }, "판단한 수업이 없어요.")),
+            h("span", { class: "muted" }, ` “${r.evidence}”`)))))
+          : h("p", { class: "muted", style: "margin:4px 0" }, "판단 근거가 되는 수업 기록이 아직 없어요.")),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
     ] : null,
