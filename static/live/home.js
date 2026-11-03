@@ -1484,7 +1484,7 @@ async function bannersEditor(reload) {
   draw();
   return h("details", { class: "card", style: "margin:12px 0", open: true },
     h("summary", {}, h("strong", {}, "🖼️ 메인 전광판(배너) "), summaryCount),
-    h("p", { class: "muted", style: "font-size:0.9rem" }, "메인 화면 맨 위에 5초마다 넘어가며 보여요. 기본 배너 4개도 목록에 있어서 남기거나 뺄 수 있고, 새 배너를 더하거나 ▲▼로 순서를 바꿀 수 있어요. 새 배너는 제목이나 그림 중 하나는 있어야 해요. (최대 10개)"),
+    h("p", { class: "muted", style: "font-size:0.9rem" }, "메인 화면 맨 위에 5초마다 넘어가며 보여요. 새 배너는 제목이나 그림 중 하나는 있어야 해요. (최대 10개)"),
     box, tools);
 }
 
