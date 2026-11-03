@@ -820,6 +820,8 @@ def close_livekit_rooms(k: Klass) -> None:
 class CreateReq(BaseModel):
     title: str = Field(default="", max_length=60)
     course_id: int | None = None  # 강좌 수업: 승인된 수강생은 코드 없이 들어온다
+    session_no: int | None = Field(default=None, ge=1, le=200)
+    session_topic: str | None = Field(default=None, max_length=120)
     target_grade: int | None = Field(default=None, ge=1, le=6)
     target_class: int | None = Field(default=None, ge=1, le=30)
 
@@ -831,6 +833,8 @@ class TokenReq(BaseModel):
 @router.post("/api/live/classes")
 async def create_class(req: CreateReq, request: Request):
     t = await require_user(request, "teacher")
+    if (req.session_no is None) != (req.session_topic is None) or (req.session_no is not None and req.course_id is None):
+        raise HTTPException(400, "회차 주제를 수정하려면 강좌와 회차를 함께 지정해 주세요.")
     if req.course_id is not None:
         course = await db.run(owned_course, req.course_id, t)
         if course.archived:
@@ -843,13 +847,25 @@ async def create_class(req: CreateReq, request: Request):
 
     def run():
         with db.engine.begin() as c:
-            return c.execute(insert(db.classes).values(
-                code=code, title=title, teacher_id=t["id"], school=t["school"] or "",
+            opened_title = title
+            if req.session_no is not None:
+                session = c.execute(select(db.course_sessions).where(
+                    db.course_sessions.c.course_id == req.course_id,
+                    db.course_sessions.c.no == req.session_no)).first()
+                if not session:
+                    raise HTTPException(404, "강좌의 회차 정보를 찾을 수 없어요.")
+                topic = clean(req.session_topic, 120)
+                c.execute(update(db.course_sessions).where(db.course_sessions.c.id == session.id)
+                          .values(topic=topic or f"{session.no}회차"))
+                opened_title = clean(f"{session.no}회차" + (f" · {topic}" if topic else ""), 60)
+            class_id = c.execute(insert(db.classes).values(
+                code=code, title=opened_title, teacher_id=t["id"], school=t["school"] or "",
                 target_grade=req.target_grade, target_class=req.target_class, created_at=time.time(),
                 course_id=req.course_id,
             )).inserted_primary_key[0]
+            return class_id, opened_title
 
-    class_id = await db.run(run)
+    class_id, title = await db.run(run)
     classes[code] = Klass(db_id=class_id, code=code, title=title, teacher_id=t["id"], course_id=req.course_id)
     return {"code": code, "title": title, "class_id": class_id}
 

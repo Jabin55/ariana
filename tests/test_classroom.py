@@ -2286,6 +2286,25 @@ def test_course_sessions_joined_schools_and_recruit_time(monkeypatch):
     assert y.post(f"/api/courses/{cid}/enroll").status_code == 409
 
 
+def test_opening_session_updates_saved_topic_and_class_title():
+    t, other = teacher(), teacher("other@gmail.com")
+    cid = t.post("/api/courses", json={**COURSE, "sessions": [
+        {"date": "2026-11-03", "start": "16:00", "end": "17:00", "topic": "기존 주제"}]}).json()["id"]
+    url = "/api/live/classes"
+    body = {"course_id": cid, "session_no": 1, "session_topic": "변경한 주제"}
+    assert other.post(url, json=body).status_code == 404
+    assert t.post(url, json={**body, "session_no": 2}).status_code == 404
+    assert t.post(url, json={"session_no": 1, "session_topic": "변경한 주제"}).status_code == 400
+    assert t.get("/api/courses/mine").json()["courses"][0]["sessions"][0]["topic"] == "기존 주제"
+    opened = t.post(url, json=body)
+    assert opened.status_code == 200 and opened.json()["title"] == "1회차 · 변경한 주제"
+    with db.engine.connect() as conn:
+        assert conn.execute(db.classes.select().where(db.classes.c.code == opened.json()["code"])).first().title == "1회차 · 변경한 주제"
+    assert t.get("/api/courses/mine").json()["courses"][0]["sessions"][0]["topic"] == "변경한 주제"
+    assert t.post(url, json={**body, "session_topic": ""}).json()["title"] == "1회차"
+    assert t.get("/api/courses/mine").json()["courses"][0]["sessions"][0]["topic"] == "1회차"
+
+
 def test_ai_assistant_uses_cheapest_model(monkeypatch):
     """AI 조교는 가장 저렴한 모델(Haiku)을 쓰고, Haiku 가 지원하지 않는 거절 대비 옵션은 보내지 않는다"""
     import app.main as main

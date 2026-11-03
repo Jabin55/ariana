@@ -801,10 +801,11 @@ async function renderOpenClass(c, box) {
   // 회차 외 보강·특강에서 고를 성취기준 (과목 정보에 넣은 것)
   let standards = [];
   try { ({ standards } = await api(`/api/courses/${c.id}/standards`)); } catch { /* 성취기준 없이도 연다 */ }
-  const start = async (title, standardIds = []) => {
+  const start = async (title, standardIds = [], session = null) => {
     if (notYet && !await appConfirm(`아직 수강 확정이 안 된 학생이 ${notYet}명 있어요. 이 학생들은 들어올 수 없어요. '수강생 관리'에서 먼저 승인하는 게 좋아요.\n\n그래도 지금 수업을 열까요?`)) return;
     try {
-      const res = await api("/api/live/classes", { title: title || c.title, course_id: c.id });
+      const res = await api("/api/live/classes", { title: title || c.title, course_id: c.id,
+        ...(session ? { session_no: session.no, session_topic: session.topic } : {}) });
       if (standardIds.length) {  // 보강·특강에서 고른 성취기준 (AI 분석은 회차보다 이것을 먼저 쓴다)
         await api(`/api/courses/${c.id}/classes/${res.class_id}/standards`, { standard_ids: standardIds }).catch(() => {});
       }
@@ -832,7 +833,7 @@ async function renderOpenClass(c, box) {
       let topicCell;
       if (picked) {
         const topic = h("input", { maxlength: 50, value: s.topic || "", placeholder: "수업 주제 (예: 헌법과 기본권)" });
-        const go = () => start(`${s.no}회차${topic.value.trim() ? ` · ${topic.value.trim()}` : ""}`);
+        const go = () => start("", [], { no: s.no, topic: topic.value.trim() });
         topic.addEventListener("keydown", (e) => {
           if (e.key === "Enter") { e.preventDefault(); go(); }
           if (e.key === "Escape") toggle();
