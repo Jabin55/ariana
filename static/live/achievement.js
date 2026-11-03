@@ -317,10 +317,12 @@ function achRadar(comps) {
     t.append(s);
     svg.append(t);
   });
-  // 역량별 판단 근거: 차트 바로 아래에 펼친 채로
-  const reasons = h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 역량별 판단 근거"),
+  return svg;
+}
+
+function achRadarReasons(comps) {
+  return h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 역량별 판단 근거"),
     comps.map((c) => h("div", { class: "ach-rate" }, h("strong", {}, `${c.label} ${c.score}점`), h("span", { class: "muted" }, ` · ${c.reason || "-"}`))));
-  return h("div", {}, svg, reasons);
 }
 
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
@@ -366,9 +368,10 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       h("div", { class: "ach-two" },
         h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트"),
           v.competencies?.length ? achRadar(v.competencies)
-            : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요.")),
+            : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요."),
+          v.competencies?.length ? achRadarReasons(v.competencies) : null),
         h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (상·중·하)"), achChart(v.classes),
-          // 수업별 판단 근거: 그래프 바로 아래에 펼친 채로
+          // 수업별 판단 근거: 왼쪽 역량 근거와 같은 그리드 행에서 시작
           h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 수업별 판단 근거"),
             v.classes.map((x) => h("div", { class: "ach-class" },
               h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),

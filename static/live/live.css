@@ -1883,11 +1883,14 @@ table.att.satisfaction-table tbody th { white-space: nowrap; }
 .open-title { margin: 6px 0 8px; font-size: 1.02rem; }
 .open-std { margin-top: 4px; }
 /* 학생별 발언 기록: 핵심역량 6각형(왼쪽) + 성취 변화(오른쪽) */
-.ach-two { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 10px; align-items: stretch; }
-.ach-two > .ach-box { margin-bottom: 10px; }
+.ach-two { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-rows: auto auto auto; gap: 10px; align-items: stretch; }
+.ach-two > .ach-box { display: grid; grid-template-rows: subgrid; grid-row: 1 / span 3; min-width: 0; margin-bottom: 10px; }
 .ach-radar { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
 .ach-reasons { margin-top: 4px; font-size: 0.85rem; }
-@media (max-width: 860px) { .ach-two { grid-template-columns: 1fr; } }
+@media (max-width: 860px) {
+  .ach-two { grid-template-columns: 1fr; grid-template-rows: none; }
+  .ach-two > .ach-box { display: block; grid-row: auto; }
+}
 .ach-reasons { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.86rem; }
 .ach-sub-head { font-weight: 800; margin-bottom: 4px; font-size: 0.9rem; }
 .ach-reasons .ach-rate { padding: 3px 0; }
