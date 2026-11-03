@@ -109,10 +109,10 @@ function standardCard(c, s, i, again) {
       h("table", { class: "info-table" }, h("tbody", {},
         [["상", s.level_high], ["중", s.level_mid], ["하", s.level_low]].map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { style: "white-space:pre-wrap" }, v || "-")))))),
     s.elements.length ? h("div", { class: "table-wrap" }, h("table", { class: "att std-elements" },
-      h("thead", {}, h("tr", {}, ["범주·평가 요소·확인 자료", "상", "중", "하"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, s.elements.map((e) => h("tr", {}, h("td", {},
-        h("span", { class: "std-element-category" }, e.category || "미분류"), h("strong", {}, e.name),
-        e.evidence ? h("span", { class: "std-element-evidence" }, `확인 자료: ${e.evidence}`) : null),
+      h("thead", {}, h("tr", {}, ["범주", "평가 요소", "확인 자료", "상", "중", "하"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, s.elements.map((e) => h("tr", {},
+        h("td", {}, h("span", { class: "std-element-category" }, e.category || "미분류")),
+        h("td", {}, h("strong", {}, e.name)), h("td", {}, e.evidence || "-"),
         h("td", {}, e.high), h("td", {}, e.mid), h("td", {}, e.low))))))
       : h("p", { class: "error", style: "margin:6px 0 0" }, "평가 요소가 없어요. [수정]에서 평가 요소를 넣어야 AI 분석에 쓰여요."));
 }
@@ -129,7 +129,7 @@ function standardForm(c, s, aiOn, again) {
         .map(([value, label]) => h("option", { value, selected: (e.category || "") === value }, label)));
     const name = h("input", { "data-k": "name", "aria-label": "평가 요소 이름", maxlength: 60, value: e.name || "", placeholder: "예: 근거 제시" });
     const evidence = h("input", { "data-k": "evidence", "aria-label": "확인 자료", maxlength: 300, value: e.evidence || "", placeholder: "확인 자료: 퀴즈·보고서 등" });
-    const cells = [h("td", { class: "std-element-fields" }, category, name, evidence), ...["high", "mid", "low"].map((k) => {
+    const cells = [h("td", {}, category), h("td", {}, name), h("td", {}, evidence), ...["high", "mid", "low"].map((k) => {
       const el = h("textarea", { rows: 2, maxlength: 1000 });
       el.value = e[k] || "";
       el.dataset.k = k;
@@ -174,7 +174,7 @@ function standardForm(c, s, aiOn, again) {
       h("label", { class: "wide" }, "평가기준 하", lv[2])),
     h("div", { class: "row", style: "margin:12px 0 6px" }, h("strong", { class: "grow" }, "평가 요소"), draftBtn),
     h("div", { class: "table-wrap" }, h("table", { class: "att std-elements edit" },
-      h("thead", {}, h("tr", {}, ["범주·평가 요소·확인 자료", "상", "중", "하", ""].map((t) => h("th", {}, t)))), rows)),
+      h("thead", {}, h("tr", {}, ["범주", "평가 요소", "확인 자료", "상", "중", "하", ""].map((t) => h("th", {}, t)))), rows)),
     h("div", { class: "row", style: "margin-top:8px" },
       h("button", { class: "small", type: "button", onclick: () => addRow() }, "+ 평가 요소 추가"), h("span", { class: "grow" }),
       h("button", { type: "button", onclick: () => { achEditing.delete(c.id); again(); } }, "취소"), save));
