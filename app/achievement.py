@@ -165,58 +165,56 @@ async def list_standards(course_id: int, request: Request):
     sessions = (await db.run(sessions_by_course, [course_id])).get(course_id, [])
     class_links = await db.run(class_links_of, course_id)
     return {"standards": standards, "ai": ai_ready(), "scale": scale_of(course), "course_levels": course_levels(course),
-            "subject_competencies": subject_competencies_of(course),
+            "subject_competencies": subject_competencies_of(course), "subject_competency_area": subject_competency_area(course),
+            "subject_competency_note": SUBJECT_COMPETENCIES[subject_competency_area(course)][1] if subject_competency_area(course) else "",
             "class_links": {str(k): v for k, v in class_links.items()},
             "achievement_text": subjects.ACHIEVEMENTS.get(course.achievement or "", "성취도 미정 (5단계로 표시)"),
             "sessions": [{**s, "standard_ids": links.get(s["no"], [])} for s in sessions]}
 
 
+# 2022 개정 교육과정 교과별 교과 역량 (교과 → 역량 목록, 주요 특징). 과목의 교과로 자동으로 정해진다
+SUBJECT_COMPETENCIES = {
+    "국어": (["비판적·창의적 사고 역량", "디지털·미디어 역량", "의사소통 역량", "공동체·대인 관계 역량", "문화 향유 역량", "자기 성찰·계발 역량"],
+             "매체 영역 신설과 디지털 전환을 반영하여 기존 '자료·정보 활용 역량'이 '디지털·미디어 역량'으로 전면 개편되었습니다."),
+    "수학": (["문제해결", "추론", "의사소통", "연결", "정보처리"],
+             "2015 개정(6개)에서 5개 역량으로 재구조화되었습니다. 수학 내적·외적 연계성을 강조하는 '연결' 역량이 독립적으로 부각되었습니다."),
+    "영어": (["영어 의사소통 역량", "자기관리 역량", "지식정보처리 역량", "공동체 역량"],
+             "4기능(듣기·말하기·읽기·쓰기) 분절을 탈피하여 '이해'와 '표현' 및 상호작용 중심의 실질적 소통 역량 함양에 초점을 둡니다."),
+    "사회": (["창의적 사고력", "비판적 사고력", "문제 해결력 및 의사 결정력", "의사소통 및 협업 능력", "정보 활용 능력"],
+             "지식 탐구를 넘어 사회 현상을 다각도로 분석하고, 민주 시민으로서 실천·참여하는 역량을 지향합니다."),
+    "역사": (["역사 기억과 계승 역량", "역사적 비판적 사고 역량", "역사적 판단력과 문제 해결 역량", "역사적 공감과 소통 역량", "역사적 주체성과 참여 역량"],
+             "과거의 경험·문화유산을 기억·계승하고, 사료를 비판적으로 검증하며, 역사적 판단·공감·소통을 거쳐 민주적 공동체에 참여하는 역량을 기릅니다."),
+    "도덕": (["도덕적 사고 역량", "도덕적 정서 및 대인관계 역량", "도덕적 행동 및 실천 역량"],
+             "4대 관계 영역(자신, 타인, 사회·공동체, 자연·초월) 속에서 윤리적 성찰과 일상적 실천을 연계하는 데 집중합니다."),
+    "과학": (["과학적 사고력", "과학적 탐구 능력", "과학적 문제 해결력", "과학적 의사소통 및 협업 능력"],
+             "기후변화, 감염병 등 생태·디지털 대전환 시대의 복합적 문제를 해결하기 위한 탐구와 협업, 실천적 소양을 강조합니다."),
+    "체육": (["움직임 수행 역량", "건강 관리 역량", "신체활동 문화 향유 역량"],
+             "기존 5개 영역 중심에서 '신체활동' 자체의 본질적 가치를 중심으로 3대 핵심 역량으로 집약되었습니다."),
+    "음악": (["음악적 감성 역량", "음악적 창의·융합 사고 역량", "음악적 소통 역량", "문화적 공동체 역량", "음악정보처리 역량", "자기관리 역량"],
+             "소리와 음악을 통한 감성 표현뿐 아니라, 디지털 매체와 결합한 창작·향유 역량이 강화되었습니다."),
+    "미술": (["심미적 감성 역량", "시각적 소통 역량", "창의·융합 역량", "정체성 역량", "공동체 역량"],
+             "미적 감수성이 '심미적 감성'으로, 자기주도적 학습 능력이 '정체성 역량', 문화 이해 능력이 '공동체 역량'으로 정비되었습니다."),
+    "기술·가정": (["실천적 문제해결 능력", "생활 자립 능력", "관계 형성 능력", "기술적 문제해결 능력", "기술 시스템 설계 및 활용 능력"],
+               "지속가능한 삶과 생애주기 설계를 다루는 가정 영역과 공학적 문제해결·신기술 융합을 다루는 기술 영역의 역량이 조화를 이룹니다."),
+    "정보": (["컴퓨팅 사고력", "인공지능 문제 해결력", "디지털 문화 소양"],
+             "독립 교과군 및 독립 과목으로서 위상이 강화되며, 인공지능 윤리·협력적 문제해결 및 디지털 시민성이 핵심 역량으로 명시되었습니다."),
+}
+SUBJECT_COMPETENCY_ALIAS = {"사회(역사/도덕 포함)": "사회", "기술·가정/정보": "기술·가정"}
+
+
+def subject_competency_area(course) -> str:
+    """과목의 교과(영역) → 교과 역량 표의 교과 이름 (없으면 '')"""
+    for name in (getattr(course, "subject_area", "") or "", getattr(course, "subject_group", "") or ""):
+        name = SUBJECT_COMPETENCY_ALIAS.get(name, name)
+        if name in SUBJECT_COMPETENCIES:
+            return name
+    return ""
+
+
 def subject_competencies_of(course) -> list[str]:
-    try:
-        items = json.loads(getattr(course, "subject_competencies", "") or "[]")
-    except ValueError:
-        items = []
-    return [str(x) for x in items if str(x).strip()][:8]
-
-
-class SubjectCompetenciesReq(BaseModel):
-    items: list[str] = Field(default_factory=list, max_length=8)
-
-
-@router.post("/api/courses/{course_id}/subject-competencies")
-async def save_subject_competencies(course_id: int, req: SubjectCompetenciesReq, request: Request):
-    """이 과목의 교과 역량 (3~8개). 학생 맞춤형 분석의 '교과 역량 밸런스 차트' 꼭짓점이 된다"""
-    await _course(course_id, request)
-    items = list(dict.fromkeys(" ".join(x.split())[:30] for x in req.items if x.strip()))[:8]
-
-    def run():
-        with db.engine.begin() as c:
-            c.execute(update(db.courses).where(db.courses.c.id == course_id)
-                      .values(subject_competencies=json.dumps(items, ensure_ascii=False)))
-
-    await db.run(run)
-    return {"items": items}
-
-
-SUBJECT_COMP_SYSTEM = (
-    "당신은 한국 고등학교 교육과정 전문가입니다. 주어진 과목의 2022 개정 교육과정 문서가 제시하는 교과 역량(교과에서 기르고자 하는 역량)을 "
-    "3~6개의 짧은 이름(15자 이내)으로 적습니다. 문서의 표현을 우선하고, 확실하지 않으면 그 과목 성취기준에서 공통으로 드러나는 사고·탐구 능력으로 정리합니다. "
-    "교사가 확인하고 고칠 초안입니다."
-)
-
-
-@router.post("/api/courses/{course_id}/subject-competencies/draft")
-async def draft_subject_competencies(course_id: int, request: Request):
-    course, _ = await _course(course_id, request)
-    if not ai_ready():
-        raise HTTPException(503, "AI가 설정되지 않았어요. 교과 역량을 직접 적어 주세요.")
-    standards, _ = await db.run(standards_of, course_id)
-    prompt = (f"교과(군): {course.subject_group or '-'} / 과목: {course.subject or course.title}\n"
-              + ("성취기준:\n" + "\n".join(f"- {s['code']} {s['text']}" for s in standards[:30]) if standards else "(성취기준 없음)"))
-    data = await ai_json(SUBJECT_COMP_SYSTEM, prompt, {
-        "type": "object", "properties": {"items": {"type": "array", "items": {"type": "string"}}},
-        "required": ["items"], "additionalProperties": False}, 2000)
-    return {"items": [" ".join(str(x).split())[:30] for x in data.get("items", []) if str(x).strip()][:8]}
+    """2022 개정 교육과정에서 이 과목 교과의 교과 역량 (교사가 따로 입력하지 않는다)"""
+    area = subject_competency_area(course)
+    return list(SUBJECT_COMPETENCIES[area][0]) if area else []
 
 
 class CourseLevelsReq(BaseModel):

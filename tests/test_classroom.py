@@ -3851,7 +3851,7 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     from datetime import datetime
     from zoneinfo import ZoneInfo
     today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
-    cid = t.post("/api/courses", json={**COURSE, "sessions": [{"no": 1, "date": today, "start": "16:00", "end": "17:00", "topic": "사형제"}]}).json()["id"]
+    cid = t.post("/api/courses", json={**COURSE, "title": "법과 사회", "sessions": [{"no": 1, "date": today, "start": "16:00", "end": "17:00", "topic": "사형제"}]}).json()["id"]
     a = student(1)
     a.post(f"/api/courses/{cid}/enroll")
     t.post(f"/api/courses/{cid}/approve-all")
@@ -3873,11 +3873,14 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
         state(sa, lambda m: m["transcript_on"])
         a.post(f"/api/live/classes/{code}/speech", json={"text": "오판 가능성이 있어 폐지해야 합니다", "final": True})
     uid = t.get(f"{base}/speech").json()["students"][0]["user_id"]
-    assert t.post(f"{base}/subject-competencies", json={"items": ["비판적 사고력", " 탐구력 ", "비판적 사고력", "의사소통 능력"]}).json()["items"] == ["비판적 사고력", "탐구력", "의사소통 능력"]
-    assert t.get(f"{base}/standards").json()["subject_competencies"] == ["비판적 사고력", "탐구력", "의사소통 능력"]
+    social = list(ach.SUBJECT_COMPETENCIES["사회"][0])  # 교사가 입력하지 않아도 2022 개정 교과 역량이 자동으로
+    got = t.get(f"{base}/standards").json()
+    assert got["subject_competencies"] == social and got["subject_competency_area"] == "사회"
+    assert t.post(f"{base}/subject-competencies", json={"items": ["x", "y", "z"]}).status_code in (404, 405)
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
-    assert view["subject_competencies"] == [{"key": "비판적 사고력", "label": "비판적 사고력", "score": 4, "reason": "반론을 검토함"}]
-    assert calls[-1][1]["properties"]["subject_competencies"]["items"]["properties"]["name"]["enum"] == ["비판적 사고력", "탐구력", "의사소통 능력"]
+    assert {"key": "비판적 사고력", "label": "비판적 사고력", "score": 4, "reason": "반론을 검토함"} in view["subject_competencies"]
+    assert view["subject_competency_names"] == social
+    assert calls[-1][1]["properties"]["subject_competencies"]["items"]["properties"]["name"]["enum"] == social
     assert view["classes"][0]["ratings"] == [{"standard_id": sid, "code": "[12법사02-03]", "element": "근거 제시", "level": 3, "evidence": "오판 가능성"}]
     assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
     comps = {c["key"]: c for c in view["competencies"]}
@@ -4144,3 +4147,14 @@ def test_ai_error_messages_say_the_cause():
     assert "모델" in ai_error_text(404, "model: not found")
     assert "한도" in ai_error_text(429, "rate limit for this model")
     assert "오류 500" in ai_error_text(500, "internal")
+
+
+def test_subject_competencies_follow_2022_curriculum():
+    """교과 역량은 과목의 교과로 자동으로 정해진다 (역사는 역사과 5대 역량)"""
+    from types import SimpleNamespace as N
+    import app.achievement as ach
+    assert ach.subject_competencies_of(N(subject_area="역사", subject_group="사회(역사/도덕 포함)"))[0] == "역사 기억과 계승 역량"
+    assert len(ach.subject_competencies_of(N(subject_area="역사", subject_group=""))) == 5
+    assert ach.subject_competencies_of(N(subject_area="정보", subject_group="기술·가정/정보")) == ["컴퓨팅 사고력", "인공지능 문제 해결력", "디지털 문화 소양"]
+    assert ach.subject_competencies_of(N(subject_area="", subject_group="사회(역사/도덕 포함)"))[0] == "창의적 사고력"
+    assert ach.subject_competencies_of(N(subject_area="중국어", subject_group="제2외국어/한문")) == []

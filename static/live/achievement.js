@@ -94,31 +94,16 @@ function courseLevelsBox(c, d) {
     h("div", { class: "row", style: "justify-content:flex-end;margin-top:8px" }, save));
 }
 
-/** 이 과목의 교과 역량 (3~8개): 학생 맞춤형 분석의 '교과 역량 밸런스 차트' 꼭짓점 */
+/** 이 과목의 교과 역량: 2022 개정 교육과정에서 과목의 교과로 자동으로 정해진다 (읽기 전용) */
 function subjectCompetenciesBox(c, d) {
   const items = d.subject_competencies || [];
-  const text = h("textarea", { rows: 5, placeholder: "한 줄에 하나씩 (3~8개)\n예: 비판적 사고력\n탐구 및 문제 해결력\n의사소통 및 협업 능력" });
-  text.value = items.join("\n");
-  const save = h("button", { class: "primary small", type: "button" }, "교과 역량 저장");
-  save.onclick = async () => {
-    const list = text.value.split("\n").map((x) => x.trim()).filter(Boolean);
-    if (list.length && list.length < 3) { toast("차트를 그리려면 교과 역량을 3개 이상 적어 주세요."); return; }
-    try { const r = await achApi(`/api/courses/${c.id}/subject-competencies`, { items: list }); text.value = r.items.join("\n"); toast("교과 역량을 저장했어요. 학생 분석을 다시 하면 차트에 반영돼요.", 4000); }
-    catch (err) { toast(err.message); }
-  };
-  const draft = h("button", { class: "small", type: "button", disabled: !d.ai, title: d.ai ? "" : "AI가 설정되지 않았어요" }, "🤖 AI 초안");
-  draft.onclick = async () => {
-    if (text.value.trim() && !confirm("지금 적힌 교과 역량을 AI 초안으로 바꿀까요?")) return;
-    draft.disabled = true; draft.textContent = "🤖 만드는 중…";
-    try { const r = await achApi(`/api/courses/${c.id}/subject-competencies/draft`, {}); text.value = r.items.join("\n"); toast("AI 초안이에요. 교육과정 문서와 비교해 고친 뒤 [교과 역량 저장]을 눌러 주세요.", 5000); }
-    catch (err) { toast(err.message, 5000); }
-    draft.disabled = !d.ai; draft.textContent = "🤖 AI 초안";
-  };
-  return h("details", { class: "std-card course-levels", open: !items.length },
-    h("summary", {}, h("strong", {}, "🧩 교과 역량 "), h("span", { class: "muted", style: "font-size:0.85rem" }, items.length ? `${items.length}개 · ${items.join(" · ")}` : "아직 정하지 않았어요")),
-    h("p", { class: "muted", style: "margin:6px 0;font-size:0.85rem" }, "이 과목에서 기르는 교과 역량을 한 줄에 하나씩 적어요. 학생 맞춤형 분석의 '교과 역량 밸런스 차트'가 이 역량으로 그려져요."),
-    text,
-    h("div", { class: "row", style: "justify-content:flex-end;margin-top:8px;gap:6px" }, draft, save));
+  return h("details", { class: "std-card course-levels" },
+    h("summary", {}, h("strong", {}, "🧩 교과 역량 "), h("span", { class: "muted", style: "font-size:0.85rem" },
+      items.length ? `${d.subject_competency_area} · ${items.length}개 (2022 개정 교육과정)` : "이 교과는 2022 개정 교과 역량 표에 없어요")),
+    items.length ? h("ol", { style: "margin:6px 0 4px 18px" }, items.map((x) => h("li", {}, x))) : null,
+    h("p", { class: "muted", style: "margin:4px 0;font-size:0.85rem" }, items.length
+      ? (d.subject_competency_note || "") + " 학생 맞춤형 분석의 '교과 역량 밸런스 차트'가 이 역량으로 그려져요."
+      : "교과 역량 밸런스 차트는 국어·수학·영어·사회·역사·도덕·과학·체육·음악·미술·기술·가정·정보 과목에서 그려져요."));
 }
 
 function standardCard(c, s, i, again) {
@@ -424,7 +409,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
           v.subject_competencies?.length ? achRadar(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량 밸런스 차트")
             : h("p", { class: "muted" }, v.subject_competency_names?.length
               ? "[다시 분석하기]를 누르면 교과 역량 차트가 생겨요."
-              : "[과목 정보]의 '🧩 교과 역량'에서 이 과목의 교과 역량을 먼저 정해 주세요."),
+              : "이 과목의 교과는 2022 개정 교육과정 교과 역량 표에 없어 교과 역량 차트를 그리지 않아요."),
           v.subject_competencies?.length ? achRadarReasons(v.subject_competencies) : null)),
       // 수업별 판단 근거 (성취기준 평가 요소의 상·중·하)
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준 평가 요소)"),
