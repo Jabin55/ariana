@@ -497,15 +497,26 @@ function openStudentChange(field) {
     ? h("select", {}, h("option", { value: "" }, "새 학교를 고르세요"),
       koSort(CONFIG.schools).filter((s) => s !== ME.school).map((s) => h("option", { value: s }, s)))
     : h("input", { maxlength: field === "name" ? 30 : 60, placeholder: `새 ${label}` });
+  const newNumber = field === "school" ? [
+    h("input", { type: "number", min: 1, max: 6, placeholder: "학년", "aria-label": "변경 후 학년" }),
+    h("input", { type: "number", min: 1, max: 30, placeholder: "반", "aria-label": "변경 후 반" }),
+    h("input", { type: "number", min: 1, max: 60, placeholder: "번호", "aria-label": "변경 후 번호" }),
+  ] : [];
   const approver = field === "school" ? "새 학교의 참여학교 담당교사" : "전체 관리자";
   fill(box, h("p", { class: "muted" }, `${approver}가 승인하면 ${label}가 바뀝니다. 승인 전에는 현재 정보가 유지됩니다.`),
-    h("div", { class: "row" }, input, h("button", { type: "button", class: "primary", onclick: async () => {
+    h("div", { class: "row" }, input),
+    field === "school" ? h("div", { class: "row school-change-number" }, ...newNumber) : null,
+    field === "school" ? h("p", { class: "muted" }, "새 학교의 학년·반·번호를 알면 적어 주세요. 모르면 비워 두고, 승인하는 선생님이 입력할 수 있습니다.") : null,
+    h("button", { type: "button", class: "primary", onclick: async () => {
       try {
-        await api("/api/me/change-requests", { field, value: input.value.trim() });
+        await api("/api/me/change-requests", { field, value: input.value.trim(),
+          ...(field === "school" ? { grade: newNumber[0].value ? Number(newNumber[0].value) : null,
+            class_no: newNumber[1].value ? Number(newNumber[1].value) : null,
+            number: newNumber[2].value ? Number(newNumber[2].value) : null } : {}) });
         toast(`${label} 변경을 신청했어요.`);
         showProfile();
       } catch (e) { $("#profile-error").textContent = e.message; }
-    } }, "승인 요청")));
+    } }, "승인 요청"));
 }
 $("#p-name-request").onclick = () => openStudentChange("name");
 $("#p-school-request").onclick = () => openStudentChange("school");

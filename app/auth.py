@@ -513,6 +513,9 @@ async def request_school_transfer(p: SchoolTransfer, request: Request):
 class ProfileChangeReq(BaseModel):
     field: str = Field(pattern="^(name|school)$")
     value: str = Field(min_length=1, max_length=60)
+    grade: int | None = Field(default=None, ge=1, le=6)
+    class_no: int | None = Field(default=None, ge=1, le=30)
+    number: int | None = Field(default=None, ge=1, le=60)
 
 
 @router.get("/api/me/change-requests")
@@ -525,7 +528,9 @@ async def my_profile_change_requests(request: Request):
             rows = c.execute(select(db.profile_change_requests).where(q.user_id == u["id"])
                              .order_by(q.requested_at.desc()).limit(20)).all()
             return [{"id": r.id, "field": r.field, "old_value": r.old_value,
-                     "new_value": r.new_value, "status": r.status, "note": r.note} for r in rows]
+                     "new_value": r.new_value, "new_grade": r.new_grade,
+                     "new_class_no": r.new_class_no, "new_number": r.new_number,
+                     "status": r.status, "note": r.note} for r in rows]
 
     return {"requests": await db.run(run)}
 
@@ -560,6 +565,9 @@ async def request_profile_change(req: ProfileChangeReq, request: Request):
                 q.user_id == u["id"], q.field == req.field, q.status == "pending")
                 .order_by(q.requested_at.desc()).limit(1)).first()
             values = {"old_value": old, "new_value": value, "requested_at": time.time(), "note": ""}
+            if req.field == "school" and u["role"] == "student":
+                values.update(old_grade=u["grade"], old_class_no=u["class_no"], old_number=u["number"],
+                              new_grade=req.grade, new_class_no=req.class_no, new_number=req.number)
             if pending:
                 c.execute(update(db.profile_change_requests).where(q.id == pending.id).values(**values))
                 return pending.id

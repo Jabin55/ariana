@@ -1103,7 +1103,11 @@ async def school_change_requests(request: Request):
                 query = query.where(q.new_value.in_(schools))
             rows = c.execute(query).all()
             return [{"id": r.id, "name": r.name, "student_no": student_no(r._mapping),
-                     "grade": r.grade, "class_no": r.class_no,
+                     "grade": r.old_grade if r.old_grade is not None else r.grade,
+                     "class_no": r.old_class_no if r.old_class_no is not None else r.class_no,
+                     "number": r.old_number if r.old_number is not None else r.number,
+                     "new_grade": r.new_grade, "new_class_no": r.new_class_no,
+                     "new_number": r.new_number,
                      "old_value": r.old_value, "new_value": r.new_value,
                      "requested_at": r.requested_at} for r in rows]
 
@@ -1113,6 +1117,9 @@ async def school_change_requests(request: Request):
 class SchoolChangeDecision(BaseModel):
     action: str = Field(pattern="^(approve|reject)$")
     note: str = Field(default="", max_length=300)
+    grade: int | None = Field(default=None, ge=1, le=6)
+    class_no: int | None = Field(default=None, ge=1, le=30)
+    number: int | None = Field(default=None, ge=1, le=60)
 
 
 @router.post("/api/school/change-requests/{change_id}")
@@ -1136,11 +1143,22 @@ async def decide_school_change(change_id: int, req: SchoolChangeDecision, reques
                 raise HTTPException(404, "학생을 찾을 수 없어요.")
             if student.school != row.old_value:
                 raise HTTPException(409, "학생의 현재 학교가 신청 당시와 달라졌어요. 다시 신청해야 해요.")
+            if (row.old_grade is not None and (student.grade, student.class_no, student.number) !=
+                    (row.old_grade, row.old_class_no, row.old_number)):
+                raise HTTPException(409, "학생의 현재 학년·반·번호가 신청 당시와 달라졌어요. 다시 신청해야 해요.")
             if req.action == "approve":
+                grade = req.grade if req.grade is not None else row.new_grade
+                class_no = req.class_no if req.class_no is not None else row.new_class_no
+                number = req.number if req.number is not None else row.new_number
+                if not all((grade, class_no, number)):
+                    raise HTTPException(400, "변경 후 학교의 학년·반·번호를 모두 입력해 주세요.")
                 if valid_schools and row.new_value not in valid_schools:
                     raise HTTPException(400, "학교 목록에 없는 학교예요.")
                 auth.check_school_gender(row.new_value, student.gender or "")
-                c.execute(update(db.users).where(db.users.c.id == student.id).values(school=row.new_value))
+                c.execute(update(db.users).where(db.users.c.id == student.id).values(
+                    school=row.new_value, grade=grade, class_no=class_no, number=number))
+                c.execute(update(db.profile_change_requests).where(q.id == row.id).values(
+                    new_grade=grade, new_class_no=class_no, new_number=number))
             c.execute(update(db.profile_change_requests).where(q.id == row.id).values(
                 status="approved" if req.action == "approve" else "rejected",
                 decided_at=time.time(), decided_by=u["id"], note=req.note.strip()))
