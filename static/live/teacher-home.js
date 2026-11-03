@@ -935,7 +935,7 @@ async function learnSpeech(c, st, box) {
   }
   const who = d.students.find((x) => x.user_id === st.view);
   if (who) {
-    // 학생 한 명: [성취 분석] (역량·성취 그래프, AI 종합 의견, 피드백, 워드클라우드) / [관찰 및 발언기록]
+    // 학생 한 명: [성취 분석] (역량·성취 그래프, AI 종합 의견, 피드백) / [관찰 및 발언기록] (워드클라우드, 관찰, 발언)
     st.studentTab ||= "analysis";
     const tabs = h("nav", { class: "tabs sub-tabs", style: "margin:4px 0 10px" },
       [["analysis", "📊 성취 분석"], ["records", "🗒 관찰 및 발언기록"]].map(([k, label]) =>
@@ -948,10 +948,8 @@ async function learnSpeech(c, st, box) {
     const { entries } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}`);
     if (st.studentTab === "analysis") {
       const anal = h("div", { class: "ach-wrap" }, h("p", { class: "muted" }, "AI 분석을 불러오는 중…"));
-      const cloud = h("div", { class: "word-cloud" });
-      fill(pane, anal, h("h4", { class: "speech-h" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud);
+      fill(pane, anal);
       renderAnalysis(c.id, who, anal, { obs: false }); // AI 성취 분석·그래프·피드백 (achievement.js)
-      drawWordCloud(cloud, entries.map((e) => e.text));
       return;
     }
     // 관찰 및 발언기록: 교사 관찰 기록 + 수업별 학생 발언 기록
@@ -963,8 +961,10 @@ async function learnSpeech(c, st, box) {
       if (!g || g.class_id !== e.class_id) days.push(g = { class_id: e.class_id, date: e.date, title: e.class_title, items: [] });
       g.items.push(e);
     }
+    const cloud = h("div", { class: "word-cloud" });
     fill(pane,
-      h("h4", { class: "speech-h", style: "margin-top:4px" }, `👀 교사 관찰 기록 ${obs.length}건`),
+      h("h4", { class: "speech-h", style: "margin-top:4px" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
+      h("h4", { class: "speech-h" }, `👀 교사 관찰 기록 ${obs.length}건`),
       obs.length ? h("div", { class: "speech-day" }, ...obs.map((o) => h("div", { class: "speech-line student" },
         h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)))))
@@ -974,6 +974,7 @@ async function learnSpeech(c, st, box) {
         h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`, h("span", { class: "muted" }, ` ${g.items.length}건`)),
         ...g.items.map((e) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text)))))
         : h("p", { class: "muted" }, "발언 기록이 없어요."));
+    drawWordCloud(cloud, entries.map((e) => e.text));
     return;
   }
   fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students" },
