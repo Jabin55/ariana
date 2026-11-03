@@ -1084,7 +1084,7 @@ def my_schools(u: dict) -> set[str] | None:
 
 @router.get("/api/school/change-requests")
 async def school_change_requests(request: Request):
-    """새 학교 담당교사에게 전입 신청을 보여 준다. 전체 관리자는 목록만 조회한다."""
+    """새 학교 담당교사는 자기 학교, 전체 관리자는 모든 전입 신청을 처리한다."""
     u = await require_user(request)
     schools = set(u.get("participant_schools") or [])
     if not schools and not u["is_admin"]:
@@ -1119,7 +1119,7 @@ class SchoolChangeDecision(BaseModel):
 async def decide_school_change(change_id: int, req: SchoolChangeDecision, request: Request):
     u = await require_user(request)
     schools = set(u.get("participant_schools") or [])
-    if not schools:
+    if not schools and not u["is_admin"]:
         raise HTTPException(403, "참여학교 담당교사만 할 수 있어요.")
     valid_schools = await db.run(auth.get_schools)
 
@@ -1127,7 +1127,7 @@ async def decide_school_change(change_id: int, req: SchoolChangeDecision, reques
         q = db.profile_change_requests.c
         with db.engine.begin() as c:
             row = c.execute(select(db.profile_change_requests).where(q.id == change_id)).first()
-            if not row or row.field != "school" or row.new_value not in schools:
+            if not row or row.field != "school" or (not u["is_admin"] and row.new_value not in schools):
                 raise HTTPException(404, "우리 학교의 변경 신청을 찾을 수 없어요.")
             if row.status != "pending":
                 raise HTTPException(409, "이미 처리한 신청이에요.")

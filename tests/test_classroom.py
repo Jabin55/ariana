@@ -1741,7 +1741,6 @@ def test_student_school_change_needs_new_school_participant_approval(monkeypatch
     pending_changes = teachers["B학교"].get("/api/school/change-requests").json()["requests"]
     assert [(x["id"], x["grade"], x["class_no"]) for x in pending_changes] == [(change_id, 1, 2)]
     assert [x["id"] for x in boss.get("/api/school/change-requests").json()["requests"]] == [change_id]
-    assert boss.post(f"/api/school/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
     assert boss.get("/api/admin/change-requests?field=school").json()["requests"] == []
     assert boss.post(f"/api/admin/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
     assert student_client.post(f"/api/school/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
@@ -1756,7 +1755,15 @@ def test_student_school_change_needs_new_school_participant_approval(monkeypatch
     next_id = next_request.json()["id"]
     assert boss.post(f"/api/staff/{membership_ids['C학교']}", json={"action": "revoke"}).status_code == 200
     assert teachers["C학교"].post(f"/api/school/change-requests/{next_id}", json={"action": "approve"}).status_code == 403
-    assert student_client.get("/api/me").json()["user"]["school"] == "B학교"
+    assert boss.post(f"/api/school/change-requests/{next_id}", json={"action": "approve"}).status_code == 200
+    assert student_client.get("/api/me").json()["user"]["school"] == "C학교"
+    rejected_request = student_client.post("/api/me/change-requests", json={"field": "school", "value": "A학교"})
+    assert rejected_request.status_code == 200
+    rejected_id = rejected_request.json()["id"]
+    assert boss.post(f"/api/school/change-requests/{rejected_id}",
+                     json={"action": "reject", "note": "확인 필요"}).status_code == 200
+    assert student_client.get("/api/me").json()["user"]["school"] == "C학교"
+    assert boss.get("/api/school/change-requests").json()["requests"] == []
 
 
 def test_admin_can_view_classroom_overview_without_student_enrollment(monkeypatch):
