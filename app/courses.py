@@ -1084,21 +1084,24 @@ def my_schools(u: dict) -> set[str] | None:
 
 @router.get("/api/school/change-requests")
 async def school_change_requests(request: Request):
-    """새 학교의 참여학교 담당교사에게 학생 전입 신청만 보여 준다."""
+    """새 학교 담당교사에게 전입 신청을 보여 준다. 전체 관리자는 목록만 조회한다."""
     u = await require_user(request)
     schools = set(u.get("participant_schools") or [])
-    if not schools:
+    if not schools and not u["is_admin"]:
         raise HTTPException(403, "참여학교 담당교사만 할 수 있어요.")
 
     def run():
         q = db.profile_change_requests.c
         s = db.users.c
         with db.engine.connect() as c:
-            rows = c.execute(select(db.profile_change_requests, s.name, s.role, s.grade, s.class_no, s.number)
+            query = (select(db.profile_change_requests, s.name, s.role, s.grade, s.class_no, s.number)
                 .join(db.users, s.id == q.user_id)
-                .where(q.field == "school", q.status == "pending", q.new_value.in_(schools),
+                .where(q.field == "school", q.status == "pending",
                        s.role == "student", s.account_state == "active")
-                .order_by(q.requested_at.desc())).all()
+                .order_by(q.requested_at.desc()))
+            if not u["is_admin"]:
+                query = query.where(q.new_value.in_(schools))
+            rows = c.execute(query).all()
             return [{"id": r.id, "name": r.name, "student_no": student_no(r._mapping),
                      "grade": r.grade, "class_no": r.class_no,
                      "old_value": r.old_value, "new_value": r.new_value,

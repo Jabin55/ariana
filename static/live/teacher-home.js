@@ -1621,7 +1621,9 @@ async function renderStudentSchoolChanges(box) {
     const { requests } = await api("/api/school/change-requests");
     const head = ["연번", "변경 전 소속학교", "학년", "반", "이름", "변경 후 소속학교", "승인/반려"];
     fill(box, h("h2", {}, "소속학교 변경 승인"),
-      h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
+      h("p", { class: "muted" }, ME.is_admin
+        ? "참여학교로 옮기려는 학생의 신청입니다. 승인·반려는 변경할 학교의 담당교사가 처리합니다."
+        : "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
         h("thead", {}, h("tr", {}, head.map((label) => h("th", {}, label)))),
         h("tbody", {}, requests.length ? requests.map((r, i) => h("tr", {},
@@ -1631,7 +1633,8 @@ async function renderStudentSchoolChanges(box) {
           h("td", {}, r.class_no ? `${r.class_no}반` : "-"),
           h("td", {}, r.name || "-"),
           h("td", {}, r.new_value || "-"),
-          h("td", {}, h("div", { class: "row school-change-actions" }, ["approve", "reject"].map((action) => h("button", {
+          h("td", {}, (ME.participant_schools || []).includes(r.new_value)
+            ? h("div", { class: "row school-change-actions" }, ["approve", "reject"].map((action) => h("button", {
             type: "button", class: action === "approve" ? "small primary" : "small", onclick: async () => {
               if (action === "approve" && !await appConfirm(`${r.name} 학생의 소속학교를 ${r.new_value}(으)로 변경할까요?`)) return;
               const note = action === "reject" ? await appPrompt("반려 사유를 입력하세요. 학생에게 표시됩니다.", "") : "";
@@ -1643,7 +1646,8 @@ async function renderStudentSchoolChanges(box) {
                 loadSchool();
               } catch (e) { toast(e.message); }
             }
-          }, action === "approve" ? "승인" : "반려"))))
+          }, action === "approve" ? "승인" : "반려")))
+            : h("span", { class: "muted" }, "해당 학교 담당교사 처리"))
         )) : h("tr", {}, h("td", { colspan: head.length, class: "muted" }, "승인 대기 중인 신청이 없어요."))))));
   } catch (e) { fill(box, h("p", { class: "error" }, e.message)); }
 }

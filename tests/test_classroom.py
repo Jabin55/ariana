@@ -1740,6 +1740,8 @@ def test_student_school_change_needs_new_school_participant_approval(monkeypatch
     assert teachers["C학교"].get("/api/school/change-requests").json()["requests"] == []
     pending_changes = teachers["B학교"].get("/api/school/change-requests").json()["requests"]
     assert [(x["id"], x["grade"], x["class_no"]) for x in pending_changes] == [(change_id, 1, 2)]
+    assert [x["id"] for x in boss.get("/api/school/change-requests").json()["requests"]] == [change_id]
+    assert boss.post(f"/api/school/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
     assert boss.get("/api/admin/change-requests?field=school").json()["requests"] == []
     assert boss.post(f"/api/admin/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
     assert student_client.post(f"/api/school/change-requests/{change_id}", json={"action": "approve"}).status_code == 403
