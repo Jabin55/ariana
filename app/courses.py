@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, delete, func, insert, or_, select, update
 
 from app import auth, db, subjects
@@ -1115,11 +1115,9 @@ async def school_change_requests(request: Request):
 
 
 class SchoolChangeDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # 승인자는 학생이 신청한 학번 정보를 바꿀 수 없다
     action: str = Field(pattern="^(approve|reject)$")
     note: str = Field(default="", max_length=300)
-    grade: int | None = Field(default=None, ge=1, le=6)
-    class_no: int | None = Field(default=None, ge=1, le=30)
-    number: int | None = Field(default=None, ge=1, le=60)
 
 
 @router.post("/api/school/change-requests/{change_id}")
@@ -1147,18 +1145,14 @@ async def decide_school_change(change_id: int, req: SchoolChangeDecision, reques
                     (row.old_grade, row.old_class_no, row.old_number)):
                 raise HTTPException(409, "학생의 현재 학년·반·번호가 신청 당시와 달라졌어요. 다시 신청해야 해요.")
             if req.action == "approve":
-                grade = req.grade if req.grade is not None else row.new_grade
-                class_no = req.class_no if req.class_no is not None else row.new_class_no
-                number = req.number if req.number is not None else row.new_number
-                if not all((grade, class_no, number)):
-                    raise HTTPException(400, "변경 후 학교의 학년·반·번호를 모두 입력해 주세요.")
                 if valid_schools and row.new_value not in valid_schools:
                     raise HTTPException(400, "학교 목록에 없는 학교예요.")
                 auth.check_school_gender(row.new_value, student.gender or "")
                 c.execute(update(db.users).where(db.users.c.id == student.id).values(
-                    school=row.new_value, grade=grade, class_no=class_no, number=number))
-                c.execute(update(db.profile_change_requests).where(q.id == row.id).values(
-                    new_grade=grade, new_class_no=class_no, new_number=number))
+                    school=row.new_value,
+                    grade=row.new_grade if row.new_grade is not None else student.grade,
+                    class_no=row.new_class_no if row.new_class_no is not None else student.class_no,
+                    number=row.new_number if row.new_number is not None else student.number))
             c.execute(update(db.profile_change_requests).where(q.id == row.id).values(
                 status="approved" if req.action == "approve" else "rejected",
                 decided_at=time.time(), decided_by=u["id"], note=req.note.strip()))

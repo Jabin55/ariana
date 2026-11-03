@@ -1624,13 +1624,10 @@ async function renderStudentSchoolChanges(box) {
       h("p", { class: "muted" }, ME.is_admin
         ? "참여학교로 옮기려는 학생의 신청입니다. 전체 관리자 또는 변경할 학교의 담당교사가 승인·반려할 수 있습니다."
         : "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
-      h("p", { class: "muted" }, "변경 후 학년·반·번호를 확인해 입력한 뒤 승인해 주세요."),
+      h("p", { class: "muted" }, "변경 후 학년·반·번호는 학생이 신청한 값입니다. 학생이 입력하지 않은 항목은 기존 값이 유지됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
         h("thead", {}, h("tr", {}, head.map((label) => h("th", {}, label)))),
         h("tbody", {}, requests.length ? requests.map((r, i) => {
-          const newGrade = h("input", { type: "number", min: 1, max: 6, value: r.new_grade || "", "aria-label": `${r.name} 변경 후 학년` });
-          const newClass = h("input", { type: "number", min: 1, max: 30, value: r.new_class_no || "", "aria-label": `${r.name} 변경 후 반` });
-          const newNumber = h("input", { type: "number", min: 1, max: 60, value: r.new_number || "", "aria-label": `${r.name} 변경 후 번호` });
           return h("tr", {},
           h("td", {}, i + 1),
           h("td", {}, r.name || "-"),
@@ -1639,9 +1636,9 @@ async function renderStudentSchoolChanges(box) {
           h("td", {}, r.class_no ? `${r.class_no}반` : "-"),
           h("td", {}, r.number ? `${r.number}번` : "-"),
           h("td", {}, r.new_value || "-"),
-          h("td", {}, newGrade),
-          h("td", {}, newClass),
-          h("td", {}, newNumber),
+          h("td", {}, (r.new_grade ?? r.grade) ? `${r.new_grade ?? r.grade}학년` : "-"),
+          h("td", {}, (r.new_class_no ?? r.class_no) ? `${r.new_class_no ?? r.class_no}반` : "-"),
+          h("td", {}, (r.new_number ?? r.number) ? `${r.new_number ?? r.number}번` : "-"),
           h("td", {}, (ME.is_admin || (ME.participant_schools || []).includes(r.new_value))
             ? h("div", { class: "row school-change-actions" }, ["approve", "reject"].map((action) => h("button", {
             type: "button", class: action === "approve" ? "small primary" : "small", onclick: async () => {
@@ -1649,10 +1646,7 @@ async function renderStudentSchoolChanges(box) {
               const note = action === "reject" ? await appPrompt("반려 사유를 입력하세요. 학생에게 표시됩니다.", "") : "";
               if (note === null) return;
               try {
-                await api(`/api/school/change-requests/${r.id}`, { action, note,
-                  ...(action === "approve" ? { grade: newGrade.value ? Number(newGrade.value) : null,
-                    class_no: newClass.value ? Number(newClass.value) : null,
-                    number: newNumber.value ? Number(newNumber.value) : null } : {}) });
+                await api(`/api/school/change-requests/${r.id}`, { action, note });
                 toast(action === "approve" ? "소속학교 변경을 승인했어요." : "소속학교 변경을 반려했어요.");
                 schoolData = null;
                 loadSchool();

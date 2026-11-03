@@ -506,7 +506,7 @@ function openStudentChange(field) {
   fill(box, h("p", { class: "muted" }, `${approver}가 승인하면 ${label}가 바뀝니다. 승인 전에는 현재 정보가 유지됩니다.`),
     h("div", { class: "row" }, input),
     field === "school" ? h("div", { class: "row school-change-number" }, ...newNumber) : null,
-    field === "school" ? h("p", { class: "muted" }, "새 학교의 학년·반·번호를 알면 적어 주세요. 모르면 비워 두고, 승인하는 선생님이 입력할 수 있습니다.") : null,
+    field === "school" ? h("p", { class: "muted" }, "새 학교에서 사용할 학년·반·번호 중 바꿀 항목만 입력하세요. 비워 둔 항목은 기존 값이 유지됩니다.") : null,
     h("button", { type: "button", class: "primary", onclick: async () => {
       try {
         await api("/api/me/change-requests", { field, value: input.value.trim(),

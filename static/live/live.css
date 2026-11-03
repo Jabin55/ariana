@@ -1468,7 +1468,6 @@ table.att.school-table .quit-cell { justify-content: center; flex-wrap: wrap; }
 table.att.school-change-table { min-width: 1100px; }
 table.att.school-change-table th, table.att.school-change-table td { text-align: center; vertical-align: middle; white-space: nowrap; }
 table.att.school-change-table td:last-child { min-width: 150px; }
-.school-change-table td input[type="number"] { width: 56px; box-sizing: border-box; text-align: center; }
 .school-change-actions { justify-content: center; }
 .school-change-number input[type="number"] { width: 80px; }
 /* 로그인 ↔ 회원가입 */

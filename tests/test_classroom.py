@@ -1759,18 +1759,26 @@ def test_student_school_change_needs_new_school_participant_approval(monkeypatch
     next_id = next_request.json()["id"]
     assert boss.post(f"/api/staff/{membership_ids['C학교']}", json={"action": "revoke"}).status_code == 200
     assert teachers["C학교"].post(f"/api/school/change-requests/{next_id}", json={"action": "approve"}).status_code == 403
-    assert boss.post(f"/api/school/change-requests/{next_id}", json={"action": "approve"}).status_code == 400
     assert boss.post(f"/api/school/change-requests/{next_id}", json={
-        "action": "approve", "grade": 2, "class_no": 1, "number": 9}).status_code == 200
+        "action": "approve", "grade": 3}).status_code == 422  # 승인자는 학번을 바꿀 수 없다
+    assert boss.post(f"/api/school/change-requests/{next_id}", json={"action": "approve"}).status_code == 200
     moved = student_client.get("/api/me").json()["user"]
-    assert (moved["school"], moved["grade"], moved["class_no"], moved["number"]) == ("C학교", 2, 1, 9)
-    rejected_request = student_client.post("/api/me/change-requests", json={"field": "school", "value": "A학교"})
+    assert (moved["school"], moved["grade"], moved["class_no"], moved["number"]) == ("C학교", 2, 5, 17)
+    partial_request = student_client.post("/api/me/change-requests", json={
+        "field": "school", "value": "A학교", "number": 9})
+    assert partial_request.status_code == 200
+    assert boss.post(f"/api/school/change-requests/{partial_request.json()['id']}",
+                     json={"action": "approve"}).status_code == 200
+    moved = student_client.get("/api/me").json()["user"]
+    assert (moved["school"], moved["grade"], moved["class_no"], moved["number"]) == ("A학교", 2, 5, 9)
+    rejected_request = student_client.post("/api/me/change-requests", json={
+        "field": "school", "value": "B학교", "grade": 3})
     assert rejected_request.status_code == 200
     rejected_id = rejected_request.json()["id"]
     assert boss.post(f"/api/school/change-requests/{rejected_id}",
                      json={"action": "reject", "note": "확인 필요"}).status_code == 200
     unchanged = student_client.get("/api/me").json()["user"]
-    assert (unchanged["school"], unchanged["grade"], unchanged["class_no"], unchanged["number"]) == ("C학교", 2, 1, 9)
+    assert (unchanged["school"], unchanged["grade"], unchanged["class_no"], unchanged["number"]) == ("A학교", 2, 5, 9)
     assert boss.get("/api/school/change-requests").json()["requests"] == []
 
 
