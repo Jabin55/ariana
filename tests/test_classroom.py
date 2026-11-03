@@ -3835,6 +3835,48 @@ def test_observations_recorded_and_used_in_analysis(monkeypatch):
     assert "[교사 관찰 기록]" in prompts[-1] and "근거를 들어 반박함" in prompts[-1] and "(발언 기록 없음)" in prompts[-1]
 
 
+def test_quiz_answers_used_in_student_analysis_without_other_students_or_polls(monkeypatch):
+    """발언이 없어도 해당 학생의 퀴즈 답만 분석하고 설문·다른 학생 답은 제외한다."""
+    import app.achievement as ach
+    from sqlalchemy import insert
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    prompts = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        prompts.append((system, prompt))
+        return {"classes": [], "summary": "", "feedback": ""}
+
+    monkeypatch.setattr(ach, "ai_json", fake_ai)
+    t, a, b = teacher(), student(1), student(2)
+    aid, bid = (s.get("/api/me").json()["user"]["id"] for s in (a, b))
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    for s in (a, b):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    t.post(f"/api/courses/{cid}/standards", json={"code": "[S1]", "text": "근거", "elements": [{"name": "근거 제시"}]})
+    class_id = create(t, title="퀴즈 수업", course_id=cid)["class_id"]
+    now = time.time()
+    rows = [
+        ("choice", "대통령제 국가는?", ["영국", "미국"], 1, {str(aid): 1, str(bid): 0}),
+        ("ox", "헌법은 최고 규범이다", ["O", "X"], 0, {str(aid): 0}),
+        ("text", "이유를 쓰세요", [], None, {str(aid): "이름 학생1 학번 20301, 근거를 연결했다", str(bid): "다른 학생의 비밀 답"}),
+        ("poll", "선호 조사", ["예", "아니오"], None, {str(aid): 0}),
+    ]
+    with db.engine.begin() as c:
+        for i, (kind, question, options, correct, responses) in enumerate(rows):
+            c.execute(insert(db.activities).values(class_id=class_id, kind=kind, prompt=question,
+                                                   options=json.dumps(options, ensure_ascii=False), correct=correct,
+                                                   responses=json.dumps(responses, ensure_ascii=False), created_at=now + i))
+    assert t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze").status_code == 200
+    system, prompt = prompts[-1]
+    assert "[학생 퀴즈 응답]" in prompt and "학생 답: 미국" in prompt and "정답: 미국 (정답)" in prompt
+    assert "[OX]" in prompt and "근거를 연결했다" in prompt and "(발언 기록 없음)" in prompt
+    assert "선호 조사" not in prompt and "다른 학생의 비밀 답" not in prompt
+    assert "학생1" not in prompt and "20301" not in prompt
+    assert "퀴즈" in system and "정오 여부 한 번만으로" in system
+
+
 def test_student_phone_saved_and_shown_to_teacher():
     """학생 가입 때 연락처를 받고, 수강생 관리 목록에 보인다"""
     t, s = teacher(), student(1)

@@ -259,7 +259,7 @@ function achSeries(classes) {
 
 function achChart(classes) {
   const series = achSeries(classes);
-  if (!series.length) return h("p", { class: "muted" }, "판단할 수 있는 발언이 아직 없어요.");
+  if (!series.length) return h("p", { class: "muted" }, "판단할 수 있는 수업 기록이 아직 없어요.");
   const W = 640, H = 230, L = 44, R = 16, T = 16, B = 40;
   const n = classes.length;
   const X = (i) => (n === 1 ? (L + W - R) / 2 : L + (i * (W - L - R)) / (n - 1));
@@ -360,7 +360,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`))))
         : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),
-    v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언과 관찰 기록을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
+    v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언·교사 관찰 기록·퀴즈 답안을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
     v.analyzed_at ? [
       // 왼쪽: 2022 개정 교육과정 핵심역량 6각형 · 오른쪽: 수업별 성취 변화(상·중·하)
       h("div", { class: "ach-two" },
@@ -374,7 +374,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
               h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
               x.ratings.length ? x.ratings.map((r) => h("div", { class: "ach-rate" },
                 h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
-                h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 발언이 없었어요.")))))),
+                h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 수업 기록이 없었어요.")))))),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
     ] : null,

@@ -1,10 +1,10 @@
-"""성취기준 기반 발언 분석.
+"""성취기준 기반 수업 기록 분석.
 
 1) 강좌에 성취기준과 성취기준별 평가기준(상·중·하)을 넣어 두고, 거기서 평가 요소를 뽑는다(AI 초안 → 교사 수정).
    과목 전체의 성취수준(성취도 A~E / A~C / P 별 일반적 특성)도 함께 넣어 둔다.
 2) 강좌 회차마다 다루는 성취기준을 고른다. 수업(실시간)은 같은 날짜의 회차와 연결된다.
-3) 교사가 [AI 분석]을 누르면 그 학생의 발언(이름·학번은 가림)을 평가 요소에 비추어
-   수업마다 상(3)·중(2)·하(1)로 판단하고, 근거 발언·종합 의견(교사용)·피드백 초안(학생용)을 만든다.
+3) 교사가 [AI 분석]을 누르면 그 학생의 발언·교사 관찰·퀴즈 답안(이름·학번은 가림)을 평가 요소에 비추어
+   수업마다 상(3)·중(2)·하(1)로 판단하고, 판단 근거·종합 의견(교사용)·피드백 초안(학생용)을 만든다.
 4) 피드백은 교사가 [학생에게 공개]해야 학생에게 보인다. 기록은 과목이 끝나고 365일 뒤 지운다(file_retention).
 """
 
@@ -405,7 +405,7 @@ async def get_student_observations(course_id: int, user_id: int, request: Reques
 # ───────── 학생 발언 AI 분석 ─────────
 
 def _student_material(course_id: int, user_id: int):
-    """그 학생의 수업별 발언과 수업마다 연결된 성취기준"""
+    """그 학생의 수업별 발언·관찰·퀴즈 답안과 연결된 성취기준"""
     from app.speech import _entries
     from app.courses import sessions_by_course
     entries = [e for e in _entries(course_id, None, user_id) if e["role"] == "student"]
@@ -417,12 +417,44 @@ def _student_material(course_id: int, user_id: int):
     classes: dict[int, dict] = {}
     for e in entries:
         x = classes.setdefault(e["class_id"], {"class_id": e["class_id"], "date": e["date"], "title": e["class_title"],
-                                                "texts": [], "notes": []})
+                                                "texts": [], "notes": [], "quizzes": []})
         x["texts"].append(e["text"])
     for o in student_observations(course_id, user_id):  # 교사 관찰 기록도 그 수업의 근거로
         x = classes.setdefault(o["class_id"], {"class_id": o["class_id"], "date": o["date"], "title": o["class_title"],
-                                                "texts": [], "notes": []})
+                                                "texts": [], "notes": [], "quizzes": []})
         x["notes"].append(o["text"])
+    a, cl = db.activities.c, db.classes.c
+    with db.engine.connect() as c:
+        quiz_rows = c.execute(select(a.kind, a.prompt, a.options, a.correct, a.responses,
+                                     cl.id.label("class_id"), cl.title, cl.created_at.label("class_created"))
+                              .join(db.classes, cl.id == a.class_id)
+                              .where(cl.course_id == course_id, a.kind.in_(("ox", "choice", "text")))
+                              .order_by(a.created_at, a.id)).all()
+    for q in quiz_rows:
+        try:
+            answers = json.loads(q.responses)
+            if not isinstance(answers, dict) or str(user_id) not in answers:
+                continue
+            answer = answers[str(user_id)]
+            options = json.loads(q.options)
+        except (ValueError, TypeError):
+            continue
+        if q.kind == "text":
+            if not isinstance(answer, str) or not answer.strip():
+                continue
+            shown = answer.strip()
+        else:
+            if not isinstance(options, list) or type(answer) is not int or not 0 <= answer < len(options):
+                continue
+            shown = str(options[answer])
+        kind = {"ox": "OX", "choice": "객관식", "text": "주관식"}[q.kind]
+        record = f"[{kind}] 문항: {q.prompt} / 학생 답: {shown}"
+        if q.kind != "text" and type(q.correct) is int and 0 <= q.correct < len(options):
+            record += f" / 정답: {options[q.correct]} ({'정답' if answer == q.correct else '오답'})"
+        x = classes.setdefault(q.class_id, {"class_id": q.class_id,
+                                             "date": datetime.fromtimestamp(q.class_created, KST).strftime("%Y-%m-%d"),
+                                             "title": q.title or "", "texts": [], "notes": [], "quizzes": []})
+        x["quizzes"].append(record)
     every = [s["id"] for s in standards]
     direct = class_links_of(course_id)
     for x in classes.values():
@@ -435,18 +467,18 @@ def _student_material(course_id: int, user_id: int):
 
 
 ANALYSIS_SYSTEM = (
-    "당신은 한국 고등학교 교사를 돕는 평가 보조자입니다. 한 학생이 여러 수업에서 한 발언(음성 인식 결과라 오탈자가 있을 수 있음)과 "
-    "수업 중 교사가 그 학생을 관찰해 적은 기록을 성취기준의 평가 요소와 상·중·하 기준에 비추어 판단합니다.\n"
-    "규칙:\n- 수업마다, 그 수업에 연결된 평가 요소 가운데 발언에서 근거를 찾을 수 있는 것만 판단합니다. 근거가 없으면 판단하지 않습니다.\n"
-    "- level 은 상=3, 중=2, 하=1 입니다. evidence 에는 판단 근거가 된 학생 발언을 짧게 그대로 인용합니다. "
-    "교사 관찰 기록을 근거로 삼았으면 앞에 '(관찰)'을 붙여 인용합니다.\n"
+    "당신은 한국 고등학교 교사를 돕는 평가 보조자입니다. 한 학생의 수업별 발언(음성 인식 결과라 오탈자가 있을 수 있음), "
+    "교사 관찰 기록, 퀴즈 문항과 그 학생의 답을 성취기준의 평가 요소와 상·중·하 기준에 비추어 판단합니다.\n"
+    "규칙:\n- 수업마다 연결된 평가 요소 가운데 발언·관찰·퀴즈 답안에 직접 근거가 있는 것만 판단합니다. 근거가 없으면 판단하지 않습니다.\n"
+    "- 퀴즈의 정오 여부 한 번만으로 학생의 전체 성취수준이나 발표·협력 역량을 단정하지 않습니다. 정답이 없는 문항은 답안 내용만 봅니다.\n"
+    "- level 은 상=3, 중=2, 하=1 입니다. evidence 에는 판단 근거를 짧게 인용하고 출처를 '(발언)', '(관찰)', '(퀴즈)'로 표시합니다.\n"
     "- summary(교사용)는 수업이 이어지면서 성취가 어떻게 달라졌는지 4~6문장으로 씁니다. 과목 성취수준(일반적 특성)이 주어지면 "
-    "지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되, 성취도를 확정하는 말은 하지 않습니다. 발언 수가 적으면 그 한계를 밝힙니다.\n"
+    "지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되, 성취도를 확정하는 말은 하지 않습니다. 근거가 적으면 그 한계를 밝힙니다.\n"
     "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로, 잘한 점 1~2가지·보완할 점 1가지·다음 수업에서 해 볼 행동 1가지를 3~5문장으로 씁니다.\n"
     "- competencies 는 2022 개정 교육과정 핵심역량 6가지(자기관리, 지식정보처리, 창의적 사고, 심미적 감성, 협력적 소통, 공동체)를 "
-    "발언과 관찰 기록 전체에서 드러난 만큼 1~5점으로 매기고(3=보통), reason 에 근거를 한 문장으로 씁니다. "
+    "발언·관찰·퀴즈 답안 전체에서 드러난 만큼 1~5점으로 매기고(3=보통), reason 에 근거를 한 문장으로 씁니다. "
     "근거가 거의 없는 역량은 3점으로 두고 reason 에 '근거 부족'이라고 씁니다.\n"
-    "- 이름·학번 등 개인정보를 쓰지 않습니다. 발언에 없는 사실을 지어내지 않습니다."
+    "- 이름·학번 등 개인정보를 쓰지 않습니다. 제공된 기록에 없는 사실을 지어내지 않습니다."
 )
 
 
@@ -492,7 +524,7 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     from app.privacy_filter import redact
     classes, standards, names = await db.run(_student_material, course_id, user_id)
     if not classes:
-        raise HTTPException(400, "이 학생의 발언 기록이나 관찰 기록이 없어요.")
+        raise HTTPException(400, "이 학생의 발언·관찰·퀴즈 기록이 없어요.")
     usable = [s for s in standards if s["elements"]]
     if not usable:
         raise HTTPException(400, "먼저 [과목 정보]에서 성취기준과 평가 요소를 넣어 주세요.")
@@ -513,12 +545,14 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
         linked = [f"S{sno[sid]}" for sid in x["standard_ids"] if sid in sno] or [f"S{i}" for i in range(1, len(usable) + 1)]
         said = "\n".join(f"  · {redact(t, names)}" for t in x["texts"]) or "  (발언 기록 없음)"
         notes = "\n".join(f"  · {redact(t, names)}" for t in x["notes"])
+        quizzes = "\n".join(f"  · {redact(t, names)}" for t in x["quizzes"])
         cls_lines.append(f"<수업 {n}> {x['date']} 주제: {x['title'] or '-'} / 연결된 성취기준: {', '.join(linked)}\n"
-                         f"[학생 발언]\n{said}" + (f"\n[교사 관찰 기록]\n{notes}" if notes else ""))
+                         f"[학생 발언]\n{said}" + (f"\n[교사 관찰 기록]\n{notes}" if notes else "")
+                         + (f"\n[학생 퀴즈 응답]\n{quizzes}" if quizzes else ""))
     levels = {k: v for k, v in course_levels(course).items() if v}
     level_text = ("\n\n# 과목 성취수준별 일반적 특성 (참고)\n" + "\n".join(f"[{k}] {v}" for k, v in levels.items())) if levels else ""
     prompt = (f"과목: {course.subject or course.title}{level_text}\n\n# 성취기준과 평가 요소\n" + "\n".join(std_lines)
-              + "\n\n# 수업별 학생 발언과 교사 관찰 기록 (수업 순서)\n" + "\n\n".join(cls_lines))
+              + "\n\n# 수업별 학생 발언·교사 관찰 기록·학생 퀴즈 응답 (수업 순서)\n" + "\n\n".join(cls_lines))
     data = await ai_json(ANALYSIS_SYSTEM, prompt, analysis_schema(keys, len(classes)), 12000)
     now = time.time()
 
