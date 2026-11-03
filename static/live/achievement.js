@@ -1,6 +1,6 @@
 /* 성취기준 기반 발언 분석 화면
    - 교사 [과목 정보]: 성취기준·평가기준(상중하)·평가 요소, 과목 성취수준(A~E·A~C·P)(AI 초안 → 수정) 입력, 회차마다 성취기준 연결
-   - 교사 [학습 관리 > 학생별 발언 기록 > 학생]: AI 분석, 성취 변화 그래프, 종합 의견, 학생 피드백 공개
+   - 교사 [학습 관리 > 학생 맞춤형 분석 > 학생 > 성취 분석]: AI 분석, 역량·성취 변화 그래프, 종합 의견, 학생 피드백 공개
    - 학생 [내 강좌 > 학습 활동]: 선생님이 공개한 피드백과 성취 변화 그래프 */
 
 const ACH_COLORS = ["#1b6b4a", "#e8663d", "#2f7fb5", "#8a5cc2", "#c79a1e", "#d0485f", "#3c9a6e", "#5c6bc0"];
@@ -324,7 +324,7 @@ function achRadar(comps) {
 
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
 
-async function renderAnalysis(courseId, who, box) {
+async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === false: 관찰 기록은 [관찰 및 발언기록] 탭에서
   let v, obs = [];
   try {
     [v, { observations: obs }] = await Promise.all([
@@ -354,7 +354,7 @@ async function renderAnalysis(courseId, who, box) {
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
       h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run),
-    h("details", { class: "ach-box", open: obs.length > 0 && !v.analyzed_at },
+    opts.obs === false ? null : h("details", { class: "ach-box", open: obs.length > 0 && !v.analyzed_at },
       h("summary", { class: "ach-box-head" }, `👀 선생님 관찰 기록 ${obs.length}건 `, h("span", { class: "muted", style: "font-weight:400" }, "(수업 중 [관찰기록] 탭에서 적은 것 · AI 분석에 함께 써요)")),
       obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`))))
