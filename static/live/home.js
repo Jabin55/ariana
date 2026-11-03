@@ -887,8 +887,8 @@ function basicInfoTable(c) {
     ["대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", "), "거점학교", c.hub_school],
     ["선택과목 유형", c.custom_subject ? "고시외 과목" : c.subject_type, "교과(군)", c.subject_group],
     ["강의 교사 소속 학교", c.instructor_school, "강의 교사 성명", c.instructor],
-    ["운영 학점(운영 시간)", c.credits ? `${c.credits}학점${c.hours ? ` (${c.hours}시간)` : ""}` : "", "수강 인원", c.capacity ? `${c.capacity}명` : "제한 없음"],
-    ["수업 시간(횟수)", [time, n ? `(${n}회)` : ""].filter(Boolean).join(" "),
+    ["운영 학점(운영 시간)", c.credits ? `${c.credits}학점${c.hours ? ` (${c.hours}시간)` : ""}` : "", "수업 시간(횟수)", [time, n ? `(${n}회)` : ""].filter(Boolean).join(" ")],
+    ["수강 인원", c.capacity ? `${c.capacity}명` : "제한 없음",
       "평가 방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : ""],
     ["성취도", c.achievement_text, "등급", c.rank_grade],
   ];
