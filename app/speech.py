@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app import db
 from app.auth import admin_user_ids, require_user, student_no
@@ -60,13 +60,28 @@ def _entries(course_id: int | None, class_id: int | None = None, user_id: int | 
     return out
 
 
+def _observation_counts(course_id: int) -> dict[int, int]:
+    o = db.observations.c
+    with db.engine.connect() as c:
+        return dict(c.execute(select(o.user_id, func.count(o.id)).where(o.course_id == course_id)
+                              .group_by(o.user_id)).all())
+
+
 @router.get("/api/courses/{course_id}/speech")
 async def speech_summary(course_id: int, request: Request):
-    """수업별·학생별 발언 수"""
+    """수업별 발언과 수강생별 발언·교사 관찰 건수"""
     await _course(course_id, request)
     rows = await db.run(_entries, course_id)
+    from app.courses import course_roster
+    roster = await db.run(course_roster, course_id)
+    observation_counts = await db.run(_observation_counts, course_id)
     classes: dict = {}
     students: dict = {}
+    for row in roster:
+        u = dict(row._mapping)
+        students[u["id"]] = {"user_id": u["id"], "name": u["name"] or u["google_name"] or "",
+                              "school": u["school"] or "", "student_no": student_no(u),
+                              "count": 0, "chars": 0, "classes": set()}
     for e in rows:
         x = classes.setdefault(e["class_id"], {"id": e["class_id"], "title": e["class_title"], "date": e["date"],
                                                 "count": 0, "speakers": set()})
@@ -84,6 +99,7 @@ async def speech_summary(course_id: int, request: Request):
     sts = sorted(students.values(), key=lambda x: (x["school"], x["student_no"], x["name"]))
     for x in sts:
         x["classes"] = len(x["classes"])
+        x["observations"] = observation_counts.get(x["user_id"], 0)
     return {"classes": cls, "students": sts, "total": len(rows)}
 
 

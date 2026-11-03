@@ -905,7 +905,7 @@ async function learnSpeech(c, st, box) {
   const head = h("div", { class: "row", style: "margin:4px 0 10px" },
     h("h3", { class: "grow", style: "margin:0" }, st.speechTab === "class" ? "🗒 수업별 스크립트" : "🧑‍🎓 학생 맞춤형 피드백"),
     d.total ? h("a", { class: "button small", href: `/api/courses/${c.id}/speech.xlsx` }, "📥 엑셀 내려받기") : null);
-  if (!d.total) {
+  if (!d.total && !(st.speechTab === "student" && d.students.length)) {
     fill(box, head, h("p", { class: "muted" }, "아직 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면, 마이크를 켠 학생과 선생님의 말이 글자로 바뀌어 여기에 쌓여요. (크롬·엣지 사용자만 기록돼요)"));
     return;
   }
@@ -984,13 +984,14 @@ async function learnSpeech(c, st, box) {
     drawWordCloud(cloud, entries.map((e) => e.text));
     return;
   }
-  fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students" },
-    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "발언한 수업"].map((t) => h("th", {}, t)))),
+  fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students speech-feedback-students" },
+    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "발언한 수업", "교사 관찰 기록"].map((t) => h("th", {}, t)))),
     h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; st.studentTab = "analysis"; again(); } },
       h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
       h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
-      h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.chars.toLocaleString()}자`), h("td", { class: "num" }, `${x.classes}회`)))
-      : empty(7, "학생 발언 기록이 없어요.")))));
+      h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.chars.toLocaleString()}자`), h("td", { class: "num" }, `${x.classes}회`),
+      h("td", { class: "num" }, x.observations || 0)))
+      : empty(8, "수강 확정 학생이 없어요.")))));
 }
 
 /* 워드클라우드: 조사·어미를 대강 떼어 낸 낱말의 빈도로 글자 크기를 정한다 */

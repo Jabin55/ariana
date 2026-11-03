@@ -3826,6 +3826,11 @@ def test_observations_recorded_and_used_in_analysis(monkeypatch):
         assert a.get(base).status_code == 403
     got = t.get(f"/api/courses/{cid}/speech/student/{aid}/observations").json()["observations"]
     assert got[0]["text"] == "상대 주장을 요약한 뒤 근거를 들어 반박함" and got[0]["class_title"] == "1차시"
+    summary = t.get(f"/api/courses/{cid}/speech").json()
+    assert summary["total"] == 0  # 발언 기록 없이도 수강생별 관찰 건수가 보인다
+    by_id = {x["user_id"]: x for x in summary["students"]}
+    assert by_id[aid]["observations"] == 1 and by_id[aid]["count"] == 0
+    assert by_id[bid]["observations"] == 0 and by_id[bid]["count"] == 0
     t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze")  # 발언이 없어도 관찰 기록만으로 분석
     assert "[교사 관찰 기록]" in prompts[-1] and "근거를 들어 반박함" in prompts[-1] and "(발언 기록 없음)" in prompts[-1]
 
