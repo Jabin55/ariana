@@ -875,26 +875,25 @@ function classroomCourseStatus(c) {
   return ["approved", "수강 중"];
 }
 
-/* 내 강좌 > 강좌 정보: 두 항목씩 한 줄로 놓은 기본 정보 표 */
+/* 교사 과목 정보·학생 강좌 정보에서 함께 쓰는 기본 정보 표 */
 function basicInfoTable(c) {
   const dash = (v) => (v === null || v === undefined || v === "" ? "-" : v);
   const n = c.sessions?.length || 0;
   const time = c.class_days?.length ? `매주 ${c.class_days.map((d) => DAYS[d]).join("·")} ${c.class_start || ""}~${c.class_end || ""}` : "";
+  const period = c.start_date || c.end_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
   const pairs = [
     ["학기", [c.school_year ? `${c.school_year}학년도` : "", c.term || ""].filter(Boolean).join(" "),
-      "대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", ")],
-    ["거점학교", c.hub_school, "선택과목 유형", c.custom_subject ? "고시외 과목" : c.subject_type],
-    ["교과(군)", c.subject_group, "과목명", c.subject || c.title],
+      "강의 기간", h("span", {}, dash(period), c.finished ? h("span", { class: "status rejected", style: "margin-left:8px" }, "기간 종료") : null)],
+    ["대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", "), "거점학교", c.hub_school],
+    ["선택과목 유형", c.custom_subject ? "고시외 과목" : c.subject_type, "교과(군)", c.subject_group],
     ["강의 교사 소속 학교", c.instructor_school, "강의 교사 성명", c.instructor],
     ["운영 학점(운영 시간)", c.credits ? `${c.credits}학점${c.hours ? ` (${c.hours}시간)` : ""}` : "", "수강 인원", c.capacity ? `${c.capacity}명` : "제한 없음"],
     ["수업 시간(횟수)", [time, n ? `(${n}회)` : ""].filter(Boolean).join(" "),
       "평가 방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : ""],
     ["성취도", c.achievement_text, "등급", c.rank_grade],
   ];
-  const period = c.start_date || c.end_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
   return h("div", { class: "table-wrap" }, h("table", { class: "info-table basic-info-table" }, h("tbody", {},
-    ...pairs.map(([k1, v1, k2, v2]) => h("tr", {}, h("th", {}, k1), h("td", {}, dash(v1)), h("th", {}, k2), h("td", {}, dash(v2)))),
-    h("tr", {}, h("th", {}, "강의 기간"), h("td", { colspan: 3 }, dash(period), c.finished ? h("span", { class: "status rejected", style: "margin-left:8px" }, "기간 종료") : null)))));
+    ...pairs.map(([k1, v1, k2, v2]) => h("tr", {}, h("th", {}, k1), h("td", {}, dash(v1)), h("th", {}, k2), h("td", {}, dash(v2)))))));
 }
 
 /* 내 강좌 > 강좌 정보: 회차 정보 표 */
