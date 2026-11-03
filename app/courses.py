@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -31,6 +31,21 @@ KST = ZoneInfo("Asia/Seoul")
 def today_kst() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
 LIVE_LIMIT = 24 * 3600  # classroom.CLASS_REVIVE_LIMIT 과 같게
+
+
+def session_window(session) -> tuple[float, float] | None:
+    """회차의 학생 사전 입장 가능 구간 (한국 시각). 종료 시각이 없으면 2시간으로 본다."""
+    if not session.start:
+        return None
+    try:
+        start = datetime.fromisoformat(f"{session.date}T{session.start}").replace(tzinfo=KST)
+        end = (datetime.fromisoformat(f"{session.date}T{session.end}").replace(tzinfo=KST)
+               if session.end else start + timedelta(hours=2))
+    except ValueError:
+        return None
+    if end <= start:
+        end += timedelta(days=1)
+    return start.timestamp(), end.timestamp()
 
 
 def is_enrolled(course_id: int, user_id: int) -> bool:
@@ -904,29 +919,63 @@ async def cancel_enroll(course_id: int, request: Request):
 
 @router.get("/api/courses/live-now")
 async def live_now(request: Request):
-    """학생: 수강 승인된 강좌에서 지금 열려 있는 수업 → 코드 없이 바로 입장"""
+    """학생: 열린 수업과 시작 30분 전부터 들어갈 수 있는 예약 회차."""
     u = await require_user(request, "student")
 
     def run():
         with db.engine.connect() as c:
             e, cl, co = db.enrollments.c, db.classes.c, db.courses.c
             # 신청만 하고 아직 확정 전인 강좌의 수업도 알려 준다 (들어갈 수는 없음 → 왜 못 들어가는지 보여 주기)
-            return c.execute(
-                select(cl.code, cl.title, cl.created_at, co.title.label("course_title"), co.instructor, co.hub_school,
-                       e.status)
+            rows = c.execute(
+                select(cl.code, cl.title, cl.created_at, cl.course_id, cl.session_no, cl.preopened,
+                       co.title.label("course_title"), co.instructor, co.hub_school, e.status)
                 .join(db.courses, co.id == cl.course_id)
                 .join(db.enrollments, and_(e.course_id == cl.course_id, e.user_id == u["id"],
                                            e.status.in_(["approved", "pending"])))
                 .where(cl.ended_at.is_(None), cl.created_at > time.time() - LIVE_LIMIT)
                 .order_by(cl.created_at.desc())).all()
+            sessions = c.execute(select(db.course_sessions, co.title.label("course_title"), co.instructor,
+                                        co.hub_school)
+                .join(db.courses, co.id == db.course_sessions.c.course_id)
+                .join(db.enrollments, and_(e.course_id == co.id, e.user_id == u["id"], e.status == "approved"))
+                .where(co.archived == 0, co.approval == "approved")).all()
+            closed = c.execute(select(cl.course_id, cl.session_no, cl.created_at).where(
+                cl.course_id.in_([s.course_id for s in sessions] or [-1]),
+                cl.session_no.is_not(None), cl.ended_at.is_not(None),
+                cl.created_at > time.time() - LIVE_LIMIT)).all()
+            return rows, sessions, closed
 
-    rows = await db.run(run)
-    return {"classes": [{"code": r.code, "title": r.title, "course_title": r.course_title, "started_at": r.created_at,
+    rows, sessions, closed = await db.run(run)
+    now = time.time()
+    session_by_key = {(s.course_id, s.no): s for s in sessions}
+    def visible(r):
+        if not r.preopened:
+            return True
+        session = session_by_key.get((r.course_id, r.session_no))
+        window = session_window(session) if session else None
+        return bool(window and window[0] - 1800 <= now <= window[1])
+    active = [r for r in rows if visible(r)]
+    opened = {(r.course_id, r.session_no) for r in active if r.session_no is not None}
+    available = []
+    for s in sessions:
+        window = session_window(s)
+        already_ended = any(r.course_id == s.course_id and r.session_no == s.no
+                            and window and r.created_at >= window[0] - 1800 for r in closed)
+        if (window and window[0] - 1800 <= now <= window[1]
+                and (s.course_id, s.no) not in opened and not already_ended):
+            available.append({"scheduled": True, "course_id": s.course_id, "session_no": s.no,
+                              "title": f"{s.no}회차 · {s.topic}", "course_title": s.course_title,
+                              "started_at": window[0], "instructor": s.instructor,
+                              "hub_school": s.hub_school})
+    return {"classes": [{"code": r.code, "title": r.title, "course_title": r.course_title,
+                         "started_at": (session_window(session_by_key[(r.course_id, r.session_no)])[0]
+                                        if r.preopened else r.created_at),
+                         "scheduled": bool(r.preopened), "course_id": r.course_id, "session_no": r.session_no,
                          "instructor": r.instructor, "hub_school": r.hub_school}
-                        for r in rows if r.status == "approved"],
+                        for r in active if r.status == "approved"] + available,
             # 수업은 열렸지만 아직 수강 확정 전 (코드는 알려 주지 않는다)
             "waiting": [{"title": r.title, "course_title": r.course_title, "status": r.status}
-                        for r in rows if r.status != "approved"]}
+                        for r in active if r.status != "approved"]}
 
 
 def course_roster(course_id: int) -> list:

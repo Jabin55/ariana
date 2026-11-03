@@ -335,6 +335,8 @@ classes = Table(
     Column("ended_at", Float),
     Column("results_public", Integer, nullable=False, default=0),  # 채점 결과를 학생에게 공개
     Column("course_id", Integer, index=True),  # 강좌 수업이면 승인된 수강생만, 코드 없이 입장
+    Column("session_no", Integer),  # 회차별 예약 수업과 실제 수업방 연결
+    Column("preopened", Integer, nullable=False, default=0),  # 학생이 먼저 입장해 교사가 아직 열지 않은 방
 )
 
 attendance = Table(
@@ -600,6 +602,8 @@ def init() -> None:
              ("classes", "results_public", "INTEGER NOT NULL DEFAULT 0"),
              ("activities", "points", "FLOAT NOT NULL DEFAULT 1"),
              ("classes", "course_id", "INTEGER"),
+             ("classes", "session_no", "INTEGER"),
+             ("classes", "preopened", "INTEGER NOT NULL DEFAULT 0"),
              ("courses", "instructor", "VARCHAR(30) NOT NULL DEFAULT ''"),
              ("courses", "hub_school", "VARCHAR(60) NOT NULL DEFAULT ''"),
              ("courses", "start_date", "VARCHAR(10) NOT NULL DEFAULT ''"),

@@ -38,7 +38,7 @@ from livekit import api as lk
 
 from app import db
 from app.auth import KST, current_user, display_name, needs_profile, require_user
-from app.courses import course_roster, is_enrolled, owned_course
+from app.courses import course_roster, is_enrolled, owned_course, session_window
 
 log = logging.getLogger("live-class")
 router = APIRouter()
@@ -154,6 +154,7 @@ class Klass:
     teacher_id: int
     created: float = field(default_factory=time.time)
     course_id: int | None = None  # 강좌 수업이면 승인된 수강생만 들어올 수 있다
+    preopened: bool = False  # 학생이 먼저 입장한 예약 회차
     last_active: float = field(default_factory=time.time)
     students: dict[str, Student] = field(default_factory=dict)
     banned: set[str] = field(default_factory=set)
@@ -248,13 +249,18 @@ async def get_class(code: str) -> Klass:
     k = classes.get(code)  # 기다리는 사이 다른 요청이 먼저 살렸을 수 있다
     if not k:
         k = Klass(db_id=row.id, code=row.code, title=row.title, teacher_id=row.teacher_id, created=row.created_at,
-                  course_id=row.course_id)
+                  course_id=row.course_id, preopened=bool(row.preopened))
         k.questions = saved_questions
         k.files = saved_files
         k.strokes = saved_boards
         k.board_pages = max([int(x[3:]) for x in saved_boards if x.startswith("wb:")] + [1])
         classes[code] = k
     return k
+
+
+def _mark_teacher_opened(class_id: int) -> None:
+    with db.engine.begin() as c:
+        c.execute(update(db.classes).where(db.classes.c.id == class_id).values(preopened=0))
 
 
 def _load_materials(class_id: int) -> tuple[list[dict], dict[str, list]]:
@@ -849,6 +855,8 @@ async def create_class(req: CreateReq, request: Request):
         with db.engine.begin() as c:
             opened_title = title
             if req.session_no is not None:
+                # 학생이 예약 시각에 먼저 입장했다면 기존 방을 교사 수업으로 이어 간다.
+                c.execute(select(db.courses.c.id).where(db.courses.c.id == req.course_id).with_for_update())
                 session = c.execute(select(db.course_sessions).where(
                     db.course_sessions.c.course_id == req.course_id,
                     db.course_sessions.c.no == req.session_no)).first()
@@ -858,16 +866,74 @@ async def create_class(req: CreateReq, request: Request):
                 c.execute(update(db.course_sessions).where(db.course_sessions.c.id == session.id)
                           .values(topic=topic or f"{session.no}회차"))
                 opened_title = clean(f"{session.no}회차" + (f" · {topic}" if topic else ""), 60)
+                waiting = c.execute(select(db.classes).where(
+                    db.classes.c.course_id == req.course_id, db.classes.c.session_no == req.session_no,
+                    db.classes.c.preopened == 1, db.classes.c.ended_at.is_(None),
+                    db.classes.c.created_at > time.time() - CLASS_REVIVE_LIMIT)
+                    .order_by(db.classes.c.id.desc())).first()
+                if waiting:
+                    c.execute(update(db.classes).where(db.classes.c.id == waiting.id)
+                              .values(title=opened_title, preopened=0))
+                    return waiting.id, opened_title, waiting.code
             class_id = c.execute(insert(db.classes).values(
                 code=code, title=opened_title, teacher_id=t["id"], school=t["school"] or "",
                 target_grade=req.target_grade, target_class=req.target_class, created_at=time.time(),
-                course_id=req.course_id,
+                course_id=req.course_id, session_no=req.session_no,
             )).inserted_primary_key[0]
-            return class_id, opened_title
+            return class_id, opened_title, code
 
-    class_id, title = await db.run(run)
-    classes[code] = Klass(db_id=class_id, code=code, title=title, teacher_id=t["id"], course_id=req.course_id)
-    return {"code": code, "title": title, "class_id": class_id}
+    class_id, title, actual_code = await db.run(run)
+    if actual_code == code:
+        classes[code] = Klass(db_id=class_id, code=code, title=title, teacher_id=t["id"], course_id=req.course_id)
+    else:
+        k = await get_class(actual_code)
+        k.title = title
+        k.preopened = False
+        push(k)
+    return {"code": actual_code, "title": title, "class_id": class_id}
+
+
+@router.post("/api/live/courses/{course_id}/sessions/{session_no}/join")
+async def join_scheduled_session(course_id: int, session_no: int, request: Request):
+    """수강 확정 학생이 회차 시작 30분 전부터 교사보다 먼저 수업방에 입장한다."""
+    u = await require_user(request, "student")
+    prune_classes()
+    code = await new_code()
+
+    def run():
+        with db.engine.begin() as c:
+            # 같은 회차를 여러 학생이 동시에 누르더라도 방은 하나만 만든다.
+            course = c.execute(select(db.courses).where(db.courses.c.id == course_id).with_for_update()).first()
+            if not course or course.archived or (course.approval or "approved") != "approved":
+                raise HTTPException(404, "입장할 수 있는 강좌를 찾을 수 없어요.")
+            enrolled = c.execute(select(db.enrollments.c.id).where(
+                db.enrollments.c.course_id == course_id, db.enrollments.c.user_id == u["id"],
+                db.enrollments.c.status == "approved")).first()
+            if not enrolled:
+                raise HTTPException(403, "수강 확정된 학생만 들어올 수 있어요.")
+            session = c.execute(select(db.course_sessions).where(
+                db.course_sessions.c.course_id == course_id, db.course_sessions.c.no == session_no)).first()
+            window = session_window(session) if session else None
+            now = time.time()
+            if not window or not window[0] - 1800 <= now <= window[1]:
+                raise HTTPException(409, "이 회차는 수업 시작 30분 전부터 들어올 수 있어요.")
+            existing = c.execute(select(db.classes).where(
+                db.classes.c.course_id == course_id, db.classes.c.session_no == session_no,
+                db.classes.c.created_at >= window[0] - 1800)
+                .order_by(db.classes.c.id.desc())).first()
+            if existing:
+                if existing.ended_at is not None:
+                    raise HTTPException(409, "이미 종료된 수업이에요.")
+                return existing.code
+            title = clean(f"{session.no}회차 · {session.topic}", 60)
+            c.execute(insert(db.classes).values(
+                code=code, title=title, teacher_id=course.teacher_id, school=course.hub_school or "",
+                created_at=now, course_id=course_id, session_no=session_no, preopened=1))
+            return code
+
+    actual_code = await db.run(run)
+    await get_class(actual_code)
+    return {"code": actual_code}
 
 
 # ───────────────────────── 특강·회의 예약 ─────────────────────────
@@ -1712,6 +1778,9 @@ async def live_socket(ws: WebSocket, code: str):
     as_student = u["is_admin"] and ws.query_params.get("as_student") == "1"
     if not as_student and await is_class_teacher(k, u):
         conn = Conn(ws=ws, role="teacher", sid=None)
+        if k.preopened:
+            await db.run(_mark_teacher_opened, k.db_id)
+            k.preopened = False
         k.roster = await db.run(load_roster, k.course_id)  # 선생님이 들어올 때마다 수강생 명단을 새로 읽는다
     elif not needs_profile(u) and (u["role"] == "student" or u["is_admin"] or not k.course_id):
         try:

@@ -5,6 +5,8 @@ import json
 import os
 import tempfile
 import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from io import BytesIO
 
 _tmp = tempfile.mkdtemp()
@@ -2303,6 +2305,69 @@ def test_opening_session_updates_saved_topic_and_class_title():
     assert t.get("/api/courses/mine").json()["courses"][0]["sessions"][0]["topic"] == "변경한 주제"
     assert t.post(url, json={**body, "session_topic": ""}).json()["title"] == "1회차"
     assert t.get("/api/courses/mine").json()["courses"][0]["sessions"][0]["topic"] == "1회차"
+
+
+def test_approved_student_enters_scheduled_session_before_teacher():
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    near = now + timedelta(minutes=29)
+    far = now + timedelta(minutes=34)
+    end = now + timedelta(minutes=90)
+    t, s, pending = teacher(), student(1), student(2)
+    cid = t.post("/api/courses", json={**COURSE, "sessions": [
+        {"date": near.strftime("%Y-%m-%d"), "start": near.strftime("%H:%M"),
+         "end": end.strftime("%H:%M"), "topic": "예정된 수업"},
+        {"date": far.strftime("%Y-%m-%d"), "start": far.strftime("%H:%M"),
+         "end": (far + timedelta(hours=1)).strftime("%H:%M"), "topic": "다음 수업"},
+    ]}).json()["id"]
+    assert s.post(f"/api/courses/{cid}/enroll").status_code == 200
+    assert pending.post(f"/api/courses/{cid}/enroll").status_code == 200
+    with db.engine.begin() as conn:
+        conn.execute(db.enrollments.update().where(db.enrollments.c.course_id == cid,
+                     db.enrollments.c.user_id == s.get("/api/me").json()["user"]["id"]).values(status="approved"))
+    listed = s.get("/api/courses/live-now").json()["classes"]
+    assert [(x["session_no"], x["scheduled"]) for x in listed] == [(1, True)]
+    assert pending.get("/api/courses/live-now").json()["classes"] == []
+    url = f"/api/live/courses/{cid}/sessions/1/join"
+    assert pending.post(url).status_code == 403
+    assert s.post(f"/api/live/courses/{cid}/sessions/2/join").status_code == 409
+    first = s.post(url)
+    assert first.status_code == 200, first.text
+    code = first.json()["code"]
+    assert s.post(url).json()["code"] == code
+    assert s.post(f"/api/live/classes/{code}/join").status_code == 200
+    assert pending.post(f"/api/live/classes/{code}/join").status_code == 403
+    assert s.get("/api/courses/live-now").json()["classes"][0]["code"] == code
+    assert s.get("/api/courses/live-now").json()["classes"][0]["scheduled"] is True
+    opened = t.post("/api/live/classes", json={"course_id": cid, "session_no": 1,
+                                                "session_topic": "수정한 주제"})
+    assert opened.status_code == 200 and opened.json()["code"] == code
+    assert opened.json()["title"] == "1회차 · 수정한 주제"
+    with db.engine.connect() as conn:
+        rows = conn.execute(db.classes.select().where(db.classes.c.course_id == cid)).all()
+    assert len(rows) == 1 and rows[0].preopened == 0
+    assert s.get("/api/courses/live-now").json()["classes"][0]["title"] == "1회차 · 수정한 주제"
+    with db.engine.begin() as conn:
+        conn.execute(db.classes.update().where(db.classes.c.id == rows[0].id).values(ended_at=time.time()))
+    assert s.get("/api/courses/live-now").json()["classes"] == []
+    assert s.post(url).status_code == 409
+
+
+def test_teacher_entering_preopened_session_marks_it_live():
+    start = datetime.now(ZoneInfo("Asia/Seoul")) + timedelta(minutes=20)
+    t, s = teacher(), student(1)
+    cid = t.post("/api/courses", json={**COURSE, "sessions": [{
+        "date": start.strftime("%Y-%m-%d"), "start": start.strftime("%H:%M"),
+        "end": (start + timedelta(hours=1)).strftime("%H:%M"), "topic": "예정된 수업"}]}).json()["id"]
+    s.post(f"/api/courses/{cid}/enroll")
+    with db.engine.begin() as conn:
+        conn.execute(db.enrollments.update().where(db.enrollments.c.course_id == cid).values(status="approved"))
+    code = s.post(f"/api/live/courses/{cid}/sessions/1/join").json()["code"]
+    assert s.get("/api/courses/live-now").json()["classes"][0]["scheduled"] is True
+    with t.websocket_connect(f"/ws/live/{code}") as ws:
+        state(ws)
+    assert s.get("/api/courses/live-now").json()["classes"][0]["scheduled"] is False
+    with db.engine.connect() as conn:
+        assert conn.execute(db.classes.select().where(db.classes.c.code == code)).first().preopened == 0
 
 
 def test_ai_assistant_uses_cheapest_model(monkeypatch):

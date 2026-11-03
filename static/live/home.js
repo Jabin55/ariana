@@ -807,11 +807,11 @@ async function loadLiveNow() {
     const box = $("#live-now");
     box.replaceChildren(...classes.map((c) => h("div", { class: "live-item" },
       h("div", { class: "grow" }, h("div", { class: "muted", style: "font-size:0.85rem" },
-        `${c.course_title}${c.instructor ? ` · ${c.instructor}` : ""} · ${fmtTime(c.started_at)} 시작`),
+        `${c.course_title}${c.instructor ? ` · ${c.instructor}` : ""} · ${fmtTime(c.started_at)} ${c.scheduled ? "예정 (30분 전부터 입장 가능)" : "시작"}`),
         h("strong", {}, c.title)),
-      h("button", { class: "primary", onclick: () => join(c.code) }, "입장하기"))));
+      h("button", { class: "primary", onclick: () => c.scheduled ? joinScheduled(c) : join(c.code) }, "입장하기"))));
     if (!classes.length) {
-      box.append(h("span", { class: "muted" }, "지금 열린 수업이 없어요. 선생님이 수업을 열면 여기에 바로 나타나요."));
+      box.append(h("span", { class: "muted" }, "지금 들어갈 수 있는 수업이 없어요. 예정된 회차는 시작 30분 전부터 나타나요."));
     }
   } catch { /* 다음 새로고침 때 다시 시도 */ }
 }
@@ -1127,6 +1127,14 @@ async function join(code) {
     const studentMode = ME.is_admin ? "?as_student=1" : "";
     await api(`/api/live/classes/${code}/join${studentMode}`, {});
     location.href = `/live/class/${code}${studentMode}`;
+  } catch (err) { $("#join-error").textContent = err.message; }
+}
+
+async function joinScheduled(c) {
+  $("#join-error").textContent = "";
+  try {
+    const { code } = await api(`/api/live/courses/${c.course_id}/sessions/${c.session_no}/join`, {});
+    await join(code);
   } catch (err) { $("#join-error").textContent = err.message; }
 }
 
