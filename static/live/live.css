@@ -1880,3 +1880,7 @@ table.att.satisfaction-table tbody th { white-space: nowrap; }
 .ach-radar { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
 .ach-reasons { margin-top: 4px; font-size: 0.85rem; }
 @media (max-width: 860px) { .ach-two { grid-template-columns: 1fr; } }
+.ach-reasons { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.86rem; }
+.ach-sub-head { font-weight: 800; margin-bottom: 4px; font-size: 0.9rem; }
+.ach-reasons .ach-rate { padding: 3px 0; }
+.ach-reasons .ach-class { margin: 6px 0; }

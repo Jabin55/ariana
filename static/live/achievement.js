@@ -317,7 +317,8 @@ function achRadar(comps) {
     t.append(s);
     svg.append(t);
   });
-  const reasons = h("details", { class: "ach-reasons" }, h("summary", { class: "muted" }, "역량별 근거 보기"),
+  // 역량별 판단 근거: 차트 바로 아래에 펼친 채로
+  const reasons = h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 역량별 판단 근거"),
     comps.map((c) => h("div", { class: "ach-rate" }, h("strong", {}, `${c.label} ${c.score}점`), h("span", { class: "muted" }, ` · ${c.reason || "-"}`))));
   return h("div", {}, svg, reasons);
 }
@@ -366,15 +367,16 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
         h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트"),
           v.competencies?.length ? achRadar(v.competencies)
             : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요.")),
-        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (상·중·하)"), achChart(v.classes))),
+        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📈 성취 변화 (상·중·하)"), achChart(v.classes),
+          // 수업별 판단 근거: 그래프 바로 아래에 펼친 채로
+          h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 수업별 판단 근거"),
+            v.classes.map((x) => h("div", { class: "ach-class" },
+              h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
+              x.ratings.length ? x.ratings.map((r) => h("div", { class: "ach-rate" },
+                h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
+                h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 발언이 없었어요.")))))),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
-      h("details", { class: "ach-box" }, h("summary", { class: "ach-box-head" }, "🔎 수업별 판단 근거"),
-        v.classes.map((x) => h("div", { class: "ach-class" },
-          h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
-          x.ratings.length ? x.ratings.map((r) => h("div", { class: "ach-rate" },
-            h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
-            h("span", { class: "muted" }, ` “${r.evidence}”`))) : h("p", { class: "muted", style: "margin:4px 0" }, "판단할 근거가 되는 발언이 없었어요.")))),
     ] : null,
     h("div", { class: "ach-box" },
       h("div", { class: "ach-box-head" }, "💌 학생에게 줄 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 고쳐서 쓰세요)")),
