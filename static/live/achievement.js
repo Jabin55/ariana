@@ -27,7 +27,6 @@ async function renderStandards(c, box) {
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
       "평가 요소는 [평가 요소] 시트에 적거나 AI 초안을 받아 교사가 확인·수정해 주세요."),
     courseLevelsBox(c, d),
-    subjectCompetenciesBox(c, d),
     d.standards.length || editing ? null : h("p", { class: "muted" }, "아직 넣은 성취기준이 없어요."),
     cards,
     editing === "new" ? standardForm(c, null, d.ai, again) : null,
@@ -94,17 +93,6 @@ function courseLevelsBox(c, d) {
     h("div", { class: "row", style: "justify-content:flex-end;margin-top:8px" }, save));
 }
 
-/** 이 과목의 교과 역량: 2022 개정 교육과정에서 과목의 교과로 자동으로 정해진다 (읽기 전용) */
-function subjectCompetenciesBox(c, d) {
-  const items = d.subject_competencies || [];
-  return h("details", { class: "std-card course-levels" },
-    h("summary", {}, h("strong", {}, "🧩 교과 역량 "), h("span", { class: "muted", style: "font-size:0.85rem" },
-      items.length ? `${d.subject_competency_area} · ${items.length}개 (2022 개정 교육과정)` : "이 교과는 2022 개정 교과 역량 표에 없어요")),
-    items.length ? h("ol", { style: "margin:6px 0 4px 18px" }, items.map((x) => h("li", {}, x))) : null,
-    h("p", { class: "muted", style: "margin:4px 0;font-size:0.85rem" }, items.length
-      ? (d.subject_competency_note || "") + " 학생 맞춤형 분석의 '교과 역량 밸런스 차트'가 이 역량으로 그려져요."
-      : "교과 역량 밸런스 차트는 국어·수학·영어·사회·역사·도덕·과학·체육·음악·미술·기술·가정·정보 과목에서 그려져요."));
-}
 
 function standardCard(c, s, i, again) {
   return h("div", { class: "std-card" },
