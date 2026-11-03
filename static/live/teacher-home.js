@@ -1273,18 +1273,28 @@ function hubCourseApprove(ov) {
       : c.class_start || c.class_end ? `${c.class_start || ""}~${c.class_end || ""}` : "-";
     const evaluation = c.exam_ratio != null && c.perf_ratio != null
       ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : "-";
-    const facts = [["신청 학기", termOf(c)], ["교과(군)", c.subject_group || "-"],
-      ["학점", c.credits ? `${c.credits}학점` : "-"], ["강의교사", c.instructor || "-"],
-      ["수강 인원", capacityOf(c)], ["거점학교", c.hub_school || "-"],
-      ["대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", ")],
-      ["성취도", c.achievement_text || "-"], ["등급", c.rank_grade || "-"], ["평가방식", evaluation], ["수업시간", classTime]];
-    if (c.subject && c.subject !== c.title) facts.push(["과목", c.subject]);
-    if (c.subject_area || c.subject_type) facts.push(["교과 상세", [c.subject_area,
-      c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ")]);
-    if (c.hours) facts.push(["총 수업시간", `${c.hours}시간`]);
-    if (c.start_date || c.end_date) facts.push(["강의기간", `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}`]);
-    if (c.recruit_start || c.recruit_end) facts.push(["모집 기간",
-      `${fmtDate(c.recruit_start)} ${c.recruit_start_time || ""} ~ ${fmtDate(c.recruit_end)} ${c.recruit_end_time || ""}`]);
+    // 요청한 순서의 2칸 표: 신청 학기·강의 기간 / 교과 상세·교과(군) / 대상 학년·수강 인원 /
+    // 강의교사 소속학교·강의교사 이름 / 학점(수업시간)·평가 방식 / 성취도·등급 / 모집기간
+    const dash = (v) => (v === null || v === undefined || v === "" ? "-" : v);
+    const subjectDetail = [c.subject_area, c.subject && c.subject !== c.title ? c.subject : "",
+      c.custom_subject ? "고시외 과목" : c.subject_type].filter(Boolean).join(" · ");
+    const credits = c.credits ? `${c.credits}학점${c.hours ? ` (${c.hours}시간)` : ""}` : (c.hours ? `${c.hours}시간` : "");
+    const pairs = [
+      ["신청 학기", termOf(c), "강의 기간", c.start_date || c.end_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : ""],
+      ["교과 상세", subjectDetail, "교과(군)", c.subject_group],
+      ["대상 학년", (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", "), "수강 인원", capacityOf(c)],
+      ["강의교사 소속학교", c.instructor_school, "강의교사 이름", c.instructor],
+      ["학점(수업시간)", credits, "평가 방식", evaluation === "-" ? "" : evaluation],
+      ["성취도", c.achievement_text, "등급", c.rank_grade],
+    ];
+    const recruit = c.recruit_start || c.recruit_end
+      ? `${fmtDate(c.recruit_start)} ${c.recruit_start_time || ""} ~ ${fmtDate(c.recruit_end)} ${c.recruit_end_time || ""}` : "";
+    const infoTable = h("div", { class: "table-wrap" }, h("table", { class: "info-table hub-info-table" }, h("tbody", {},
+      ...pairs.map(([k1, v1, k2, v2]) => h("tr", {}, h("th", {}, k1), h("td", {}, dash(v1)), h("th", {}, k2), h("td", {}, dash(v2)))),
+      h("tr", {}, h("th", {}, "모집기간"), h("td", { colspan: 3 }, dash(recruit))))));
+    // 표 밖의 참고 정보 (있을 때만)
+    const facts = [];
+    if (classTime !== "-") facts.push(["수업 시간", classTime]);
     if (c.schools?.length) facts.push(["참여 학교", c.schools.join(", ")]);
     if (c.team_teaching) facts.push(["팀티칭", c.co_teachers?.length
       ? `보조교사 ${c.co_teachers.map((x) => x.name).join(", ")}` : "예"]);
@@ -1296,7 +1306,8 @@ function hubCourseApprove(ov) {
     return [h("article", { class: "info-block notice-view hub-course-view" },
       h("h2", {}, c.title),
       h("p", {}, approvalBadge(c) || h("span", { class: "status approved" }, "개설 승인")),
-      h("dl", { class: "facts" }, facts.flatMap(([label, value]) => [h("dt", {}, label), h("dd", {}, value)])),
+      infoTable,
+      facts.length ? h("dl", { class: "facts", style: "margin-top:10px" }, facts.flatMap(([label, value]) => [h("dt", {}, label), h("dd", {}, value)])) : null,
       c.description ? h("section", {}, h("h3", {}, "강좌 소개"), h("div", { class: "notice-body" }, c.description)) : null,
       h("section", {}, h("h3", {}, `회차 정보${sessions.length ? ` (${sessions.length}회)` : ""}`),
         sessions.length ? h("div", { class: "table-wrap" }, h("table", { class: "sess-table view" },

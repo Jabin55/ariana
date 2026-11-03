@@ -1036,7 +1036,14 @@ async def hub_overview(request: Request):
         if key:
             k[key] += 1
     sess = await db.run(lambda: sessions_by_course([x.id for x in courses]))
-    return {"courses": [{**course_row(x, counts), "sessions": sess.get(x.id, []), "teacher_id": x.teacher_id}
+
+    def teacher_schools():  # 강의교사 소속학교 (개설 승인 화면용)
+        ids = list({x.teacher_id for x in courses}) or [-1]
+        with db.engine.connect() as c:
+            return dict(c.execute(select(db.users.c.id, db.users.c.school).where(db.users.c.id.in_(ids))).all())
+    schools = await db.run(teacher_schools)
+    return {"courses": [{**course_row(x, counts), "sessions": sess.get(x.id, []), "teacher_id": x.teacher_id,
+                         "instructor_school": schools.get(x.teacher_id) or ""}
                         for x in courses], "enrollments": enrollments}
 
 

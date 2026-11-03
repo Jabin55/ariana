@@ -1964,3 +1964,5 @@ table.att.satisfaction-table tbody th { white-space: nowrap; }
 .std-choice .std-code { white-space: nowrap; margin: 0; }
 .std-choice-text { color: var(--text); word-break: keep-all; overflow-wrap: anywhere; }
 .overlay .card.assign-dialog { width: min(720px, calc(100vw - 32px)); max-width: none; }
+.hub-info-table th { width: 16%; white-space: nowrap; }
+.hub-info-table td { width: 34%; }
