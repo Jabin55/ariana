@@ -425,7 +425,7 @@ async def past_courses_page():
     return site_page("지난 개설 과목", """
 <section class="info-block"><div id="past-course-search"></div></section>
 <section class="catalog" id="past-catalog"><p class="muted">불러오는 중…</p></section>
-""", scripts='<script src="/static/live/past-courses.js"></script>')
+""", hero=False, scripts='<script src="/static/live/past-courses.js"></script>')
 
 
 @router.get("/live/courses/{course_id}", response_class=HTMLResponse)
