@@ -1966,3 +1966,4 @@ table.att.satisfaction-table tbody th { white-space: nowrap; }
 .overlay .card.assign-dialog { width: min(720px, calc(100vw - 32px)); max-width: none; }
 .hub-info-table th { width: 16%; white-space: nowrap; }
 .hub-info-table td { width: 34%; }
+@media (min-width: 861px) { .ach-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } } /* 두 역량 차트를 같은 폭으로 (좁은 화면은 위아래) */
