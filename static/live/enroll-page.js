@@ -17,8 +17,8 @@
   }
   function action(c) {
     if (!student) return "";
-    if (c.status === "approved") return `<a class="button small primary" href="/live?classroom=1">강의실로</a>
-      <button type="button" class="small" data-action="cancel" data-id="${c.id}">수강 취소</button>`;
+    if (c.status === "approved") return `<span class="course-enroll-buttons"><a class="button small primary" href="/live?classroom=1">강의실로</a>
+      <button type="button" class="small" data-action="cancel" data-id="${c.id}">수강 취소</button></span>`;
     if (c.status === "pending") return `<button type="button" class="small" data-action="cancel" data-id="${c.id}">신청 취소</button>`;
     if (c.recruit === "open") return `<button type="button" class="small primary" data-action="enroll" data-id="${c.id}">${c.status === "rejected" ? "다시 신청" : "수강신청"}</button>`;
     return `<span class="muted">${c.recruit === "before" ? "모집 예정" : "신청 마감"}</span>`;

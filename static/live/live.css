@@ -1637,6 +1637,7 @@ table.att.hub-grid-table tfoot td:first-child { text-align: center; }
 .course-tile.clickable:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
 .course-enroll-actions { margin-top: 10px; gap: 4px; flex-wrap: nowrap; min-width: 0; }
 .course-enroll-actions .status { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.course-enroll-buttons { display: flex; align-items: center; gap: 4px; flex: none; margin-left: auto; }
 .course-enroll-actions .button, .course-enroll-actions button { flex: none; white-space: nowrap; }
 .course-detail { width: 100%; max-width: 1080px; margin: 0 auto; }
 .course-detail-banner { width: 100%; box-sizing: border-box; }
