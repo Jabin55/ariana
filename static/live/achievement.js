@@ -1,7 +1,7 @@
 /* 성취기준 기반 발언 분석 화면
    - 교사 [과목 정보]: 성취기준·평가기준(상중하)·평가 요소, 과목 성취수준(A~E·A~C·P)(AI 초안 → 수정) 입력, 회차마다 성취기준 연결
    - 교사 [학습 관리 > 학생 맞춤형 피드백 > 학생 > 성취 분석]: AI 분석, 역량·성취 변화 그래프, 종합 의견, 학생 피드백 공개
-   - 학생 [내 강좌 > 학습 활동]: 선생님이 공개한 피드백과 성취 변화 그래프 */
+   - 학생 [내 강좌 > 활동 피드백]: 선생님이 공개한 피드백과 성취 변화 그래프 */
 
 const ACH_COLORS = ["#1b6b4a", "#e8663d", "#2f7fb5", "#8a5cc2", "#c79a1e", "#d0485f", "#3c9a6e", "#5c6bc0"];
 const ACH_LEVEL = { 3: "상", 2: "중", 1: "하" };
@@ -356,7 +356,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
   saveFb.onclick = async () => {
     try {
       await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { feedback: fb.value, published: pub.checked });
-      toast(pub.checked ? "저장했어요. 학생의 [내 강좌 > 학습 활동]에 보여요." : "저장했어요. 공개하기 전에는 학생에게 보이지 않아요.", 4000);
+      toast(pub.checked ? "저장했어요. 학생의 [내 강좌 > 활동 피드백]에 보여요." : "저장했어요. 공개하기 전에는 학생에게 보이지 않아요.", 4000);
       again();
     } catch (err) { toast(err.message); }
   };
@@ -400,9 +400,9 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
 
 async function renderMyFeedback(courseId, box) {
   let v;
-  try { v = await achApi(`/api/my/courses/${courseId}/feedback`); } catch { return; }
-  if (!v.published) { box.hidden = true; return; }
-  box.hidden = false;
+  try { v = await achApi(`/api/my/courses/${courseId}/feedback`); }
+  catch { achFill(box, h("p", { class: "muted" }, "활동 피드백을 불러오지 못했어요. 잠시 후 다시 열어 주세요.")); return; }
+  if (!v.published) { achFill(box, h("p", { class: "muted" }, "아직 선생님이 공개한 활동 피드백이 없어요.")); return; }
   achFill(box,
     h("div", { class: "ach-box my-feedback" },
       h("div", { class: "ach-box-head" }, "💌 선생님 피드백"),

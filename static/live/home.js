@@ -918,7 +918,7 @@ function courseInformationPanel(c, withSessions = true) {
 }
 
 let selectedStudentCourseId = null;
-let studentCourseTab = "info"; // 강좌 안의 탭: info(강좌 정보) notice(강좌 공지) learn(학습 활동) assess(수행평가) satisfaction(만족도 조사)
+let studentCourseTab = "info"; // 강좌 안의 탭: info(강좌 정보) notice(강좌 공지) learn(학습 활동) feedback(활동 피드백) assess(수행평가) satisfaction(만족도 조사)
 function openStudentCourse(c) {
   if (selectedStudentCourseId !== c.id) studentCourseTab = "info";
   selectedStudentCourseId = c.id;
@@ -953,17 +953,18 @@ function openStudentCourse(c) {
       h("div", { class: "notice-body" }, n.body || "(내용 없음)")));
   noticeList();
   // 학습 활동: 게시판(연번·강의 주제·강의일·학습 자료) → 강의 주제를 누르면 그 수업의 자료·결과
-  const myFeedback = h("div", { hidden: true }); // 선생님이 공개한 발언 피드백 (achievement.js)
-  const learn = h("div", { class: "sc-panel" }, myFeedback, approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 학습 활동을 볼 수 있어요."));
+  const learn = h("div", { class: "sc-panel" }, approved ? materials : h("p", { class: "muted" }, "수강이 확정되면 각 수업의 학습 활동을 볼 수 있어요."));
+  const myFeedback = h("div", {}, h("p", { class: "muted" }, approved ? "활동 피드백을 불러오는 중…" : "수강이 확정되면 활동 피드백을 볼 수 있어요."));
+  const feedback = h("div", { class: "sc-panel" }, myFeedback);
   // 수행평가(과제)
   const noAssign = h("p", { class: "muted", hidden: true }, "아직 올라온 수행평가가 없어요.");
   const assess = h("div", { class: "sc-panel" }, noAssign);
   const satisfaction = h("div", { class: "sc-panel" });
   $("#student-results").hidden = true;
   { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
-  const panels = { info, notice, learn, assess, satisfaction };
+  const panels = { info, notice, learn, feedback, assess, satisfaction };
   const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"],
-    ["assess", "수행평가"], ["satisfaction", "만족도 조사"]];
+    ["feedback", "활동 피드백"], ["assess", "수행평가"], ["satisfaction", "만족도 조사"]];
   const nav = h("nav", { class: "tabs sub-tabs sc-tabs", "aria-label": "강좌 메뉴" });
   const show = (k) => {
     studentCourseTab = k;
@@ -973,7 +974,7 @@ function openStudentCourse(c) {
   nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
   content.replaceChildren(
     h("div", { class: "row" }, h("h2", { class: "grow" }, c.title), h("span", { class: `status ${state}` }, label)),
-    nav, info, notice, learn, assess, satisfaction);
+    nav, info, notice, learn, feedback, assess, satisfaction);
   show(studentCourseTab);
   if (approved) {
     loadCourseMaterials(c.id, materials);
