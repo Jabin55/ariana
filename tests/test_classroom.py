@@ -4126,5 +4126,7 @@ def test_ai_error_messages_say_the_cause():
     from app.achievement import ai_error_text
     assert "크레딧" in ai_error_text(400, "Your credit balance is too low to access the Anthropic API.")
     assert "API 키" in ai_error_text(401, "invalid x-api-key")
+    assert "권한" in ai_error_text(403, "API key does not have permission")
     assert "모델" in ai_error_text(404, "model: not found")
+    assert "한도" in ai_error_text(429, "rate limit for this model")
     assert "오류 500" in ai_error_text(500, "internal")

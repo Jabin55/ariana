@@ -41,16 +41,18 @@ def ai_ready() -> bool:
 def ai_error_text(status: int, message: str) -> str:
     """Claude API 오류를 선생님이 알아볼 수 있는 말로 (원인이 무엇인지 화면에 바로 보이게)"""
     m = message.lower()
-    if "credit" in m or "billing" in m or "balance" in m:
-        return "AI 사용 크레딧이 부족해요. console.anthropic.com의 Billing에서 충전한 뒤 다시 시도해 주세요."
-    if status == 401 or "api key" in m or "x-api-key" in m:
-        return "AI API 키가 올바르지 않아요. 서버에 넣은 키(ANTHROPIC_API_KEY)를 확인해 주세요."
+    if status == 401:
+        return "AI 서비스가 API 키 인증을 거부했어요. 서버에 적용된 키가 만료·비활성화됐거나 잘못 입력됐는지 확인해 주세요."
     if status == 403:
         return "이 API 키로는 AI를 쓸 권한이 없어요. console.anthropic.com에서 키와 조직 설정을 확인해 주세요."
-    if status == 404 or "model" in m:
-        return f"AI 모델({ANALYSIS_MODEL})을 쓸 수 없어요. 서버 설정 ANALYSIS_MODEL을 확인해 주세요."
     if status in (429, 529):
         return "AI 요청이 몰렸거나 사용 한도에 닿았어요. 잠시 후 다시 시도하거나 console.anthropic.com의 Limits를 확인해 주세요."
+    if status == 404:
+        return f"AI 모델({ANALYSIS_MODEL})을 쓸 수 없어요. 서버 설정 ANALYSIS_MODEL을 확인해 주세요."
+    if "credit" in m or "billing" in m or "balance" in m:
+        return "AI 사용 크레딧이 부족해요. console.anthropic.com의 Billing에서 충전한 뒤 다시 시도해 주세요."
+    if "model" in m:
+        return f"AI 모델({ANALYSIS_MODEL})을 쓸 수 없어요. 서버 설정 ANALYSIS_MODEL을 확인해 주세요."
     return f"AI 분석 중 문제가 생겼어요 (오류 {status}). 잠시 후 다시 시도해 주세요."
 
 
