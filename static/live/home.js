@@ -892,7 +892,7 @@ function basicInfoTable(c) {
     ["성취도", c.achievement_text, "등급", c.rank_grade],
   ];
   const period = c.start_date || c.end_date ? `${fmtDate(c.start_date)} ~ ${fmtDate(c.end_date)}` : "";
-  return h("div", { class: "table-wrap" }, h("table", { class: "info-table" }, h("tbody", {},
+  return h("div", { class: "table-wrap" }, h("table", { class: "info-table basic-info-table" }, h("tbody", {},
     ...pairs.map(([k1, v1, k2, v2]) => h("tr", {}, h("th", {}, k1), h("td", {}, dash(v1)), h("th", {}, k2), h("td", {}, dash(v2)))),
     h("tr", {}, h("th", {}, "강의 기간"), h("td", { colspan: 3 }, dash(period), c.finished ? h("span", { class: "status rejected", style: "margin-left:8px" }, "기간 종료") : null)))));
 }
