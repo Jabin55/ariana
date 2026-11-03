@@ -325,7 +325,7 @@ function achRadar(comps) {
 
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
 
-async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === false: 관찰 기록은 [관찰 및 발언기록] 탭에서
+async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === false: 관찰 기록은 [교사 관찰 기록] 탭에서
   let v, obs = [];
   try {
     [v, { observations: obs }] = await Promise.all([

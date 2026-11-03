@@ -935,26 +935,38 @@ async function learnSpeech(c, st, box) {
   }
   const who = d.students.find((x) => x.user_id === st.view);
   if (who) {
-    // 학생 한 명: [성취 분석] (역량·성취 그래프, AI 종합 의견, 피드백) / [관찰 및 발언기록] (워드클라우드, 관찰, 발언)
+    // 학생 한 명: 성취 분석 / 교사 관찰 기록 / 학생 발언 기록을 각각 보여 준다
     st.studentTab ||= "analysis";
     const tabs = h("nav", { class: "tabs sub-tabs", style: "margin:4px 0 10px" },
-      [["analysis", "📊 성취 분석"], ["records", "🗒 관찰 및 발언기록"]].map(([k, label]) =>
+      [["analysis", "📊 성취 분석"], ["observations", "👀 교사 관찰 기록"], ["speech", "🗒 학생 발언 기록"]].map(([k, label]) =>
         h("button", { type: "button", class: st.studentTab === k ? "active" : "", onclick: () => { st.studentTab = k; again(); } }, label)));
     const pane = h("div");
     fill(box, head,
       h("div", { class: "row", style: "margin:0 0 8px" }, h("button", { class: "small", onclick: () => { st.view = null; again(); } }, "← 학생 목록")),
       h("div", { class: "hub-grid-summary" }, `${[who.school, who.student_no, who.name].filter(Boolean).join(" ")} · 발언 ${who.count}건 · ${who.chars.toLocaleString()}자 · ${who.classes}개 수업`),
       tabs, pane);
-    const { entries } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}`);
     if (st.studentTab === "analysis") {
       const anal = h("div", { class: "ach-wrap" }, h("p", { class: "muted" }, "AI 분석을 불러오는 중…"));
       fill(pane, anal);
       renderAnalysis(c.id, who, anal, { obs: false }); // AI 성취 분석·그래프·피드백 (achievement.js)
       return;
     }
-    // 관찰 및 발언기록: 교사 관찰 기록 + 수업별 학생 발언 기록
-    let obs = [];
-    try { ({ observations: obs } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`)); } catch { /* 관찰 기록 없이 */ }
+    if (st.studentTab === "observations") {
+      try {
+        const { observations: obs } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`);
+        fill(pane,
+          h("h4", { class: "speech-h" }, `👀 교사 관찰 기록 ${obs.length}건`),
+          obs.length ? h("div", { class: "speech-day" }, ...obs.map((o) => h("div", { class: "speech-line student" },
+            h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
+            h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)))))
+            : h("p", { class: "muted" }, "아직 관찰 기록이 없어요. 수업 화면 오른쪽 [관찰기록] 탭에서 남길 수 있어요."));
+      } catch (err) { fill(pane, h("p", { class: "error" }, err.message)); }
+      return;
+    }
+    // 학생 발언 기록: 워드클라우드를 맨 위에 두고 수업 날짜별 발언을 보여 준다
+    let entries;
+    try { ({ entries } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}`)); }
+    catch (err) { fill(pane, h("p", { class: "error" }, err.message)); return; }
     const days = [];
     for (const e of entries) {
       let g = days[days.length - 1];
@@ -964,11 +976,6 @@ async function learnSpeech(c, st, box) {
     const cloud = h("div", { class: "word-cloud" });
     fill(pane,
       h("h4", { class: "speech-h", style: "margin-top:4px" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
-      h("h4", { class: "speech-h" }, `👀 교사 관찰 기록 ${obs.length}건`),
-      obs.length ? h("div", { class: "speech-day" }, ...obs.map((o) => h("div", { class: "speech-line student" },
-        h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
-        h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)))))
-        : h("p", { class: "muted" }, "아직 관찰 기록이 없어요. 수업 화면 오른쪽 [관찰기록] 탭에서 남길 수 있어요."),
       h("h4", { class: "speech-h" }, `🗒 학생 발언 기록 ${entries.length}건 (날짜순)`),
       days.length ? days.map((g) => h("div", { class: "speech-day" },
         h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`, h("span", { class: "muted" }, ` ${g.items.length}건`)),
