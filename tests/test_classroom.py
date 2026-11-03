@@ -3892,7 +3892,8 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
     comps = {c["key"]: c for c in view["competencies"]}
     assert [c["label"] for c in view["competencies"]][:2] == ["자기관리 역량", "지식정보처리 역량"] and len(comps) == 6
-    assert comps["knowledge_info"]["score"] == 5 and comps["community"]["score"] == 3  # 범위 밖 점수는 3점으로
+    assert comps["knowledge_info"]["score"] == 5 and comps["community"]["score"] == 1  # 범위 밖 점수는 1점으로
+    assert comps["self_management"]["score"] == 1  # '근거 부족'이면 기본 1점
     assert "competencies" in calls[-1][1]["properties"]
     prompt = calls[-1][0]
     assert "오판 가능성이 있어 폐지해야" in prompt and "S1|근거 제시" in prompt and "연결된 성취기준: S1" in prompt

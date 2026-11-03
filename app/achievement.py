@@ -545,7 +545,7 @@ ANALYSIS_SYSTEM = (
     "기록에 없는 감정이나 개인 사정을 안다고 단정하거나, 근거 없이 칭찬하거나, 다른 학생과 비교하지 않습니다.\n"
     "- competencies 는 2022 개정 교육과정 핵심역량 6가지(자기관리, 지식정보처리, 창의적 사고, 심미적 감성, 협력적 소통, 공동체)를 "
     "발언·관찰·퀴즈 답안 전체에서 드러난 만큼 1~5점으로 매기고(3=보통), reason 에 근거를 한 문장으로 씁니다. "
-    "근거가 거의 없는 역량은 3점으로 두고 reason 에 '근거 부족'이라고 씁니다.\n"
+    "근거가 거의 없는 역량은 1점으로 두고 reason 에 '근거 부족'이라고 씁니다.\n"
     "- 이름·학번 등 개인정보를 쓰지 않습니다. 제공된 기록에 없는 사실을 지어내지 않습니다."
 )
 
@@ -639,7 +639,7 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
               + "\n\n# 수업별 학생 발언·교사 관찰 기록·학생 퀴즈 응답 (수업 순서)\n" + "\n\n".join(cls_lines))
     subject_comps = subject_competencies_of(course)
     if subject_comps:
-        prompt += ("\n\n# 이 과목의 교과 역량 (subject_competencies 에 각각 1~5점, 3=보통, 근거 한 문장. 근거가 거의 없으면 3점·'근거 부족')\n"
+        prompt += ("\n\n# 이 과목의 교과 역량 (subject_competencies 에 각각 1~5점, 3=보통, 근거 한 문장. 근거가 거의 없으면 1점·'근거 부족')\n"
                    + "\n".join(f"- {x}" for x in subject_comps))
     data = await ai_json(ANALYSIS_SYSTEM, prompt, with_subject_comps(analysis_schema(keys, len(classes)), subject_comps), 12000)
     now = time.time()
@@ -666,14 +666,18 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
             f = db.speech_feedback.c
             row = c.execute(select(db.speech_feedback).where(f.course_id == course_id, f.user_id == user_id)).first()
             comp = data.get("competencies") or {}
-            comp = {k: {"score": int(v.get("score", 3)) if str(v.get("score", "")).isdigit() and 1 <= int(v.get("score")) <= 5 else 3,
+            comp = {k: {"score": int(v.get("score", 1)) if str(v.get("score", "")).isdigit() and 1 <= int(v.get("score")) <= 5 else 1,
                         "reason": str(v.get("reason", ""))[:300]}
                     for k, v in comp.items() if k in dict(COMPETENCIES) and isinstance(v, dict)}
             subj = {}
             for v in data.get("subject_competencies") or []:
                 if isinstance(v, dict) and v.get("name") in subject_comps and v["name"] not in subj:
                     sc = v.get("score")
-                    subj[v["name"]] = {"score": sc if isinstance(sc, int) and 1 <= sc <= 5 else 3, "reason": str(v.get("reason", ""))[:300]}
+                    subj[v["name"]] = {"score": sc if isinstance(sc, int) and 1 <= sc <= 5 else 1, "reason": str(v.get("reason", ""))[:300]}
+            # 근거 부족이면 AI가 다른 점수를 줬더라도 기본 1점
+            for d in (*comp.values(), *subj.values()):
+                if "근거 부족" in d["reason"]:
+                    d["score"] = 1
             values = {"summary": str(data.get("summary", ""))[:4000], "analyzed_at": now, "updated_at": now,
                       "competencies": json.dumps(comp, ensure_ascii=False) if comp else "",
                       "subject_competencies": json.dumps(subj, ensure_ascii=False) if subj else ""}
