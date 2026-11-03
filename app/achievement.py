@@ -750,6 +750,52 @@ async def save_feedback(course_id: int, user_id: int, req: FeedbackReq, request:
     return {"ok": True, "published": req.published}
 
 
+class CompetencyEdit(BaseModel):
+    key: str = Field(max_length=80)
+    score: int = Field(ge=1, le=5)
+    reason: str = Field(default="", max_length=300)
+
+
+class CompetencyEditReq(BaseModel):
+    competencies: list[CompetencyEdit] = Field(default_factory=list, max_length=20)
+    subject_competencies: list[CompetencyEdit] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/api/courses/{course_id}/speech/student/{user_id}/competencies")
+async def edit_competencies(course_id: int, user_id: int, req: CompetencyEditReq, request: Request):
+    """교사가 AI가 매긴 역량 점수·판단 근거를 고친다 (차트도 이 점수로 그려진다)"""
+    course, _ = await _course(course_id, request)
+    names = set(subject_competencies_of(course))
+    now = time.time()
+
+    def run():
+        f = db.speech_feedback.c
+        with db.engine.begin() as c:
+            row = c.execute(select(db.speech_feedback).where(f.course_id == course_id, f.user_id == user_id)).first()
+            if not row or not row.analyzed_at:
+                raise HTTPException(404, "먼저 AI 분석을 해 주세요.")
+            try:
+                comp = json.loads(row.competencies) if row.competencies else {}
+            except ValueError:
+                comp = {}
+            try:
+                subj = json.loads(row.subject_competencies) if row.subject_competencies else {}
+            except ValueError:
+                subj = {}
+            for e in req.competencies:
+                if e.key in dict(COMPETENCIES):
+                    comp[e.key] = {"score": e.score, "reason": e.reason.strip()}
+            for e in req.subject_competencies:
+                if e.key in names:
+                    subj[e.key] = {"score": e.score, "reason": e.reason.strip()}
+            c.execute(update(db.speech_feedback).where(f.id == row.id).values(
+                competencies=json.dumps(comp, ensure_ascii=False) if comp else "",
+                subject_competencies=json.dumps(subj, ensure_ascii=False) if subj else "", updated_at=now))
+
+    await db.run(run)
+    return await db.run(analysis_view, course_id, user_id)
+
+
 @router.get("/api/my/courses/{course_id}/feedback")
 async def my_feedback(course_id: int, request: Request):
     """학생: 선생님이 공개한 내 발언 피드백과 성취 변화 (공개 전이면 비어 있음)"""

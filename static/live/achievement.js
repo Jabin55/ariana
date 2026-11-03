@@ -340,9 +340,15 @@ function achRadar(comps, color = "#1b6b4a", fill = "rgba(27,107,74,0.22)", aria 
   return svg;
 }
 
-function achRadarReasons(comps) {
-  return h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, "🔎 역량별 판단 근거"),
-    comps.map((c) => h("div", { class: "ach-rate" }, h("strong", {}, `${c.label} ${c.score}점`), h("span", { class: "muted" }, ` · ${c.reason || "-"}`))));
+function achRadarReasons(comps, edit = null) { // edit(c, i) → [점수 칸, 근거 칸] (교사가 수정할 때)
+  return h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, edit ? "✏️ 역량별 판단 근거 수정" : "🔎 역량별 판단 근거"),
+    h("div", { class: "table-wrap" }, h("table", { class: "att ach-reason-table" },
+      h("colgroup", {}, h("col", { class: "c-name" }), h("col", { class: "c-score" }), h("col")),
+      h("thead", {}, h("tr", {}, h("th", {}, "역량"), h("th", {}, "점수"), h("th", {}, "근거"))),
+      h("tbody", {}, comps.map((c, i) => {
+        const [score, reason] = edit ? edit(c, i) : [`${c.score}점`, c.reason || "-"];
+        return h("tr", {}, h("td", {}, c.label), h("td", { class: "c-score" }, score), h("td", {}, reason));
+      })))));
 }
 
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
@@ -362,6 +368,47 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     try { await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/analyze`, {}); toast("AI 분석을 마쳤어요."); again(); }
     catch (err) { toast(err.message, 6000); run.disabled = false; run.textContent = "🤖 AI 분석하기"; }
   };
+  // [수정]: 교사가 역량 점수·판단 근거를 고치면 차트도 그 점수로 다시 그려진다
+  let editing = false;
+  const editBtn = h("button", { class: "small", type: "button" }, "✏️ 수정");
+  const charts = h("div");
+  const drawCharts = () => achFill(charts, h("div", { class: "ach-two" },
+    h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트"),
+      v.competencies?.length ? compPanel(v.competencies, "#1b6b4a", "rgba(27,107,74,0.22)", "핵심역량 밸런스 차트")
+        : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요.")),
+    // 오른쪽: 이 과목의 교과 역량 밸런스 차트 (2022 개정 교육과정 교과 역량으로 자동)
+    h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧩 교과 역량 밸런스 차트"),
+      v.subject_competencies?.length ? compPanel(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량 밸런스 차트")
+        : h("p", { class: "muted" }, v.subject_competency_names?.length
+          ? "[다시 분석하기]를 누르면 교과 역량 차트가 생겨요."
+          : "이 과목의 교과는 2022 개정 교육과정 교과 역량 표에 없어 교과 역량 차트를 그리지 않아요."))),
+    editing ? h("div", { class: "row", style: "justify-content:flex-end;margin:-4px 0 10px;gap:6px" },
+      h("span", { class: "muted grow", style: "font-size:0.82rem" }, "점수를 바꾸면 차트가 바로 바뀌어요. [다시 분석하기]를 하면 AI 판단으로 다시 바뀌어요."),
+      h("button", { class: "small", type: "button", onclick: () => { editing = false; again(); } }, "취소"),
+      h("button", { class: "primary small", type: "button", onclick: async (e) => {
+        e.target.disabled = true;
+        const pick = (list) => (list || []).map((c) => ({ key: c.key, score: c.score, reason: c.reason || "" }));
+        try {
+          await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/competencies`,
+            { competencies: pick(v.competencies), subject_competencies: pick(v.subject_competencies) });
+          toast("역량 점수와 판단 근거를 저장했어요."); editing = false; again();
+        } catch (err) { toast(err.message, 5000); e.target.disabled = false; }
+      } }, "저장")) : null);
+  // 차트 + 역량별 판단 근거 (수정 중이면 점수 1~5·근거를 고칠 수 있다)
+  const compPanel = (comps, color, fillColor, aria) => {
+    const chart = h("div", {}, achRadar(comps, color, fillColor, aria));
+    const redraw = () => achFill(chart, achRadar(comps, color, fillColor, aria));
+    if (!editing) return [chart, achRadarReasons(comps)];
+    return [chart, achRadarReasons(comps, (c) => {
+      const score = h("select", { "aria-label": `${c.label} 점수` }, [1, 2, 3, 4, 5].map((n) => h("option", { value: n, selected: n === c.score }, `${n}점`)));
+      score.onchange = () => { c.score = Number(score.value); redraw(); };
+      const reason = h("textarea", { rows: 2, maxlength: 300, "aria-label": `${c.label} 판단 근거` });
+      reason.value = c.reason || "";
+      reason.oninput = () => { c.reason = reason.value; };
+      return [score, reason];
+    })];
+  };
+  editBtn.onclick = () => { editing = true; editBtn.disabled = true; drawCharts(); };
   const fb = h("textarea", { rows: 5, maxlength: 4000, placeholder: "학생에게 보여 줄 피드백" });
   fb.value = v.feedback || "";
   const saveFb = h("button", { class: "small", type: "button" }, "피드백 저장");
@@ -379,7 +426,8 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
   const when = v.analyzed_at ? new Date(v.analyzed_at * 1000).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" }) : "";
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
-      h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run),
+      h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run,
+      v.analyzed_at && (v.competencies?.length || v.subject_competencies?.length) ? editBtn : null),
     opts.obs === false ? null : h("details", { class: "ach-box", open: obs.length > 0 && !v.analyzed_at },
       h("summary", { class: "ach-box-head" }, `👀 교사 관찰 기록 ${obs.length}건 `, h("span", { class: "muted", style: "font-weight:400" }, "(수업 중 [관찰기록] 탭에서 적은 것 · AI 분석에 함께 써요)")),
       obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
@@ -387,19 +435,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
         : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),
     v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언·교사 관찰 기록·퀴즈 답안을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
     v.analyzed_at ? [
-      // 왼쪽: 2022 개정 교육과정 핵심역량 6각형 · 오른쪽: 수업별 성취 변화(상·중·하)
-      h("div", { class: "ach-two" },
-        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트"),
-          v.competencies?.length ? achRadar(v.competencies)
-            : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요."),
-          v.competencies?.length ? achRadarReasons(v.competencies) : null),
-        // 오른쪽: 이 과목의 교과 역량 밸런스 차트 (과목 정보에서 정한 교과 역량)
-        h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧩 교과 역량 밸런스 차트"),
-          v.subject_competencies?.length ? achRadar(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량 밸런스 차트")
-            : h("p", { class: "muted" }, v.subject_competency_names?.length
-              ? "[다시 분석하기]를 누르면 교과 역량 차트가 생겨요."
-              : "이 과목의 교과는 2022 개정 교육과정 교과 역량 표에 없어 교과 역량 차트를 그리지 않아요."),
-          v.subject_competencies?.length ? achRadarReasons(v.subject_competencies) : null)),
+      (drawCharts(), charts),
       // 수업별 판단 근거 (성취기준 평가 요소의 상·중·하)
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준 평가 요소)"),
         v.classes.length ? v.classes.map((x) => h("div", { class: "ach-class" },

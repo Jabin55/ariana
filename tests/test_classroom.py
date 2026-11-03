@@ -3880,6 +3880,13 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
     assert {"key": "비판적 사고력", "label": "비판적 사고력", "score": 4, "reason": "반론을 검토함"} in view["subject_competencies"]
     assert view["subject_competency_names"] == social
+    edited = t.post(f"{base}/speech/student/{uid}/competencies", json={
+        "competencies": [{"key": "community", "score": 5, "reason": " 모둠을 이끎 "}, {"key": "없는역량", "score": 1}],
+        "subject_competencies": [{"key": "비판적 사고력", "score": 2, "reason": "교사 수정"}]}).json()
+    assert {c["key"]: c for c in edited["competencies"]}["community"] == {"key": "community", "label": "공동체 역량", "score": 5, "reason": "모둠을 이끎"}
+    assert {c["key"]: c for c in edited["subject_competencies"]}["비판적 사고력"]["score"] == 2
+    assert t.post(f"{base}/speech/student/{uid}/competencies", json={"competencies": [{"key": "community", "score": 9}]}).status_code == 422
+    assert other.post(f"{base}/speech/student/{uid}/competencies", json={}).status_code == 404
     assert calls[-1][1]["properties"]["subject_competencies"]["items"]["properties"]["name"]["enum"] == social
     assert view["classes"][0]["ratings"] == [{"standard_id": sid, "code": "[12법사02-03]", "element": "근거 제시", "level": 3, "evidence": "오판 가능성"}]
     assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
