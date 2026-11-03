@@ -459,6 +459,7 @@ async def help_page():
     s = settings()
     contact = html.escape(f"{s['officer']} {s['contact']}")
     return site_page("이용안내", f"""
+<section class="page-hero"><p>자주 묻는 질문과 도움말</p></section>
 <section class="faq">
   <details open><summary>로그인이 안 돼요 ("관리자에게 액세스 요청"이 떠요)</summary>
     <p>학생은 <b>학교에서 받은 구글 계정</b>으로 로그인해야 해요. 학교 계정인데도 막히면 학교(교육청) 구글 관리자가 이 사이트를 아직 허용하지 않은 거예요. 선생님께 알려 주세요.</p></details>
@@ -478,7 +479,7 @@ async def help_page():
     <p><a href="/live/privacy">개인정보 처리방침</a>을 확인해 주세요.</p></details>
 </section>
 <section class="info-block"><h2>문의</h2><p>{contact}</p></section>
-""", "자주 묻는 질문과 도움말")
+""", hero=False)
 
 
 @router.get("/live/course-requests", response_class=HTMLResponse)
@@ -833,7 +834,7 @@ async def community_page(page: int = Query(default=1, ge=1)):
   <thead><tr><th>번호</th><th>제목</th><th>작성자</th><th>날짜</th></tr></thead>
   <tbody>{items or '<tr><td colspan="4" class="muted">아직 글이 없어요.</td></tr>'}</tbody>
 </table></div></section>{pagination}
-""", "누구나 의견을 나누는 공간", scripts=COMMUNITY_SCRIPT)
+""", hero=False, scripts=COMMUNITY_SCRIPT)
 
 
 @router.get("/live/community/{pid}", response_class=HTMLResponse)
@@ -852,7 +853,7 @@ async def community_detail(pid: int):
   <div class="notice-body">{html.escape(r.body)}</div></article>
 <p class="row"><a class="button" href="/live/community">← 목록으로</a>
   <span class="grow"></span><button class="danger" type="button" id="community-delete" data-id="{pid}" hidden>관리자 삭제</button></p>
-""", "누구나 의견을 나누는 공간", scripts=COMMUNITY_SCRIPT)
+""", hero=False, scripts=COMMUNITY_SCRIPT)
 
 
 class CommunityPostReq(BaseModel):
