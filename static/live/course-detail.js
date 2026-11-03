@@ -26,9 +26,6 @@
     }
     document.title = `${c.title} · 외솔온닷`;
     const grades = (c.grades?.length ? c.grades : [1, 2, 3]).map((g) => `${g}학년`).join(", ");
-    const subject = [c.subject_group, c.subject_area, c.subject].filter(Boolean).join(" > ");
-    const recruit = c.recruit_start || c.recruit_end
-      ? `${dot(c.recruit_start)} ${c.recruit_start_time || ""} ~ ${dot(c.recruit_end)} ${c.recruit_end_time || ""}`.trim() : "";
     const dash = (v) => v === null || v === undefined || v === "" ? "-" : v;
     const cell = (label, value) => `<th>${esc(label)}</th><td>${esc(dash(value))}</td>`;
     const table = (rows) => `<div class="table-wrap"><table class="info-table basic-info-table"><tbody>${rows.map(([k1, v1, k2, v2]) => `<tr>${cell(k1, v1)}${cell(k2, v2)}</tr>`).join("")}</tbody></table></div>`;
@@ -47,16 +44,6 @@
         "평가 방식", c.exam_ratio != null && c.perf_ratio != null ? `지필 ${c.exam_ratio}% · 수행 ${c.perf_ratio}%` : ""],
       ["성취도", c.achievement_text, "등급", c.rank_grade],
     ]);
-    const extra = [
-      ["과목", subject + (c.custom_subject ? " (고시외 과목)" : "")],
-      ["운영 방식", c.delivery],
-      ["모집 기간", recruit],
-      ["참여 학교", (c.schools || []).join(", ")],
-      ["문의", [c.contact_email, c.contact_phone].filter(Boolean).join(" · ")],
-      ...(c.team_teaching ? [["강의 방식", "팀티칭"]] : []),
-    ].filter(([, value]) => value);
-    const extraRows = [];
-    for (let i = 0; i < extra.length; i += 2) extraRows.push([...(extra[i] || ["", ""]), ...(extra[i + 1] || ["", ""])]);
     const area = c.subject_area || "교양";
     const [a, b] = window.courseAreaColors ? window.courseAreaColors(area) : ["#7fc8a9", "#1b6b4a"];
     const [courseStatus] = window.courseState ? window.courseState(c) : [""];
@@ -65,7 +52,7 @@
     let action = "";
     if (!user) action = '<a class="button primary" href="/live?start=student">학생 로그인 후 신청</a>';
     else if (student && mine) {
-      if (mine.status === "approved") action = '<a class="button primary" href="/live?classroom=1">강의실로</a> <button type="button" data-act="cancel">수강 취소</button>';
+      if (mine.status === "approved") action = '<span class="cd-action-buttons"><a class="button primary" href="/live?classroom=1">강의실로</a><button type="button" data-act="cancel">수강 취소</button></span>';
       else if (mine.status === "pending") action = '<button type="button" data-act="cancel">신청 취소</button>';
       else if (mine.recruit === "open") action = `<button type="button" class="primary" data-act="enroll">${mine.status === "rejected" ? "다시 신청" : "수강신청"}</button>`;
       else action = `<span class="muted">${mine.recruit === "before" ? "모집 예정" : "신청 마감"}</span>`;
@@ -93,7 +80,6 @@
           ${sessions.map((x) => `<tr><td class="num">${esc(x.no)}회</td><td class="num">${esc(dot(x.date))} (${esc(DAYS[new Date(`${x.date}T00:00:00Z`).getUTCDay()])})</td><td class="num">${esc(x.start ? `${x.start}~${x.end || ""}` : "-")}</td><td>${esc(x.topic || "-")}</td></tr>`).join("")}
           </tbody></table></div>` : '<p class="muted">등록된 회차 정보가 없어요.</p>'}</section>
         ${c.description ? `<section><h3>강좌 소개</h3><p class="cd-desc">${esc(c.description)}</p></section>` : ""}
-        ${extraRows.length ? `<section><h3>수강신청 안내</h3>${table(extraRows)}</section>` : ""}
       </div>`;
   }
 

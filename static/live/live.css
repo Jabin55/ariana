@@ -1642,6 +1642,7 @@ table.att.hub-grid-table tfoot td:first-child { text-align: center; }
 .course-detail-banner { width: 100%; box-sizing: border-box; }
 .cd-actions { gap: 8px; margin: 0 0 18px; flex-wrap: wrap; align-items: center; }
 .cd-actions .status { margin: 0; }
+.cd-action-buttons { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .course-detail .sc-panel { margin-top: 16px; }
 .cd-desc { white-space: pre-wrap; margin: 0; }
 
