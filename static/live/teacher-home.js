@@ -1798,7 +1798,7 @@ function drawSchoolResult(box) {
   // 한 줄 = 학생 한 명의 과목 하나 (과목이 없으면 한 줄). 과목 조건으로 찾았으면 맞는 과목만
   const pick = schoolCourseFilter();
   const coursesOf = (x) => koSort(pick ? x.courses.filter(pick) : x.courses, (c) => `${c.term} ${c.subject}`);
-  const HEAD = ["연번", "소속학교", "학년", "반", "이름", "거점학교", "과목명", "강의교사", "승인여부"];
+  const HEAD = ["연번", "소속학교", "학년", "반", "학생 이름", "거점학교", "과목명", "강의교사", "승인여부"];
   const csv = () => {
     const lines = list.flatMap((x, i) => {
       const cs = coursesOf(x);
