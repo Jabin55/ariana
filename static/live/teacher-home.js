@@ -619,7 +619,7 @@ function renderRunCourse(c) {
   const subBox = h("div", { class: "run-sub" });
   // 왼쪽 세로 메뉴: [키, 그림, 이름, 대기 수]
   const subs = [["students", "👥", "수강생 관리", c.pending], ["notice", "📢", "과목 공지사항"], ["info", "📘", "과목 정보"], ["sessions", "🗓️", "회차 정보"],
-    ["open", "▶️", "온라인 수업 열기"], ["learn", "📊", "학습 관리"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "성취도 및 특기 사항"]];
+    ["open", "▶️", "온라인 수업"], ["learn", "📊", "학습 관리"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "성취도 및 특기 사항"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
