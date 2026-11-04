@@ -637,7 +637,7 @@ function renderRunCourse(c) {
     c.locked ? h("div", { class: "run-sub" }, courseInformationPanel(c)) : h("div", { class: "side-layout run-layout" },
       h("nav", { class: "side-menu", "aria-label": "과목 운영 메뉴" }, subs.map(([k, icon, label, n]) => sideBtn(icon, label, runSub === k,
         () => { runSub = k; renderRunCourse(c); }, n))),
-      h("div", { class: "side-main" }, h("h2", { class: "meet-sub-title" }, (subs.find((x) => x[0] === runSub) || subs[0])[2]), subBox)));
+      h("div", { class: "side-main" }, h("h2", { class: "meet-sub-title" }, runSub === "info" ? "과목 기본 정보" : (subs.find((x) => x[0] === runSub) || subs[0])[2]), subBox)));
   if (c.locked) return;
   if (runSub === "info") {
     if (editing.has(c.id)) fill(subBox, courseEditForm(c));
