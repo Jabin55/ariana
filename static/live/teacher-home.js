@@ -918,7 +918,6 @@ async function renderLearning(c, box) {
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["speakers", "🧑‍🎓 학생 맞춤형 피드백", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
-    ["classfb", "📝 수업별 피드백", `${S.classes}회`, "수업마다 학생 피드백"],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -926,7 +925,17 @@ async function renderLearning(c, box) {
       onclick: () => { st.card = k; st.open.clear(); st.view = null; renderLearning(c, box); } },
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
-  if (st.card === "classfb") { renderClassFeedback(c, detail); return; }
+  if (st.card === "classfb") { st.card = "speakers"; st.fbMode = "class"; } // 예전 [수업별 피드백] 카드 → 학생 맞춤형 피드백 안으로
+  if (st.card === "speakers") {
+    // 학생 맞춤형 피드백 = 학생별(누적 분석·피드백) + 수업별(수업 1회마다 피드백)
+    st.fbMode ||= "student";
+    const inner = h("div");
+    fill(detail, h("nav", { class: "tabs sub-tabs fb-mode" }, [["student", "🧑‍🎓 학생별 피드백"], ["class", "📝 수업별 피드백"]].map(([k, label]) =>
+      h("button", { type: "button", class: st.fbMode === k ? "active" : "", onclick: () => { st.fbMode = k; st.view = null; renderLearning(c, box); } }, label))), inner);
+    if (st.fbMode === "class") renderClassFeedback(c, inner);
+    else { st.speechTab = "student"; learnSpeech(c, st, inner); }
+    return;
+  }
   if (st.card === "script" || st.card === "speakers") { st.speechTab = st.card === "script" ? "class" : "student"; learnSpeech(c, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "attend") learnAttendance(d, st, detail);

@@ -654,7 +654,6 @@ async function renderClassFeedback(c, box) {
   try { d = await achApi(`/api/courses/${c.id}/class-feedback`); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
   const open = (k) => { classFbView.set(c.id, k); renderClassFeedback(c, box); };
   achFill(box,
-    h("div", { class: "row", style: "margin:4px 0 6px" }, h("h3", { class: "grow", style: "margin:0" }, "📝 수업별 피드백")),
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
       "수업이 끝나면 그 수업에 연결된 성취기준([회차 정보])만 보고 학생마다 피드백을 만들어요. AI 초안을 고쳐서 공개하면 학생의 [활동 피드백]에 수업별로 쌓여요."),
     d.classes.length ? h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
