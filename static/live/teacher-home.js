@@ -1732,7 +1732,7 @@ async function renderStudentSchoolChanges(box) {
         h("colgroup", {}, [5, 8, 15, 6, 5, 6, 15, 6, 5, 6, 10, 13].map((w) => h("col", { style: `width:${w}%` }))),
         // 머리글 두 줄: 변경 전·후 아래에 소속학교·학년·반·번호 (가로 폭을 줄인다)
         h("thead", {},
-          h("tr", {}, h("th", { rowspan: 2 }, "연번"), h("th", { rowspan: 2 }, "이름"), h("th", { colspan: 4 }, "변경 전"),
+          h("tr", {}, h("th", { rowspan: 2 }, "연번"), h("th", { rowspan: 2 }, "학생 이름"), h("th", { colspan: 4 }, "변경 전"),
             h("th", { colspan: 4 }, "변경 후"), h("th", { rowspan: 2, title: "변경 후 학교의 참여학교 담당 선생님이 승인해요" }, "승인 담당"), h("th", { rowspan: 2 }, "승인/반려")),
           h("tr", {}, [0, 1].flatMap(() => ["소속학교", "학년", "반", "번호"].map((label) => h("th", {}, label))))),
         h("tbody", {}, requests.length ? requests.map((r, i) => {
