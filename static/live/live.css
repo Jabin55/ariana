@@ -2004,3 +2004,6 @@ table.att.ach-reason-table td:first-child { overflow: visible; }
 .ach-comp-info-item + .ach-comp-info-item { border-top: 1px dashed var(--border); }
 .ach-comp-info-item { padding: 6px 0; }
 .ach-comp-info-item p { margin: 3px 0 0; line-height: 1.6; }
+
+/* 오른쪽 차트의 팝업은 오른쪽 끝에 맞춘다 (화면 밖으로 나가지 않게) */
+.ach-two > .ach-box:last-child .ach-comp-info { left: auto; right: 0; }

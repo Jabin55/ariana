@@ -3873,12 +3873,14 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
         state(sa, lambda m: m["transcript_on"])
         a.post(f"/api/live/classes/{code}/speech", json={"text": "오판 가능성이 있어 폐지해야 합니다", "final": True})
     uid = t.get(f"{base}/speech").json()["students"][0]["user_id"]
-    social = list(ach.SUBJECT_COMPETENCIES["사회"][0])  # 교사가 입력하지 않아도 2022 개정 교과 역량이 자동으로
+    social = [n for n, _ in ach.SUBJECT_COMPETENCIES["사회"]]  # 교사가 입력하지 않아도 2022 개정 교과 역량이 자동으로
     got = t.get(f"{base}/standards").json()
     assert got["subject_competencies"] == social and got["subject_competency_area"] == "사회"
     assert t.post(f"{base}/subject-competencies", json={"items": ["x", "y", "z"]}).status_code in (404, 405)
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
-    assert {"key": "비판적 사고력", "label": "비판적 사고력", "desc": "", "score": 4, "reason": "반론을 검토함"} in view["subject_competencies"]
+    crit = {c["key"]: c for c in view["subject_competencies"]}["비판적 사고력"]
+    assert crit["score"] == 4 and crit["reason"] == "반론을 검토함" and crit["desc"].startswith("사회 현상을 객관적으로")
+    assert view["subject_competency_area"] == "사회" and len(view["subject_competency_info"]) == 5
     assert "자기주도성" in ach.ANALYSIS_SYSTEM and view["competencies"][0]["desc"].startswith("자아정체성과 자신감")
     assert view["subject_competency_names"] == social
     edited = t.post(f"{base}/speech/student/{uid}/competencies", json={
@@ -4159,11 +4161,15 @@ def test_ai_error_messages_say_the_cause():
 
 
 def test_subject_competencies_follow_2022_curriculum():
-    """교과 역량은 과목의 교과로 자동으로 정해진다 (역사는 역사과 5대 역량)"""
+    """교과 역량은 과목의 교과로 자동으로 정해진다 (교양은 과목별)"""
     from types import SimpleNamespace as N
     import app.achievement as ach
-    assert ach.subject_competencies_of(N(subject_area="역사", subject_group="사회(역사/도덕 포함)"))[0] == "역사 기억과 계승 역량"
-    assert len(ach.subject_competencies_of(N(subject_area="역사", subject_group=""))) == 5
-    assert ach.subject_competencies_of(N(subject_area="정보", subject_group="기술·가정/정보")) == ["컴퓨팅 사고력", "인공지능 문제 해결력", "디지털 문화 소양"]
-    assert ach.subject_competencies_of(N(subject_area="", subject_group="사회(역사/도덕 포함)"))[0] == "창의적 사고력"
-    assert ach.subject_competencies_of(N(subject_area="중국어", subject_group="제2외국어/한문")) == []
+    c = lambda area, group="", subject="": N(subject_area=area, subject_group=group, subject=subject)
+    assert ach.subject_competencies_of(c("역사", "사회(역사/도덕 포함)"))[0] == "역사 사실 이해"
+    assert ach.subject_competencies_of(c("정보", "기술·가정/정보")) == ["컴퓨팅 사고력", "인공지능 문제 해결력", "디지털 문화 소양"]
+    assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "비판적 사고력"
+    assert ach.subject_competencies_of(c("제2외국어", "제2외국어/한문", "중국어"))[0] == "제2외국어 의사소통 역량"
+    assert ach.subject_competencies_of(c("교양", "교양", "논리와 사고"))[0] == "논리적 사고 역량"
+    assert ach.subject_competencies_of(c("교양", "교양", "보건")) == []
+    assert len(ach.subject_competencies_of(c("기술·가정", "기술·가정/정보"))) == 6
+    assert ach.subject_competency_desc(c("수학"))["추론"].startswith("수학적 사실을 관찰")

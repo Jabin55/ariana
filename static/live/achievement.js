@@ -379,7 +379,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       v.competencies?.length ? compPanel(v.competencies, "#1b6b4a", "rgba(27,107,74,0.22)", "핵심역량 밸런스 차트")
         : h("p", { class: "muted" }, "[다시 분석하기]를 누르면 핵심역량 6가지 차트가 생겨요.")),
     // 오른쪽: 이 과목의 교과 역량 밸런스 차트 (2022 개정 교육과정 교과 역량으로 자동)
-    h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🧩 교과 역량 밸런스 차트"),
+    h("div", { class: "ach-box" }, subjectHead(),
       v.subject_competencies?.length ? compPanel(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량 밸런스 차트")
         : h("p", { class: "muted" }, v.subject_competency_names?.length
           ? "[다시 분석하기]를 누르면 교과 역량 차트가 생겨요."
@@ -396,14 +396,14 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
           toast("역량 점수와 판단 근거를 저장했어요."); editing = false; again();
         } catch (err) { toast(err.message, 5000); e.target.disabled = false; }
       } }, "저장")) : null);
-  // 핵심역량 밸런스 차트 제목 + 오른쪽 [📖 핵심역량이란?] (누르면 6가지 뜻을 펼친다)
-  const coreHead = () => {
-    const comps = v.competencies || [];
-    if (!comps.some((c) => c.desc)) return h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트");
+  // 차트 제목 + 오른쪽 [📖 …이란?] 버튼: 누르면 역량의 뜻을 팝업으로 (차트를 밀어내지 않는다)
+  const infoHead = (title, items, label, popTitle) => {
+    if (!items.some((c) => c.desc)) return h("div", { class: "ach-box-head" }, title);
     const panel = h("div", { class: "ach-comp-info", hidden: true },
-      comps.map((c) => h("div", { class: "ach-comp-info-item" }, h("strong", {}, c.label), h("p", {}, h("b", {}, c.desc, "."), " ", c.detail || ""))));
-    const btn = h("button", { class: "small", type: "button", "aria-expanded": "false" }, "📖 핵심역량이란?");
-    // 팝업으로 띄운다 (차트를 밀어내지 않는다). 바깥을 누르거나 Esc 를 누르면 닫힌다
+      items.map((c) => h("div", { class: "ach-comp-info-item" }, h("strong", {}, c.label),
+        c.desc ? h("p", {}, c.detail ? [h("b", {}, c.desc, "."), " ", c.detail] : c.desc) : null)));
+    const btn = h("button", { class: "small", type: "button", "aria-expanded": "false" }, label);
+    // 바깥을 누르거나 Esc 를 누르면 닫힌다
     const close = () => { panel.hidden = true; btn.setAttribute("aria-expanded", "false"); document.removeEventListener("click", outside, true); document.removeEventListener("keydown", esc); };
     const outside = (e) => { if (!panel.contains(e.target) && e.target !== btn) close(); };
     const esc = (e) => { if (e.key === "Escape") close(); };
@@ -412,11 +412,14 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       panel.hidden = false; btn.setAttribute("aria-expanded", "true");
       document.addEventListener("click", outside, true); document.addEventListener("keydown", esc);
     };
-    panel.prepend(h("div", { class: "row", style: "align-items:center;margin-bottom:2px" }, h("strong", { class: "grow" }, "📖 2022 개정 교육과정 핵심역량"),
+    panel.prepend(h("div", { class: "row", style: "align-items:center;margin-bottom:2px" }, h("strong", { class: "grow" }, popTitle),
       h("button", { class: "small", type: "button", "aria-label": "닫기", onclick: close }, "✕")));
     // 머리글과 팝업을 한 칸으로 묶어 두 차트 상자의 줄 맞춤(subgrid)을 지킨다
-    return h("div", { class: "ach-comp-head" }, h("div", { class: "ach-box-head row", style: "align-items:center" }, h("span", { class: "grow" }, "🧭 핵심역량 밸런스 차트"), btn), panel);
+    return h("div", { class: "ach-comp-head" }, h("div", { class: "ach-box-head row", style: "align-items:center" }, h("span", { class: "grow" }, title), btn), panel);
   };
+  const coreHead = () => infoHead("🧭 핵심역량 밸런스 차트", v.competencies || [], "📖 핵심역량이란?", "📖 2022 개정 교육과정 핵심역량");
+  const subjectHead = () => infoHead("🧩 교과 역량 밸런스 차트", v.subject_competency_info || [], "📖 교과 역량이란?",
+    `📖 ${v.subject_competency_area || ""} 교과 역량 (2022 개정 교육과정)`);
   // 차트 + 역량별 판단 근거 (수정 중이면 점수 1~5·근거를 고칠 수 있다)
   const compPanel = (comps, color, fillColor, aria) => {
     const chart = h("div", {}, achRadar(comps, color, fillColor, aria));
