@@ -1544,12 +1544,12 @@ function hubCourseDays(ov, classes) {
     hubRecordCourseId = null;
     return hubRecordCards(ov, "days");
   }
-  const rows = classes.filter((x) => x.course_id === course.id);
+  const rows = classes.filter((x) => x.course_id === course.id).reverse(); // 첫 수업부터 1, 2, 3 …
   return [hubRecordHeading(course),
     rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att hub-days-table" },
       h("thead", {}, h("tr", {}, ["연번", "수업일", "수업시간", "수업 주제", "참여 인원"].map((t) => h("th", {}, t)))),
       h("tbody", {}, rows.map((x, i) => h("tr", {},
-        h("td", { class: "num" }, rows.length - i), h("td", {}, fmtDate(x.date)),
+        h("td", { class: "num" }, i + 1), h("td", {}, fmtDate(x.date)),
         h("td", {}, `${x.start} ~ ${x.end || (x.live ? "진행 중" : "-")}`),
         h("td", {}, h("button", { type: "button", class: "day-link", title: "이 수업일의 수강생 출석부", onclick: () => openDay(x.id) }, x.title || "(주제 없음)")),
         h("td", {}, h("button", { type: "button", class: "day-link", title: "이 수업일의 수강생 출석부", onclick: () => openDay(x.id) }, `${x.attended}명`)))))))
