@@ -1454,7 +1454,7 @@ function staffBoard(id, list, today, reload, title) {
     const FIELD = { name: "이름", gender: "성별", school: "소속" };
     const changeNote = (x) => (x.changes || []).map((c) => h("div", { class: "change-note" },
       `${FIELD[c.field] || c.field} 변경: ${c.old || "(없음)"} → ${c.new}`));
-    const COLS = hubApproval ? 7 : 8;
+    const COLS = hubApproval ? 9 : 8;
     const trs = rows.flatMap((x, i) => {
       const open = st.open.has(x.id);
       const [cls, label] = MEMBER_STATUS[x.status] || ["pending", x.status];
@@ -1462,15 +1462,17 @@ function staffBoard(id, list, today, reload, title) {
       const pick = h("input", { type: "checkbox", class: "pick", checked: st.pick.has(x.id), "aria-label": `${x.name} 신청 선택`, onchange: (e) => {
           if (e.target.checked) st.pick.add(x.id); else st.pick.delete(x.id);
         } });
+      // 거점학교 운영 > 강의교사 승인: 선택·연번·신청일·소속·직위·이름·연락처·상태·관리 (머리글과 칸이 하나씩 맞게)
       const main = hubApproval ? h("tr", { class: open ? "open-row" : "" },
-        h("td", { class: "num" }, pick, ` ${rows.length - i}`),
+        h("td", {}, pick),
+        h("td", {}, rows.length - i),
         h("td", {}, day(x.requested_at)),
         h("td", {}, x.affiliation || "-"),
         h("td", {}, x.position || "-"),
-        h("td", {}, h("button", { class: "link-btn name-btn", onclick: toggle }, `${open ? "▾" : "▸"} ${x.name}`), changeNote(x)),
+        h("td", {}, h("button", { class: "link-btn name-btn", onclick: toggle }, x.name), changeNote(x)),
         h("td", {}, x.contact || x.contact_email || x.email || "-"),
-        h("td", {}, h("span", { class: `status ${cls}` }, label), " ",
-          h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")))
+        h("td", {}, h("span", { class: `status ${cls}` }, label)),
+        h("td", {}, h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")))
         : h("tr", {},
         h("td", { class: "num", "data-label": "연번" }, pick, ` ${rows.length - i}`),
         h("td", { "data-label": "회원 구분" }, STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (보조)" : "")),
@@ -1486,12 +1488,12 @@ function staffBoard(id, list, today, reload, title) {
       h("div", { class: "row", style: "margin-bottom:8px" },
         h("strong", {}, "총 ", h("span", { class: "accent-text" }, rows.length), "건"),
         h("span", { class: "muted", style: "font-size:0.85rem" }, "체크한 신청 한꺼번에:"),
-        hubApproval ? h("label", { class: "switch" }, all, "전체 선택") : null,
+
         h("button", { class: "small primary", onclick: () => decide("approve") }, "승인"),
         h("button", { class: "small", onclick: () => decide("reject") }, "거절")),
       h("div", { class: "table-wrap" }, h("table", { class: `att enroll-table ${hubApproval ? "instructor-approval-table" : "staff-approval-table"}` },
         h("thead", {}, h("tr", {}, hubApproval
-          ? ["연번", "신청일", "소속", "직위", "이름", "연락처", "상태"].map((t) => h("th", {}, t))
+          ? [h("th", {}, all), ...["연번", "신청일", "소속", "직위", "이름", "연락처", "상태", "관리"].map((t) => h("th", {}, t))]
           : [h("th", {}, all, " 연번"), ...["회원 구분", "소속", "성별", "이름", "신청일", "상태", "관리"].map((t) => h("th", {}, t))])),
         h("tbody", {}, trs.length ? trs
           : h("tr", {}, h("td", { colspan: COLS, class: "muted", style: "text-align:center;padding:24px" }, list.length ? "조건에 맞는 신청이 없어요." : "아직 신청이 없어요."))))));
@@ -1499,7 +1501,7 @@ function staffBoard(id, list, today, reload, title) {
 
   const pending = list.filter((x) => x.status === "pending" || x.change_only).length;
   box.append(
-    h("h2", { style: "margin:8px 0 6px" }, title, pending ? h("span", { class: "status pending", style: "margin-left:8px;font-size:0.85rem" }, `승인 대기 ${pending}`) : null),
+    title ? h("h2", { style: "margin:8px 0 6px" }, title, pending ? h("span", { class: "status pending", style: "margin-left:8px;font-size:0.85rem" }, `승인 대기 ${pending}`) : null) : "",
     searchBox,
     result);
   searchBox.append(

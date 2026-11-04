@@ -1267,7 +1267,7 @@ async function loadHub() {
     h("nav", { class: "tabs sub-tabs", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
       onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); } }, label))),
     box);
-  if (hubSub === "teachers") fill(box, staffBoard("hub", teachers, ins.today || today(), loadHub, "강의교사 승인"));
+  if (hubSub === "teachers") fill(box, staffBoard("hub", teachers, ins.today || today(), loadHub, ""));
   else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
     if (hubRecordCourseId && hubClassId) await hubClassAttendance(box, ov);
@@ -1415,7 +1415,6 @@ function hubCourseApprove(ov) {
     : h("tr", {}, h("td", { colspan: 9, class: "muted" }, "아직 개설 신청한 강좌가 없어요.")));
   const pending = courses.filter((c) => c.approval === "pending").length;
   return [
-    h("h2", { style: "margin:8px 0" }, `강좌 개설 승인${pending ? ` (${pending}건 대기)` : ""}`),
     h("div", { class: "row hub-course-actions" }, h("label", { class: "hub-select-all" }, all, "전체 선택"), count,
       h("span", { class: "grow" }), approveSelected, rejectSelected),
     h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table hub-approval-table" },

@@ -1140,9 +1140,19 @@ table.att.staff-approval-table tr.detail-row > td { text-align: left; }
 @media (max-width: 520px) {
   table.att.staff-approval-table tbody tr:not(.detail-row) { grid-template-columns: minmax(0, 1fr); }
 }
-table.att.instructor-approval-table { min-width: 900px; }
-table.att.instructor-approval-table th, table.att.instructor-approval-table td { vertical-align: middle; white-space: nowrap; }
-table.att.instructor-approval-table td:last-child { min-width: 150px; }
+/* 거점학교 운영 > 강의교사 승인: 선택·연번·신청일·소속·직위·이름·연락처·상태·관리 */
+table.att.instructor-approval-table { width: 100%; table-layout: fixed; }
+table.att.instructor-approval-table th, table.att.instructor-approval-table td { text-align: center; vertical-align: middle; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; padding: 7px 4px; }
+table.att.instructor-approval-table th:nth-child(1) { width: 5%; }
+table.att.instructor-approval-table th:nth-child(2) { width: 6%; }
+table.att.instructor-approval-table th:nth-child(3) { width: 12%; }
+table.att.instructor-approval-table th:nth-child(4) { width: 18%; }
+table.att.instructor-approval-table th:nth-child(5) { width: 10%; }
+table.att.instructor-approval-table th:nth-child(6) { width: 12%; }
+table.att.instructor-approval-table th:nth-child(7) { width: 16%; }
+table.att.instructor-approval-table th:nth-child(8) { width: 11%; }
+table.att.instructor-approval-table th:nth-child(9) { width: 10%; }
+table.att.instructor-approval-table tr.detail-row > td { text-align: left; }
 .hub-select-all { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
 .hub-select-all input, .hub-approval-table input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0; padding: 0; }
 table.att.hub-approval-table { width: 100%; min-width: 0; table-layout: fixed; font-size: clamp(0.76rem, 0.85vw, 0.9rem); }
