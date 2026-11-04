@@ -4406,7 +4406,7 @@ def test_instructor_apply_with_multiple_teach_hubs(monkeypatch):
     c = TestClient(app)
     google_login(c, "ins@gmail.com")
     r = staff_apply(c, {"role": "instructor", "name": "김강사", "affiliation": "울산대학교", "affil_type": "univ", "department": "정치외교학과",
-                        "contact": "010-1111-2222", "gender": "남", "pledge": True,
+                        "contact": "010-1111-2222", "gender": "남", "email": "ins@korea.kr", "pledge": True,
                         "teach_hubs": ["가나고등학교", " 다라고등학교 ", "가나고등학교", ""]})
     assert r.status_code == 200, r.text
     apps = boss.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
