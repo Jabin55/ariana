@@ -1042,7 +1042,7 @@ async function learnSpeech(c, st, box) {
         const [{ observations: obs }, { classes }] = await Promise.all([api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`),
           api(`/api/courses/${c.id}/class-feedback`)]);
         // 새 관찰 기록: 회차를 고르고 적는다 (수업이 끝난 뒤에도)
-        const pick = h("select", { "aria-label": "회차" }, [...classes].reverse().map((k) => h("option", { value: k.class_id }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
+        const pick = h("select", { "aria-label": "회차" }, [...classes].sort((a, b) => (a.no || 0) - (b.no || 0) || a.date.localeCompare(b.date)).map((k) => h("option", { value: k.class_id }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
         const text = h("textarea", { rows: 2, maxlength: 1000, placeholder: "관찰한 내용 (예: 반대 측 근거를 정리해 모둠 토의를 이끎)" });
         const add = h("button", { class: "small primary", type: "button", disabled: !classes.length }, "+ 관찰 기록 추가");
         add.onclick = async () => {
