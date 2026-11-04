@@ -1465,9 +1465,10 @@ table.att.school-table th:nth-child(8) { width: 12%; }
 table.att.school-table th:nth-child(9) { width: 11%; }
 table.att.school-table tr.cont-row td { border-top: 1px dashed var(--border); }
 table.att.school-table .quit-cell { justify-content: center; flex-wrap: wrap; }
-table.att.school-change-table { min-width: 1100px; }
-table.att.school-change-table th, table.att.school-change-table td { text-align: center; vertical-align: middle; white-space: nowrap; }
-table.att.school-change-table td:last-child { min-width: 150px; }
+table.att.school-change-table { width: 100%; }
+table.att.school-change-table th, table.att.school-change-table td { text-align: center; vertical-align: middle; white-space: nowrap; padding: 6px 5px; }
+table.att.school-change-table td:nth-child(3), table.att.school-change-table td:nth-child(7) { white-space: normal; word-break: keep-all; min-width: 6em; }
+table.att.school-change-table .school-change-actions { flex-wrap: nowrap; gap: 4px; justify-content: center; }
 .school-change-actions { justify-content: center; }
 .school-change-number input[type="number"] { width: 80px; }
 /* 로그인 ↔ 회원가입 */

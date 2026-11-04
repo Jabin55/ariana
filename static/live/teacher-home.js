@@ -1659,7 +1659,11 @@ async function renderStudentSchoolChanges(box) {
       ME.is_admin ? null : h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
       h("p", { class: "muted" }, "변경 후 학년·반·번호는 학생이 신청한 값입니다. 학생이 입력하지 않은 항목은 기존 값이 유지됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
-        h("thead", {}, h("tr", {}, head.map((label) => h("th", {}, label)))),
+        // 머리글 두 줄: 변경 전·후 아래에 소속학교·학년·반·번호 (가로 폭을 줄인다)
+        h("thead", {},
+          h("tr", {}, h("th", { rowspan: 2 }, "연번"), h("th", { rowspan: 2 }, "이름"), h("th", { colspan: 4 }, "변경 전"),
+            h("th", { colspan: 4 }, "변경 후"), h("th", { rowspan: 2 }, "승인/반려")),
+          h("tr", {}, [0, 1].flatMap(() => ["소속학교", "학년", "반", "번호"].map((label) => h("th", {}, label))))),
         h("tbody", {}, requests.length ? requests.map((r, i) => {
           return h("tr", {},
           h("td", {}, i + 1),
