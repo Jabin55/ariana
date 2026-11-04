@@ -745,7 +745,7 @@ def _purge_user_rows(c, uid: int, keep_account: bool = False) -> list:
         c.execute(update(db.course_request_likes).where(db.course_request_likes.c.request_id == rid,
                                                        db.course_request_likes.c.user_id == uid)
                   .values(user_id=-secrets.randbelow(2 ** 31 - 2) - 1))  # 누구 것인지 알 수 없는 번호
-    for table in (db.grades, db.questions, db.speech_logs, db.speech_analyses, db.speech_feedback, db.observations, db.attendance, db.enrollments, db.memberships):
+    for table in (db.grades, db.questions, db.speech_logs, db.speech_analyses, db.speech_feedback, db.class_feedback, db.observations, db.attendance, db.enrollments, db.memberships):
         c.execute(delete(table).where(table.c.user_id == uid))
     c.execute(delete(db.community_posts).where(db.community_posts.c.author_id == uid))
     c.execute(delete(db.profile_change_requests).where(db.profile_change_requests.c.user_id == uid))

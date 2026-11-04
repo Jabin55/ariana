@@ -82,6 +82,7 @@ def purge_expired_files(today: date | None = None) -> dict:
         # 발언 AI 분석·피드백도 과목이 끝나고 365일 뒤
         c.execute(delete(db.speech_analyses).where(db.speech_analyses.c.course_id.in_(done or [-1])))
         c.execute(delete(db.speech_feedback).where(db.speech_feedback.c.course_id.in_(done or [-1])))
+        c.execute(delete(db.class_feedback).where(db.class_feedback.c.course_id.in_(done or [-1])))
         # 공유한 기록(파일명·쪽수)은 남기고 파기 표시만 한다. 파일 내용은 아래에서 복구할 수 없게 지운다
         for x in mats:
             _mark_deleted(c, x.class_id, x.id)

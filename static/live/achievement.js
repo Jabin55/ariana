@@ -643,13 +643,114 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       v.published ? h("p", { class: "ok-text", style: "margin:6px 0 0;font-size:0.85rem" }, "✅ 지금 학생에게 공개 중이에요.") : null));
 }
 
+/* ───────── 교사 [학습 관리 > 📝 수업별 피드백]: 수업 1회마다 학생별 형성평가 피드백 ───────── */
+const classFbView = new Map(); // 과목별로 보고 있는 수업
+
+async function renderClassFeedback(c, box) {
+  const viewing = classFbView.get(c.id);
+  if (viewing) return renderClassFeedbackDetail(c, viewing, box);
+  achFill(box, h("p", { class: "muted" }, "수업 목록을 불러오는 중…"));
+  let d;
+  try { d = await achApi(`/api/courses/${c.id}/class-feedback`); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const open = (k) => { classFbView.set(c.id, k); renderClassFeedback(c, box); };
+  achFill(box,
+    h("div", { class: "row", style: "margin:4px 0 6px" }, h("h3", { class: "grow", style: "margin:0" }, "📝 수업별 피드백")),
+    h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.88rem" },
+      "수업이 끝나면 그 수업에 연결된 성취기준([회차 정보])만 보고 학생마다 피드백을 만들어요. AI 초안을 고쳐서 공개하면 학생의 [활동 피드백]에 수업별로 쌓여요."),
+    d.classes.length ? h("div", { class: "table-wrap" }, h("table", { class: "att assign-board" },
+      h("thead", {}, h("tr", {}, ["연번", "수업일", "수업 주제", "만든 피드백", "공개", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, [...d.classes].reverse().map((k) => h("tr", {},
+        h("td", {}, String(k.no)), h("td", {}, fmtDate(k.date)), h("td", { style: "white-space:normal" }, k.title || "(주제 없음)"),
+        h("td", {}, `${k.made}명`), h("td", {}, k.published ? h("strong", { class: "ok-text" }, `${k.published}명`) : "0명"),
+        h("td", {}, h("button", { class: "small primary", type: "button", onclick: () => open(k) }, "열기")))))))
+      : h("p", { class: "muted" }, "아직 연 수업이 없어요."));
+}
+
+async function renderClassFeedbackDetail(c, k, box) {
+  const again = () => renderClassFeedbackDetail(c, k, box);
+  achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
+  let d;
+  try { d = await achApi(`/api/courses/${c.id}/class-feedback/${k.class_id}`); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const withRec = d.students.filter((s) => s.has_record);
+  const made = d.students.filter((s) => s.parts);
+  const gen = h("button", { class: "primary small", type: "button", disabled: !d.ai || !withRec.length, title: d.ai ? "" : "AI가 설정되지 않았어요" },
+    `🤖 AI 초안 만들기 (기록 있는 학생 ${withRec.length}명)`);
+  gen.onclick = async () => {
+    gen.disabled = true; gen.textContent = "🤖 만드는 중… (학생 수에 따라 1~2분)";
+    try {
+      const r = await achApi(`/api/courses/${c.id}/class-feedback/${k.class_id}/generate`, {});
+      toast(`초안 ${r.made}명 만들었어요.${r.skipped ? ` (기록 없음·공개 중 ${r.skipped}명은 건너뜀)` : ""}${r.errors.length ? ` 일부 오류: ${r.errors[0]}` : ""}`, 6000);
+      again();
+    } catch (err) { toast(err.message, 6000); gen.disabled = false; gen.textContent = "🤖 AI 초안 만들기"; }
+  };
+  const allPub = made.length && made.every((s) => s.published);
+  const pubAll = h("button", { class: "small", type: "button", disabled: !made.length }, allPub ? "모두 공개 취소" : "만든 피드백 모두 공개");
+  pubAll.onclick = async () => {
+    if (!allPub && !confirm(`만든 피드백 ${made.length}명을 모두 학생에게 공개할까요?`)) return;
+    try { await achApi(`/api/courses/${c.id}/class-feedback/${k.class_id}/publish-all`, { published: !allPub }); toast(allPub ? "공개를 취소했어요." : "학생들에게 공개했어요."); again(); }
+    catch (err) { toast(err.message); }
+  };
+  achFill(box,
+    h("div", { class: "row", style: "margin:0 0 8px" }, h("button", { class: "small", type: "button", onclick: () => { classFbView.delete(c.id); renderClassFeedback(c, box); } }, "← 수업 목록")),
+    h("div", { class: "hub-grid-summary" }, `${fmtDate(k.date)} · ${k.title || "(주제 없음)"}`),
+    h("div", { class: "ach-box", style: "margin-top:8px" }, h("div", { class: "ach-box-head" }, "🎯 이 수업에서 다룬 성취기준"),
+      d.linked.length ? d.linked.map((x) => h("div", { class: "ach-rate" }, h("strong", {}, x.code), " ", h("span", { class: "muted" }, x.text)))
+        : h("p", { class: "muted", style: "margin:0" }, "[회차 정보]에서 이 수업의 성취기준을 고르지 않아 모든 성취기준을 후보로 봐요. 고르면 그 성취기준만 피드백해요.")),
+    h("div", { class: "row", style: "margin:8px 0;gap:6px;justify-content:flex-end" }, pubAll, gen),
+    d.students.map((s) => classFbStudent(c, k, s, again)));
+}
+
+function classFbStudent(c, k, s, again) {
+  const who = [s.student_no, s.name].filter(Boolean).join(" ");
+  const counts = s.counts ? `발언 ${s.counts.talk} (자발 ${s.counts.spontaneous} · 응답 ${s.counts.response})` : "이 수업 기록 없음";
+  const badge = s.published ? h("span", { class: "fb-badge pub" }, "공개 중") : s.parts ? h("span", { class: "fb-badge" }, "초안") : null;
+  if (!s.parts) return h("div", { class: "cfb-row muted" }, h("strong", {}, who), ` · ${counts}`);
+  const ed = feedbackEditor(s.parts);
+  const lvSel = s.levels.map((x) => {
+    const sel = h("select", { "aria-label": `${x.code} 수준` }, [[0, "– (근거 없음)"], [3, "상"], [2, "중"], [1, "하"]].map(([v, t]) => h("option", { value: v, selected: v === x.level }, t)));
+    return { x, sel };
+  });
+  const save = async (published) => {
+    try {
+      await achApi(`/api/courses/${c.id}/class-feedback/${k.class_id}/student/${s.user_id}`,
+        { parts: ed.read(), levels: lvSel.map(({ x, sel }) => ({ standard_id: x.standard_id, level: Number(sel.value) })), published });
+      toast(published ? "학생에게 공개했어요." : s.published ? "공개를 취소했어요." : "저장했어요.");
+      again();
+    } catch (err) { toast(err.message); }
+  };
+  return h("details", { class: "cfb-row" },
+    h("summary", {}, h("strong", {}, who), h("span", { class: "muted" }, ` · ${counts} `), badge),
+    h("div", { class: "cfb-body" },
+      lvSel.length ? h("div", { class: "cfb-levels" }, lvSel.map(({ x, sel }) => h("div", { class: "ach-rate" },
+        sel, " ", h("strong", {}, x.code), " ", h("span", { class: "muted" }, x.evidence ? `“${x.evidence}”` : x.text)))) : null,
+      ed.el,
+      h("div", { class: "row", style: "margin-top:8px;gap:6px;justify-content:flex-end" },
+        h("button", { class: "small", type: "button", onclick: () => save(s.published) }, "저장"),
+        h("button", { class: s.published ? "small" : "primary small", type: "button", onclick: () => save(!s.published) }, s.published ? "공개 취소" : "학생에게 공개"))));
+}
+
 /* ───────── 학생: 선생님이 공개한 피드백 ───────── */
 
 async function renderMyFeedback(courseId, box) {
-  let v;
-  try { v = await achApi(`/api/my/courses/${courseId}/feedback`); }
-  catch { achFill(box, h("p", { class: "muted" }, "활동 피드백을 불러오지 못했어요. 잠시 후 다시 열어 주세요.")); return; }
-  if (!v.published) { achFill(box, h("p", { class: "muted" }, "아직 선생님이 공개한 활동 피드백이 없어요.")); return; }
-  const p = v.parts || { message: v.feedback };
-  achFill(box, h("div", { class: "my-feedback" }, feedbackView(p, v.participation || [])));
+  let v, cf;
+  try {
+    [v, cf] = await Promise.all([achApi(`/api/my/courses/${courseId}/feedback`),
+      achApi(`/api/my/courses/${courseId}/class-feedback`).catch(() => ({ items: [] }))]);
+  } catch { achFill(box, h("p", { class: "muted" }, "활동 피드백을 불러오지 못했어요. 잠시 후 다시 열어 주세요.")); return; }
+  const items = cf.items || [];
+  if (!v.published && !items.length) { achFill(box, h("p", { class: "muted" }, "아직 선생님이 공개한 활동 피드백이 없어요.")); return; }
+  achFill(box,
+    // 수업별 피드백 (최근 수업부터, 가장 최근 것만 펼침)
+    items.length ? h("div", { class: "my-class-fb" }, h("h3", { class: "section-title" }, "📝 수업별 피드백"),
+      items.map((x, i) => h("details", { class: "fb-class", open: i === 0 },
+        h("summary", {}, h("strong", {}, `${fmtDate(x.date)} · ${x.title || "수업"}`),
+          h("span", { class: "muted" }, ` · 스스로 한 발언 ${x.participation.spontaneous} · 질문에 대답 ${x.participation.response}`)),
+        h("div", { class: "my-feedback" },
+          x.standards.length ? h("div", { class: "fb-card" }, h("div", { class: "fb-card-head" }, "🎯 이번 수업의 성취기준"),
+            x.standards.map((s) => h("div", { class: "ach-rate" },
+              s.level ? h("span", { class: `ach-lv lv${s.level}` }, ACH_LEVEL[s.level]) : h("span", { class: "ach-lv lv0" }, "–"),
+              h("strong", {}, ` ${s.code} `), h("span", { class: "muted" }, s.text)))) : null,
+          feedbackView(x.parts))))) : null,
+    v.published ? h("div", { class: "my-total-fb" }, items.length ? h("h3", { class: "section-title" }, "📚 종합 피드백") : null,
+      h("div", { class: "my-feedback" }, feedbackView(v.parts || { message: v.feedback }, v.participation || []))) : null);
 }

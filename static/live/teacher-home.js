@@ -889,6 +889,7 @@ async function renderLearning(c, box) {
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
     ["speakers", "🧑‍🎓 학생 맞춤형 피드백", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
+    ["classfb", "📝 수업별 피드백", `${S.classes}회`, "수업마다 학생 피드백"],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -896,6 +897,7 @@ async function renderLearning(c, box) {
       onclick: () => { st.card = k; st.open.clear(); st.view = null; renderLearning(c, box); } },
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
+  if (st.card === "classfb") { renderClassFeedback(c, detail); return; }
   if (st.card === "script" || st.card === "speakers") { st.speechTab = st.card === "script" ? "class" : "student"; learnSpeech(c, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "attend") learnAttendance(d, st, detail);

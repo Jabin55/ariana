@@ -30,6 +30,7 @@ from app.score_confirmations import router as score_confirmations_router
 from app.satisfaction import router as satisfaction_router
 from app.speech import router as speech_router
 from app.achievement import router as achievement_router
+from app.class_feedback import router as class_feedback_router
 from app.site import router as site_router
 from app.auth import router as auth_router
 from app.classroom import heartbeat_loop, router as live_router
@@ -136,6 +137,7 @@ app.include_router(score_confirmations_router)
 app.include_router(satisfaction_router)
 app.include_router(speech_router)
 app.include_router(achievement_router)
+app.include_router(class_feedback_router)
 app.include_router(site_router)
 app.include_router(evidence_router)
 app.include_router(access_log_router)

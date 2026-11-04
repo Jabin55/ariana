@@ -2060,3 +2060,16 @@ table.att.ach-tracking thead th:nth-last-child(2) { width: 6em; }
 table.att.ach-progress td.ach-off { background: repeating-linear-gradient(45deg, #f4f5f7, #f4f5f7 4px, #eceef1 4px, #eceef1 8px); }
 table.att.ach-progress td.ach-gap { background: #fff8e6; }
 .ach-q { color: #b7791f; font-weight: 800; }
+
+/* 수업별 피드백 (교사) */
+.cfb-row { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; background: #fff; }
+.cfb-row > summary { cursor: pointer; }
+.cfb-body { margin-top: 10px; display: grid; gap: 10px; }
+.cfb-levels select { width: auto; padding: 2px 6px; }
+.fb-badge { display: inline-block; padding: 0 8px; border-radius: 999px; background: #f4f6fa; color: var(--muted); font-size: 0.75rem; font-weight: 700; }
+.fb-badge.pub { background: #eaf6ef; color: #1b6b4a; }
+.fb-class { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fafbfc; }
+.fb-class > summary { cursor: pointer; }
+.fb-class[open] > summary { margin-bottom: 10px; }
+.ach-lv.lv0 { background: #e9ecef; color: #6b7280; }
+.my-total-fb { margin-top: 14px; }

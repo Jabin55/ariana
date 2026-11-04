@@ -4223,3 +4223,63 @@ def test_standard_progress_covered_gap_off(monkeypatch):
     prog = ach.standard_progress(1, classes, {}, {10: {1}, 11: {1, 2}})  # 12번 수업은 연결 안 함 → 모두 다룬 것으로
     assert [c["state"] for c in prog[0]["cells"]] == ["judged", "gap", "gap"] and prog[0]["taught"] == 3
     assert [c["state"] for c in prog[1]["cells"]] == ["off", "gap", "gap"] and prog[1]["status"] == "관찰 필요"
+
+
+def test_class_feedback_per_class_draft_edit_publish(monkeypatch):
+    """수업별 피드백지: 그 수업에 연결된 성취기준만 판단 → 교사 수정·공개 → 학생은 상·중·하와 항목만 본다"""
+    import app.class_feedback as cf
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    calls = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        calls.append((prompt, schema))
+        return {"standards": [{"key": "S1", "level": 3, "evidence": "이유 두 가지(응답)"}, {"key": "S9", "level": 1, "evidence": "x"}],
+                "feedback": {"message": "근거를 잘 들었어요.", "changes": [], "strengths": ["이유를 두 가지 들었어요"],
+                             "next_actions": ["친구 의견에 덧붙이기"], "sentence_starters": ["~의 의견에 덧붙이면 ~"]}}
+    monkeypatch.setattr(cf, "ai_json", fake_ai)
+    t, other = teacher(), teacher("other@gmail.com")
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+    cid = t.post("/api/courses", json={**COURSE, "title": "법과 사회", "sessions": [{"no": 1, "date": today, "start": "16:00", "end": "17:00", "topic": "사형제"}]}).json()["id"]
+    a, b = student(1), student(2)
+    for s_ in (a, b):
+        s_.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    base = f"/api/courses/{cid}"
+    s1 = t.post(f"{base}/standards", json={"code": "[12법사02-03]", "text": "기본권 제한", "level_high": "근거를 들어 판단", "level_mid": "중", "level_low": "하"}).json()["id"]
+    t.post(f"{base}/standards", json={"code": "[12법사03-01]", "text": "다른 성취기준", "level_high": "상", "level_mid": "중", "level_low": "하"})
+    t.post(f"{base}/sessions/1/standards", json={"standard_ids": [s1]})
+    code = create(t, title="사형제 토론", course_id=cid)["code"]
+    with t.websocket_connect(f"/ws/live/{code}") as tw, a.websocket_connect(f"/ws/live/{code}") as sa:
+        state(tw, lambda m: sum(x["online"] for x in m["students"]) == 1)
+        t.post(f"/api/live/classes/{code}/transcript/state", json={"enabled": True})
+        state(sa, lambda m: m["transcript_on"])
+        t.post(f"/api/live/classes/{code}/captions/text", json={"text": "왜 그렇게 생각하나요", "final": True})
+        a.post(f"/api/live/classes/{code}/speech", json={"text": "오판 가능성과 비용 때문입니다", "final": True})
+    classes = t.get(f"{base}/class-feedback").json()["classes"]
+    assert other.get(f"{base}/class-feedback").status_code == 404
+    k = classes[0]["class_id"]
+    detail = t.get(f"{base}/class-feedback/{k}").json()
+    assert detail["linked"] == [{"standard_id": s1, "code": "[12법사02-03]", "text": "기본권 제한"}]
+    rec = {s["has_record"] for s in detail["students"]}
+    assert rec == {True, False}  # 발언한 학생만 기록이 있다
+    got = t.post(f"{base}/class-feedback/{k}/generate", json={}).json()
+    assert got["made"] == 1 and got["skipped"] == 1 and len(calls) == 1
+    prompt, schema = calls[0]
+    assert "[S1] [12법사02-03]" in prompt and "다른 성취기준" not in prompt and "[응답] (선생님 발문: 왜 그렇게 생각하나요)" in prompt
+    assert schema["properties"]["standards"]["items"]["properties"]["key"]["enum"] == ["S1"]
+    mine = next(s for s in got["students"] if s["has_record"])
+    assert mine["levels"] == [{"standard_id": s1, "code": "[12법사02-03]", "text": "기본권 제한", "level": 3, "evidence": "이유 두 가지(응답)"}]
+    assert mine["parts"]["next_actions"] == ["친구 의견에 덧붙이기"] and not mine["published"]
+    assert a.get(f"/api/my/courses/{cid}/class-feedback").json()["items"] == []
+    uid = mine["user_id"]
+    assert t.post(f"{base}/class-feedback/{k}/student/{uid}", json={"parts": {**mine["parts"], "message": "고친 글"},
+                                                                    "levels": [{"standard_id": s1, "level": 2}], "published": False}).json()["ok"]
+    assert t.post(f"{base}/class-feedback/{k}/publish-all", json={"published": True}).json()["changed"] == 1
+    items = a.get(f"/api/my/courses/{cid}/class-feedback").json()["items"]
+    assert items[0]["parts"]["message"] == "고친 글" and items[0]["standards"] == [{"code": "[12법사02-03]", "text": "기본권 제한", "level": 2}]
+    assert items[0]["participation"] == {"spontaneous": 0, "response": 1}
+    # 공개한 학생은 다시 만들어도 그대로
+    assert t.post(f"{base}/class-feedback/{k}/generate", json={}).json()["made"] == 0
+    assert b.get(f"/api/my/courses/{cid}/class-feedback").json()["items"] == []

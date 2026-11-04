@@ -475,6 +475,20 @@ speech_feedback = Table(
     UniqueConstraint("course_id", "user_id"),
 )
 
+class_feedback = Table(
+    "class_feedback", metadata,  # 수업별 피드백지 (형성평가): 수업 1회 × 학생 1명. 공개하기 전에는 학생에게 보이지 않는다
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("class_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("levels", Text, nullable=False, default=""),  # 그 수업에 연결된 성취기준별 상·중·하 JSON
+    Column("parts", Text, nullable=False, default=""),  # 항목별 피드백 JSON
+    Column("published", Integer, nullable=False, default=0),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float, nullable=False),
+    UniqueConstraint("class_id", "user_id"),
+)
+
 observations = Table(
     "observations", metadata,  # 수업 중 교사가 학생을 관찰해 적은 기록 (교사만 봄, AI 성취 분석에 함께 씀)
     Column("id", Integer, primary_key=True),
