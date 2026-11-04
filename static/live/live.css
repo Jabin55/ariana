@@ -1159,8 +1159,8 @@ table.att.instructor-approval-table tr.detail-row > td { text-align: left; }
 table.att.hub-approval-table { width: 100%; min-width: 0; table-layout: fixed; font-size: clamp(0.76rem, 0.85vw, 0.9rem); }
 table.att.hub-approval-table th, table.att.hub-approval-table td { vertical-align: middle; white-space: normal; overflow-wrap: anywhere; min-width: 0; padding: 8px 5px; }
 table.att.hub-approval-table th:nth-child(1) { width: 4%; }
-table.att.hub-approval-table th:nth-child(2) { width: 3%; }
-table.att.hub-approval-table th:nth-child(3) { width: 14%; }
+table.att.hub-approval-table th:nth-child(2) { width: 5.5%; white-space: nowrap; } /* 연번이 줄바꿈되지 않게 */
+table.att.hub-approval-table th:nth-child(3) { width: 12.5%; }
 table.att.hub-approval-table th:nth-child(4) { width: 18%; }
 table.att.hub-approval-table th:nth-child(5) { width: 22%; }
 table.att.hub-approval-table th:nth-child(6) { width: 6%; }
@@ -2163,3 +2163,8 @@ html { scrollbar-gutter: stable; }
 }
 .meet-sub-title { margin: 0 0 12px; font-size: 1.25rem; }
 .side-main .staff-board > h2:first-child { margin-top: 0 !important; }
+
+/* 표로 된 게시판에는 정보마당 공지사항처럼 흰 바탕 틀을 씌운다 (이미 흰 상자 안에 있는 표는 그대로) */
+:where(.side-main, .run-sub) .table-wrap:not(.card .table-wrap):not(.ach-box .table-wrap):not(.box .table-wrap):not(.info-block .table-wrap):not(.fb-card .table-wrap):not(.result-sheet .table-wrap) {
+  background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px 10px;
+}
