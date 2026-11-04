@@ -1656,9 +1656,7 @@ async function renderStudentSchoolChanges(box) {
     const { requests } = await api("/api/school/change-requests");
     const head = ["연번", "이름", "변경 전 소속학교", "학년", "반", "번호", "변경 후 소속학교", "학년", "반", "번호", "승인/반려"];
     fill(box, h("h2", {}, "소속학교 변경 승인"),
-      h("p", { class: "muted" }, ME.is_admin
-        ? "참여학교로 옮기려는 학생의 신청입니다. 전체 관리자 또는 변경할 학교의 담당교사가 승인·반려할 수 있습니다."
-        : "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
+      ME.is_admin ? null : h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
       h("p", { class: "muted" }, "변경 후 학년·반·번호는 학생이 신청한 값입니다. 학생이 입력하지 않은 항목은 기존 값이 유지됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
         h("thead", {}, h("tr", {}, head.map((label) => h("th", {}, label)))),
