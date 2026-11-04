@@ -4366,7 +4366,8 @@ def test_student_signup_needs_school_approval(monkeypatch):
     me = kid.get("/api/me").json()["user"]
     assert me["school_approval"] == "pending" and not me["needs_profile"]
     assert kid.get("/api/courses/available").status_code == 403  # 승인 전에는 수강신청 등 이용 불가
-    assert [x["name"] for x in p1.get("/api/school/signups").json()["signups"]] == ["김민준"]
+    got = p1.get("/api/school/signups").json()["signups"]
+    assert [x["name"] for x in got] == ["김민준"] and got[0]["teachers"] == ["담당"]
     assert p2.get("/api/school/signups").json()["signups"] == []  # 다른 학교 담당교사에게는 안 보임
     assert all(x["name"] != "김민준" for x in p1.get("/api/school/overview").json()["students"])  # 학생 관리 명단엔 승인 뒤에
     assert p1.get("/api/school/overview").json()["signups"] == 1
@@ -4392,3 +4393,7 @@ def test_student_signup_needs_school_approval(monkeypatch):
     # 전체 관리자는 모든 학교의 가입 신청을 볼 수 있다
     login("kid2@s.school.kr", approve_school=False, name="이서연", school=SCHOOL, grade=1, class_no=1, number=1, gender="여")
     assert [x["name"] for x in boss.get("/api/school/signups").json()["signups"]] == ["이서연"]
+    # 담당 선생님이 없는 학교: 전체 관리자 화면에서 '담당 선생님 없음'으로 구분된다
+    login("kid3@s.school.kr", approve_school=False, name="박도윤", school="신정고등학교", grade=1, class_no=1, number=2)
+    by_name = {x["name"]: x for x in boss.get("/api/school/signups").json()["signups"]}
+    assert by_name["박도윤"]["teachers"] == [] and by_name["이서연"]["teachers"] == ["담당"]

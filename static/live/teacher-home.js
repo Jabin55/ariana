@@ -1601,11 +1601,16 @@ async function loadSchool() {
 }
 
 const signupPick = new Set();
+let signupNoTeacher = false; // 전체 관리자: 담당 선생님 없는 학교만 보기
+const teacherCell = (names) => (names?.length ? names.filter(Boolean).join(", ") || "담당 선생님"
+  : h("span", { class: "status rejected", title: "이 학교에는 참여학교 담당 선생님이 없어 전체 관리자가 승인해요" }, "담당 선생님 없음"));
 
 /** [학생 가입 승인]: 우리 학교로 가입한 학생을 확인해 승인·반려 (승인해야 학생이 이용할 수 있다) */
 async function renderSchoolSignups(box) {
   let list;
   try { ({ signups: list } = await api("/api/school/signups")); } catch (e) { fill(box, h("p", { class: "error" }, e.message)); return; }
+  const orphan = list.filter((x) => !x.teachers.length);
+  if (ME.is_admin && signupNoTeacher) list = orphan;
   signupPick.clear();
   const decide = async (action, only = null) => {
     const picked = only ? [only] : list.filter((x) => signupPick.has(x.user_id));
@@ -1637,14 +1642,18 @@ async function renderSchoolSignups(box) {
     h("div", { class: "row", style: "margin-bottom:8px" },
       h("strong", {}, "승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
       h("button", { class: "small primary", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 승인"),
-      h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 반려")),
+      h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 반려"),
+      h("span", { class: "grow" }),
+      ME.is_admin ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: signupNoTeacher,
+        onchange: (e) => { signupNoTeacher = e.target.checked; renderSchoolSignups(box); } }),
+        `담당 선생님 없는 학교만 보기 (${orphan.filter((x) => x.status === "pending").length}명 대기)`) : null),
     h("div", { class: "table-wrap" }, h("table", { class: "att signup-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "학년", "반", "번호", "이름", "생년월일", "성별", "이메일", "연락처", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "승인 담당", "학년", "반", "번호", "이름", "생년월일", "성별", "이메일", "연락처", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, x.status === "pending" ? h("input", { type: "checkbox", class: "signup-check", "aria-label": `${x.name} 선택`, onchange: (e) => {
           if (e.target.checked) signupPick.add(x.user_id); else signupPick.delete(x.user_id);
         } }) : null),
-        h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, x.grade ? `${x.grade}학년` : "-"),
+        h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, teacherCell(x.teachers)), h("td", {}, x.grade ? `${x.grade}학년` : "-"),
         h("td", {}, x.class_no ? `${x.class_no}반` : "-"), h("td", {}, x.number ? `${x.number}번` : "-"), h("td", {}, h("strong", {}, x.name)),
         h("td", {}, x.birth || "-"), h("td", {}, x.gender || "-"), h("td", { class: "contact-cell" }, x.email || "-"),
         h("td", { class: "contact-cell" }, fmtPhone(x.phone) || "-"), h("td", {}, kstDate(x.requested_at)),
@@ -1653,7 +1662,7 @@ async function renderSchoolSignups(box) {
         h("td", {}, x.status === "pending" ? h("div", { class: "row school-change-actions" },
           h("button", { class: "small primary", type: "button", onclick: () => decide("approve", x) }, "승인"),
           h("button", { class: "small", type: "button", onclick: () => decide("reject", x) }, "반려")) : "-")))
-        : h("tr", {}, h("td", { colspan: 14, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
+        : h("tr", {}, h("td", { colspan: 15, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
 }
 
 function renderSchoolWithdrawals(box) {
@@ -1715,12 +1724,13 @@ async function renderStudentSchoolChanges(box) {
     const head = ["연번", "이름", "변경 전 소속학교", "학년", "반", "번호", "변경 후 소속학교", "학년", "반", "번호", "승인/반려"];
     fill(box, h("h2", {}, "소속학교 변경 승인"),
       ME.is_admin ? null : h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
+      h("p", { class: "muted" }, "변경 후 학교의 참여학교 담당 선생님이 승인해요. 담당 선생님이 없는 학교는 전체 관리자가 승인해요."),
       h("p", { class: "muted" }, "변경 후 학년·반·번호는 학생이 신청한 값입니다. 학생이 입력하지 않은 항목은 기존 값이 유지됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
         // 머리글 두 줄: 변경 전·후 아래에 소속학교·학년·반·번호 (가로 폭을 줄인다)
         h("thead", {},
           h("tr", {}, h("th", { rowspan: 2 }, "연번"), h("th", { rowspan: 2 }, "이름"), h("th", { colspan: 4 }, "변경 전"),
-            h("th", { colspan: 4 }, "변경 후"), h("th", { rowspan: 2 }, "승인/반려")),
+            h("th", { colspan: 4 }, "변경 후"), h("th", { rowspan: 2, title: "변경 후 학교의 참여학교 담당 선생님이 승인해요" }, "승인 담당"), h("th", { rowspan: 2 }, "승인/반려")),
           h("tr", {}, [0, 1].flatMap(() => ["소속학교", "학년", "반", "번호"].map((label) => h("th", {}, label))))),
         h("tbody", {}, requests.length ? requests.map((r, i) => {
           return h("tr", {},
@@ -1734,6 +1744,7 @@ async function renderStudentSchoolChanges(box) {
           h("td", {}, (r.new_grade ?? r.grade) ? `${r.new_grade ?? r.grade}학년` : "-"),
           h("td", {}, (r.new_class_no ?? r.class_no) ? `${r.new_class_no ?? r.class_no}반` : "-"),
           h("td", {}, (r.new_number ?? r.number) ? `${r.new_number ?? r.number}번` : "-"),
+          h("td", {}, teacherCell(r.teachers)),
           h("td", {}, (ME.is_admin || (ME.participant_schools || []).includes(r.new_value))
             ? h("div", { class: "row school-change-actions" }, ["approve", "reject"].map((action) => h("button", {
             type: "button", class: action === "approve" ? "small primary" : "small", onclick: async () => {

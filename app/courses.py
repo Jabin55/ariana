@@ -1109,7 +1109,9 @@ async def school_change_requests(request: Request):
             if not u["is_admin"]:
                 query = query.where(q.new_value.in_(schools))
             rows = c.execute(query).all()
+            teachers = school_teachers()
             return [{"id": r.id, "name": r.name, "student_no": student_no(r._mapping),
+                     "teachers": teachers.get(r.new_value, []),  # 변경 후 학교의 담당교사가 승인한다
                      "grade": r.old_grade if r.old_grade is not None else r.grade,
                      "class_no": r.old_class_no if r.old_class_no is not None else r.class_no,
                      "number": r.old_number if r.old_number is not None else r.number,
@@ -1239,6 +1241,20 @@ def withdrawn_rows(schools: set[str] | None) -> list[dict]:
                  "approved_by": r.approved_by} for r in c.execute(q.order_by(db.withdrawn.c.approved_at.desc()))]
 
 
+def school_teachers() -> dict[str, list[str]]:
+    """학교 → 지금 활동 중인 참여학교 담당교사 이름 (가입·전입 승인을 맡는 사람)"""
+    m, u = db.memberships.c, db.users.c
+    with db.engine.connect() as c:
+        rows = c.execute(select(db.memberships, u.name.label("teacher_name"), u.account_state)
+                         .join(db.users, u.id == m.user_id).where(m.role == "participant", m.status == "approved")).all()
+    out: dict[str, list[str]] = {}
+    for r in rows:
+        d = dict(r._mapping)
+        if d["account_state"] == "active" and auth.membership_active(d):
+            out.setdefault(d["hub_name"], []).append(d["teacher_name"] or "")
+    return out
+
+
 def school_signups(schools: set[str] | None) -> list[dict]:
     """가입 승인을 기다리거나 반려된 우리 학교 학생"""
     u = db.users.c
@@ -1248,10 +1264,11 @@ def school_signups(schools: set[str] | None) -> list[dict]:
         if schools is not None:
             q = q.where(u.school.in_(schools))
         rows = c.execute(q.order_by(u.created_at)).all()
+    teachers = school_teachers()
     return [{"user_id": x.id, "name": x.name or x.google_name or "", "school": x.school or "", "grade": x.grade, "class_no": x.class_no,
              "number": x.number, "student_no": student_no(dict(x._mapping)), "birth": x.birth or "", "gender": x.gender or "",
              "email": x.email or "", "phone": x.phone or "", "requested_at": x.created_at, "status": x.school_approval,
-             "note": x.school_approval_note or ""} for x in rows]
+             "note": x.school_approval_note or "", "teachers": teachers.get(x.school or "", [])} for x in rows]
 
 
 @router.get("/api/school/signups")

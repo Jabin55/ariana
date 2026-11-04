@@ -2098,3 +2098,4 @@ table.att.ach-progress td.ach-gap { background: #fff8e6; }
 table.att.signup-table { width: 100%; font-size: 0.86rem; }
 table.att.signup-table th, table.att.signup-table td { text-align: center; vertical-align: middle; padding: 6px 4px; white-space: nowrap; }
 table.att.signup-table td.contact-cell { font-size: 0.8rem; white-space: normal; overflow-wrap: anywhere; }
+table.att.signup-table td.contact-cell { min-width: 9em; }

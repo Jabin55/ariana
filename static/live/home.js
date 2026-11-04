@@ -1577,10 +1577,17 @@ async function loadAdmin() {
     x.id = `change-${x.user_id}`; // 활동 중인 같은 권한 줄과 체크·펼치기가 겹치지 않게
     return true;
   });
-  const pending = list.filter((x) => x.status === "pending" || x.change_only).length;
+  // 담당 선생님 없는 학교의 학생 가입 신청은 전체 관리자가 승인한다 → 놓치지 않게 알린다
+  const orphans = await api("/api/school/signups").then((r) => r.signups.filter((x) => x.status === "pending" && !x.teachers.length)).catch(() => []);
+  if (adminSub !== selected) return;
+  const pending = list.filter((x) => x.status === "pending" || x.change_only).length + orphans.length;
   $("#admin-badge").textContent = pending;
   $("#admin-badge").hidden = !pending;
-  fill(box, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
+  const alert = orphans.length ? h("div", { class: "banner warn", style: "display:flex;gap:10px;align-items:center;flex-wrap:wrap" },
+    h("span", { class: "grow" }, `🧑‍🎓 담당 선생님이 없는 학교의 학생 가입 신청 ${orphans.length}명이 승인을 기다려요 (`,
+      [...new Set(orphans.map((x) => x.school))].join(", "), ")."),
+    h("button", { class: "small primary", type: "button", onclick: () => { schoolSub = "signup"; signupNoTeacher = true; showHomeTab("school"); } }, "학생 가입 승인으로")) : null;
+  fill(box, alert, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
 }
 
 /** 전체 관리 > 서버 용량: 디스크 전체·남은 공간과 항목별 사용량 */
