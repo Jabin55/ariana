@@ -1827,7 +1827,7 @@ function gradeActivity(classId, a, box) {
     h("strong", { class: "grow" }, `${a.no}. [${a.kind_name}] ${a.prompt}`),
     a.gradable ? h("label", { class: "row" }, "배점", points, "점") : h("span", { class: "muted" }, "투표 (채점 안 함)"));
   const info = a.correct_answer ? h("div", { class: "muted" }, `정답: ${a.correct_answer} · 자동 채점됨 (점수를 바꾸면 덮어써요)`)
-    : a.gradable ? h("div", { class: "muted" }, "정답이 없는 문제예요. 학생마다 점수를 주세요.") : null;
+    : null;
   const rows = a.rows.map((r) => {
     const save = async (score, feedback) => {
       try {
