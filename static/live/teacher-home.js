@@ -907,17 +907,21 @@ const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "평가" };
 const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '평가'는 수행평가(과제) 제출
 
 /** 학습 관리 > 📁 수업자료: 수업마다 공유한 자료(PDF)·판서 (누르면 지난 수업 자료 화면에서 보기·내려받기·지우기) */
-function learnMaterials(list, box) {
+function learnMaterials(list, box, classes = []) {
+  const times = new Map(classes.map((x) => [x.id, x]));
   const rows = [...list].reverse(); // 첫 수업부터
-  fill(box, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board learn-board" },
-    h("thead", {}, h("tr", {}, ["연번", "수업일", "수업 주제", "자료", "판서", ""].map((t) => h("th", {}, t)))),
-    h("tbody", {}, rows.length ? rows.map((x, i) => h("tr", {},
-      h("td", { class: "num" }, String(i + 1)), h("td", { class: "num" }, fmtDate(x.date)),
-      h("td", { style: "white-space:normal" }, x.title || "(주제 없음)", x.live ? h("span", { class: "tag", style: "margin-left:6px" }, "진행 중") : null),
-      h("td", { class: "num" }, x.files ? `📄 ${x.files}개` : x.removed ? h("span", { class: "muted", title: "과목이 끝나 파기된 자료" }, `파기 ${x.removed}개`) : "-"),
-      h("td", { class: "num" }, x.whiteboard ? "✏️ 있음" : "-"),
-      h("td", { class: "num" }, x.files || x.whiteboard ? h("a", { class: "button small", href: `/live/materials?class=${x.id}`, target: "_blank", rel: "noopener" }, "보기") : null)))
-      : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "아직 연 수업이 없어요."))))),
+  fill(box, h("div", { class: "table-wrap" }, h("table", { class: "att log-table learn-table" },
+    h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "자료", "판서", ""].map((t) => h("th", {}, t)))),
+    h("tbody", {}, rows.length ? rows.map((x, i) => {
+      const k = times.get(x.id);
+      return h("tr", {},
+        h("td", { class: "num" }, String(i + 1)), h("td", {}, fmtDate(x.date)),
+        h("td", {}, k ? `${k.start} ~ ${k.end || (k.live ? "진행 중" : "")}` : "-"),
+        h("td", {}, x.title || "(주제 없음)", x.live ? h("span", { class: "tag", style: "margin-left:6px" }, "진행 중") : null),
+        h("td", { class: "num" }, x.files ? `📄 ${x.files}개` : x.removed ? h("span", { class: "muted", title: "과목이 끝나 파기된 자료" }, `파기 ${x.removed}개`) : "-"),
+        h("td", { class: "num" }, x.whiteboard ? "✏️ 있음" : "-"),
+        h("td", {}, x.files || x.whiteboard ? h("a", { class: "button small", href: `/live/materials?class=${x.id}`, target: "_blank", rel: "noopener" }, "자료 보기") : null));
+    }) : h("tr", {}, h("td", { colspan: 7, class: "muted", style: "text-align:center;padding:18px" }, "아직 연 수업이 없어요."))))),
     h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.82rem" }, "수업 화면에서 공유한 PDF와 판서예요. PDF는 과목이 끝나면 바로, 판서는 1년 뒤 자동으로 지워져요."));
 }
 
@@ -947,7 +951,7 @@ async function renderLearning(c, box) {
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
-  if (st.card === "materials") { learnMaterials(mats.classes, detail); return; }
+  if (st.card === "materials") { learnMaterials(mats.classes, detail, d.classes); return; }
   if (st.card === "script") { st.speechTab = "class"; learnSpeech(c, st, detail); return; } // 수업별 스크립트
   if (st.card === "attend") learnAttendance(d, st, detail);
   else if (st.card === "notice") learnNotices(d, detail);
@@ -1157,7 +1161,7 @@ function learnAttendance(d, st, box) {
   }
   const draw = () => fill(box,
     h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `🙋 수업별 출석 (수강생 ${d.summary.enrolled}명)`),
-    h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+    h("div", { class: "table-wrap" }, h("table", { class: "att log-table learn-table" },
       h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "참여 학생", "출석률", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, d.classes.map((x, i) => {
         const row = h("tr", {},
@@ -1272,7 +1276,7 @@ function learnActivities(d, st, key, box) {
   }
   fill(box,
     h("h3", { class: "section-title", style: "margin:4px 0 8px" }, `${label}${key === "quiz" ? "를" : "을"} 한 수업 ${list.length}개`),
-    list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table" },
+    list.length ? h("div", { class: "table-wrap" }, h("table", { class: "att log-table learn-table" },
       h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", `${label} 수`, "응답률", ""].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.map((x, n) => h("tr", { class: "assign-row", onclick: () => go(x.id) },
         h("td", { class: "num" }, n + 1), h("td", {}, fmtDate(x.date)), h("td", {}, x.start),

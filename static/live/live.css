@@ -2198,3 +2198,16 @@ table.att.hub-approval-table thead th { text-align: center; } /* 머리글 줄 �
 .goal-pop-body ol { margin: 0 0 6px; padding-left: 18px; line-height: 1.7; }
 .goal-pop-body p { margin: 0; font-size: 0.8rem; }
 .goal-ico { cursor: help; }
+
+/* 수업 관리: 수업참석률·수업자료·설문·퀴즈 표의 열을 같게 (연번·날짜·시각·수업 주제·값·값·버튼) */
+table.att.learn-table { table-layout: fixed; width: 100%; }
+table.att.learn-table th, table.att.learn-table td { text-align: center; vertical-align: middle; }
+table.att.learn-table th:nth-child(1) { width: 7%; }
+table.att.learn-table th:nth-child(2) { width: 13%; }
+table.att.learn-table th:nth-child(3) { width: 15%; }
+table.att.learn-table th:nth-child(4) { width: 29%; }
+table.att.learn-table th:nth-child(5) { width: 12%; }
+table.att.learn-table th:nth-child(6) { width: 10%; }
+table.att.learn-table th:nth-child(7) { width: 14%; }
+table.att.learn-table td:nth-child(4) { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+table.att.learn-table td.num { width: auto; }
