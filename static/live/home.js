@@ -1048,7 +1048,10 @@ function openStudentCourse(c) {
   };
   nav.append(...tabs.map(([k, label]) => h("button", { type: "button", "data-k": k, onclick: () => show(k) }, label)));
   content.replaceChildren(
-    h("div", { class: "row" }, h("h2", { class: "grow" }, c.title), h("span", { class: `status ${state}` }, label)),
+    // 과목 운영과 같은 가로로 긴 과목 카드 (오른쪽: 내 수강 상태 · 강사)
+    window.courseBanner ? courseBanner(c, [h("span", { class: `cb-chip${state === "approved" ? "" : " warn"}` }, label),
+      c.instructor ? h("span", { class: "cb-chip" }, `강사 ${c.instructor}`) : null])
+      : h("div", { class: "row" }, h("h2", { class: "grow" }, c.title), h("span", { class: `status ${state}` }, label)),
     nav, info, notice, learn, feedback, assess, satisfaction);
   show(studentCourseTab);
   if (approved) {

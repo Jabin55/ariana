@@ -591,7 +591,8 @@ function renderRun() {
 }
 
 /* 과목 운영 안: 과목 카드 머리 그림을 가로로 길게 늘인 제목 띠 */
-function courseBanner(c) {
+/** 과목 카드를 가로로 길게 늘인 제목 띠. chips 를 주면 오른쪽 작은 표시를 바꾼다 (학생 강의실 등) */
+function courseBanner(c, chips = null) {
   const [a, b] = window.courseAreaColors ? window.courseAreaColors(c.subject_area) : ["#7fc8a9", "#1b6b4a"];
   const icons = { 국어: "📖", 수학: "📐", 영어: "🔤", 사회: "🌏", 역사: "🏛️", 도덕: "⚖️", 과학: "🔬", 체육: "⚽", 음악: "🎵", 미술: "🎨",
     연극: "🎭", "기술·가정": "🛠️", 정보: "💻", 제2외국어: "🗣️", 한문: "📜", 교양: "💡" };
@@ -608,10 +609,10 @@ function courseBanner(c) {
       h("div", { class: "cb-facts" }, facts)),
     h("div", { class: "cb-side" },
       h("span", { class: "cb-ico", "aria-hidden": "true" }, icons[area] || "📚"),
-      h("div", { class: "cb-chips" },
+      h("div", { class: "cb-chips" }, chips || [
         c.archived ? h("span", { class: "cb-chip ended" }, "종료") : state ? h("span", { class: "cb-chip" }, state) : null,
         h("span", { class: "cb-chip" }, `수강 확정 ${c.approved || 0}명`),
-        c.pending ? h("span", { class: "cb-chip warn" }, `승인 대기 ${c.pending}`) : null)));
+        c.pending ? h("span", { class: "cb-chip warn" }, `승인 대기 ${c.pending}`) : null])));
 }
 
 function renderRunCourse(c) {
