@@ -589,7 +589,9 @@ def _student_material(course_id: int, user_id: int):
     for x in classes.values():
         x["counts"] = turn_counts(x)
         # 수업에 직접 고른 성취기준 → 같은 날 회차의 성취기준 → 모든 성취기준
-        x["standard_ids"] = direct.get(x["class_id"]) or by_date.get(x["date"]) or every
+        linked = direct.get(x["class_id"]) or by_date.get(x["date"])
+        x["linked"] = bool(linked)  # 회차·수업에 성취기준을 직접 연결했는지 (아니면 모든 성취기준이 후보)
+        x["standard_ids"] = linked or every
     with db.engine.connect() as c:
         u = c.execute(select(db.users.c.name, db.users.c.google_name).where(db.users.c.id == user_id)).first()
     names = [n for n in ((u.name, u.google_name) if u else ()) if n]
@@ -619,6 +621,8 @@ ANALYSIS_SYSTEM = (
     "- 가치·태도는 학생의 말이 적거나 정답을 틀렸다는 이유로 추정하지 않습니다. 관련 행동의 관찰 근거가 있을 때만 판단합니다.\n"
     "- standard_feedback: 판단한 성취기준마다, 지금 수준에서 다음 수준(이미 상이면 상 수준을 더 단단히)으로 가기 위해 "
     "학생이 다음 수업에서 해 볼 구체적인 행동을 한두 문장(존댓말)으로 씁니다. 상 수행 진술을 기준으로 삼습니다.\n"
+    "- 수업에 연결된 성취기준인데 근거가 없어 판단하지 못한 것이 있으면, summary 끝에 '관찰 필요:'로 그 성취기준(S번호)과 "
+    "다음 수업에서 이 학생에게 해 볼 발문 하나를 덧붙입니다.\n"
     "- summary(교사용)는 수업이 이어지면서 성취와 관찰 지표가 어떻게 달라졌는지, 응답과 자발 발언의 변화까지 4~6문장으로 씁니다. "
     "과목 성취수준(일반적 특성)이 주어지면 지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되 성취도를 확정하지 않습니다. 근거가 적으면 그 한계를 밝힙니다.\n"
     "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로, 학생이 지금까지 무엇을 잘했고 얼마나 성장했으며 다음 수업에서 무엇을 할지 알 수 있게 항목별로 씁니다.\n"
@@ -863,19 +867,26 @@ def _trend(levels: list[int]) -> str | None:
     return "up" if levels[-1] > levels[0] else "down" if levels[-1] < levels[0] else "flat"
 
 
-def standard_progress(course_id: int, classes: list[dict], next_steps: dict) -> list[dict]:
-    """성취기준별 도달 상태: 회차별 상·중·하 → 현재 도달(최근 2회 판단이 같으면 확정, 다르면 '변화 중')과 추세"""
+def standard_progress(course_id: int, classes: list[dict], next_steps: dict, covered: dict | None = None) -> list[dict]:
+    """성취기준별 도달 상태: 회차별 상·중·하 → 현재 도달(최근 2회 판단이 같으면 확정, 다르면 '변화 중')과 추세.
+    covered: 수업 → 그 수업에 연결한 성취기준 (연결하지 않은 수업은 모든 성취기준을 다룬 것으로 본다).
+    칸 state: judged(판단) · gap(다뤘지만 근거 없음 → 관찰 필요) · off(그 수업에서 다루지 않음)"""
+    covered = covered or {}
     standards, _ = standards_of(course_id)
     out = []
     for s in standards:
-        cells, levels = [], []
+        cells, levels, taught = [], [], 0
         for x in classes:
             hit = next((r for r in x["standards"] if r["standard_id"] == s["id"]), None)
-            cells.append({"class_id": x["class_id"], "level": hit["level"] if hit else None, "evidence": hit["evidence"] if hit else ""})
+            on = x["class_id"] not in covered or s["id"] in covered[x["class_id"]]
+            taught += on
+            state = "judged" if hit else "gap" if on else "off"
+            cells.append({"class_id": x["class_id"], "level": hit["level"] if hit else None, "evidence": hit["evidence"] if hit else "",
+                          "state": state})
             if hit:
                 levels.append(hit["level"])
         if not levels:
-            status, current = "판단 보류", None
+            status, current = ("관찰 필요" if taught else "다루지 않음"), None
         elif len(levels) == 1:
             status, current = "1회 판단", levels[-1]
         elif levels[-1] == levels[-2]:
@@ -883,13 +894,13 @@ def standard_progress(course_id: int, classes: list[dict], next_steps: dict) -> 
         else:
             status, current = "변화 중", levels[-1]
         out.append({"standard_id": s["id"], "code": s["code"], "text": s["text"], "cells": cells, "current": current,
-                    "status": status, "trend": _trend(levels), "next_step": next_steps.get(str(s["id"]), "")})
+                    "status": status, "trend": _trend(levels), "taught": taught, "judged": len(levels),
+                    "gaps": sum(c["state"] == "gap" for c in cells), "next_step": next_steps.get(str(s["id"]), "")})
     return out
 
 
-def indicator_tracking(course_id: int, user_id: int, classes: list[dict]) -> list[dict]:
+def indicator_tracking(material: list[dict], classes: list[dict]) -> list[dict]:
     """반복 관찰 지표: 회차마다 자동으로 센 것(발언·자발·응답·길이·퀴즈) + AI 판단(근거·개념·질문·연결)"""
-    material, _, _ = _student_material(course_id, user_id)
     ai = {x["class_id"]: x["indicators"] for x in classes}
     return [{"class_id": x["class_id"], "date": x["date"], "title": x["title"], "counts": x["counts"],
              "indicators": ai.get(x["class_id"], {}), "analyzed": x["class_id"] in ai} for x in material]
@@ -925,8 +936,10 @@ def analysis_view(course_id: int, user_id: int) -> dict:
         parts = None
     if parts is None:  # 예전 피드백(글 하나)은 '선생님의 피드백'으로
         parts = clean_parts({"message": fb.feedback if fb else ""})
-    progress = standard_progress(course_id, classes, next_steps)
-    tracking = indicator_tracking(course_id, user_id, classes)
+    material, _, _ = _student_material(course_id, user_id)
+    covered = {x["class_id"]: set(x["standard_ids"]) for x in material if x["linked"]}
+    progress = standard_progress(course_id, classes, next_steps, covered)
+    tracking = indicator_tracking(material, classes)
     try:
         comp = json.loads(fb.competencies) if fb and fb.competencies else {}
     except ValueError:

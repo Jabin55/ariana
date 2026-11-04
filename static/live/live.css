@@ -2057,3 +2057,6 @@ table.att.ach-tracking thead th:nth-last-child(2) { width: 6em; }
 .part-legend { display: flex; gap: 14px; justify-content: center; font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
 .part-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 .my-feedback .ach-chart { max-width: 560px; margin: 0 auto; display: block; }
+table.att.ach-progress td.ach-off { background: repeating-linear-gradient(45deg, #f4f5f7, #f4f5f7 4px, #eceef1 4px, #eceef1 8px); }
+table.att.ach-progress td.ach-gap { background: #fff8e6; }
+.ach-q { color: #b7791f; font-weight: 800; }

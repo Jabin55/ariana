@@ -3906,6 +3906,7 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert view["classes"][0]["indicators"] == {"reasoning": {"level": 3, "evidence": "이유를 듦"}}  # 0점·범위 밖은 빼고
     prog = view["standards_progress"][0]
     assert prog["current"] == 2 and prog["status"] == "1회 판단" and prog["next_step"] == "근거를 두 가지 들어 보세요."
+    assert prog["cells"][0]["state"] == "judged" and (prog["taught"], prog["judged"], prog["gaps"]) == (1, 1, 0)
     track = view["tracking"][0]
     assert track["counts"]["talk"] == 1 and track["counts"]["response"] == 1 and track["counts"]["spontaneous"] == 0
     assert track["indicators"]["reasoning"]["level"] == 3 and [x["key"] for x in view["indicator_names"]][0] == "reasoning"
@@ -4211,3 +4212,14 @@ def test_speech_turns_response_or_spontaneous():
             {"class_id": 2, "role": "student", "text": "다른 수업", "ts": 105.0}]
     tag_turns(rows, teacher)
     assert [r["kind"] for r in rows] == ["응답", "자발", "자발", "자발"] and rows[0]["prompt"] == "왜 그렇게 생각하나요"
+
+
+def test_standard_progress_covered_gap_off(monkeypatch):
+    """회차에 연결한 성취기준: 다뤘지만 근거 없음(gap) · 다루지 않음(off) 구분"""
+    import app.achievement as ach
+    monkeypatch.setattr(ach, "standards_of", lambda cid: ([{"id": 1, "code": "A", "text": "a"}, {"id": 2, "code": "B", "text": "b"}], {}))
+    classes = [{"class_id": 10, "standards": [{"standard_id": 1, "level": 2, "evidence": "e"}]},
+               {"class_id": 11, "standards": []}, {"class_id": 12, "standards": []}]
+    prog = ach.standard_progress(1, classes, {}, {10: {1}, 11: {1, 2}})  # 12번 수업은 연결 안 함 → 모두 다룬 것으로
+    assert [c["state"] for c in prog[0]["cells"]] == ["judged", "gap", "gap"] and prog[0]["taught"] == 3
+    assert [c["state"] for c in prog[1]["cells"]] == ["off", "gap", "gap"] and prog[1]["status"] == "관찰 필요"

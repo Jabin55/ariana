@@ -378,18 +378,20 @@ function achProgressTable(v) {
       h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, "(성취기준의 상·중·하 수행 진술 기준 · 현재 도달은 최근 2회 판단이 같으면 확정)")),
     h("div", { class: "table-wrap" }, h("table", { class: "att ach-progress" },
       h("thead", {}, h("tr", {}, h("th", {}, "성취기준"), v.classes.map((x) => h("th", { title: x.title }, achMD(x.date))),
-        h("th", {}, "현재 도달"), h("th", {}, "추세"))),
+        h("th", { title: "판단 횟수 / 다룬 수업 수" }, "판단/다룸"), h("th", {}, "현재 도달"), h("th", {}, "추세"))),
       h("tbody", {}, rows.flatMap((r) => [
         h("tr", {},
           h("td", { class: "ach-std-name" }, h("strong", {}, r.code || ""), " ", h("span", { class: "muted" }, r.text)),
-          r.cells.map((c) => h("td", { class: "ach-cell", title: c.evidence || "근거 없음 (판단 보류)" },
-            c.level ? h("span", { class: `ach-lv lv${c.level}` }, ACH_LEVEL[c.level]) : h("span", { class: "muted" }, "–"))),
+          r.cells.map((c) => c.state === "off" ? h("td", { class: "ach-cell ach-off", title: "이 수업에서 다루지 않은 성취기준" })
+            : h("td", { class: `ach-cell${c.level ? "" : " ach-gap"}`, title: c.evidence || "이 수업에서 다뤘지만 판단할 근거가 없어요 (관찰 필요)" },
+              c.level ? h("span", { class: `ach-lv lv${c.level}` }, ACH_LEVEL[c.level]) : h("span", { class: "ach-q" }, "?"))),
+          h("td", { class: "ach-cell", title: "다룬 수업 가운데 판단한 횟수" }, `${r.judged}/${r.taught}`),
           h("td", { class: "ach-cell" }, r.current ? h("span", { class: `ach-lv lv${r.current}` }, ACH_LEVEL[r.current]) : null,
             h("div", { class: "muted", style: "font-size:0.75rem" }, r.status)),
           achTrendCell(r.trend)),
-        r.next_step ? h("tr", { class: "ach-next" }, h("td", { colspan: v.classes.length + 3 }, "➡️ 다음 단계: ", r.next_step)) : null,
+        r.next_step ? h("tr", { class: "ach-next" }, h("td", { colspan: v.classes.length + 4 }, "➡️ 다음 단계: ", r.next_step)) : null,
       ].filter(Boolean))))),
-    h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.8rem" }, "칸에 마우스를 올리면 판단 근거가 보여요. – 는 그 수업에 근거가 없어 판단을 보류한 것이에요."));
+    h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.8rem" }, "칸에 마우스를 올리면 판단 근거가 보여요. 회색 빈칸은 그 수업에서 다루지 않은 성취기준([회차 정보]에서 연결), ? 는 다뤘지만 근거가 없어 관찰이 필요한 것이에요."));
 }
 
 /** 📈 반복 관찰 지표: 회차마다 같은 잣대 (자동 집계 + AI 판단) */
