@@ -4170,6 +4170,9 @@ def test_subject_competencies_follow_2022_curriculum():
     assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "비판적 사고력"
     assert ach.subject_competencies_of(c("제2외국어", "제2외국어/한문", "중국어"))[0] == "제2외국어 의사소통 역량"
     assert ach.subject_competencies_of(c("교양", "교양", "논리와 사고"))[0] == "논리적 사고 역량"
-    assert ach.subject_competencies_of(c("교양", "교양", "보건")) == []
+    assert ach.subject_competencies_of(c("교양", "교양", "보건"))[0] == "건강 관리 역량"
+    assert ach.subject_competencies_of(c("교양", "교양", "생태와 환경"))[0] == "생태적 감수성"
+    assert ach.subject_competencies_of(c("교양", "교양", "진로와 직업"))[1] == "진로 탐색 및 설계 역량"
+    assert ach.subject_competencies_of(c("교양", "교양", "논술")) == []
     assert len(ach.subject_competencies_of(c("기술·가정", "기술·가정/정보"))) == 6
     assert ach.subject_competency_desc(c("수학"))["추론"].startswith("수학적 사실을 관찰")
