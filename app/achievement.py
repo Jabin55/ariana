@@ -621,10 +621,14 @@ ANALYSIS_SYSTEM = (
     "학생이 다음 수업에서 해 볼 구체적인 행동을 한두 문장(존댓말)으로 씁니다. 상 수행 진술을 기준으로 삼습니다.\n"
     "- summary(교사용)는 수업이 이어지면서 성취와 관찰 지표가 어떻게 달라졌는지, 응답과 자발 발언의 변화까지 4~6문장으로 씁니다. "
     "과목 성취수준(일반적 특성)이 주어지면 지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되 성취도를 확정하지 않습니다. 근거가 적으면 그 한계를 밝힙니다.\n"
-    "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로 4~6문장으로 씁니다. 관찰된 잘한 점 1~2가지와 "
-    "보완할 점 1가지를 비난 없이 설명하고, 다음 수업에서 해 볼 구체적인 행동 1가지를 제안합니다. "
-    "학생이 어려움을 느낄 수 있음을 배려하며 질문·재시도·교사 도움을 받을 수 있다는 따뜻한 격려를 포함합니다. "
-    "기록에 없는 감정이나 개인 사정을 안다고 단정하거나, 근거 없이 칭찬하거나, 다른 학생과 비교하지 않습니다.\n"
+    "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로, 학생이 지금까지 무엇을 잘했고 얼마나 성장했으며 다음 수업에서 무엇을 할지 알 수 있게 항목별로 씁니다.\n"
+    "  · message(선생님의 피드백): 전체를 아우르는 따뜻한 2~3문장. 보완할 점 1가지를 비난 없이 담고, 질문·재시도·교사 도움을 받을 수 있다는 격려를 포함합니다.\n"
+    "  · changes(이전에 비해 달라진 점): 앞 수업과 최근 수업의 모습을 before → after 로 1~3개. 두 수업 이상에 근거가 있을 때만 쓰고, 없으면 빈 배열입니다. "
+    "각 칸은 '근거 없이 주장만 말함' → '근거 두 가지를 들어 말함'처럼 관찰된 행동으로 짧게 씁니다.\n"
+    "  · strengths(잘한 점): 기록에 근거한 구체적인 행동 1~3개.\n"
+    "  · next_actions(다음 수업에서 해 보기): 부족한 점을 채울 관찰 가능한 행동 목표 1~3개 (예: '발표할 때 이유를 두 가지 들어 말하기'). 성취기준의 상 수행 진술을 기준으로 삼습니다.\n"
+    "  · sentence_starters(생각을 돕는 문장): next_actions 를 해낼 때 바로 쓸 수 있는 문장 틀 2~4개 (예: '제 생각은 ~입니다. 왜냐하면 ~', '~의 의견에 덧붙이면 ~').\n"
+    "  기록에 없는 감정이나 개인 사정을 안다고 단정하거나, 근거 없이 칭찬하거나, 다른 학생과 비교하지 않습니다.\n"
     "- competencies 는 2022 개정 교육과정 핵심역량 6가지(자기관리, 지식정보처리, 창의적 사고, 심미적 감성, 협력적 소통, 공동체)를 "
     "발언·관찰·퀴즈 답안 전체에서 드러난 만큼 1~5점으로 매기고(3=보통), reason 에 근거를 한 문장으로 씁니다. "
     "근거가 거의 없는 역량은 1점으로 두고 reason 에 '근거 부족'이라고 씁니다.\n"
@@ -664,6 +668,27 @@ ANALYSIS_SYSTEM += ("\n\n# 핵심역량의 뜻 (competencies 판단 기준)\n"
 
 
 
+_STRS = {"type": "array", "items": {"type": "string"}}
+FEEDBACK_SCHEMA = {"type": "object", "properties": {
+    "message": {"type": "string"},
+    "changes": {"type": "array", "items": {"type": "object", "properties": {"before": {"type": "string"}, "after": {"type": "string"}},
+                                           "required": ["before", "after"], "additionalProperties": False}},
+    "strengths": _STRS, "next_actions": _STRS, "sentence_starters": _STRS},
+    "required": ["message", "changes", "strengths", "next_actions", "sentence_starters"], "additionalProperties": False}
+
+
+def clean_parts(raw) -> dict:
+    """학생 피드백 항목을 정리한다 (AI 결과·교사 수정 공통)"""
+    raw = raw if isinstance(raw, dict) else {}
+    strs = lambda xs, n: [str(x).strip()[:300] for x in (xs if isinstance(xs, list) else []) if str(x).strip()][:n]
+    changes = [{"before": str(c.get("before", "")).strip()[:200], "after": str(c.get("after", "")).strip()[:200]}
+               for c in (raw.get("changes") if isinstance(raw.get("changes"), list) else []) if isinstance(c, dict)]
+    return {"message": str(raw.get("message", "")).strip()[:2000],
+            "changes": [c for c in changes if c["before"] or c["after"]][:5],
+            "strengths": strs(raw.get("strengths"), 5), "next_actions": strs(raw.get("next_actions"), 5),
+            "sentence_starters": strs(raw.get("sentence_starters"), 6)}
+
+
 def analysis_schema(keys: list[str], n_classes: int, std_keys: list[str] | None = None) -> dict:
     std_keys = std_keys or ["S1"]
     level = lambda opts: {"type": "integer", "enum": opts}
@@ -687,7 +712,7 @@ def analysis_schema(keys: list[str], n_classes: int, std_keys: list[str] | None 
                 "type": "object", "properties": {"key": {"type": "string", "enum": std_keys}, "next_step": {"type": "string"}},
                 "required": ["key", "next_step"], "additionalProperties": False}},
             "summary": {"type": "string"},
-            "feedback": {"type": "string"},
+            "feedback": FEEDBACK_SCHEMA,
             "competencies": {"type": "object", "properties": {
                 k: {"type": "object", "properties": {"score": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
                                                      "reason": {"type": "string"}},
@@ -816,14 +841,15 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
                       "competencies": json.dumps(comp, ensure_ascii=False) if comp else "",
                       "subject_competencies": json.dumps(subj, ensure_ascii=False) if subj else "",
                       "standard_feedback": json.dumps(next_steps, ensure_ascii=False) if next_steps else ""}
+            parts = clean_parts(data.get("feedback"))
+            draft = {"feedback": parts["message"], "feedback_parts": json.dumps(parts, ensure_ascii=False)}
             if row:
                 # 이미 학생에게 공개한 피드백은 선생님이 고친 글일 수 있어 그대로 두고, 공개 전이면 새 초안으로 바꾼다
                 if not row.published:
-                    values["feedback"] = str(data.get("feedback", ""))[:4000]
+                    values.update(draft)
                 c.execute(update(db.speech_feedback).where(f.id == row.id).values(**values))
             else:
-                c.execute(insert(db.speech_feedback).values(course_id=course_id, user_id=user_id, published=0,
-                                                            feedback=str(data.get("feedback", ""))[:4000], **values))
+                c.execute(insert(db.speech_feedback).values(course_id=course_id, user_id=user_id, published=0, **draft, **values))
 
     await db.run(save)
     return await db.run(analysis_view, course_id, user_id)
@@ -891,6 +917,12 @@ def analysis_view(course_id: int, user_id: int) -> dict:
         next_steps = json.loads(fb.standard_feedback) if fb and fb.standard_feedback else {}
     except ValueError:
         next_steps = {}
+    try:
+        parts = clean_parts(json.loads(fb.feedback_parts)) if fb and fb.feedback_parts else None
+    except ValueError:
+        parts = None
+    if parts is None:  # 예전 피드백(글 하나)은 '선생님의 피드백'으로
+        parts = clean_parts({"message": fb.feedback if fb else ""})
     progress = standard_progress(course_id, classes, next_steps)
     tracking = indicator_tracking(course_id, user_id, classes)
     try:
@@ -910,7 +942,7 @@ def analysis_view(course_id: int, user_id: int) -> dict:
     subject = [{"key": n, "label": n, "desc": descs.get(n, ""), **subj[n]} for n in names if n in subj]
     return {"classes": classes, "standards_progress": progress, "tracking": tracking,
             "indicator_names": [{"key": k, "label": n, "desc": d} for k, n, d in INDICATORS],
-            "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
+            "feedback_parts": parts, "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
             "competencies": competencies, "subject_competencies": subject, "subject_competency_names": names,
             "subject_competency_area": subject_competency_area(course) if course else "",
             "subject_competency_info": [{"label": n, "desc": d} for n, d in descs.items()],
@@ -923,8 +955,22 @@ async def get_analysis(course_id: int, user_id: int, request: Request):
     return await db.run(analysis_view, course_id, user_id)
 
 
+class FeedbackChange(BaseModel):
+    before: str = Field(default="", max_length=200)
+    after: str = Field(default="", max_length=200)
+
+
+class FeedbackParts(BaseModel):
+    message: str = Field(default="", max_length=2000)
+    changes: list[FeedbackChange] = Field(default_factory=list, max_length=5)
+    strengths: list[str] = Field(default_factory=list, max_length=5)
+    next_actions: list[str] = Field(default_factory=list, max_length=5)
+    sentence_starters: list[str] = Field(default_factory=list, max_length=6)
+
+
 class FeedbackReq(BaseModel):
     feedback: str = Field(default="", max_length=4000)
+    parts: FeedbackParts | None = None  # 항목별 피드백 (있으면 이것을 쓴다)
     published: bool = False
 
 
@@ -938,7 +984,9 @@ async def save_feedback(course_id: int, user_id: int, req: FeedbackReq, request:
         f = db.speech_feedback.c
         with db.engine.begin() as c:
             row = c.execute(select(db.speech_feedback.c.id).where(f.course_id == course_id, f.user_id == user_id)).first()
-            values = {"feedback": req.feedback.strip(), "published": int(req.published), "updated_at": now}
+            parts = clean_parts(req.parts.model_dump() if req.parts else {"message": req.feedback})
+            values = {"feedback": parts["message"], "feedback_parts": json.dumps(parts, ensure_ascii=False),
+                      "published": int(req.published), "updated_at": now}
             if row:
                 c.execute(update(db.speech_feedback).where(f.id == row.id).values(**values))
             else:
@@ -1001,7 +1049,7 @@ async def my_feedback(course_id: int, request: Request):
     view = await db.run(analysis_view, course_id, u["id"])
     if not view["published"]:
         return {"published": False}
-    return {"published": True, "feedback": view["feedback"], "classes": view["classes"]}
+    return {"published": True, "feedback": view["feedback"], "parts": view["feedback_parts"]}
 
 
 # ───────── 엑셀로 성취기준 한꺼번에 넣기 ─────────

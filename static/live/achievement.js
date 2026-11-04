@@ -421,6 +421,67 @@ function achTrackingTable(v) {
       "발문 응답은 선생님 질문 뒤 20초 안에 한 대답이에요. 선생님 말은 수업 중 [발언 기록]과 선생님 마이크 음성 인식이 켜져 있을 때만 저장돼서, 꺼져 있으면 모두 '자발'로 세요."));
 }
 
+/* 학생 피드백 항목: 선생님의 피드백 · 달라진 점(이전→현재) · 잘한 점 · 다음 수업에서 해 보기 · 생각을 돕는 문장 */
+const FB_SECTIONS = [
+  ["strengths", "👍 잘한 점", "예: 반대 의견의 근거를 짚어 냈어요"],
+  ["next_actions", "🎯 다음 수업에서 해 보기", "예: 발표할 때 이유를 두 가지 들어 말하기"],
+  ["sentence_starters", "💡 생각을 돕는 문장", "예: 제 생각은 ~입니다. 왜냐하면 ~"]];
+
+/** 교사용 항목별 피드백 편집기: { el, read() } */
+function feedbackEditor(parts) {
+  const msg = h("textarea", { rows: 3, maxlength: 2000, placeholder: "학생에게 하고 싶은 말 (2~3문장)" });
+  msg.value = parts.message || "";
+  const changeRows = h("div", { class: "fb-list" });
+  const addChange = (c = {}) => {
+    const before = h("input", { maxlength: 200, value: c.before || "", placeholder: "이전 모습", "aria-label": "이전" });
+    const after = h("input", { maxlength: 200, value: c.after || "", placeholder: "지금 모습", "aria-label": "현재" });
+    const row = h("div", { class: "fb-change-edit" }, before, h("span", { class: "fb-arrow" }, "→"), after,
+      h("button", { class: "small danger", type: "button", "aria-label": "삭제", onclick: () => row.remove() }, "✕"));
+    changeRows.append(row);
+  };
+  (parts.changes || []).forEach(addChange);
+  const lists = {};
+  const listBox = (key, placeholder) => {
+    const box = h("div", { class: "fb-list" });
+    const add = (text = "") => {
+      const input = h("input", { maxlength: 300, value: text, placeholder });
+      const row = h("div", { class: "fb-item-edit" }, input, h("button", { class: "small danger", type: "button", "aria-label": "삭제", onclick: () => row.remove() }, "✕"));
+      box.append(row);
+    };
+    (parts[key] || []).forEach(add);
+    if (!(parts[key] || []).length) add();
+    lists[key] = box;
+    return [box, h("button", { class: "small", type: "button", onclick: () => add() }, "+ 추가")];
+  };
+  if (!(parts.changes || []).length) addChange();
+  const el = h("div", { class: "fb-editor" },
+    h("div", { class: "fb-sec" }, h("div", { class: "fb-sec-head" }, "💬 선생님의 피드백"), msg),
+    h("div", { class: "fb-sec" }, h("div", { class: "fb-sec-head" }, "📈 이전에 비해 달라진 점 ", h("span", { class: "muted" }, "(이전 → 현재)")),
+      changeRows, h("button", { class: "small", type: "button", onclick: () => addChange() }, "+ 추가")),
+    FB_SECTIONS.map(([key, title, ph]) => h("div", { class: "fb-sec" }, h("div", { class: "fb-sec-head" }, title), listBox(key, ph))));
+  const read = () => ({
+    message: msg.value.trim(),
+    changes: [...changeRows.children].map((r) => { const [b, a] = r.querySelectorAll("input"); return { before: b.value.trim(), after: a.value.trim() }; })
+      .filter((c) => c.before || c.after),
+    ...Object.fromEntries(FB_SECTIONS.map(([key]) => [key, [...lists[key].querySelectorAll("input")].map((i) => i.value.trim()).filter(Boolean)])),
+  });
+  return { el, read };
+}
+
+/** 학생 화면: 항목별 피드백 카드 */
+function feedbackView(p) {
+  const sec = (title, body) => h("div", { class: "fb-card" }, h("div", { class: "fb-card-head" }, title), body);
+  return [
+    p.message ? sec("💬 선생님의 피드백", h("p", { class: "fb-message" }, p.message)) : null,
+    p.changes?.length ? sec("📈 이전에 비해 달라진 점", p.changes.map((c) => h("div", { class: "fb-change" },
+      h("span", { class: "fb-before" }, h("small", {}, "이전"), c.before || "-"), h("span", { class: "fb-arrow" }, "→"),
+      h("span", { class: "fb-after" }, h("small", {}, "현재"), c.after || "-")))) : null,
+    p.strengths?.length ? sec("👍 잘한 점", h("ul", { class: "fb-ul" }, p.strengths.map((x) => h("li", {}, x)))) : null,
+    p.next_actions?.length ? sec("🎯 다음 수업에서 해 보기", h("ul", { class: "fb-ul fb-goals" }, p.next_actions.map((x) => h("li", {}, x)))) : null,
+    p.sentence_starters?.length ? sec("💡 생각을 돕는 문장", p.sentence_starters.map((x) => h("div", { class: "fb-starter" }, `“${x}”`))) : null,
+  ];
+}
+
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
 
 async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === false: 관찰 기록은 [교사 관찰 기록] 탭에서
@@ -503,14 +564,13 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     })];
   };
   editBtn.onclick = () => { editing = true; editBtn.disabled = true; drawCharts(); };
-  const fb = h("textarea", { rows: 5, maxlength: 4000, placeholder: "학생에게 보여 줄 피드백" });
-  fb.value = v.feedback || "";
+  const fb = feedbackEditor(v.feedback_parts || { message: v.feedback || "" });
   const saveFb = h("button", { class: "small", type: "button" }, "피드백 저장");
   const publishFb = h("button", { class: v.published ? "small" : "primary small", type: "button" }, v.published ? "공개 취소" : "학생에게 공개");
   const saveFeedback = async (published, message) => {
     saveFb.disabled = publishFb.disabled = true;
     try {
-      await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { feedback: fb.value, published });
+      await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { parts: fb.read(), published });
       toast(message, 4000);
       again();
     } catch (err) { toast(err.message); saveFb.disabled = publishFb.disabled = false; }
@@ -548,8 +608,8 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
     ] : null,
     h("div", { class: "ach-box" },
-      h("div", { class: "ach-box-head" }, "💌 학생에게 줄 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 고쳐서 쓰세요)")),
-      fb,
+      h("div", { class: "ach-box-head" }, "💌 학생에게 줄 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 항목별로 고쳐서 쓰세요 · 학생 화면에도 이 순서로 보여요)")),
+      fb.el,
       h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, saveFb, publishFb),
       v.published ? h("p", { class: "ok-text", style: "margin:6px 0 0;font-size:0.85rem" }, "✅ 지금 학생에게 공개 중이에요.") : null));
 }
@@ -561,9 +621,6 @@ async function renderMyFeedback(courseId, box) {
   try { v = await achApi(`/api/my/courses/${courseId}/feedback`); }
   catch { achFill(box, h("p", { class: "muted" }, "활동 피드백을 불러오지 못했어요. 잠시 후 다시 열어 주세요.")); return; }
   if (!v.published) { achFill(box, h("p", { class: "muted" }, "아직 선생님이 공개한 활동 피드백이 없어요.")); return; }
-  achFill(box,
-    h("div", { class: "ach-box my-feedback" },
-      h("div", { class: "ach-box-head" }, "💌 선생님 피드백"),
-      h("p", { style: "white-space:pre-wrap;margin:0 0 10px;line-height:1.6" }, v.feedback),
-      v.classes.length ? [h("div", { class: "ach-box-head", style: "margin-top:6px" }, "📈 나의 성취 변화"), achChart(v.classes)] : null));
+  const p = v.parts || { message: v.feedback };
+  achFill(box, h("div", { class: "my-feedback" }, feedbackView(p)));
 }

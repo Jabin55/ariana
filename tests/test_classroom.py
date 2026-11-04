@@ -3845,7 +3845,9 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
                              "indicators": {"reasoning": {"level": 3, "evidence": "이유를 듦"}, "concept": {"level": 0, "evidence": ""},
                                             "questioning": {"level": 0, "evidence": ""}, "connecting": {"level": 5, "evidence": "x"}}}],
                 "standard_feedback": [{"key": "S1", "next_step": "근거를 두 가지 들어 보세요."}],
-                "summary": "근거 제시가 뛰어납니다.", "feedback": "근거를 잘 들었어요.",
+                "summary": "근거 제시가 뛰어납니다.",
+                "feedback": {"message": "근거를 잘 들었어요.", "changes": [{"before": "주장만 말함", "after": "근거를 들어 말함"}, {"x": 1}],
+                             "strengths": ["반론을 검토함", " "], "next_actions": ["이유 두 가지 들기"], "sentence_starters": ["제 생각은 ~입니다. 왜냐하면 ~"]},
                 "competencies": {**{k: {"score": 3, "reason": "근거 부족"} for k, _ in ach.COMPETENCIES},
                                  "knowledge_info": {"score": 5, "reason": "근거를 정확히 듦"}, "community": {"score": 9, "reason": "x"}},
                 "subject_competencies": [{"name": "비판적 사고력", "score": 4, "reason": "반론을 검토함"},
@@ -3919,9 +3921,13 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert "범주: 과정·기능 / 확인 자료: 토론·보고서" in prompt
     assert a.get(f"/api/my/courses/{cid}/feedback").json() == {"published": False}
     assert other.post(f"{base}/speech/student/{uid}/feedback", json={"feedback": "x", "published": True}).status_code == 404
-    t.post(f"{base}/speech/student/{uid}/feedback", json={"feedback": "근거가 탄탄해요!", "published": True})
+    parts = t.get(f"{base}/speech/student/{uid}/analysis").json()["feedback_parts"]
+    assert parts == {"message": "근거를 잘 들었어요.", "changes": [{"before": "주장만 말함", "after": "근거를 들어 말함"}],
+                     "strengths": ["반론을 검토함"], "next_actions": ["이유 두 가지 들기"], "sentence_starters": ["제 생각은 ~입니다. 왜냐하면 ~"]}
+    t.post(f"{base}/speech/student/{uid}/feedback", json={"parts": {**parts, "message": "근거가 탄탄해요!"}, "published": True})
     mine = a.get(f"/api/my/courses/{cid}/feedback").json()
-    assert mine["published"] and mine["feedback"] == "근거가 탄탄해요!" and mine["classes"][0]["ratings"][0]["level"] == 3
+    assert mine["published"] and mine["feedback"] == "근거가 탄탄해요!" and mine["parts"]["next_actions"] == ["이유 두 가지 들기"]
+    assert "classes" not in mine and "summary" not in mine  # 교사용 판단 근거는 학생에게 보내지 않는다
     # 다시 분석해도 이미 공개한 피드백(선생님이 고친 글)은 그대로
     t.post(f"{base}/speech/student/{uid}/analyze")
     assert t.get(f"{base}/speech/student/{uid}/analysis").json()["feedback"] == "근거가 탄탄해요!"

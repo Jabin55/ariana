@@ -2028,3 +2028,29 @@ td.ach-trend.up { color: #1b6b4a; } td.ach-trend.down { color: #b42318; } td.ach
 .ach-spark circle { fill: #2f6fb3; }
 table.att.ach-progress thead th:last-child, table.att.ach-progress td.ach-trend { width: 5.5em; }
 table.att.ach-tracking thead th:nth-last-child(2) { width: 6em; }
+
+/* 항목별 학생 피드백: 교사 편집기 · 학생 카드 */
+.fb-editor { display: grid; gap: 10px; }
+.fb-sec-head { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
+.fb-sec-head .muted { font-weight: 400; font-size: 0.8rem; }
+.fb-list { display: grid; gap: 4px; margin-bottom: 4px; }
+.fb-item-edit, .fb-change-edit { display: flex; gap: 6px; align-items: center; }
+.fb-item-edit input, .fb-change-edit input { flex: 1; min-width: 0; margin: 0; }
+.fb-arrow { color: #2f6fb3; font-weight: 800; flex: none; }
+.my-feedback { display: grid; gap: 10px; }
+.fb-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.fb-card-head { font-weight: 800; margin-bottom: 8px; }
+.fb-message { white-space: pre-wrap; margin: 0; line-height: 1.7; }
+.fb-change { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: stretch; margin-bottom: 6px; }
+.fb-before, .fb-after { padding: 8px 10px; border-radius: 8px; line-height: 1.5; font-size: 0.92rem; }
+.fb-before { background: #f4f6fa; color: #4a5263; }
+.fb-after { background: #eaf6ef; color: #1b4d36; font-weight: 600; }
+.fb-before small, .fb-after small { display: block; font-size: 0.72rem; font-weight: 700; opacity: 0.7; margin-bottom: 2px; }
+.fb-change .fb-arrow { align-self: center; font-size: 1.2rem; }
+.fb-ul { margin: 0; padding-left: 20px; line-height: 1.8; }
+.fb-goals { list-style: none; padding-left: 0; }
+.fb-goals li::before { content: "☐ "; color: #1b6b4a; font-weight: 800; }
+.fb-starter { background: #fffbea; border-left: 4px solid #e0b100; padding: 7px 10px; border-radius: 6px; margin-bottom: 6px; font-size: 0.93rem; }
+@media (max-width: 560px) { .fb-change { grid-template-columns: 1fr; } .fb-change .fb-arrow { transform: rotate(90deg); justify-self: center; } }
+.fb-editor textarea { width: 100%; box-sizing: border-box; }
+.fb-change + .fb-change { border-top: 1px dashed var(--border); padding-top: 8px; }
