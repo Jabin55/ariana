@@ -1273,7 +1273,7 @@ async function loadHub() {
   fill($("#hub-list"), h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
     h("nav", { class: "side-menu", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, icon, label, n]) => sideBtn(icon, label, hubSub === k,
       () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); }, n))),
-    h("div", { class: "side-main" }, box)));
+    h("div", { class: "side-main" }, h("h2", { class: "meet-sub-title" }, (subs.find((x) => x[0] === hubSub) || subs[0])[2]), box)));
   if (hubSub === "teachers") fill(box, staffBoard("hub", teachers, ins.today || today(), loadHub, ""));
   else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
@@ -1544,15 +1544,16 @@ let schoolData = null; // 참여학교 담당: 우리 학교 학생
 const withdrawPick = new Set(); // 탈퇴 승인 탭에서 체크한 학생 id
 const schoolQ = {};
 
+const SCHOOL_SUBS = [["signup", "🙋", "학생 가입 승인"], ["transfer", "🔁", "학교 변경 승인"], ["students", "📚", "학생 수강 관리"], ["withdraw", "🚪", "탈퇴 승인"],
+  ["evidence", "🗄️", "탈퇴자 증빙"]];
 /** 참여학교 담당: 학생 가입 승인, 학생 명단, 전입 승인, 탈퇴 승인, 탈퇴자 증빙 */
 async function loadSchool() {
   const outer = $("#school-list");
   const box = h("div");
   fill(outer, h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
     h("nav", { class: "side-menu", "aria-label": "참여학교 담당 메뉴" },
-      [["signup", "🙋", "학생 가입 승인"], ["transfer", "🔁", "학교 변경 승인"], ["students", "📚", "학생 수강 관리"], ["withdraw", "🚪", "탈퇴 승인"],
-        ["evidence", "🗄️", "탈퇴자 증빙"]].map(([key, icon, label]) => sideBtn(icon, label, schoolSub === key, () => { schoolSub = key; loadSchool(); }))),
-    h("div", { class: "side-main" }, box)));
+      SCHOOL_SUBS.map(([key, icon, label]) => sideBtn(icon, label, schoolSub === key, () => { schoolSub = key; loadSchool(); }))),
+    h("div", { class: "side-main" }, h("h2", { class: "meet-sub-title" }, (SCHOOL_SUBS.find((x) => x[0] === schoolSub) || SCHOOL_SUBS[0])[2]), box)));
   if (schoolSub === "evidence") { window.renderEvidence(box); return; }
   if (schoolSub === "transfer") { await renderStudentSchoolChanges(box); return; }
   const selectedTab = schoolSub;
@@ -1595,7 +1596,6 @@ async function loadSchool() {
   const row = (...cells) => h("div", { class: "sf-row" }, ...cells.flat());
   const cell = (label, el, wide) => [h("div", { class: "sf-label" }, label), h("div", { class: `sf-field ${wide ? "wide" : ""}` }, el)];
   fill(box,
-    h("h2", { style: "margin:0 0 6px" }, "학생 수강 관리"),
     ME.is_admin && !schoolData.schools.length ? null
       : h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.9rem" },
         `${schoolData.schools.join(", ")} 학생만 보여요 (학생이 가입할 때 고른 소속 학교 기준).`),
@@ -1730,7 +1730,6 @@ function renderSchoolWithdrawals(box) {
     box.querySelectorAll(".withdraw-student-check").forEach((input) => { input.checked = e.target.checked; });
   } });
   fill(box,
-    h("h2", {}, "탈퇴 승인"),
     h("p", { class: "muted" }, `탈퇴 승인 대기 ${pending.length}명`),
     pending.length ? h("div", { class: "row", style: "margin-bottom:12px" },
       h("label", { class: "switch" }, all, "전체 선택"),

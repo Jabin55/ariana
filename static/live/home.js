@@ -1604,6 +1604,7 @@ async function loadAdmin() {
   const selected = adminSub;
   const tabs = [["approve", "👩‍🏫", "교사 승인"], ["banner", "🖼️", "전광판 배너"], ["logs", "📜", "접속 기록"], ["storage", "💾", "서버 용량"]];
   $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, icon, label]) => sideBtn(icon, label, adminSub === key, () => { adminSub = key; loadAdmin(); })));
+  $("#admin-sub-title").textContent = (tabs.find((x) => x[0] === adminSub) || tabs[0])[2];
   const box = $("#admin-list");
   fill(box, h("p", { class: "muted" }, "불러오는 중…"));
   if (selected === "storage") {
@@ -1646,7 +1647,7 @@ async function loadAdmin() {
     h("span", { class: "grow" }, `🧑‍🎓 담당 선생님이 없는 학교의 학생 가입 신청 ${orphans.length}명이 승인을 기다려요 (`,
       [...new Set(orphans.map((x) => x.school))].join(", "), ")."),
     h("button", { class: "small primary", type: "button", onclick: () => { schoolSub = "signup"; signupNoTeacher = true; showHomeTab("school"); } }, "학생 가입 승인으로")) : null;
-  fill(box, alert, staffBoard("admin", list, co.today, loadAdmin, "관리교사 · 강의교사"));
+  fill(box, alert, staffBoard("admin", list, co.today, loadAdmin, ""));
 }
 
 /** 전체 관리 > 서버 용량: 디스크 전체·남은 공간과 항목별 사용량 */
@@ -1662,7 +1663,6 @@ async function storageBoard() {
   const pct = Math.round((d.disk.used / d.disk.total) * 100);
   const level = pct >= 90 ? "danger" : pct >= 75 ? "warn" : "ok";
   return h("div", {},
-    h("h2", {}, "서버 용량"),
     h("div", { class: `storage-meter ${level}` },
       h("div", { class: "sm-head" }, h("strong", {}, `남은 공간 ${size(d.disk.free)}`), h("span", { class: "muted" }, `전체 ${size(d.disk.total)} 중 ${size(d.disk.used)} 사용 (${pct}%)`)),
       h("div", { class: "sm-bar" }, h("i", { style: `width:${pct}%` }))),
@@ -1710,7 +1710,7 @@ function accessLogBoard() {
   per.addEventListener("change", () => { try { localStorage.setItem("access-log-size", per.value); } catch { /* 무시 */ } page = 1; load(); });
   q.addEventListener("keydown", (e) => { if (e.key === "Enter") { page = 1; load(); } });
   load();
-  return h("div", {}, h("h2", {}, "접속 기록"),
+  return h("div", {},
     h("p", { class: "muted" }, "교사·관리자가 학생 정보를 조회·내려받기·수정·삭제한 기록입니다. 365일 보관 후 자동 삭제됩니다."),
     h("div", { class: "row" }, q, action, days, per, h("button", { type: "button", class: "small", onclick: () => { page = 1; load(); } }, "검색")), out);
 }

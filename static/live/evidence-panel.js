@@ -1,7 +1,6 @@
 /* [참여학교 담당] 안에서 탈퇴자 증빙을 조회한다. 서버가 학교별 권한을 검사한다. */
 window.renderEvidence = function (box) {
   box.innerHTML = `<section class="card" style="margin-top:12px">
-    <h2>탈퇴자 증빙</h2>
     <p class="muted">수업 증빙에 필요한 경우에만 조회하세요. 목록·열람·다운로드 사유와 시각이 기록됩니다.</p>
     <p data-ev="policy" class="banner warn" hidden></p>
     <div class="row"><label>조회 사유 <select data-ev="purpose">
