@@ -1,4 +1,4 @@
-/* 선생님 교무실: [특강/회의] [과목 개설] [수강생 관리] [과목 운영] [거점학교 운영] [참여학교 담당] (+ 전체 운영 관리) */
+/* 선생님 교무실: [특강/회의] [수강생 관리] [과목 운영(+ 과목 개설)] [거점학교 운영] [참여학교 담당] (+ 전체 운영 관리) */
 
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
@@ -23,7 +23,7 @@ function today() {
 function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "")); }
 
 /* 권한: 관리교사는 [특강/회의]·[거점학교 운영]·[참여학교 담당],
-   강의교사는 [특강/회의]·[과목 개설]·[수강생 관리]·[과목 운영]. */
+   강의교사는 [특강/회의]·[수강생 관리]·[과목 운영] (과목 개설은 [과목 운영]의 [+ 과목 개설] 버튼). */
 function canHub() { return ME.is_admin || ME.coordinator_hubs.length > 0; }
 function canSchool() { return ME.is_admin || (ME.participant_schools || []).length > 0; }
 function canTeach() {
@@ -49,9 +49,10 @@ function showTeacher() {
   document.title = "외솔온닷 · 교무실";
   $("#lead").hidden = true;
   $("#admin-tab").hidden = false;
-  $("#home-tabs").style.setProperty("--sub-count", 7);
-  $("#home-tabs").style.setProperty("--sub-min-width", "784px");
-  const want = params.get("tab") === "courses" || params.get("tab") === "history" ? "run" : params.get("tab");
+  $("#home-tabs").style.setProperty("--sub-count", 6);
+  $("#home-tabs").style.setProperty("--sub-min-width", "672px");
+  if (params.get("tab") === "create") runCreating = true; // 예전 [과목 개설] 탭 주소
+  const want = ["courses", "history", "create"].includes(params.get("tab")) ? "run" : params.get("tab");
   if (params.get("course")) runCourseId = Number(params.get("course"));
   // 교무실에 들어오면 [특강/회의]부터 (볼 수 없는 역할이면 예전처럼)
   const first = allowed("meet") ? "meet" : canTeach() ? "run" : canHub() ? "hub" : "school";
@@ -69,7 +70,6 @@ function showHomeTab(name) {
   for (const p of document.querySelectorAll("#teacher-view [data-panel]")) p.hidden = !ok || p.dataset.panel !== name;
   if (!ok) return;
   if (name === "meet") { meetView = null; showMeetSub(meetSub); loadLive(); loadMeetings(); loadMeetHistory(); }
-  if (name === "create") { if (!$("#course-create-box").dataset.ready) drawCreateForm(); }
   if (name === "students") renderStudents();
   if (name === "run") renderRun();
   if (name === "admin") loadAdmin();
@@ -78,6 +78,7 @@ function showHomeTab(name) {
 }
 $("#home-tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
+  if (b?.dataset.tab === "run") runCreating = false; // [과목 운영] 탭을 누르면 과목 목록으로
   if (b) showHomeTab(b.dataset.tab);
 });
 
@@ -390,8 +391,10 @@ async function drawCreateForm() {
   try {
     fill(box, await courseForm(null, (id) => {
       toast("강좌를 만들었어요. 모집 기간에 학생들이 수강신청할 수 있어요.");
-      drawCreateForm();
+      runCreating = false;
+      delete $("#course-create-box").dataset.ready; // 다음에 열 때 빈 양식으로
       runCourseId = id;
+      runSub = "info";
       loadTeacherCourses();
     }));
   } catch (err) { fill(box, h("p", { class: "error" }, err.message)); }
@@ -547,7 +550,16 @@ function thumbOf(c) {
   return box;
 }
 
+let runCreating = false; // [과목 운영] 안에서 [+ 과목 개설] 화면을 보고 있는지
+$("#run-create-back").addEventListener("click", () => { runCreating = false; renderRun(); });
+
 function renderRun() {
+  $("#run-create").hidden = !runCreating;
+  if (runCreating) {
+    $("#run-list").hidden = $("#run-course").hidden = true;
+    if (!$("#course-create-box").dataset.ready) drawCreateForm();
+    return;
+  }
   if (!teacherCourses) { fill($("#run-list"), h("p", { class: "muted" }, "불러오는 중…")); return; }
   const c = teacherCourses.find((x) => x.id === runCourseId);
   $("#run-list").hidden = !!c;
@@ -565,8 +577,10 @@ function renderRun() {
   const grid = (items) => h("div", { class: "run-tiles" }, items.map(tile));
   // 보관한 강좌도 따로 접지 않고 뒤에 이어서, 회색 카드로 보여 준다
   fill($("#run-list"),
+    h("div", { class: "row", style: "margin:0 0 12px" }, h("span", { class: "grow" }),
+      h("button", { class: "primary", type: "button", onclick: () => { runCreating = true; renderRun(); window.scrollTo(0, 0); } }, "+ 과목 개설")),
     active.length || archived.length ? grid([...active, ...archived])
-      : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. '과목 개설'에서 먼저 강좌를 만들어 주세요."));
+      : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. 위 [+ 과목 개설]을 눌러 먼저 강좌를 만들어 주세요."));
 }
 
 /* 과목 운영 안: 과목 카드 머리 그림을 가로로 길게 늘인 제목 띠 */

@@ -247,7 +247,6 @@
     <section id="teacher-view" hidden>
       <nav class="tabs page-tabs" id="home-tabs">
         <button data-tab="meet">특강/회의</button>
-        <button data-tab="create">과목 개설</button>
         <button data-tab="students">수강생 관리 <span class="badge" id="pending-badge" hidden></span></button>
         <button data-tab="run" class="active">과목 운영</button>
         <button data-tab="hub" id="hub-tab">거점학교 운영 <span class="badge" id="hub-badge" hidden></span></button>
@@ -306,18 +305,20 @@
         </section>
       </div>
 
-      <div data-panel="create" hidden>
-        <section class="card" style="margin-bottom:16px">
-          <h2 style="margin:0 0 8px">새로운 과목 개설</h2>
-          <div id="course-create-box"><p class="muted">불러오는 중…</p></div>
-        </section>
-      </div>
-
       <div data-panel="students" hidden>
         <div id="students-list"></div>
       </div>
 
       <div data-panel="run">
+        <div id="run-create" hidden>
+          <section class="card" style="margin-bottom:16px">
+            <div class="row" style="margin:0 0 8px">
+              <h2 class="grow" style="margin:0">새로운 과목 개설</h2>
+              <button type="button" class="small" id="run-create-back">← 과목 목록</button>
+            </div>
+            <div id="course-create-box"><p class="muted">불러오는 중…</p></div>
+          </section>
+        </div>
         <div id="run-list"></div>
         <div id="run-course" hidden></div>
       </div>
