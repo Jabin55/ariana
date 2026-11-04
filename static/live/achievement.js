@@ -342,7 +342,7 @@ function achRadar(comps, color = "#1b6b4a", fill = "rgba(27,107,74,0.22)", aria 
 
 function achRadarReasons(comps, edit = null) { // edit(c, i) → [점수 칸, 근거 칸] (교사가 수정할 때)
   return h("div", { class: "ach-reasons" }, h("div", { class: "ach-sub-head" }, edit ? "✏️ 역량별 판단 근거 수정" : "🔎 역량별 판단 근거"),
-    h("div", { class: "table-wrap" }, h("table", { class: "att ach-reason-table" },
+    h("div", {}, h("table", { class: "att ach-reason-table" },
       h("colgroup", {}, h("col", { class: "c-name" }), h("col", { class: "c-score" }), h("col")),
       h("thead", {}, h("tr", {}, h("th", {}, "역량"), h("th", {}, "점수"), h("th", {}, "근거"))),
       h("tbody", {}, comps.map((c, i) => {
@@ -403,9 +403,19 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     const panel = h("div", { class: "ach-comp-info", hidden: true },
       comps.map((c) => h("div", { class: "ach-comp-info-item" }, h("strong", {}, c.label), h("p", {}, h("b", {}, c.desc, "."), " ", c.detail || ""))));
     const btn = h("button", { class: "small", type: "button", "aria-expanded": "false" }, "📖 핵심역량이란?");
-    btn.onclick = () => { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); btn.textContent = panel.hidden ? "📖 핵심역량이란?" : "📖 접기"; };
-    // 머리글과 펼침 상자를 한 칸으로 묶어 두 차트 상자의 줄 맞춤(subgrid)을 지킨다
-    return h("div", {}, h("div", { class: "ach-box-head row", style: "align-items:center" }, h("span", { class: "grow" }, "🧭 핵심역량 밸런스 차트"), btn), panel);
+    // 팝업으로 띄운다 (차트를 밀어내지 않는다). 바깥을 누르거나 Esc 를 누르면 닫힌다
+    const close = () => { panel.hidden = true; btn.setAttribute("aria-expanded", "false"); document.removeEventListener("click", outside, true); document.removeEventListener("keydown", esc); };
+    const outside = (e) => { if (!panel.contains(e.target) && e.target !== btn) close(); };
+    const esc = (e) => { if (e.key === "Escape") close(); };
+    btn.onclick = () => {
+      if (!panel.hidden) { close(); return; }
+      panel.hidden = false; btn.setAttribute("aria-expanded", "true");
+      document.addEventListener("click", outside, true); document.addEventListener("keydown", esc);
+    };
+    panel.prepend(h("div", { class: "row", style: "align-items:center;margin-bottom:2px" }, h("strong", { class: "grow" }, "📖 2022 개정 교육과정 핵심역량"),
+      h("button", { class: "small", type: "button", "aria-label": "닫기", onclick: close }, "✕")));
+    // 머리글과 팝업을 한 칸으로 묶어 두 차트 상자의 줄 맞춤(subgrid)을 지킨다
+    return h("div", { class: "ach-comp-head" }, h("div", { class: "ach-box-head row", style: "align-items:center" }, h("span", { class: "grow" }, "🧭 핵심역량 밸런스 차트"), btn), panel);
   };
   // 차트 + 역량별 판단 근거 (수정 중이면 점수 1~5·근거를 고칠 수 있다)
   const compPanel = (comps, color, fillColor, aria) => {
