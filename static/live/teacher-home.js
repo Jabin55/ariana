@@ -1550,7 +1550,7 @@ async function loadSchool() {
   const box = h("div");
   fill(outer, h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
     h("nav", { class: "side-menu", "aria-label": "참여학교 담당 메뉴" },
-      [["signup", "🙋", "학생 가입 승인"], ["transfer", "🔁", "소속학교 변경 승인"], ["students", "📚", "학생 수강 관리"], ["withdraw", "🚪", "탈퇴 승인"],
+      [["signup", "🙋", "학생 가입 승인"], ["transfer", "🔁", "학교 변경 승인"], ["students", "📚", "학생 수강 관리"], ["withdraw", "🚪", "탈퇴 승인"],
         ["evidence", "🗄️", "탈퇴자 증빙"]].map(([key, icon, label]) => sideBtn(icon, label, schoolSub === key, () => { schoolSub = key; loadSchool(); }))),
     h("div", { class: "side-main" }, box)));
   if (schoolSub === "evidence") { window.renderEvidence(box); return; }

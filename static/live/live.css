@@ -1553,7 +1553,7 @@ body.class-t .present-bar .small-switch { white-space: nowrap; }
 body.class-t .sharebox { display: flex; align-items: baseline; justify-content: center; gap: 10px; padding: 6px 8px; }
 body.class-t .sharebox #share-url { display: none; }
 /* 특강/회의: 가운데 줄 (왼쪽 진행 중 · 오른쪽 예약) */
-.meet-mid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; align-items: start; }
+.meet-mid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; align-items: stretch; } /* 예약한 특강/회의 칸도 예약하기만큼 높게 */
 .meet-mid .card { margin: 0; min-width: 0; }
 @media (max-width: 720px) { .meet-mid { grid-template-columns: 1fr; } }
 /* 날짜 입력: [년▼][월▼][일▼][📅] (원래 입력칸은 달력용으로 숨김) */
@@ -2153,3 +2153,10 @@ html { scrollbar-gutter: stable; }
 @media (max-width: 640px) {
   .landing, .site-main, .home-wrap { padding-left: 16px; padding-right: 16px; }
 }
+
+/* 넓은 화면: 왼쪽 세로 메뉴를 화면 왼쪽 끝에 딱 붙인다 (내용은 그대로 가운데) */
+@media (min-width: 1290px) {
+  .side-layout { display: block; }
+  .side-menu { position: absolute; left: 0; top: auto; width: 96px; box-sizing: border-box; border-left: none; border-radius: 0 16px 16px 0; }
+}
+.meet-sub-title { margin: 0 0 12px; font-size: 1.25rem; }
