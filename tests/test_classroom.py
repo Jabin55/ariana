@@ -3879,7 +3879,7 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert t.post(f"{base}/subject-competencies", json={"items": ["x", "y", "z"]}).status_code in (404, 405)
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
     crit = {c["key"]: c for c in view["subject_competencies"]}["비판적 사고력"]
-    assert crit["score"] == 4 and crit["reason"] == "반론을 검토함" and crit["desc"].startswith("사회 현상을 객관적으로")
+    assert crit["score"] == 4 and crit["reason"] == "반론을 검토함" and crit["desc"] == "사태를 분석적으로 평가하는 능력"
     assert view["subject_competency_area"] == "사회" and len(view["subject_competency_info"]) == 5
     assert "자기주도성" in ach.ANALYSIS_SYSTEM and view["competencies"][0]["desc"].startswith("자아정체성과 자신감")
     assert view["subject_competency_names"] == social
@@ -4167,7 +4167,7 @@ def test_subject_competencies_follow_2022_curriculum():
     c = lambda area, group="", subject="": N(subject_area=area, subject_group=group, subject=subject)
     assert ach.subject_competencies_of(c("역사", "사회(역사/도덕 포함)"))[0] == "역사 사실 이해"
     assert ach.subject_competencies_of(c("정보", "기술·가정/정보")) == ["컴퓨팅 사고력", "인공지능 문제 해결력", "디지털 문화 소양"]
-    assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "비판적 사고력"
+    assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "창의적 사고력"
     assert ach.subject_competencies_of(c("제2외국어", "제2외국어/한문", "중국어"))[0] == "제2외국어 의사소통 역량"
     assert ach.subject_competencies_of(c("교양", "교양", "논리와 사고"))[0] == "논리적 사고 역량"
     assert ach.subject_competencies_of(c("교양", "교양", "보건"))[0] == "건강 관리 역량"
