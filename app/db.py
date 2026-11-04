@@ -247,6 +247,7 @@ memberships = Table(
     Column("message", String(500), nullable=False, default=""),
     Column("valid_from", String(10), nullable=False, default=""),  # 활동 기간 (비우면 제한 없음)
     Column("valid_until", String(10), nullable=False, default=""),
+    Column("teach_hubs", Text, nullable=False, default=""),  # 강의교사가 신청서에 고른 '강의할 거점학교' (줄바꿈으로 여러 곳)
     Column("wish_from", String(10), nullable=False, default=""),  # 강사가 신청서에 적은 희망 기간
     Column("wish_until", String(10), nullable=False, default=""),
     # 신청서: 소속 구분(school 학교 교원 / univ 대학 교원 / cert 교원자격 소지자 / other 기타)·교육청·교원자격·이메일
@@ -659,6 +660,7 @@ def init() -> None:
              ("enrollments", "instructor_by", "INTEGER"),
              ("enrollments", "coordinator_by", "INTEGER"),
              ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("memberships", "teach_hubs", "TEXT NOT NULL DEFAULT ''"),
              ("memberships", "wish_from", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "transfer_from", "VARCHAR(60) NOT NULL DEFAULT ''"),

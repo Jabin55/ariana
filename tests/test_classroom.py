@@ -4397,3 +4397,17 @@ def test_student_signup_needs_school_approval(monkeypatch):
     login("kid3@s.school.kr", approve_school=False, name="박도윤", school="신정고등학교", grade=1, class_no=1, number=2)
     by_name = {x["name"]: x for x in boss.get("/api/school/signups").json()["signups"]}
     assert by_name["박도윤"]["teachers"] == [] and by_name["이서연"]["teachers"] == ["담당"]
+
+
+def test_instructor_apply_with_multiple_teach_hubs(monkeypatch):
+    """강의교사 신청: 강의할 거점학교를 여러 곳 고르면 전체 관리자 화면에 함께 보인다"""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    c = TestClient(app)
+    google_login(c, "ins@gmail.com")
+    r = staff_apply(c, {"role": "instructor", "name": "김강사", "affiliation": "울산대학교", "affil_type": "univ", "department": "정치외교학과",
+                        "contact": "010-1111-2222", "gender": "남", "pledge": True,
+                        "teach_hubs": ["가나고등학교", " 다라고등학교 ", "가나고등학교", ""]})
+    assert r.status_code == 200, r.text
+    apps = boss.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
+    assert apps[0]["teach_hubs"] == ["가나고등학교", "다라고등학교"] and apps[0]["gender"] == "남"

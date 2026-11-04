@@ -180,22 +180,36 @@
         </div>
         <datalist id="school-options"></datalist>
         <h3 class="wide form-sec">2) 회원 정보</h3>
-        <label><span>이름 (실명 · 가입 뒤 바꿀 수 없어요) <b class="required-mark" aria-hidden="true">*</b></span><input id="a-name" maxlength="30" required></label>
-        <label><span>생년월일 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-birth" type="date" min="1920-01-01" required></label>
-        <label><span>성별 <b class="required-mark" aria-hidden="true">*</b></span><select id="a-gender" required><option value="">고르세요</option><option value="남">남</option><option value="여">여</option></select></label>
-        <label><span>소속 구분 <b class="required-mark" aria-hidden="true">*</b></span>
-          <select id="a-affil-type" required>
-            <option value="cert">교원자격 소지자 (미임용)</option>
-            <option value="univ">대학 교원 (교수·강사)</option>
-            <option value="school" selected>학교 교원 (초·중·고 교사)</option>
-            <option value="other">기타 (연구소·기관 등)</option>
-          </select></label>
-        <label id="a-office-wrap"><span>소속 교육청 <b class="required-mark" aria-hidden="true">*</b></span><select id="a-office"></select></label>
-        <label id="a-aff-wrap"><span><span id="a-aff-label">소속 학교</span> <b class="required-mark" id="a-aff-required" aria-hidden="true">*</b></span><input id="a-aff" maxlength="60"><select id="a-aff-pick" hidden></select></label>
-        <label id="a-dept-wrap" hidden><span>학과 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-dept" maxlength="60" placeholder="예: 사회과교육과"></label>
-        <label id="a-license-wrap" hidden><span>교원자격 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-license" maxlength="100" placeholder="예: 중등학교 2급 정교사(사회)"></label>
-        <label><span>이메일 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-email" type="email" maxlength="200" required placeholder="연락받을 이메일"></label>
-        <label><span>휴대전화 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-contact" maxlength="100" required placeholder="휴대전화 번호"></label>
+        <!-- 한 줄에 세 칸: 이름·성별·생년월일 / 소속 구분·소속 교육청·소속 학교 / 이메일·휴대전화 -->
+        <div class="wide form-grid3">
+          <label><span>이름 (실명 · 가입 뒤 바꿀 수 없어요) <b class="required-mark" aria-hidden="true">*</b></span><input id="a-name" maxlength="30" required></label>
+          <label><span>성별 <b class="required-mark" aria-hidden="true">*</b></span><select id="a-gender" required><option value="">고르세요</option><option value="남">남</option><option value="여">여</option></select></label>
+          <label><span>생년월일 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-birth" type="date" min="1920-01-01" required></label>
+        </div>
+        <div class="wide form-grid3">
+          <label><span>소속 구분 <b class="required-mark" aria-hidden="true">*</b></span>
+            <select id="a-affil-type" required>
+              <option value="cert">교원자격 소지자 (미임용)</option>
+              <option value="univ">대학 교원 (교수·강사)</option>
+              <option value="school" selected>학교 교원 (초·중·고 교사)</option>
+              <option value="other">기타 (연구소·기관 등)</option>
+            </select></label>
+          <label id="a-office-wrap"><span>소속 교육청 <b class="required-mark" aria-hidden="true">*</b></span><select id="a-office"></select></label>
+          <label id="a-aff-wrap"><span><span id="a-aff-label">소속 학교</span> <b class="required-mark" id="a-aff-required" aria-hidden="true">*</b></span><input id="a-aff" maxlength="60"><select id="a-aff-pick" hidden></select></label>
+          <label id="a-dept-wrap" hidden><span>학과 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-dept" maxlength="60" placeholder="예: 사회과교육과"></label>
+          <label id="a-license-wrap" hidden><span>교원자격 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-license" maxlength="100" placeholder="예: 중등학교 2급 정교사(사회)"></label>
+        </div>
+        <div class="wide form-grid3">
+          <label><span>이메일 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-email" type="email" maxlength="200" required placeholder="연락받을 이메일"></label>
+          <label><span>휴대전화 <b class="required-mark" aria-hidden="true">*</b></span><input id="a-contact" maxlength="100" required placeholder="휴대전화 번호"></label>
+        </div>
+        <!-- 강의교사: 강의할 거점학교 (여러 곳) -->
+        <div class="wide" id="a-hubs-wrap" hidden>
+          <span class="a-hubs-label">강의할 거점학교 <b class="required-mark" aria-hidden="true">*</b> <span class="muted" style="font-weight:400">(여러 곳을 고를 수 있어요)</span></span>
+          <div class="row a-hubs-pick"><select id="a-hub-office" aria-label="거점학교 교육청"></select><select id="a-hub-school" aria-label="거점학교"></select>
+            <button type="button" class="small" id="a-hub-add">+ 추가</button></div>
+          <div id="a-hubs" class="a-hubs-chips"></div>
+        </div>
         <label class="wide" id="a-msg-wrap" hidden>자기 소개 <textarea id="a-msg" maxlength="500" rows="3"></textarea></label>
         <label class="wide pledge"><span><input type="checkbox" id="a-pledge" required> <strong>개인정보 보호 서약</strong>에 동의 <b class="required-mark" aria-hidden="true">*</b></span><span id="pledge-text" class="muted"></span></label>
         <button class="primary wide" type="submit" id="apply-btn">가입 신청</button>

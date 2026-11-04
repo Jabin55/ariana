@@ -79,6 +79,7 @@ class ApplyReq(BaseModel):
     birth: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 생년월일
     gender: str = Field(default="", pattern="^(남|여)?$")  # 성별
     subjects: str = Field(default="", max_length=300)  # 담당과목 (강의교사만)
+    teach_hubs: list[str] = Field(default_factory=list, max_length=20)  # 강의할 거점학교 (강의교사만, 여러 곳)
     assistant: bool = False  # 강사: 팀티칭 보조교사로 참여 (강좌를 직접 열지 않고 다른 강사의 강좌를 돕는다)
     message: str = Field(default="", max_length=500)  # 관리교사만 (강사 신청서에는 없음)
     wish_from: str = Field(default="", pattern=r"^(\d{4}-\d{2}-\d{2})?$")  # 강사: 희망 기간
@@ -218,7 +219,8 @@ async def apply(req: ApplyReq, request: Request):
                       "license": req.license.strip() if req.affil_type == "cert" else "", "email": req.email.strip(),
                       "kind": "assistant" if req.role == "instructor" and req.assistant else ""}
             if req.role == "instructor":
-                values.update(wish_from=req.wish_from, wish_until=req.wish_until)
+                hubs = list(dict.fromkeys(x.strip()[:60] for x in req.teach_hubs if x.strip()))
+                values.update(wish_from=req.wish_from, wish_until=req.wish_until, teach_hubs="\n".join(hubs))
             else:
                 values["message"] = req.message.strip()
             values["replace_membership_id"] = replacing.id if replacing else None
@@ -296,6 +298,7 @@ async def applications(role: str, request: Request):
                     "department": x["department"], "license": x["license"],
                     "contact_email": x["email"], "birth": x["birth"] or "", "gender": x["gender"] or "",
                     "position": x["position"] or "",
+                    "teach_hubs": [h for h in (x.get("teach_hubs") or "").split("\n") if h],
                     # 대기 중인 신청이면 함께 들어온 이름·성별·소속 변경 (승인하면 같이 바뀐다)
                     "changes": changes.get(x["user_id"], []) if membership_status(x) == "pending" else [],
                     "requested_at": x["requested_at"]})

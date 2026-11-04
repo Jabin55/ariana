@@ -2102,3 +2102,13 @@ table.staff-detail { width: 100%; border-collapse: collapse; font-size: 0.9rem; 
 table.staff-detail th, table.staff-detail td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
 table.staff-detail th { background: #f4f6fa; width: 8.5em; white-space: nowrap; font-weight: 700; }
 table.staff-detail td { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 교사 가입·변경 신청: 회원 정보 한 줄에 세 칸 */
+.course-form .form-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.course-form .form-grid3 > label[hidden] { display: none; }
+@media (max-width: 640px) { .course-form .form-grid3 { grid-template-columns: 1fr; } }
+.a-hubs-label { display: block; font-weight: 600; margin-bottom: 6px; }
+.a-hubs-pick select { flex: 1; min-width: 0; }
+.a-hubs-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.a-hub-chip { display: inline-flex; align-items: center; gap: 4px; background: #eaf6ef; color: #1b4d36; border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 0.88rem; font-weight: 600; }
+.a-hub-chip button { border: none; background: transparent; color: #1b4d36; cursor: pointer; padding: 0 6px; font-size: 0.8rem; }

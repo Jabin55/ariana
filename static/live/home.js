@@ -771,8 +771,38 @@ function updateAffil() {
 }
 $("#a-affil-type").addEventListener("change", updateAffil);
 
+/* 강의교사: 강의할 거점학교 (여러 곳) — 교육청을 고르고 학교를 골라 [+ 추가] */
+let applyHubs = [];
+function drawApplyHubs() {
+  fill($("#a-hubs"), applyHubs.length ? applyHubs.map((n) => h("span", { class: "a-hub-chip" }, n,
+    h("button", { type: "button", "aria-label": `${n} 빼기`, onclick: () => { applyHubs = applyHubs.filter((x) => x !== n); drawApplyHubs(); } }, "✕")))
+    : h("span", { class: "muted", style: "font-size:0.85rem" }, "아직 고른 거점학교가 없어요."));
+}
+function fillApplyHubSchools() {
+  const list = (META?.office_schools || {})[$("#a-hub-office").value] || [];
+  $("#a-hub-school").replaceChildren(h("option", { value: "" }, "학교를 고르세요"), ...koSort(list).map((n) => h("option", { value: n }, n)));
+}
+function initApplyHubs() {
+  const offices = Object.keys(META?.office_schools || {});
+  if (!$("#a-hub-office").options.length) {
+    $("#a-hub-office").replaceChildren(...offices.map((o) => h("option", { value: o }, o)));
+    fillApplyHubSchools();
+  }
+  drawApplyHubs();
+}
+$("#a-hub-office").addEventListener("change", fillApplyHubSchools);
+$("#a-hub-add").addEventListener("click", () => {
+  const n = $("#a-hub-school").value;
+  if (!n) { toast("추가할 거점학교를 골라 주세요."); return; }
+  if (!applyHubs.includes(n)) applyHubs.push(n);
+  $("#a-hub-school").value = "";
+  drawApplyHubs();
+});
+
 function updateApplyRole() {
   const role = document.querySelector("input[name=a-role]:checked").value;
+  $("#a-hubs-wrap").hidden = role !== "instructor";
+  if (role === "instructor") initApplyHubs();
   const affiliationType = $("#a-affil-type");
   if (role !== "instructor") affiliationType.value = "school";
   affiliationType.disabled = role !== "instructor";
@@ -790,6 +820,7 @@ $("#apply").addEventListener("submit", async (e) => {
   const role = document.querySelector("input[name=a-role]:checked").value;
   const first = !ME.memberships.length; // 처음 가입 신청이면 '가입완료' 안내로
   const place = role === "instructor" ? "" : $("#a-aff").value.trim();
+  if (role === "instructor" && !applyHubs.length) { $("#apply-error").textContent = "강의할 거점학교를 한 곳 이상 골라 [+ 추가]를 눌러 주세요."; return; }
   withConsent("guest-view", () => sendApply(role, first, place));
 });
 
@@ -805,6 +836,7 @@ async function sendApply(role, first, place) {
       department: $("#a-affil-type").value === "univ" ? $("#a-dept").value.trim() : "",
       license: $("#a-affil-type").value === "cert" ? $("#a-license").value : "", email: $("#a-email").value,
       assistant: role === "instructor" && document.querySelector("input[name=a-kind]:checked").value === "assistant",
+      teach_hubs: role === "instructor" ? applyHubs : [],
       message: role === "coordinator" ? $("#a-msg").value : "",
       wish_from: "", wish_until: "", // 희망 기간은 받지 않는다 (활동 기간은 전체 관리자가 승인할 때 정함)
       pledge: $("#a-pledge").checked,
@@ -1366,7 +1398,8 @@ function staffBoard(id, list, today, reload, title) {
     const info = [
       ["회원 구분", STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (팀티칭 보조교사)" : "")], ["상태", h("span", { class: `status ${cls}` }, label)],
       ["이름", x.name], ["성별", x.gender || "-"], ["생년월일", x.birth ? x.birth.replaceAll("-", ".") : "-"],
-      [x.role === "coordinator" ? "거점학교" : x.role === "participant" ? "담당 학교" : "강의 학교", x.hub || "-"],
+      x.role === "instructor" ? ["강의할 거점학교", (x.teach_hubs || []).join(", ") || x.hub || "-"]
+        : [x.role === "coordinator" ? "거점학교" : "담당 학교", x.hub || "-"],
       ["소속 구분", AFFIL_NAME[x.affil_type] || "-"], ["교육청", x.office || "-"],
       [x.affil_type === "univ" ? "소속 대학" : "소속", x.affiliation || "-"], ["학과", x.department || "-"], ["직위", x.position || "-"],
       ["자격", x.license || "-"], ["이메일", x.contact_email || x.email || "-"], ["로그인 계정", x.email || "-"], ["연락처", x.contact || "-"],
