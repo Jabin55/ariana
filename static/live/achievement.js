@@ -765,8 +765,6 @@ async function renderResults(c, box) {
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 6px;gap:6px" }, h("span", { class: "grow" }),
       h("a", { class: "button small", href: `/api/courses/${c.id}/results.xlsx` }, "📥 엑셀 (나이스 입력용)"), draftAll),
-    h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.88rem" },
-      `모든 수행평가 채점이 끝나면 학생별 성취도를 확정하고 과목별 세부능력 및 특기사항(세특)을 써요. 성취도 체계: ${v.scale} · 제안 성취도는 수행평가 환산 점수 기준이고, 확정은 선생님이 해요.`),
     v.ready ? null : h("div", { class: "warn-box" }, `⏳ 아직 채점하지 않은 수행평가가 있어요 (채점 ${v.graded}/${v.total}). [📝 수행평가]에서 채점을 모두 마치면 작성할 수 있어요.`),
     v.weight_ok || !v.assignments.length ? null : h("div", { class: "warn-box" }, "⚠️ 수행평가 반영 비율 합계가 100%가 아니라 환산 점수를 계산할 수 없어요. [📝 수행평가]에서 반영 비율을 확인해 주세요."),
     v.students.length ? h("div", { class: "table-wrap" }, h("table", { class: "att ach-progress results-table" },
