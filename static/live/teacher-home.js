@@ -1012,7 +1012,7 @@ async function learnSpeech(c, st, box) {
     st.studentTab ||= "speech";
     if (!["growth", "analysis", "observations", "quiz", "speech", "feedback"].includes(st.studentTab)) st.studentTab = "speech";
     const tabs = h("nav", { class: "tabs sub-tabs", style: "margin:4px 0 10px" },
-      [["speech", "🗣️ 학생 발언 기록"], ["observations", "👀 교사 관찰 기록"], ["quiz", "✅ 퀴즈 점수"], ["analysis", "🎯 역량 분석"], ["growth", "📈 성장 흐름"], ["feedback", "💌 피드백 전송"]].map(([k, label]) =>
+      [["speech", "🗣️ 학생 발언 기록"], ["observations", "👀 교사 관찰 기록"], ["quiz", "✅ 퀴즈 점수 기록"], ["analysis", "🎯 역량 분석"], ["growth", "📈 성장 흐름"], ["feedback", "💌 피드백 전송"]].map(([k, label]) =>
         h("button", { type: "button", class: st.studentTab === k ? "active" : "", onclick: () => { st.studentTab = k; st.fbClass = null; again(); } }, label)));
     const pane = h("div");
     fill(box, head,
