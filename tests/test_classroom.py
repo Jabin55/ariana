@@ -3927,6 +3927,7 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     t.post(f"{base}/speech/student/{uid}/feedback", json={"parts": {**parts, "message": "근거가 탄탄해요!"}, "published": True})
     mine = a.get(f"/api/my/courses/{cid}/feedback").json()
     assert mine["published"] and mine["feedback"] == "근거가 탄탄해요!" and mine["parts"]["next_actions"] == ["이유 두 가지 들기"]
+    assert mine["participation"] == [{"date": mine["participation"][0]["date"], "title": "사형제 토론", "spontaneous": 0, "response": 1}]
     assert "classes" not in mine and "summary" not in mine  # 교사용 판단 근거는 학생에게 보내지 않는다
     # 다시 분석해도 이미 공개한 피드백(선생님이 고친 글)은 그대로
     t.post(f"{base}/speech/student/{uid}/analyze")

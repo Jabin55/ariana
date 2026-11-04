@@ -1049,7 +1049,10 @@ async def my_feedback(course_id: int, request: Request):
     view = await db.run(analysis_view, course_id, u["id"])
     if not view["published"]:
         return {"published": False}
-    return {"published": True, "feedback": view["feedback"], "parts": view["feedback_parts"]}
+    # 발언 참여 변화: 회차별 자발 발언·발문 응답 수 (발언 기록이 있는 수업만)
+    participation = [{"date": x["date"], "title": x["title"], "spontaneous": x["counts"]["spontaneous"], "response": x["counts"]["response"]}
+                     for x in view["tracking"] if x["counts"]["talk"]]
+    return {"published": True, "feedback": view["feedback"], "parts": view["feedback_parts"], "participation": participation}
 
 
 # ───────── 엑셀로 성취기준 한꺼번에 넣기 ─────────

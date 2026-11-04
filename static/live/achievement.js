@@ -468,14 +468,40 @@ function feedbackEditor(parts) {
   return { el, read };
 }
 
+/** 학생 화면: 회차별 발언 참여 막대 (자발 발언 + 발문 응답 쌓기) */
+function participationChart(list) {
+  const W = 640, H = 210, L = 34, R = 12, T = 14, B = 42, n = list.length;
+  const max = Math.max(1, ...list.map((x) => x.spontaneous + x.response));
+  const step = (W - L - R) / n, bw = Math.min(46, step * 0.6);
+  const Y = (v) => T + (H - T - B) * (1 - v / max);
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; return e; };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "ach-chart", role: "img", "aria-label": "회차별 발언 참여 그래프" });
+  const ticks = [...new Set([0, Math.round(max / 2), max])];
+  for (const v of ticks) {
+    svg.append(el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "#e3e6e8" }));
+    svg.append(el("text", { x: L - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 12, fill: "#59636b" }, String(v)));
+  }
+  list.forEach((x, i) => {
+    const cx = L + step * i + step / 2, total = x.spontaneous + x.response;
+    if (x.response) svg.append(el("rect", { x: cx - bw / 2, y: Y(x.response), width: bw, height: Y(0) - Y(x.response), fill: "#9cbbe0", rx: 3 }));
+    if (x.spontaneous) svg.append(el("rect", { x: cx - bw / 2, y: Y(total), width: bw, height: Y(x.response) - Y(total), fill: "#1b6b4a", rx: 3 }));
+    svg.append(el("text", { x: cx, y: Y(total) - 5, "text-anchor": "middle", "font-size": 12, "font-weight": 700, fill: "#1d2330" }, String(total)));
+    svg.append(el("text", { x: cx, y: H - B + 18, "text-anchor": "middle", "font-size": 12, fill: "#59636b" }, achMD(x.date)));
+  });
+  return h("div", {}, svg, h("div", { class: "part-legend" },
+    h("span", {}, h("i", { style: "background:#1b6b4a" }), "스스로 한 발언"), h("span", {}, h("i", { style: "background:#9cbbe0" }), "선생님 질문에 대한 대답")));
+}
+
 /** 학생 화면: 항목별 피드백 카드 */
-function feedbackView(p) {
+function feedbackView(p, participation = []) {
   const sec = (title, body) => h("div", { class: "fb-card" }, h("div", { class: "fb-card-head" }, title), body);
   return [
     p.message ? sec("💬 선생님의 피드백", h("p", { class: "fb-message" }, p.message)) : null,
     p.changes?.length ? sec("📈 이전에 비해 달라진 점", p.changes.map((c) => h("div", { class: "fb-change" },
       h("span", { class: "fb-before" }, h("small", {}, "이전"), c.before || "-"), h("span", { class: "fb-arrow" }, "→"),
       h("span", { class: "fb-after" }, h("small", {}, "현재"), c.after || "-")))) : null,
+    participation.length ? sec("🗣️ 나의 발언 참여 변화", participationChart(participation)) : null,
     p.strengths?.length ? sec("👍 잘한 점", h("ul", { class: "fb-ul" }, p.strengths.map((x) => h("li", {}, x)))) : null,
     p.next_actions?.length ? sec("🎯 다음 수업에서 해 보기", h("ul", { class: "fb-ul fb-goals" }, p.next_actions.map((x) => h("li", {}, x)))) : null,
     p.sentence_starters?.length ? sec("💡 생각을 돕는 문장", p.sentence_starters.map((x) => h("div", { class: "fb-starter" }, `“${x}”`))) : null,
@@ -622,5 +648,5 @@ async function renderMyFeedback(courseId, box) {
   catch { achFill(box, h("p", { class: "muted" }, "활동 피드백을 불러오지 못했어요. 잠시 후 다시 열어 주세요.")); return; }
   if (!v.published) { achFill(box, h("p", { class: "muted" }, "아직 선생님이 공개한 활동 피드백이 없어요.")); return; }
   const p = v.parts || { message: v.feedback };
-  achFill(box, h("div", { class: "my-feedback" }, feedbackView(p)));
+  achFill(box, h("div", { class: "my-feedback" }, feedbackView(p, v.participation || [])));
 }
