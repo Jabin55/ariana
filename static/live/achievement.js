@@ -353,6 +353,74 @@ function achRadarReasons(comps, edit = null) { // edit(c, i) → [점수 칸, �
       })))));
 }
 
+const ACH_TREND = { up: "↗ 상승", down: "↘ 하락", flat: "→ 유지" };
+const achMD = (iso) => (iso || "").slice(5).replace("-", "/");
+
+/** 작은 꺾은선 (값이 없는 회차는 건너뜀) */
+function achSpark(values, max) {
+  const ns = "http://www.w3.org/2000/svg", W = 70, H = 20;
+  const pts = values.map((v, i) => (v === null || v === undefined ? null : [values.length > 1 ? (i * (W - 6)) / (values.length - 1) + 3 : W / 2, H - 3 - ((H - 6) * v) / (max || 1)])).filter(Boolean);
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "ach-spark"); svg.setAttribute("aria-hidden", "true");
+  if (pts.length > 1) { const pl = document.createElementNS(ns, "polyline"); pl.setAttribute("points", pts.map((p) => p.join(",")).join(" ")); svg.append(pl); }
+  for (const [x, y] of pts) { const c = document.createElementNS(ns, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 2); svg.append(c); }
+  return svg;
+}
+const achTrendOf = (vals) => { const xs = vals.filter((v) => v !== null && v !== undefined); return xs.length < 2 ? null : xs.at(-1) > xs[0] ? "up" : xs.at(-1) < xs[0] ? "down" : "flat"; };
+const achTrendCell = (t) => h("td", { class: `ach-trend ${t || ""}` }, t ? ACH_TREND[t] : "–");
+
+/** 🎯 성취기준별 도달 상태: 회차별 상·중·하 → 현재 도달·추세, 그리고 다음 단계 */
+function achProgressTable(v) {
+  const rows = v.standards_progress || [];
+  if (!rows.length || !v.classes.length) return null;
+  return h("div", { class: "ach-box" },
+    h("div", { class: "ach-box-head" }, "🎯 성취기준별 도달 상태 ",
+      h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, "(성취기준의 상·중·하 수행 진술 기준 · 현재 도달은 최근 2회 판단이 같으면 확정)")),
+    h("div", { class: "table-wrap" }, h("table", { class: "att ach-progress" },
+      h("thead", {}, h("tr", {}, h("th", {}, "성취기준"), v.classes.map((x) => h("th", { title: x.title }, achMD(x.date))),
+        h("th", {}, "현재 도달"), h("th", {}, "추세"))),
+      h("tbody", {}, rows.flatMap((r) => [
+        h("tr", {},
+          h("td", { class: "ach-std-name" }, h("strong", {}, r.code || ""), " ", h("span", { class: "muted" }, r.text)),
+          r.cells.map((c) => h("td", { class: "ach-cell", title: c.evidence || "근거 없음 (판단 보류)" },
+            c.level ? h("span", { class: `ach-lv lv${c.level}` }, ACH_LEVEL[c.level]) : h("span", { class: "muted" }, "–"))),
+          h("td", { class: "ach-cell" }, r.current ? h("span", { class: `ach-lv lv${r.current}` }, ACH_LEVEL[r.current]) : null,
+            h("div", { class: "muted", style: "font-size:0.75rem" }, r.status)),
+          achTrendCell(r.trend)),
+        r.next_step ? h("tr", { class: "ach-next" }, h("td", { colspan: v.classes.length + 3 }, "➡️ 다음 단계: ", r.next_step)) : null,
+      ].filter(Boolean))))),
+    h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.8rem" }, "칸에 마우스를 올리면 판단 근거가 보여요. – 는 그 수업에 근거가 없어 판단을 보류한 것이에요."));
+}
+
+/** 📈 반복 관찰 지표: 회차마다 같은 잣대 (자동 집계 + AI 판단) */
+function achTrackingTable(v) {
+  const t = v.tracking || [];
+  if (!t.length) return null;
+  const num = [
+    ["talk", "발언 수", ""], ["spontaneous", "└ 자발 발언", "스스로 한 발언"], ["response", "└ 발문 응답", "선생님 질문 뒤 20초 안의 대답"],
+    ["avg_len", "평균 발언 길이(자)", ""], ["quiz_rate", "퀴즈 정답률(%)", "정답이 있는 퀴즈만"]];
+  const numRows = num.map(([k, label, tip]) => {
+    const vals = t.map((x) => x.counts[k]);
+    return h("tr", {}, h("th", { title: tip }, label), vals.map((x) => h("td", { class: "ach-cell" }, x === null || x === undefined ? "–" : String(x))),
+      h("td", { class: "ach-cell" }, achSpark(vals, Math.max(1, ...vals.filter((x) => x !== null && x !== undefined)))), achTrendCell(achTrendOf(vals)));
+  });
+  const aiRows = (v.indicator_names || []).map((ind) => {
+    const vals = t.map((x) => x.indicators?.[ind.key]?.level ?? null);
+    return h("tr", {}, h("th", { title: ind.desc }, `🤖 ${ind.label}`),
+      t.map((x) => { const c = x.indicators?.[ind.key]; return h("td", { class: "ach-cell", title: c?.evidence || (x.analyzed ? "그 수업에서 드러나지 않음" : "아직 분석 전") },
+        c ? h("span", { class: `ach-lv lv${c.level}` }, ACH_LEVEL[c.level]) : h("span", { class: "muted" }, "–")); }),
+      h("td", { class: "ach-cell" }, achSpark(vals, 3)), achTrendCell(achTrendOf(vals)));
+  });
+  return h("div", { class: "ach-box" },
+    h("div", { class: "ach-box-head" }, "📈 반복 관찰 지표 ",
+      h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, "(회차마다 같은 잣대 · 숫자는 자동 집계, 🤖는 AI 판단)")),
+    h("div", { class: "table-wrap" }, h("table", { class: "att ach-progress ach-tracking" },
+      h("thead", {}, h("tr", {}, h("th", {}, "지표"), t.map((x) => h("th", { title: x.title }, achMD(x.date))), h("th", {}, "변화"), h("th", {}, "추세"))),
+      h("tbody", {}, numRows, aiRows))),
+    h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.8rem" },
+      "발문 응답은 선생님 질문 뒤 20초 안에 한 대답이에요. 선생님 말은 수업 중 [발언 기록]과 선생님 마이크 음성 인식이 켜져 있을 때만 저장돼서, 꺼져 있으면 모두 '자발'로 세요."));
+}
+
 /* ───────── 교사: 학생 한 명의 AI 성취 분석 ───────── */
 
 async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === false: 관찰 기록은 [교사 관찰 기록] 탭에서
@@ -459,14 +527,19 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`))))
         : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),
-    v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언·교사 관찰 기록·퀴즈 답안을 성취기준의 평가 요소에 비추어 수업마다 상·중·하로 판단하고, 종합 의견과 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
+    v.analyzed_at ? achProgressTable(v) : null,
+    achTrackingTable(v),
+    v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언(발문 응답·자발 구분)·교사 관찰 기록·퀴즈 답안을 성취기준의 상·중·하 수행 진술에 비추어 수업마다 판단해 도달 상태와 반복 관찰 지표의 변화를 추적하고, 성취기준별 다음 단계와 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
     v.analyzed_at ? [
       (drawCharts(), charts),
       // 수업별 판단 근거 (성취기준 평가 요소의 상·중·하)
-      h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준 평가 요소)"),
+      h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준·평가 요소)"),
         // 판단 근거가 되는 기록이 없는 회차는 아예 보여 주지 않는다
-        v.classes.some((x) => x.ratings.length) ? v.classes.filter((x) => x.ratings.length).map((x) => h("div", { class: "ach-class" },
+        v.classes.some((x) => x.ratings.length || x.standards?.length) ? v.classes.filter((x) => x.ratings.length || x.standards?.length).map((x) => h("div", { class: "ach-class" },
           h("div", { class: "speech-day-head" }, `${fmtDate(x.date)} · ${x.title || "(주제 없음)"}`),
+          (x.standards || []).map((r) => h("div", { class: "ach-rate" },
+            h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} 성취기준`),
+            h("span", { class: "muted" }, ` “${r.evidence}”`))),
           x.ratings.map((r) => h("div", { class: "ach-rate" },
             h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
             h("span", { class: "muted" }, ` “${r.evidence}”`)))))

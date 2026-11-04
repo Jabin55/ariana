@@ -469,6 +469,7 @@ speech_feedback = Table(
     Column("analyzed_at", Float),
     Column("subject_competencies", Text, nullable=False, default=""),  # 교과 역량별 1~5점과 근거 JSON
     Column("competencies", Text, nullable=False, default=""),  # 핵심역량 6개 1~5점과 근거 JSON (AI 분석)
+    Column("standard_feedback", Text, nullable=False, default=""),  # 성취기준별 '다음 수준으로 가려면' JSON (AI 분석)
     Column("updated_at", Float, nullable=False),
     UniqueConstraint("course_id", "user_id"),
 )
@@ -652,6 +653,7 @@ def init() -> None:
              ("courses", "achievement_levels", "TEXT NOT NULL DEFAULT ''"),
              ("speech_feedback", "competencies", "TEXT NOT NULL DEFAULT ''"),
              ("speech_feedback", "subject_competencies", "TEXT NOT NULL DEFAULT ''"),
+             ("speech_feedback", "standard_feedback", "TEXT NOT NULL DEFAULT ''"),
              ("courses", "subject_competencies", "TEXT NOT NULL DEFAULT ''"),
              ("courses", "rank_grade", "VARCHAR(4) NOT NULL DEFAULT ''"),
              ("courses", "capacity", "INTEGER"),

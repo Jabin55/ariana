@@ -201,6 +201,13 @@ async function renderMeetDetail(m, box) {
 }
 
 /* [스크립트]: 선생님·학생 발언을 시간 순서대로 */
+
+/** 학생 발언 옆 [응답]/[자발] 표시: 직전 20초 안에 선생님 질문이 있으면 응답 (선생님 말은 발언 기록·자막이 켜져 있을 때만 저장) */
+function spKind(e) {
+  if (e.role === "teacher" || !e.kind) return null;
+  return h("span", { class: `sp-kind ${e.kind === "응답" ? "resp" : "spon"}`, title: e.prompt ? `선생님 발문: ${e.prompt}` : "스스로 한 발언" }, e.kind);
+}
+
 async function meetScript(id, box) {
   const { entries } = await api(`/api/live/history/${id}/speech`);
   fill(box,
@@ -210,7 +217,7 @@ async function meetScript(id, box) {
     entries.length ? h("div", { class: "speech-script" }, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },
       h("span", { class: "sp-time" }, e.time.slice(0, 5)),
       h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
-      h("span", { class: "sp-text" }, e.text))))
+      spKind(e), h("span", { class: "sp-text" }, e.text))))
       : h("p", { class: "muted" }, "이 특강·회의에서 [📝 발언 기록]을 켜지 않았어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면 마이크를 켠 사람의 말이 글자로 남아요."));
 }
 
@@ -234,7 +241,7 @@ async function meetSpeakers(id, box) {
       h("h4", { class: "speech-h" }, "☁️ 워드클라우드 (많이 쓴 낱말)"), cloud,
       h("h4", { class: "speech-h" }, "🗒 발언 모음"),
       h("div", { class: "speech-day" }, ...who.items.map((e) => h("div", { class: "speech-line student" },
-        h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text)))));
+        h("span", { class: "sp-time" }, e.time.slice(0, 5)), spKind(e), h("span", { class: "sp-text" }, e.text)))));
     drawWordCloud(cloud, who.items.map((e) => e.text));
     return;
   }
@@ -923,7 +930,7 @@ async function learnSpeech(c, st, box) {
       fill(list, ...entries.map((e) => h("div", { class: `speech-line ${e.role}` },
         h("span", { class: "sp-time" }, e.time.slice(0, 5)),
         h("span", { class: "sp-who" }, e.role === "teacher" ? "👩‍🏫 선생님" : [e.student_no, e.name].filter(Boolean).join(" ")),
-        h("span", { class: "sp-text" }, e.text))));
+        spKind(e), h("span", { class: "sp-text" }, e.text))));
       return;
     }
     fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-classes" },
@@ -980,7 +987,7 @@ async function learnSpeech(c, st, box) {
       h("h4", { class: "speech-h" }, `🗒 학생 발언 기록 ${entries.length}건 (날짜순)`),
       days.length ? days.map((g) => h("div", { class: "speech-day" },
         h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`, h("span", { class: "muted" }, ` ${g.items.length}건`)),
-        ...g.items.map((e) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, e.time.slice(0, 5)), h("span", { class: "sp-text" }, e.text)))))
+        ...g.items.map((e) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, e.time.slice(0, 5)), spKind(e), h("span", { class: "sp-text" }, e.text)))))
         : h("p", { class: "muted" }, "발언 기록이 없어요."));
     drawWordCloud(cloud, entries.map((e) => e.text));
     return;

@@ -2007,3 +2007,24 @@ table.att.ach-reason-table td:first-child { overflow: visible; }
 
 /* 오른쪽 차트의 팝업은 오른쪽 끝에 맞춘다 (화면 밖으로 나가지 않게) */
 .ach-two > .ach-box:last-child .ach-comp-info { left: auto; right: 0; }
+
+/* 학생 발언: 교사 발문 응답 / 자발 */
+.sp-kind { display: inline-block; flex: none; margin-right: 6px; padding: 0 6px; border-radius: 999px; font-size: 0.72rem; line-height: 1.6; font-weight: 700; cursor: help; align-self: flex-start; }
+.sp-kind.resp { background: #eef3fb; color: #2f6fb3; }
+.sp-kind.spon { background: #eaf6ef; color: #1b6b4a; }
+
+/* 성취기준별 도달 상태 · 반복 관찰 지표 */
+table.att.ach-progress { font-size: 0.85rem; }
+table.att.ach-progress th, table.att.ach-progress td { border: 1px solid var(--border); padding: 5px 6px; }
+table.att.ach-progress thead th { background: #f4f6fa; text-align: center; color: var(--text); }
+table.att.ach-progress td.ach-cell { text-align: center; vertical-align: middle; min-width: 3em; }
+table.att.ach-progress td.ach-std-name { white-space: normal; min-width: 14em; max-width: 26em; }
+table.att.ach-tracking tbody th { text-align: left; color: var(--text); font-weight: 600; background: #fafbfc; cursor: help; }
+table.att.ach-progress tr.ach-next td { white-space: normal; background: #fbfaf3; font-size: 0.82rem; color: #5a4a12; }
+td.ach-trend { text-align: center; white-space: nowrap; font-weight: 700; }
+td.ach-trend.up { color: #1b6b4a; } td.ach-trend.down { color: #b42318; } td.ach-trend.flat { color: var(--muted); }
+.ach-spark { width: 70px; height: 20px; display: block; margin: 0 auto; }
+.ach-spark polyline { fill: none; stroke: #2f6fb3; stroke-width: 1.6; }
+.ach-spark circle { fill: #2f6fb3; }
+table.att.ach-progress thead th:last-child, table.att.ach-progress td.ach-trend { width: 5.5em; }
+table.att.ach-tracking thead th:nth-last-child(2) { width: 6em; }

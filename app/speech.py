@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import datetime
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -32,6 +33,34 @@ async def _course(course_id: int, request: Request):
     return course
 
 
+# 교사 발문 응답 / 자발 발언 구분: 학생 발언 직전 RESPONSE_WINDOW 초 안에 선생님의 질문이 있으면 '응답'
+RESPONSE_WINDOW = 20.0
+_QUESTION = re.compile(r"\?|까요|나요|가요|습니까|니까\b|을까|ㄹ까|는지|인지|볼래|해\s?볼|해\s?보세요|말해|대답|발표|누가|누구|왜|어떻게|무엇|뭐|어떤|어느|몇\s|이유는|생각은|니\s*$|냐\s*$")
+
+
+def is_question(text: str) -> bool:
+    return bool(_QUESTION.search(text or ""))
+
+
+def tag_turns(rows: list[dict], teacher_rows: list[dict]) -> None:
+    """학생 발언마다 kind('응답'|'자발')와 prompt(그 직전 선생님 발문)를 붙인다. rows·teacher_rows 는 ts(초)·class_id 를 가진다"""
+    by_class: dict[int, list[dict]] = {}
+    for t in teacher_rows:
+        if is_question(t["text"]):
+            by_class.setdefault(t["class_id"], []).append(t)
+    for r in rows:
+        if r["role"] != "student":
+            continue
+        ask = None
+        for t in by_class.get(r["class_id"], []):
+            if r["ts"] - RESPONSE_WINDOW <= t["ts"] <= r["ts"] + 2:  # 인식 지연으로 몇 초 늦게 저장될 수 있다
+                ask = t
+            elif t["ts"] > r["ts"] + 2:
+                break
+        r["kind"] = "응답" if ask else "자발"
+        r["prompt"] = ask["text"] if ask else ""
+
+
 def _entries(course_id: int | None, class_id: int | None = None, user_id: int | None = None) -> list[dict]:
     sl, u, cl = db.speech_logs.c, db.users.c, db.classes.c
     with db.engine.connect() as c:
@@ -56,7 +85,15 @@ def _entries(course_id: int | None, class_id: int | None = None, user_id: int | 
             "time": datetime.fromtimestamp(m["created_at"], KST).strftime("%H:%M:%S"),
             "user_id": m["user_id"], "role": m["role"], "name": m["name"] or m["google_name"] or "",
             "school": m["school"] or "", "student_no": student_no(dict(m)) if m["role"] == "student" else "",
-            "text": m["text"]})
+            "text": m["text"], "ts": m["created_at"]})
+    # 학생 한 명만 고른 경우에도 같은 수업의 선생님 발문으로 응답·자발을 가린다
+    teacher_rows = [r for r in out if r["role"] == "teacher"]
+    if user_id is not None and out:
+        with db.engine.connect() as c:
+            teacher_rows = [{"class_id": t.class_id, "text": t.text, "ts": t.created_at} for t in c.execute(
+                select(sl.class_id, sl.text, sl.created_at).where(sl.class_id.in_({r["class_id"] for r in out}), sl.role == "teacher")
+                .order_by(sl.created_at)).all()]
+    tag_turns(out, teacher_rows)
     return out
 
 
@@ -126,30 +163,31 @@ def speech_workbook(course, rows: list[dict], label: str = "강좌") -> bytes:
     sheet.append([])
     sheet.append(["연번", "수업일", "수업 주제", "시각", "구분", "소속학교", "학번", "이름", "발언"])
     for i, e in enumerate(rows, 1):
-        sheet.append([i, e["date"], xlsx_text(e["class_title"]), e["time"], "학생" if e["role"] == "student" else "교사",
+        sheet.append([i, e["date"], xlsx_text(e["class_title"]), e["time"], f"학생({e.get('kind', '자발')})" if e["role"] == "student" else "교사",
                       xlsx_text(e["school"]), e["student_no"], xlsx_text(e["name"]), xlsx_text(e["text"])])
     for cell in sheet[3]:
         cell.font, cell.fill = Font(bold=True), head_fill
-    for col, width in zip("ABCDEFGHI", (6, 12, 24, 10, 6, 16, 8, 10, 80)):
+    for col, width in zip("ABCDEFGHI", (6, 12, 24, 10, 11, 16, 8, 10, 80)):
         sheet.column_dimensions[col].width = width
     for row in sheet.iter_rows(min_row=4, min_col=9, max_col=9):
         row[0].alignment = Alignment(wrap_text=True, vertical="top")
     sheet.freeze_panes = "A4"
     summary = book.create_sheet("학생별 요약")
-    summary.append(["소속학교", "학번", "이름", "발언 수", "글자 수", "발언한 수업 수"])
+    summary.append(["소속학교", "학번", "이름", "발언 수", "자발 발언", "발문 응답", "글자 수", "발언한 수업 수"])
     stats: dict = {}
     for e in rows:
         if e["role"] != "student":
             continue
-        x = stats.setdefault(e["user_id"], [e["school"], e["student_no"], e["name"], 0, 0, set()])
+        x = stats.setdefault(e["user_id"], [e["school"], e["student_no"], e["name"], 0, 0, 0, 0, set()])
         x[3] += 1
-        x[4] += len(e["text"])
-        x[5].add(e["class_id"])
+        x[4 if e.get("kind", "자발") == "자발" else 5] += 1
+        x[6] += len(e["text"])
+        x[7].add(e["class_id"])
     for x in sorted(stats.values(), key=lambda x: (x[0], x[1], x[2])):
-        summary.append([xlsx_text(x[0]), x[1], xlsx_text(x[2]), x[3], x[4], len(x[5])])
+        summary.append([xlsx_text(x[0]), x[1], xlsx_text(x[2]), x[3], x[4], x[5], x[6], len(x[7])])
     for cell in summary[1]:
         cell.font, cell.fill = Font(bold=True), head_fill
-    for col, width in zip("ABCDEF", (18, 8, 12, 10, 10, 14)):
+    for col, width in zip("ABCDEFGH", (18, 8, 12, 10, 10, 10, 10, 14)):
         summary.column_dimensions[col].width = width
     out = io.BytesIO()
     book.save(out)

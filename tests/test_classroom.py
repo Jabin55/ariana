@@ -3840,7 +3840,11 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
                                   "high": "타당한 근거", "mid": "근거 일부", "low": "근거 없음"}]}
         key = schema["properties"]["classes"]["items"]["properties"]["ratings"]["items"]["properties"]["key"]["enum"][0]
         return {"classes": [{"class_no": 1, "ratings": [{"key": key, "level": 3, "evidence": "오판 가능성"},
-                                                        {"key": "없는|요소", "level": 2, "evidence": "x"}]}],
+                                                        {"key": "없는|요소", "level": 2, "evidence": "x"}],
+                             "standards": [{"key": "S1", "level": 2, "evidence": "오판 가능성(응답)"}, {"key": "S9", "level": 3, "evidence": "x"}],
+                             "indicators": {"reasoning": {"level": 3, "evidence": "이유를 듦"}, "concept": {"level": 0, "evidence": ""},
+                                            "questioning": {"level": 0, "evidence": ""}, "connecting": {"level": 5, "evidence": "x"}}}],
+                "standard_feedback": [{"key": "S1", "next_step": "근거를 두 가지 들어 보세요."}],
                 "summary": "근거 제시가 뛰어납니다.", "feedback": "근거를 잘 들었어요.",
                 "competencies": {**{k: {"score": 3, "reason": "근거 부족"} for k, _ in ach.COMPETENCIES},
                                  "knowledge_info": {"score": 5, "reason": "근거를 정확히 듦"}, "community": {"score": 9, "reason": "x"}},
@@ -3871,6 +3875,7 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
         state(tw, lambda m: sum(x["online"] for x in m["students"]) == 1)
         t.post(f"/api/live/classes/{code}/transcript/state", json={"enabled": True})
         state(sa, lambda m: m["transcript_on"])
+        t.post(f"/api/live/classes/{code}/captions/text", json={"text": "사형제에 대해 어떻게 생각해요", "final": True})
         a.post(f"/api/live/classes/{code}/speech", json={"text": "오판 가능성이 있어 폐지해야 합니다", "final": True})
     uid = t.get(f"{base}/speech").json()["students"][0]["user_id"]
     social = [n for n, _ in ach.SUBJECT_COMPETENCIES["사회"]]  # 교사가 입력하지 않아도 2022 개정 교과 역량이 자동으로
@@ -3893,6 +3898,17 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert calls[-1][1]["properties"]["subject_competencies"]["items"]["properties"]["name"]["enum"] == social
     assert view["classes"][0]["ratings"] == [{"standard_id": sid, "code": "[12법사02-03]", "element": "근거 제시", "level": 3, "evidence": "오판 가능성"}]
     assert view["summary"] == "근거 제시가 뛰어납니다." and not view["published"]
+    prompt_sent = calls[-1][0]
+    assert "[응답] (선생님 발문: 사형제에 대해 어떻게 생각해요) 오판 가능성" in prompt_sent and "수행 진술: 상) 상" in prompt_sent
+    assert view["classes"][0]["standards"] == [{"standard_id": sid, "code": "[12법사02-03]", "level": 2, "evidence": "오판 가능성(응답)"}]
+    assert view["classes"][0]["indicators"] == {"reasoning": {"level": 3, "evidence": "이유를 듦"}}  # 0점·범위 밖은 빼고
+    prog = view["standards_progress"][0]
+    assert prog["current"] == 2 and prog["status"] == "1회 판단" and prog["next_step"] == "근거를 두 가지 들어 보세요."
+    track = view["tracking"][0]
+    assert track["counts"]["talk"] == 1 and track["counts"]["response"] == 1 and track["counts"]["spontaneous"] == 0
+    assert track["indicators"]["reasoning"]["level"] == 3 and [x["key"] for x in view["indicator_names"]][0] == "reasoning"
+    said = t.get(f"{base}/speech/student/{uid}").json()["entries"]
+    assert [(e["kind"], e["prompt"]) for e in said] == [("응답", "사형제에 대해 어떻게 생각해요")]
     comps = {c["key"]: c for c in view["competencies"]}
     assert [c["label"] for c in view["competencies"]][:2] == ["자기관리 역량", "지식정보처리 역량"] and len(comps) == 6
     assert comps["knowledge_info"]["score"] == 5 and comps["community"]["score"] == 1  # 범위 밖 점수는 1점으로
@@ -4176,3 +4192,15 @@ def test_subject_competencies_follow_2022_curriculum():
     assert ach.subject_competencies_of(c("한문", "제2외국어/한문"))[0] == "한문 지식 및 정보 활용 역량"
     assert len(ach.subject_competencies_of(c("기술·가정", "기술·가정/정보"))) == 6
     assert ach.subject_competency_desc(c("수학"))["추론"].startswith("수학적 사실을 관찰")
+
+
+def test_speech_turns_response_or_spontaneous():
+    """학생 발언 직전 20초 안에 선생님 질문이 있으면 '응답', 아니면 '자발'"""
+    from app.speech import tag_turns
+    teacher = [{"class_id": 1, "text": "왜 그렇게 생각하나요", "ts": 100.0}, {"class_id": 1, "text": "좋아요 정리할게요", "ts": 200.0}]
+    rows = [{"class_id": 1, "role": "student", "text": "이유는요", "ts": 110.0},
+            {"class_id": 1, "role": "student", "text": "저는 궁금한 게 있어요", "ts": 205.0},
+            {"class_id": 1, "role": "student", "text": "한참 뒤", "ts": 150.0},
+            {"class_id": 2, "role": "student", "text": "다른 수업", "ts": 105.0}]
+    tag_turns(rows, teacher)
+    assert [r["kind"] for r in rows] == ["응답", "자발", "자발", "자발"] and rows[0]["prompt"] == "왜 그렇게 생각하나요"

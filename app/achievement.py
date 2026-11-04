@@ -516,11 +516,21 @@ async def get_student_observations(course_id: int, user_id: int, request: Reques
 
 # ───────── 학생 발언 AI 분석 ─────────
 
+def turn_counts(x: dict) -> dict:
+    """반복 관찰 지표 중 자동으로 세는 것: 발언 수·자발·응답·평균 길이·퀴즈 정답률"""
+    turns = x.get("turns", [])
+    total = x.get("quiz_total", 0)
+    return {"talk": len(turns), "spontaneous": sum(t["kind"] == "자발" for t in turns),
+            "response": sum(t["kind"] == "응답" for t in turns),
+            "avg_len": round(sum(len(t["text"]) for t in turns) / len(turns)) if turns else 0,
+            "quiz_rate": round(100 * x.get("quiz_correct", 0) / total) if total else None}
+
+
 def _student_material(course_id: int, user_id: int):
     """그 학생의 수업별 발언·관찰·퀴즈 답안과 연결된 성취기준"""
     from app.speech import _entries
     from app.courses import sessions_by_course
-    entries = [e for e in _entries(course_id, None, user_id) if e["role"] == "student"]
+    entries = [e for e in _entries(course_id, None, user_id) if e["role"] == "student"]  # kind: 응답|자발
     standards, links = standards_of(course_id)
     sessions = sessions_by_course([course_id]).get(course_id, [])
     by_date = {}
@@ -531,6 +541,7 @@ def _student_material(course_id: int, user_id: int):
         x = classes.setdefault(e["class_id"], {"class_id": e["class_id"], "date": e["date"], "title": e["class_title"],
                                                 "texts": [], "notes": [], "quizzes": []})
         x["texts"].append(e["text"])
+        x.setdefault("turns", []).append({"kind": e.get("kind", "자발"), "prompt": e.get("prompt", ""), "text": e["text"]})
     for o in student_observations(course_id, user_id):  # 교사 관찰 기록도 그 수업의 근거로
         x = classes.setdefault(o["class_id"], {"class_id": o["class_id"], "date": o["date"], "title": o["class_title"],
                                                 "texts": [], "notes": [], "quizzes": []})
@@ -563,13 +574,20 @@ def _student_material(course_id: int, user_id: int):
         record = f"[{kind}] 문항: {q.prompt} / 학생 답: {shown}"
         if q.kind != "text" and type(q.correct) is int and 0 <= q.correct < len(options):
             record += f" / 정답: {options[q.correct]} ({'정답' if answer == q.correct else '오답'})"
+            graded = (answer == q.correct)
+        else:
+            graded = None
         x = classes.setdefault(q.class_id, {"class_id": q.class_id,
                                              "date": datetime.fromtimestamp(q.class_created, KST).strftime("%Y-%m-%d"),
                                              "title": q.title or "", "texts": [], "notes": [], "quizzes": []})
         x["quizzes"].append(record)
+        if graded is not None:
+            x["quiz_total"] = x.get("quiz_total", 0) + 1
+            x["quiz_correct"] = x.get("quiz_correct", 0) + int(graded)
     every = [s["id"] for s in standards]
     direct = class_links_of(course_id)
     for x in classes.values():
+        x["counts"] = turn_counts(x)
         # 수업에 직접 고른 성취기준 → 같은 날 회차의 성취기준 → 모든 성취기준
         x["standard_ids"] = direct.get(x["class_id"]) or by_date.get(x["date"]) or every
     with db.engine.connect() as c:
@@ -578,16 +596,31 @@ def _student_material(course_id: int, user_id: int):
     return sorted(classes.values(), key=lambda x: (x["date"], x["class_id"])), standards, names
 
 
+# 반복 관찰 지표 (회차마다 같은 잣대로 AI가 상·중·하 판단): 키, 이름, 뜻
+INDICATORS = [
+    ("reasoning", "근거 들어 말하기", "주장이나 답에 이유·사례·자료를 들어 뒷받침한다"),
+    ("concept", "개념·용어 정확히 쓰기", "수업에서 다룬 개념과 용어를 뜻에 맞게 정확히 쓴다"),
+    ("questioning", "질문하기", "궁금한 점이나 더 생각할 거리를 스스로 묻는다"),
+    ("connecting", "다른 의견에 연결하기", "다른 사람의 말에 동의·반박·보완하며 이어서 말한다"),
+]
+
 ANALYSIS_SYSTEM = (
     "당신은 한국 고등학교 교사를 돕는 평가 보조자입니다. 한 학생의 수업별 발언(음성 인식 결과라 오탈자가 있을 수 있음), "
-    "교사 관찰 기록, 퀴즈 문항과 그 학생의 답을 성취기준의 평가 요소와 상·중·하 기준에 비추어 판단합니다.\n"
-    "규칙:\n- 수업마다 연결된 평가 요소 가운데 발언·관찰·퀴즈 답안에 직접 근거가 있는 것만 판단합니다. 근거가 없으면 판단하지 않습니다.\n"
+    "교사 관찰 기록, 퀴즈 문항과 그 학생의 답을 교육과정 성취기준과 그 상·중·하 수행 진술에 비추어 판단해, 학생의 성장 과정을 추적합니다.\n"
+    "학생 발언 앞의 [응답]은 선생님 발문(질문)에 대한 대답이고, [자발]은 학생이 스스로 한 말입니다. "
+    "[응답] 은 함께 적힌 선생님 발문에 비추어 단답인지, 이유를 붙여 확장했는지를 봅니다. 스스로 질문하거나 의견을 내는 [자발] 발언은 주도성의 근거가 됩니다.\n"
+    "규칙:\n"
+    "- standards: 수업마다 연결된 성취기준(S번호)을 그 성취기준의 상·중·하 수행 진술에 비추어 판단합니다. "
+    "level 은 상=3, 중=2, 하=1, 근거가 없으면 0(판단 보류)입니다. 근거 없이 추측하지 않습니다.\n"
+    "- ratings: 평가 요소가 주어진 경우에만, 직접 근거가 있는 평가 요소를 상=3, 중=2, 하=1 로 판단합니다.\n"
+    "- indicators: 반복 관찰 지표 4가지를 수업마다 같은 잣대로 상=3, 중=2, 하=1, 그 수업에서 드러나지 않았으면 0 으로 판단합니다.\n"
+    "- evidence 에는 판단 근거를 짧게 인용하고 출처를 '(발언)', '(응답)', '(자발)', '(관찰)', '(퀴즈)'로 표시합니다.\n"
     "- 퀴즈의 정오 여부 한 번만으로 학생의 전체 성취수준이나 발표·협력 역량을 단정하지 않습니다. 정답이 없는 문항은 답안 내용만 봅니다.\n"
-    "- 가치·태도는 학생의 말이 적거나 정답을 틀렸다는 이유로 추정하지 않습니다. 해당 성취기준과 관련된 행동의 관찰 근거가 있을 때만 판단합니다. "
-    "제안된 확인 자료가 입력에 없으면 그 자료를 본 것처럼 쓰지 않습니다.\n"
-    "- level 은 상=3, 중=2, 하=1 입니다. evidence 에는 판단 근거를 짧게 인용하고 출처를 '(발언)', '(관찰)', '(퀴즈)'로 표시합니다.\n"
-    "- summary(교사용)는 수업이 이어지면서 성취가 어떻게 달라졌는지 4~6문장으로 씁니다. 과목 성취수준(일반적 특성)이 주어지면 "
-    "지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되, 성취도를 확정하는 말은 하지 않습니다. 근거가 적으면 그 한계를 밝힙니다.\n"
+    "- 가치·태도는 학생의 말이 적거나 정답을 틀렸다는 이유로 추정하지 않습니다. 관련 행동의 관찰 근거가 있을 때만 판단합니다.\n"
+    "- standard_feedback: 판단한 성취기준마다, 지금 수준에서 다음 수준(이미 상이면 상 수준을 더 단단히)으로 가기 위해 "
+    "학생이 다음 수업에서 해 볼 구체적인 행동을 한두 문장(존댓말)으로 씁니다. 상 수행 진술을 기준으로 삼습니다.\n"
+    "- summary(교사용)는 수업이 이어지면서 성취와 관찰 지표가 어떻게 달라졌는지, 응답과 자발 발언의 변화까지 4~6문장으로 씁니다. "
+    "과목 성취수준(일반적 특성)이 주어지면 지금 모습이 어느 수준의 특성에 가까운지 참고로 한 문장 덧붙이되 성취도를 확정하지 않습니다. 근거가 적으면 그 한계를 밝힙니다.\n"
     "- feedback(학생용 초안)은 학생에게 직접 말하듯 존댓말로 4~6문장으로 씁니다. 관찰된 잘한 점 1~2가지와 "
     "보완할 점 1가지를 비난 없이 설명하고, 다음 수업에서 해 볼 구체적인 행동 1가지를 제안합니다. "
     "학생이 어려움을 느낄 수 있음을 배려하며 질문·재시도·교사 도움을 받을 수 있다는 따뜻한 격려를 포함합니다. "
@@ -595,7 +628,8 @@ ANALYSIS_SYSTEM = (
     "- competencies 는 2022 개정 교육과정 핵심역량 6가지(자기관리, 지식정보처리, 창의적 사고, 심미적 감성, 협력적 소통, 공동체)를 "
     "발언·관찰·퀴즈 답안 전체에서 드러난 만큼 1~5점으로 매기고(3=보통), reason 에 근거를 한 문장으로 씁니다. "
     "근거가 거의 없는 역량은 1점으로 두고 reason 에 '근거 부족'이라고 씁니다.\n"
-    "- 이름·학번 등 개인정보를 쓰지 않습니다. 제공된 기록에 없는 사실을 지어내지 않습니다."
+    "- 이름·학번 등 개인정보를 쓰지 않습니다. 제공된 기록에 없는 사실을 지어내지 않습니다.\n\n"
+    "# 반복 관찰 지표\n" + "\n".join(f"- {k}: {name} — {desc}" for k, name, desc in INDICATORS)
 )
 
 
@@ -630,22 +664,28 @@ ANALYSIS_SYSTEM += ("\n\n# 핵심역량의 뜻 (competencies 판단 기준)\n"
 
 
 
-def analysis_schema(keys: list[str], n_classes: int) -> dict:
+def analysis_schema(keys: list[str], n_classes: int, std_keys: list[str] | None = None) -> dict:
+    std_keys = std_keys or ["S1"]
+    level = lambda opts: {"type": "integer", "enum": opts}
+    judged = lambda key_enum, opts: {"type": "object", "properties": {"key": {"type": "string", "enum": key_enum}, "level": level(opts),
+                                                                   "evidence": {"type": "string"}},
+                                     "required": ["key", "level", "evidence"], "additionalProperties": False}
+    cls = {"class_no": {"type": "integer", "enum": list(range(1, n_classes + 1))},
+           "standards": {"type": "array", "items": judged(std_keys, [0, 1, 2, 3])},
+           "indicators": {"type": "object", "properties": {
+               k: {"type": "object", "properties": {"level": level([0, 1, 2, 3]), "evidence": {"type": "string"}},
+                   "required": ["level", "evidence"], "additionalProperties": False} for k, _, _ in INDICATORS},
+               "required": [k for k, _, _ in INDICATORS], "additionalProperties": False}}
+    if keys:  # 평가 요소가 있는 성취기준만
+        cls["ratings"] = {"type": "array", "items": judged(keys, [1, 2, 3])}
     return {
         "type": "object",
         "properties": {
-            "classes": {"type": "array", "items": {
-                "type": "object",
-                "properties": {
-                    "class_no": {"type": "integer", "enum": list(range(1, n_classes + 1))},
-                    "ratings": {"type": "array", "items": {
-                        "type": "object",
-                        "properties": {"key": {"type": "string", "enum": keys},
-                                       "level": {"type": "integer", "enum": [1, 2, 3]},
-                                       "evidence": {"type": "string"}},
-                        "required": ["key", "level", "evidence"], "additionalProperties": False}},
-                },
-                "required": ["class_no", "ratings"], "additionalProperties": False}},
+            "classes": {"type": "array", "items": {"type": "object", "properties": cls,
+                                                   "required": list(cls), "additionalProperties": False}},
+            "standard_feedback": {"type": "array", "items": {
+                "type": "object", "properties": {"key": {"type": "string", "enum": std_keys}, "next_step": {"type": "string"}},
+                "required": ["key", "next_step"], "additionalProperties": False}},
             "summary": {"type": "string"},
             "feedback": {"type": "string"},
             "competencies": {"type": "object", "properties": {
@@ -654,7 +694,7 @@ def analysis_schema(keys: list[str], n_classes: int) -> dict:
                     "required": ["score", "reason"], "additionalProperties": False} for k, _ in COMPETENCIES},
                 "required": [k for k, _ in COMPETENCIES], "additionalProperties": False},
         },
-        "required": ["classes", "summary", "feedback", "competencies"], "additionalProperties": False,
+        "required": ["classes", "standard_feedback", "summary", "feedback", "competencies"], "additionalProperties": False,
     }
 
 
@@ -680,15 +720,18 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     classes, standards, names = await db.run(_student_material, course_id, user_id)
     if not classes:
         raise HTTPException(400, "이 학생의 발언·관찰·퀴즈 기록이 없어요.")
-    usable = [s for s in standards if s["elements"]]
+    usable = standards  # 평가 요소가 없어도 성취기준의 상·중·하 수행 진술로 판단한다
     if not usable:
-        raise HTTPException(400, "먼저 [과목 정보]에서 성취기준과 평가 요소를 넣어 주세요.")
+        raise HTTPException(400, "먼저 [과목 정보]에서 성취기준을 넣어 주세요.")
     by_id = {s["id"]: s for s in usable}
     # 평가 요소 열쇠: "S번호|요소 이름" (AI 가 이 목록에서만 고르게 한다)
     keys, key_of = [], {}
     std_lines = []
+    std_key_of = {}
     for i, s in enumerate(usable, 1):
-        std_lines.append(f"[S{i}] {s['code']} {s['text']}")
+        std_key_of[f"S{i}"] = (s["id"], s["code"])
+        std_lines.append(f"[S{i}] {s['code']} {s['text']}\n  수행 진술: 상) {s.get('level_high') or '-'} / "
+                         f"중) {s.get('level_mid') or '-'} / 하) {s.get('level_low') or '-'}")
         for e in s["elements"]:
             k = f"S{i}|{e['name']}"
             keys.append(k)
@@ -701,7 +744,8 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     cls_lines = []
     for n, x in enumerate(classes, 1):
         linked = [f"S{sno[sid]}" for sid in x["standard_ids"] if sid in sno] or [f"S{i}" for i in range(1, len(usable) + 1)]
-        said = "\n".join(f"  · {redact(t, names)}" for t in x["texts"]) or "  (발언 기록 없음)"
+        said = "\n".join(f"  · [응답] (선생님 발문: {redact(t['prompt'], names)}) {redact(t['text'], names)}" if t["kind"] == "응답"
+                          else f"  · [자발] {redact(t['text'], names)}" for t in x.get("turns", [])) or "  (발언 기록 없음)"
         notes = "\n".join(f"  · {redact(t, names)}" for t in x["notes"])
         quizzes = "\n".join(f"  · {redact(t, names)}" for t in x["quizzes"])
         cls_lines.append(f"<수업 {n}> {x['date']} 주제: {x['title'] or '-'} / 연결된 성취기준: {', '.join(linked)}\n"
@@ -709,13 +753,13 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
                          + (f"\n[학생 퀴즈 응답]\n{quizzes}" if quizzes else ""))
     levels = {k: v for k, v in course_levels(course).items() if v}
     level_text = ("\n\n# 과목 성취수준별 일반적 특성 (참고)\n" + "\n".join(f"[{k}] {v}" for k, v in levels.items())) if levels else ""
-    prompt = (f"과목: {course.subject or course.title}{level_text}\n\n# 성취기준과 평가 요소\n" + "\n".join(std_lines)
+    prompt = (f"과목: {course.subject or course.title}{level_text}\n\n# 성취기준(수행 진술)과 평가 요소\n" + "\n".join(std_lines)
               + "\n\n# 수업별 학생 발언·교사 관찰 기록·학생 퀴즈 응답 (수업 순서)\n" + "\n\n".join(cls_lines))
     subject_comps = subject_competencies_of(course)
     if subject_comps:
         prompt += ("\n\n# 이 과목의 교과 역량 (subject_competencies 에 각각 1~5점, 3=보통, 근거 한 문장. 근거가 거의 없으면 1점·'근거 부족')\n"
                    + "\n".join(f"- {x}: {d}" if d else f"- {x}" for x, d in subject_competency_desc(course).items()))
-    data = await ai_json(ANALYSIS_SYSTEM, prompt, with_subject_comps(analysis_schema(keys, len(classes)), subject_comps), 12000)
+    data = await ai_json(ANALYSIS_SYSTEM, prompt, with_subject_comps(analysis_schema(keys, len(classes), list(std_key_of)), subject_comps), 12000)
     now = time.time()
 
     def save():
@@ -729,14 +773,30 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
                     continue
                 seen.add(n)
                 ratings = []
-                for r in item.get("ratings", []):
+                for r in item.get("ratings") or []:
                     if r.get("key") in key_of and r.get("level") in (1, 2, 3):
                         sid, code, name = key_of[r["key"]]
                         ratings.append({"standard_id": sid, "code": code, "element": name, "level": r["level"],
                                         "evidence": str(r.get("evidence", ""))[:300]})
+                stds, got = [], set()
+                for r in item.get("standards") or []:
+                    if r.get("key") in std_key_of and r["key"] not in got and r.get("level") in (1, 2, 3):
+                        got.add(r["key"])
+                        sid, code = std_key_of[r["key"]]
+                        stds.append({"standard_id": sid, "code": code, "level": r["level"], "evidence": str(r.get("evidence", ""))[:300]})
+                ind = {}
+                for k, _, _ in INDICATORS:
+                    v = (item.get("indicators") or {}).get(k)
+                    if isinstance(v, dict) and v.get("level") in (1, 2, 3):
+                        ind[k] = {"level": v["level"], "evidence": str(v.get("evidence", ""))[:300]}
+                result = {"ratings": ratings, "standards": stds, "indicators": ind}
                 c.execute(insert(db.speech_analyses).values(course_id=course_id, user_id=user_id,
                                                             class_id=classes[n - 1]["class_id"],
-                                                            result=json.dumps(ratings, ensure_ascii=False), created_at=now))
+                                                            result=json.dumps(result, ensure_ascii=False), created_at=now))
+            next_steps = {}
+            for v in data.get("standard_feedback") or []:
+                if isinstance(v, dict) and v.get("key") in std_key_of and str(v.get("next_step", "")).strip():
+                    next_steps[str(std_key_of[v["key"]][0])] = str(v["next_step"]).strip()[:500]
             f = db.speech_feedback.c
             row = c.execute(select(db.speech_feedback).where(f.course_id == course_id, f.user_id == user_id)).first()
             comp = data.get("competencies") or {}
@@ -754,7 +814,8 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
                     d["score"] = 1
             values = {"summary": str(data.get("summary", ""))[:4000], "analyzed_at": now, "updated_at": now,
                       "competencies": json.dumps(comp, ensure_ascii=False) if comp else "",
-                      "subject_competencies": json.dumps(subj, ensure_ascii=False) if subj else ""}
+                      "subject_competencies": json.dumps(subj, ensure_ascii=False) if subj else "",
+                      "standard_feedback": json.dumps(next_steps, ensure_ascii=False) if next_steps else ""}
             if row:
                 # 이미 학생에게 공개한 피드백은 선생님이 고친 글일 수 있어 그대로 두고, 공개 전이면 새 초안으로 바꾼다
                 if not row.published:
@@ -768,6 +829,44 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     return await db.run(analysis_view, course_id, user_id)
 
 
+def _trend(levels: list[int]) -> str | None:
+    if len(levels) < 2:
+        return None
+    return "up" if levels[-1] > levels[0] else "down" if levels[-1] < levels[0] else "flat"
+
+
+def standard_progress(course_id: int, classes: list[dict], next_steps: dict) -> list[dict]:
+    """성취기준별 도달 상태: 회차별 상·중·하 → 현재 도달(최근 2회 판단이 같으면 확정, 다르면 '변화 중')과 추세"""
+    standards, _ = standards_of(course_id)
+    out = []
+    for s in standards:
+        cells, levels = [], []
+        for x in classes:
+            hit = next((r for r in x["standards"] if r["standard_id"] == s["id"]), None)
+            cells.append({"class_id": x["class_id"], "level": hit["level"] if hit else None, "evidence": hit["evidence"] if hit else ""})
+            if hit:
+                levels.append(hit["level"])
+        if not levels:
+            status, current = "판단 보류", None
+        elif len(levels) == 1:
+            status, current = "1회 판단", levels[-1]
+        elif levels[-1] == levels[-2]:
+            status, current = "도달 확인", levels[-1]
+        else:
+            status, current = "변화 중", levels[-1]
+        out.append({"standard_id": s["id"], "code": s["code"], "text": s["text"], "cells": cells, "current": current,
+                    "status": status, "trend": _trend(levels), "next_step": next_steps.get(str(s["id"]), "")})
+    return out
+
+
+def indicator_tracking(course_id: int, user_id: int, classes: list[dict]) -> list[dict]:
+    """반복 관찰 지표: 회차마다 자동으로 센 것(발언·자발·응답·길이·퀴즈) + AI 판단(근거·개념·질문·연결)"""
+    material, _, _ = _student_material(course_id, user_id)
+    ai = {x["class_id"]: x["indicators"] for x in classes}
+    return [{"class_id": x["class_id"], "date": x["date"], "title": x["title"], "counts": x["counts"],
+             "indicators": ai.get(x["class_id"], {}), "analyzed": x["class_id"] in ai} for x in material]
+
+
 def analysis_view(course_id: int, user_id: int) -> dict:
     with db.engine.connect() as c:
         rows = c.execute(select(db.speech_analyses, db.classes.c.title, db.classes.c.created_at.label("class_created"))
@@ -776,9 +875,24 @@ def analysis_view(course_id: int, user_id: int) -> dict:
                          .order_by(db.classes.c.created_at)).all()
         fb = c.execute(select(db.speech_feedback).where(db.speech_feedback.c.course_id == course_id,
                                                         db.speech_feedback.c.user_id == user_id)).first()
-    classes = [{"class_id": r.class_id, "title": r.title or "",
-                "date": datetime.fromtimestamp(r.class_created, KST).strftime("%Y-%m-%d"),
-                "ratings": json.loads(r.result)} for r in rows]
+    classes = []
+    for r in rows:
+        try:
+            res = json.loads(r.result)
+        except ValueError:
+            res = []
+        if isinstance(res, list):  # 예전 분석: 평가 요소 판단만
+            res = {"ratings": res}
+        classes.append({"class_id": r.class_id, "title": r.title or "",
+                        "date": datetime.fromtimestamp(r.class_created, KST).strftime("%Y-%m-%d"),
+                        "ratings": res.get("ratings", []), "standards": res.get("standards", []),
+                        "indicators": res.get("indicators", {})})
+    try:
+        next_steps = json.loads(fb.standard_feedback) if fb and fb.standard_feedback else {}
+    except ValueError:
+        next_steps = {}
+    progress = standard_progress(course_id, classes, next_steps)
+    tracking = indicator_tracking(course_id, user_id, classes)
     try:
         comp = json.loads(fb.competencies) if fb and fb.competencies else {}
     except ValueError:
@@ -794,7 +908,9 @@ def analysis_view(course_id: int, user_id: int) -> dict:
     names = subject_competencies_of(course) if course else []
     descs = subject_competency_desc(course) if course else {}
     subject = [{"key": n, "label": n, "desc": descs.get(n, ""), **subj[n]} for n in names if n in subj]
-    return {"classes": classes, "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
+    return {"classes": classes, "standards_progress": progress, "tracking": tracking,
+            "indicator_names": [{"key": k, "label": n, "desc": d} for k, n, d in INDICATORS],
+            "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
             "competencies": competencies, "subject_competencies": subject, "subject_competency_names": names,
             "subject_competency_area": subject_competency_area(course) if course else "",
             "subject_competency_info": [{"label": n, "desc": d} for n, d in descs.items()],
