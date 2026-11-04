@@ -344,7 +344,7 @@ $("#transcript-btn").addEventListener("click", async () => {
     S.transcript_on = enabled;
     syncCaptionCapture();
     renderControls();
-    toast(enabled ? "발언 기록을 시작했어요. 학습 관리 > 💬 발언 기록에서 볼 수 있어요." : "발언 기록을 끝냈어요.", 4000);
+    toast(enabled ? "발언 기록을 시작했어요. 과목 운영의 [학습 활동 > 스크립트]와 [개별 피드백]에서 볼 수 있어요." : "발언 기록을 끝냈어요.", 4000);
   } catch (err) { toast(err.message); }
 });
 
