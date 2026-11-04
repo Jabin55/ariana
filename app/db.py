@@ -489,6 +489,18 @@ class_feedback = Table(
     UniqueConstraint("class_id", "user_id"),
 )
 
+course_results = Table(
+    "course_results", metadata,  # [성취도 및 특기 사항]: 모든 수행평가 채점 뒤 교사가 확정한 성취도·세특·성장 요약
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False, index=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("achievement", String(4), nullable=False, default=""),
+    Column("setuk", Text, nullable=False, default=""),  # 과목별 세부능력 및 특기사항
+    Column("growth", Text, nullable=False, default=""),  # 평가지에 싣는 성장 과정 요약
+    Column("updated_at", Float, nullable=False),
+    UniqueConstraint("course_id", "user_id"),
+)
+
 observations = Table(
     "observations", metadata,  # 수업 중 교사가 학생을 관찰해 적은 기록 (교사만 봄, AI 성취 분석에 함께 씀)
     Column("id", Integer, primary_key=True),

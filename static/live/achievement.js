@@ -729,6 +729,132 @@ function classFbStudent(c, k, s, again) {
         h("button", { class: s.published ? "small" : "primary small", type: "button", onclick: () => save(!s.published) }, s.published ? "공개 취소" : "학생에게 공개"))));
 }
 
+/* ───────── 교사 [🏅 성취도 및 특기 사항]: 모든 수행평가 채점 뒤 성취도 확정·세특·학생 개별 성취 평가지 ───────── */
+const resultsView = new Map(); // 과목별로 열어 본 학생
+
+const neisBytes = (t) => [...(t || "")].reduce((n, ch) => n + (ch === "\n" ? 2 : ch.charCodeAt(0) < 128 ? 1 : 3), 0);
+const rsNum = (v) => (v === null || v === undefined ? "-" : String(Math.round(v * 100) / 100));
+
+async function renderResults(c, box) {
+  const uid = resultsView.get(c.id);
+  if (uid) return renderResultSheet(c, uid, box);
+  achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
+  let v;
+  try { v = await achApi(`/api/courses/${c.id}/results`); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const again = () => renderResults(c, box);
+  const draftAll = h("button", { class: "primary small", type: "button", disabled: !v.ready || !v.ai, title: v.ai ? "" : "AI가 설정되지 않았어요" },
+    "🤖 세특 초안 모두 만들기 (빈 학생만)");
+  draftAll.onclick = async () => {
+    draftAll.disabled = true; draftAll.textContent = "🤖 만드는 중… (학생 수에 따라 1~3분)";
+    try { const r = await achApi(`/api/courses/${c.id}/results/draft-all`, {}); toast(`세특 초안 ${r.made}명 만들었어요.${r.skipped ? ` (이미 쓴 ${r.skipped}명은 그대로)` : ""}`, 5000); again(); }
+    catch (err) { toast(err.message, 6000); draftAll.disabled = false; }
+  };
+  const gradeSel = (s) => {
+    const sel = h("select", { disabled: !v.ready, "aria-label": `${s.name} 성취도` }, h("option", { value: "" }, "미확정"),
+      v.grades.map((g) => h("option", { value: g, selected: s.achievement === g }, g)));
+    sel.onchange = async () => {
+      try { await achApi(`/api/courses/${c.id}/results/${s.user_id}`, { achievement: sel.value, setuk: s.setuk, growth: s.growth }); s.achievement = sel.value; toast("성취도를 저장했어요."); }
+      catch (err) { toast(err.message); sel.value = s.achievement; }
+    };
+    return sel;
+  };
+  achFill(box,
+    h("div", { class: "row", style: "margin:4px 0 6px;gap:6px" }, h("h3", { class: "grow", style: "margin:0" }, "🏅 성취도 및 특기 사항"),
+      h("a", { class: "button small", href: `/api/courses/${c.id}/results.xlsx` }, "📥 엑셀 (나이스 입력용)"), draftAll),
+    h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.88rem" },
+      `모든 수행평가 채점이 끝나면 학생별 성취도를 확정하고 과목별 세부능력 및 특기사항(세특)을 써요. 성취도 체계: ${v.scale} · 제안 성취도는 수행평가 환산 점수 기준이고, 확정은 선생님이 해요.`),
+    v.ready ? null : h("div", { class: "warn-box" }, `⏳ 아직 채점하지 않은 수행평가가 있어요 (채점 ${v.graded}/${v.total}). [📝 수행평가]에서 채점을 모두 마치면 작성할 수 있어요.`),
+    v.weight_ok || !v.assignments.length ? null : h("div", { class: "warn-box" }, "⚠️ 수행평가 반영 비율 합계가 100%가 아니라 환산 점수를 계산할 수 없어요. [📝 수행평가]에서 반영 비율을 확인해 주세요."),
+    v.students.length ? h("div", { class: "table-wrap" }, h("table", { class: "att ach-progress results-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "연번"), h("th", {}, "학번"), h("th", {}, "이름"),
+        v.assignments.map((a) => h("th", { title: `만점 ${rsNum(a.max_score)}점 · 반영 ${rsNum(a.weight)}%` }, a.title)),
+        h("th", {}, "환산 점수"), h("th", {}, "제안"), h("th", {}, "성취도 확정"), h("th", {}, "세특"), h("th", {}, ""))),
+      h("tbody", {}, v.students.map((s, i) => h("tr", {},
+        h("td", { class: "ach-cell" }, String(i + 1)), h("td", { class: "ach-cell" }, s.student_no), h("td", {}, s.name),
+        s.scores.map((x) => h("td", { class: "ach-cell" }, rsNum(x))),
+        h("td", { class: "ach-cell" }, h("strong", {}, rsNum(s.rate))), h("td", { class: "ach-cell" }, s.suggested || "-"),
+        h("td", { class: "ach-cell" }, gradeSel(s)),
+        h("td", { class: "ach-cell" }, s.setuk ? h("span", { class: s.bytes > v.max_bytes ? "error" : "ok-text" }, `${s.bytes}B`) : h("span", { class: "muted" }, "미작성")),
+        h("td", { class: "ach-cell" }, h("button", { class: "small primary", type: "button", onclick: () => { resultsView.set(c.id, s.user_id); renderResults(c, box); } }, "평가지·세특"))))))) 
+      : h("p", { class: "muted" }, "수강생이 없어요."));
+}
+
+async function renderResultSheet(c, uid, box) {
+  const back = () => { resultsView.delete(c.id); renderResults(c, box); };
+  achFill(box, h("p", { class: "muted" }, "평가지를 불러오는 중…"));
+  let v, list;
+  try { [v, list] = await Promise.all([achApi(`/api/courses/${c.id}/results/${uid}/sheet`), achApi(`/api/courses/${c.id}/results`)]); }
+  catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const ready = list.ready;
+  const grade = h("select", { disabled: !ready }, h("option", { value: "" }, "미확정"), list.grades.map((g) => h("option", { value: g, selected: v.achievement === g }, g)));
+  const growth = h("textarea", { rows: 4, maxlength: 3000, disabled: !ready, placeholder: "학생에게 보여 줄 성장 과정 요약 (평가지에 실려요)" });
+  growth.value = v.growth || "";
+  const setuk = h("textarea", { rows: 8, maxlength: 3000, disabled: !ready, placeholder: "과목별 세부능력 및 특기사항 (나이스 1500바이트, 한글 약 500자)" });
+  setuk.value = v.setuk || "";
+  const counter = h("span", { class: "muted" });
+  const count = () => { const n = neisBytes(setuk.value.trim()); counter.textContent = `${[...setuk.value.trim()].length}자 · ${n} / ${list.max_bytes}바이트`; counter.className = n > list.max_bytes ? "error" : "muted"; };
+  setuk.oninput = count; count();
+  const save = h("button", { class: "primary small", type: "button", disabled: !ready }, "저장");
+  save.onclick = async () => {
+    try { await achApi(`/api/courses/${c.id}/results/${uid}`, { achievement: grade.value, setuk: setuk.value, growth: growth.value }); toast("저장했어요."); renderResultSheet(c, uid, box); }
+    catch (err) { toast(err.message, 5000); }
+  };
+  const draft = h("button", { class: "small", type: "button", disabled: !ready || !list.ai, title: list.ai ? "" : "AI가 설정되지 않았어요" }, "🤖 세특·성장 요약 AI 초안");
+  draft.onclick = async () => {
+    if ((setuk.value.trim() || growth.value.trim()) && !confirm("지금 쓴 세특과 성장 요약을 AI 초안으로 바꿀까요?")) return;
+    draft.disabled = true; draft.textContent = "🤖 만드는 중…";
+    try { await achApi(`/api/courses/${c.id}/results/${uid}/draft`, {}); toast("AI 초안이에요. 사실과 다른 곳이 없는지 꼭 확인하고 고쳐 주세요.", 5000); renderResultSheet(c, uid, box); }
+    catch (err) { toast(err.message, 6000); draft.disabled = false; draft.textContent = "🤖 세특·성장 요약 AI 초안"; }
+  };
+  const print = () => { document.body.classList.add("print-sheet-only"); window.print(); setTimeout(() => document.body.classList.remove("print-sheet-only"), 500); };
+  achFill(box,
+    h("div", { class: "row", style: "margin:0 0 10px;gap:6px" }, h("button", { class: "small", type: "button", onclick: back }, "← 학생 목록"),
+      h("span", { class: "grow" }), h("button", { class: "small", type: "button", onclick: print }, "🖨 평가지 인쇄·PDF")),
+    ready ? null : h("div", { class: "warn-box" }, `⏳ 아직 채점하지 않은 수행평가가 있어 성취도·세특은 채점을 모두 마친 뒤 작성할 수 있어요 (채점 ${list.graded}/${list.total}).`),
+    resultSheet(v),
+    h("div", { class: "ach-box", style: "margin-top:12px" },
+      h("div", { class: "row", style: "align-items:center;margin-bottom:8px" }, h("div", { class: "ach-box-head grow", style: "margin:0" }, "✍️ 성취도·세특 작성 (선생님)"), draft),
+      h("label", { class: "row", style: "gap:8px;align-items:center;margin-bottom:8px" }, h("strong", {}, "성취도 확정"), grade,
+        h("span", { class: "muted", style: "font-size:0.85rem" }, `제안: ${v.suggested || "-"} (환산 ${rsNum(v.rate)}점)`)),
+      h("div", { class: "fb-sec-head" }, "📈 성장 과정 요약 (평가지에 실림)"), growth,
+      h("div", { class: "row", style: "margin-top:10px" }, h("div", { class: "fb-sec-head grow", style: "margin:0" }, "📝 과목별 세부능력 및 특기사항"), counter), setuk,
+      h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.8rem" }, "학생 이름·교외 수상·사교육·부모 정보·특정 대학이나 기관명 등 기재 금지 사항이 없는지 확인해 주세요."),
+      h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, save)));
+}
+
+/** 학생 개별 성취 평가지 (인쇄용) */
+function resultSheet(v) {
+  const L = ACH_LEVEL;
+  const info = [["과목", v.course.course_title], ["학년도·학기", [v.course.school_year, v.course.term].filter(Boolean).join(" ")], ["거점학교", v.course.hub_school],
+    ["담당 교사", v.course.instructor], ["학교", v.student.school], ["학번", v.student.student_no], ["이름", v.student.name]];
+  return h("div", { class: "print-sheet result-sheet" },
+    h("h2", { class: "rs-title" }, "학생 개별 성취 평가지"),
+    h("table", { class: "rs-info" }, h("tbody", {}, h("tr", {}, info.slice(0, 4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")])),
+      h("tr", {}, info.slice(4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")]), h("th", {}, "성취도"), h("td", {}, h("strong", {}, v.achievement || "미확정"))))),
+    h("h3", { class: "rs-head" }, "1. 수행평가 결과"),
+    h("table", { class: "rs-table" },
+      h("thead", {}, h("tr", {}, ["평가 영역", "영역 만점", "반영 비율", "점수", "환산 점수"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, v.items.map((i) => h("tr", {}, h("td", { class: "left" }, i.title), h("td", {}, rsNum(i.max_score)), h("td", {}, `${rsNum(i.weight)}%`),
+        h("td", {}, rsNum(i.score)), h("td", {}, rsNum(i.weighted)))),
+        h("tr", { class: "rs-sum" }, h("td", {}, "합계"), h("td", {}, v.totals.max_score ?? "-"), h("td", {}, v.totals.weight ? `${v.totals.weight}%` : "-"),
+          h("td", {}, v.totals.score ?? "-"), h("td", {}, h("strong", {}, v.rate ?? v.totals.weighted ?? "-"))))),
+    h("p", { class: "rs-note" }, `성취도 체계: ${v.scale} · 성취도: ${v.achievement || "미확정"}${v.rate !== null && v.rate !== undefined ? ` (환산 ${v.rate}점)` : ""}`),
+    h("h3", { class: "rs-head" }, "2. 성취기준별 도달"),
+    v.standards.length ? h("table", { class: "rs-table" },
+      h("thead", {}, h("tr", {}, ["성취기준", "수행평가 도달 (근거 영역)", "수업 관찰 도달"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, v.standards.map((s) => h("tr", {}, h("td", { class: "left" }, h("strong", {}, s.code), " ", s.text),
+        h("td", {}, s.level ? [h("span", { class: `ach-lv lv${s.level}` }, L[s.level]), ` ${s.rate}%`, h("div", { class: "rs-sub" }, s.assessments.join(", "))] : "-"),
+        h("td", {}, s.observed ? [h("span", { class: `ach-lv lv${s.observed}` }, L[s.observed]), h("div", { class: "rs-sub" }, s.observed_status)] : "-")))))
+      : h("p", { class: "muted" }, "성취기준이 없어요."),
+    v.competencies.length || v.subject_competencies.length ? [h("h3", { class: "rs-head" }, "3. 역량"),
+      h("div", { class: "ach-two rs-two" },
+        v.competencies.length ? h("div", {}, h("div", { class: "rs-sub-head" }, "핵심역량"), achRadar(v.competencies)) : h("div"),
+        v.subject_competencies.length ? h("div", {}, h("div", { class: "rs-sub-head" }, "교과 역량"), achRadar(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량")) : h("div"))] : null,
+    v.participation.length ? [h("h3", { class: "rs-head" }, "4. 발언 참여 변화"), participationChart(v.participation)] : null,
+    h("h3", { class: "rs-head" }, "5. 성장 과정 요약"), h("p", { class: "rs-text" }, v.growth || "-"),
+    h("h3", { class: "rs-head" }, "6. 과목별 세부능력 및 특기사항"), h("p", { class: "rs-text" }, v.setuk || "-"));
+}
+
 /* ───────── 학생: 선생님이 공개한 피드백 ───────── */
 
 async function renderMyFeedback(courseId, box) {

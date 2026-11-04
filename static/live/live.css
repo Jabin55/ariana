@@ -2073,3 +2073,26 @@ table.att.ach-progress td.ach-gap { background: #fff8e6; }
 .fb-class[open] > summary { margin-bottom: 10px; }
 .ach-lv.lv0 { background: #e9ecef; color: #6b7280; }
 .my-total-fb { margin-top: 14px; }
+
+/* 성취도 및 특기 사항 · 학생 개별 성취 평가지 */
+.warn-box { background: #fff8e6; border: 1px solid #f1d28a; color: #6b4e00; border-radius: 10px; padding: 8px 12px; margin: 6px 0 10px; font-size: 0.9rem; }
+.results-table select { width: auto; padding: 2px 6px; }
+.result-sheet { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+.rs-title { text-align: center; margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0.1em; }
+.rs-head { font-size: 1rem; margin: 18px 0 6px; padding-left: 8px; border-left: 4px solid #1b6b4a; }
+.rs-info, .rs-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.rs-info th, .rs-info td, .rs-table th, .rs-table td { border: 1px solid #c9ced6; padding: 6px 8px; text-align: center; vertical-align: middle; }
+.rs-info th, .rs-table thead th { background: #f1f4f2; font-weight: 700; white-space: nowrap; }
+.rs-table td.left { text-align: left; }
+.rs-sum td { background: #fafbfc; font-weight: 700; }
+.rs-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+.rs-sub-head { text-align: center; font-weight: 700; font-size: 0.85rem; }
+.rs-note { font-size: 0.82rem; color: var(--muted); margin: 4px 0 0; }
+.rs-text { white-space: pre-wrap; line-height: 1.75; margin: 0; border: 1px solid #c9ced6; border-radius: 6px; padding: 10px 12px; min-height: 3em; }
+@media print {
+  body.print-sheet-only * { visibility: hidden !important; }
+  body.print-sheet-only .print-sheet, body.print-sheet-only .print-sheet * { visibility: visible !important; }
+  body.print-sheet-only .print-sheet { position: absolute; left: 0; top: 0; width: 100%; border: none; padding: 0; }
+  body.print-sheet-only .rs-two { display: grid !important; grid-template-columns: 1fr 1fr !important; }
+}
+.result-sheet .ach-chart { max-width: 520px; margin: 0 auto; display: block; }

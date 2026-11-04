@@ -4283,3 +4283,56 @@ def test_class_feedback_per_class_draft_edit_publish(monkeypatch):
     # 공개한 학생은 다시 만들어도 그대로
     assert t.post(f"{base}/class-feedback/{k}/generate", json={}).json()["made"] == 0
     assert b.get(f"/api/my/courses/{cid}/class-feedback").json()["items"] == []
+
+
+def test_results_achievement_and_setuk_after_grading(monkeypatch):
+    """[성취도 및 특기 사항]: 모든 수행평가 채점 뒤에만 성취도 확정·세특 작성, 성취기준별 최종 도달은 수행평가 득점률"""
+    import app.results as rs
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    calls = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        calls.append(prompt)
+        return {"setuk": "기본권 제한의 요건을 사례에 적용하여 설명함. " * 40, "growth": "근거를 들어 말하는 힘이 자랐어요."}
+    monkeypatch.setattr(rs, "ai_json", fake_ai)
+    t, other = teacher(), teacher("other@gmail.com")
+    cid = t.post("/api/courses", json={**COURSE, "title": "법과 사회"}).json()["id"]
+    a, b = student(1), student(2)
+    for s_ in (a, b):
+        s_.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    base = f"/api/courses/{cid}"
+    sid = t.post(f"{base}/standards", json={"code": "[12법사02-03]", "text": "기본권 제한", "level_high": "상", "level_mid": "중", "level_low": "하"}).json()["id"]
+    a1 = t.post(f"{base}/assignments", json={"title": "판례 분석", "weight": 60, "max_score": 50, "standard_ids": [sid]}).json()["id"]
+    a2 = t.post(f"{base}/assignments", json={"title": "토론", "weight": 40, "max_score": 20}).json()["id"]
+    ua, ub = a.get("/api/me").json()["user"]["id"], b.get("/api/me").json()["user"]["id"]
+    assert other.get(f"{base}/results").status_code == 404
+    t.post(f"/api/assignments/{a1}/grade", json={"user_id": ua, "score": 45, "feedback": "판례를 정확히 분석함"})
+    v = t.get(f"{base}/results").json()
+    assert not v["ready"] and (v["graded"], v["total"]) == (1, 4) and v["grades"] == ["A", "B", "C", "D", "E"]
+    assert t.post(f"{base}/results/{ua}", json={"achievement": "A"}).status_code == 409
+    assert t.post(f"{base}/results/draft-all").status_code == 409
+    for aid, uid, score in ((a2, ua, 18), (a1, ub, 25), (a2, ub, 10)):
+        t.post(f"/api/assignments/{aid}/grade", json={"user_id": uid, "score": score})
+    v = t.get(f"{base}/results").json()
+    assert v["ready"] and v["weight_ok"]
+    sa = next(s for s in v["students"] if s["user_id"] == ua)
+    assert sa["rate"] == 90 and sa["suggested"] == "A" and sa["scores"] == [45, 18]  # 45/50*60 + 18/20*40
+    sb = next(s for s in v["students"] if s["user_id"] == ub)
+    assert sb["rate"] == 50 and sb["suggested"] == "E"
+    assert t.post(f"{base}/results/{ua}", json={"achievement": "Z"}).status_code == 422
+    assert t.post(f"{base}/results/{ua}", json={"setuk": "가" * 501}).status_code == 422  # 1503바이트
+    assert t.post(f"{base}/results/{ua}", json={"achievement": "A", "setuk": "판례를 분석함.\n토론에 참여함."}).json()["bytes"] == 12 * 3 + 4 + 2  # 한글 12자·공백과 마침표 4·줄바꿈 2
+    sheet = t.get(f"{base}/results/{ua}/sheet").json()
+    st = sheet["standards"][0]
+    assert (st["rate"], st["level"], st["assessments"]) == (90, 3, ["판례 분석"])
+    assert sheet["achievement"] == "A" and sheet["totals"]["weight"] == "100" and sheet["items"][0]["weighted"] == 54
+    made = t.post(f"{base}/results/draft-all").json()
+    assert made["made"] == 1 and made["skipped"] == 1  # 이미 세특을 쓴 학생은 건너뜀
+    assert "- 판례 분석: 25/50점 (반영 60%)" in calls[0]
+    got = t.get(f"{base}/results/{ub}/sheet").json()
+    assert rs.neis_bytes(got["setuk"]) <= 1500 and got["growth"].startswith("근거를")
+    again = t.post(f"{base}/results/{ua}/draft").json()  # 한 명 다시 만들기는 지금 글을 바꾼다
+    assert "판례를 정확히 분석함" in calls[-1] and again["setuk"].startswith("기본권 제한의")
+    x = t.get(f"{base}/results.xlsx")
+    assert x.status_code == 200 and x.content[:2] == b"PK"

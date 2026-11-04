@@ -597,7 +597,7 @@ function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
   const subs = [["notice", "📢 과목 공지사항"], ["info", "📘 과목 정보"], ["sessions", "🗓 회차 정보"], ["open", "▶ 온라인 수업 열기"], ["learn", "📊 학습 관리"],
-    ["assess", "📝 수행평가"], ["satisfaction", "📋 만족도 조사"]];
+    ["assess", "📝 수행평가"], ["satisfaction", "📋 만족도 조사"], ["results", "🏅 성취도 및 특기 사항"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -629,6 +629,7 @@ function renderRunCourse(c) {
   else if (runSub === "notice") renderCourseNotices(c, subBox);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
   else if (runSub === "learn") renderLearning(c, subBox);
+  else if (runSub === "results") renderResults(c, subBox); // 성취도·세특·학생 개별 성취 평가지 (achievement.js)
   else renderCourseSatisfaction(c, subBox);
 }
 
