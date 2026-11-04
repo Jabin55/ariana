@@ -89,6 +89,13 @@ def _standard_results(course_id: int, user_id: int, items: list[dict], analysis:
         links = c.execute(select(s_.assignment_id, s_.standard_id).where(s_.assignment_id.in_([i["id"] for i in items] or [-1]))).all()
     by_item = {i["id"]: i for i in items}
     observed = {p["standard_id"]: p for p in analysis.get("standards_progress", [])}
+    # 학생 발언: 수업별 판단 근거 가운데 학생 말((응답)·(자발)·(발언))을 인용한 것, 최근 2개
+    said: dict[int, list[str]] = {}
+    for x in analysis.get("classes", []):
+        for r in x.get("standards", []):
+            ev = (r.get("evidence") or "").strip()
+            if ev and any(t in ev for t in ("(응답)", "(자발)", "(발언)")):
+                said.setdefault(r["standard_id"], []).append(ev)
     out = []
     for s in standards:
         got = [by_item[a] for a, sid in links if sid == s["id"] and a in by_item and by_item[a]["score"] is not None and by_item[a]["max_score"]]
@@ -96,7 +103,8 @@ def _standard_results(course_id: int, user_id: int, items: list[dict], analysis:
         level = None if rate is None else 3 if rate >= 80 else 2 if rate >= 60 else 1
         obs = observed.get(s["id"])
         out.append({"standard_id": s["id"], "code": s["code"], "text": s["text"], "assessments": [i["title"] for i in got],
-                    "rate": rate, "level": level, "observed": obs["current"] if obs else None, "observed_status": obs["status"] if obs else ""})
+                    "rate": rate, "level": level, "observed": obs["current"] if obs else None, "observed_status": obs["status"] if obs else "",
+                    "speech": said.get(s["id"], [])[-2:]})
     return out
 
 

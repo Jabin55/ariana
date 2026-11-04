@@ -2173,3 +2173,5 @@ table.att.hub-approval-table thead th { text-align: center; } /* 머리글 줄 �
 /* 강의실 > 내 강좌 > 과목: 제목·과목 카드는 바탕에, 표만 흰 틀 (위의 흰 틀 규칙) */
 .student-course-plain { max-width: none; }
 .run-layout { margin-top: 14px; }
+.rs-speech { font-size: 0.8rem; line-height: 1.5; color: #374151; }
+.rs-speech > div + div { margin-top: 4px; }

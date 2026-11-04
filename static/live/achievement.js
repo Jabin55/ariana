@@ -825,13 +825,15 @@ async function renderResultSheet(c, uid, box) {
 /** 학생 개별 성취 평가지 (인쇄용) */
 function resultSheet(v) {
   const L = ACH_LEVEL;
+  let n = 0;
+  const no = () => ++n; // 보이는 항목만 차례로 번호 (역량·발언 참여가 없으면 건너뜀)
   const info = [["학년도·학기", [v.course.school_year, v.course.term].filter(Boolean).join(" ")], ["과목", v.course.course_title], ["거점학교", v.course.hub_school],
     ["담당 교사", v.course.instructor], ["소속학교", v.student.school], ["학번", v.student.student_no], ["이름", v.student.name]];
   return h("div", { class: "print-sheet result-sheet" },
     h("h2", { class: "rs-title" }, "학생 개별 성취 평가지"),
     h("table", { class: "rs-info" }, h("tbody", {}, h("tr", {}, info.slice(0, 4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")])),
       h("tr", {}, info.slice(4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")]), h("th", {}, "성취도"), h("td", {}, h("strong", {}, v.achievement || "미확정"))))),
-    h("h3", { class: "rs-head" }, "1. 수행평가 결과"),
+    h("h3", { class: "rs-head" }, `${no()}. 수행평가 결과`),
     h("table", { class: "rs-table" },
       h("thead", {}, h("tr", {}, ["평가 영역", "영역 만점", "반영 비율", "점수", "환산 점수"].map((t) => h("th", {}, t)))),
       h("tbody", {}, v.items.map((i) => h("tr", {}, h("td", { class: "left" }, i.title), h("td", {}, rsNum(i.max_score)), h("td", {}, `${rsNum(i.weight)}%`),
@@ -839,20 +841,21 @@ function resultSheet(v) {
         h("tr", { class: "rs-sum" }, h("td", {}, "합계"), h("td", {}, v.totals.max_score ?? "-"), h("td", {}, v.totals.weight ? `${v.totals.weight}%` : "-"),
           h("td", {}, v.totals.score ?? "-"), h("td", {}, h("strong", {}, v.rate ?? v.totals.weighted ?? "-"))))),
     h("p", { class: "rs-note" }, `성취도 체계: ${v.scale} · 성취도: ${v.achievement || "미확정"}${v.rate !== null && v.rate !== undefined ? ` (환산 ${v.rate}점)` : ""}`),
-    h("h3", { class: "rs-head" }, "2. 성취기준별 도달"),
-    v.standards.length ? h("table", { class: "rs-table" },
-      h("thead", {}, h("tr", {}, ["성취기준", "수행평가 도달 (근거 영역)", "수업 관찰 도달"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, v.standards.map((s) => h("tr", {}, h("td", { class: "left" }, h("strong", {}, s.code), " ", s.text),
-        h("td", {}, s.level ? [h("span", { class: `ach-lv lv${s.level}` }, L[s.level]), ` ${s.rate}%`, h("div", { class: "rs-sub" }, s.assessments.join(", "))] : "-"),
-        h("td", {}, s.observed ? [h("span", { class: `ach-lv lv${s.observed}` }, L[s.observed]), h("div", { class: "rs-sub" }, s.observed_status)] : "-")))))
-      : h("p", { class: "muted" }, "성취기준이 없어요."),
-    v.competencies.length || v.subject_competencies.length ? [h("h3", { class: "rs-head" }, "3. 역량"),
+    v.competencies.length || v.subject_competencies.length ? [h("h3", { class: "rs-head" }, `${no()}. 역량`),
       h("div", { class: "ach-two rs-two" },
         v.competencies.length ? h("div", {}, h("div", { class: "rs-sub-head" }, "핵심역량"), achRadar(v.competencies)) : h("div"),
         v.subject_competencies.length ? h("div", {}, h("div", { class: "rs-sub-head" }, "교과 역량"), achRadar(v.subject_competencies, "#2f6fb3", "rgba(47,111,179,0.20)", "교과 역량")) : h("div"))] : null,
-    v.participation.length ? [h("h3", { class: "rs-head" }, "4. 발언 참여 변화"), participationChart(v.participation)] : null,
-    h("h3", { class: "rs-head" }, "5. 성장 과정 요약"), h("p", { class: "rs-text" }, v.growth || "-"),
-    h("h3", { class: "rs-head" }, "6. 과목별 세부능력 및 특기사항"), h("p", { class: "rs-text" }, v.setuk || "-"));
+    h("h3", { class: "rs-head" }, `${no()}. 성취기준별 도달`),
+    v.standards.length ? h("table", { class: "rs-table" },
+      h("thead", {}, h("tr", {}, ["성취기준", "수행평가", "수업 관찰", "학생 발언"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, v.standards.map((s) => h("tr", {}, h("td", { class: "left" }, h("strong", {}, s.code), " ", s.text),
+        h("td", {}, s.level ? [h("span", { class: `ach-lv lv${s.level}` }, L[s.level]), ` ${s.rate}%`, h("div", { class: "rs-sub" }, s.assessments.join(", "))] : "-"),
+        h("td", {}, s.observed ? [h("span", { class: `ach-lv lv${s.observed}` }, L[s.observed]), h("div", { class: "rs-sub" }, s.observed_status)] : "-"),
+        h("td", { class: "left rs-speech" }, s.speech?.length ? s.speech.map((q) => h("div", {}, `“${q}”`)) : "-")))))
+      : h("p", { class: "muted" }, "성취기준이 없어요."),
+    v.participation.length ? [h("h3", { class: "rs-head" }, `${no()}. 발언 참여 변화`), participationChart(v.participation)] : null,
+    h("h3", { class: "rs-head" }, `${no()}. 성장 과정 요약`), h("p", { class: "rs-text" }, v.growth || "-"),
+    h("h3", { class: "rs-head" }, `${no()}. 과목별 세부능력 및 특기사항`), h("p", { class: "rs-text" }, v.setuk || "-"));
 }
 
 /* ───────── 학생: 선생님이 공개한 피드백 ───────── */
