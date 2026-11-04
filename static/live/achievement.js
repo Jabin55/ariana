@@ -922,7 +922,7 @@ async function renderGrowth(courseId, who, box, openFeedback) {
     v && v.analyzed_at ? achProgressTable(v) : null,
     v ? achTrackingTable(v) : null,
     h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🗓️ 회차 타임라인"),
-      list.length ? [...list].reverse().map(card) : h("p", { class: "muted", style: "margin:0" }, "아직 이 학생의 수업 기록이 없어요.")));
+      list.length ? [...list].sort((a, b) => a.no - b.no).map(card) : h("p", { class: "muted", style: "margin:0" }, "아직 이 학생의 수업 기록이 없어요.")));
 }
 
 /** 활동 피드백 > 💌 피드백: 회차별 피드백(고르고 만들고 공개) + 종합 피드백 */
