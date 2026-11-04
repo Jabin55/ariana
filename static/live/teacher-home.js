@@ -619,7 +619,7 @@ function renderRunCourse(c) {
   const subBox = h("div", { class: "run-sub" });
   // 왼쪽 세로 메뉴: [키, 그림, 이름, 대기 수]
   const subs = [["students", "👥", "수강생 관리", c.pending], ["notice", "📢", "과목 공지사항"], ["info", "📘", "과목 정보"], ["sessions", "🗓️", "회차 정보"],
-    ["open", "▶️", "온라인 수업"], ["learn", "📊", "학습 관리"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "성취도 및 특기 사항"]];
+    ["open", "▶️", "온라인 수업"], ["learn", "📊", "학습 관리"], ["script", "🗒️", "스크립트"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "성취도 및 특기 사항"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -653,6 +653,11 @@ function renderRunCourse(c) {
   else if (runSub === "students") renderStudents(subBox, c);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
   else if (runSub === "learn") renderLearning(c, subBox);
+  else if (runSub === "script") { // 수업별 스크립트 (예전 [학습 관리 > 스크립트])
+    const st = learnState[c.id] ||= { card: "attend", open: new Set() };
+    st.speechTab = "class"; st.view = null;
+    learnSpeech(c, st, subBox);
+  }
   else if (runSub === "results") renderResults(c, subBox); // 성취도·세특·학생 개별 성취 평가지 (achievement.js)
   else renderCourseSatisfaction(c, subBox);
 }
@@ -902,7 +907,7 @@ const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '평�
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
-  if (["notice", "activity", "speech"].includes(st.card)) st.card = "attend"; // 없앤 카드
+  if (["notice", "activity", "speech", "script"].includes(st.card)) st.card = "attend"; // 없앤 카드 (스크립트는 왼쪽 메뉴 [스크립트]로)
   let d;
   try { d = await api(`/api/courses/${c.id}/learning`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   d.classes.reverse(); // 첫 수업(연번 1)부터 차례로
@@ -912,7 +917,6 @@ async function renderLearning(c, box) {
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
-    ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
     ["speakers", "🧑‍🎓 학생 맞춤형 피드백", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
     ["classfb", "📝 수업별 피드백", `${S.classes}회`, "수업마다 학생 피드백"],
   ];
@@ -938,7 +942,8 @@ async function learnSpeech(c, st, box) {
   try { d = await api(`/api/courses/${c.id}/speech`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   const again = () => learnSpeech(c, st, box);
   const head = h("div", { class: "row", style: "margin:4px 0 10px" },
-    h("h3", { class: "grow", style: "margin:0" }, st.speechTab === "class" ? "🗒 수업별 스크립트" : "🧑‍🎓 학생 맞춤형 피드백"),
+    st.speechTab === "class" ? h("span", { class: "grow" }) // [스크립트] 메뉴: 제목은 위에 이미 있다
+      : h("h3", { class: "grow", style: "margin:0" }, "🧑‍🎓 학생 맞춤형 피드백"),
     d.total ? h("a", { class: "button small", href: `/api/courses/${c.id}/speech.xlsx` }, "📥 엑셀 내려받기") : null);
   if (!d.total && !(st.speechTab === "student" && d.students.length)) {
     fill(box, head, h("p", { class: "muted" }, "아직 발언 기록이 없어요. 수업 화면 위쪽의 [📝 발언 기록]을 켜면, 마이크를 켠 학생과 선생님의 말이 글자로 바뀌어 여기에 쌓여요. (크롬·엣지 사용자만 기록돼요)"));
