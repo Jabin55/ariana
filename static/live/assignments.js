@@ -105,8 +105,9 @@ async function renderCourseAssignments(c, box) {
   const viewing = list.find((x) => x.id === viewAssign.get(c.id));
   if (viewing) { renderAssignmentPost(c, viewing, data, standardData.standards, box, reload); return; }
   const total = list.reduce((sum, a) => sum + (a.weight || 0), 0);
-  const rows = list.map((a, i) => h("tr", { class: "assign-row", onclick: () => { viewAssign.set(c.id, a.id); reload(); }, title: "누르면 제출 현황·채점" },
-    h("td", { class: "num" }, list.length - i),
+  // 먼저 올린 평가가 위, 새로 올린 평가가 아래 (연번 1, 2, 3 …)
+  const rows = [...list].reverse().map((a, i) => h("tr", { class: "assign-row", onclick: () => { viewAssign.set(c.id, a.id); reload(); }, title: "누르면 제출 현황·채점" },
+    h("td", { class: "num" }, i + 1),
     h("td", {}, h("strong", {}, a.title)),
     h("td", { class: "assign-desc-cell" }, a.description || "-"),
     h("td", { class: "num" }, a.max_score ? `${fmtNum(a.max_score)}점` : "-"),
