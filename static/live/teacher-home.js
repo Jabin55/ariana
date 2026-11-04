@@ -1052,8 +1052,8 @@ async function learnSpeech(c, st, box) {
         };
         const row = (o) => {
           const tr = h("div", { class: "speech-line student obs-line" },
-            h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
-            h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)),
+            h("span", { class: "sp-time" }, o.time),
+            h("span", { class: "sp-text" }, o.text),
             h("span", { class: "obs-actions" },
               h("button", { class: "small", type: "button", onclick: async () => {
                 const t = await appPrompt("관찰 기록 고치기", o.text);
@@ -1070,7 +1070,9 @@ async function learnSpeech(c, st, box) {
           h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "✍️ 관찰 기록 더하기"),
             h("div", { class: "row", style: "gap:6px;align-items:flex-start" }, pick, text, add)),
           h("h4", { class: "speech-h" }, `👀 교사 관찰 기록 ${obs.length}건`),
-          obs.length ? h("div", { class: "speech-day" }, ...obs.map(row))
+          obs.length ? obsDays(obs).map((g) => h("div", { class: "speech-day" },
+            h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`, h("span", { class: "muted" }, ` ${g.items.length}건`)),
+            ...g.items.map(row)))
             : h("p", { class: "muted" }, "아직 관찰 기록이 없어요. 수업 화면 오른쪽 [관찰기록] 탭이나 위에서 남길 수 있어요."));
       } catch (err) { fill(pane, h("p", { class: "error" }, err.message)); }
       return;
@@ -1107,6 +1109,16 @@ async function learnSpeech(c, st, box) {
         x.goal_trend ? h("span", { class: `goal-trend ${x.goal_trend}` }, { up: " ↗", down: " ↘", flat: " →" }[x.goal_trend]) : null]),
       h("td", { class: "num" }, x.published ? `${x.published}회` : "-")))
       : empty(9, "수강 확정 학생이 없어요.")))));
+}
+
+/** 관찰 기록을 수업별로 묶는다 (수업 날짜순, 수업 안에서는 적은 시각순) */
+function obsDays(obs) {
+  const map = new Map();
+  for (const o of obs) {
+    if (!map.has(o.class_id)) map.set(o.class_id, { class_id: o.class_id, date: o.date, title: o.class_title, items: [] });
+    map.get(o.class_id).items.push(o);
+  }
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date) || a.class_id - b.class_id);
 }
 
 /* 워드클라우드: 조사·어미를 대강 떼어 낸 낱말의 빈도로 글자 크기를 정한다 */
