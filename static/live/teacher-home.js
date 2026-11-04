@@ -947,8 +947,8 @@ async function renderLearning(c, box) {
   const cards = [
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
     ["materials", "📁 수업자료", `${matFiles}개`, `자료 공유한 수업 ${mats.classes.filter((x) => x.files || x.whiteboard).length}회`],
-    ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
-    ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
+    ["survey", "📊 수업 중 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
+    ["quiz", "✅ 수업 중 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
   ];
   const detail = h("div", { class: "learn-detail" });
