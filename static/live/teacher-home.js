@@ -1765,12 +1765,12 @@ async function renderSchoolSignups(box) {
       h("button", { class: "small primary", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 승인"),
       h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 반려")),
     h("div", { class: "table-wrap" }, h("table", { class: "att signup-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "승인 담당", "학년", "반", "번호", "학생 이름", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "학년", "반", "번호", "학생 이름", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, x.status === "pending" ? h("input", { type: "checkbox", class: "signup-check", "aria-label": `${x.name} 선택`, onchange: (e) => {
           if (e.target.checked) signupPick.add(x.user_id); else signupPick.delete(x.user_id);
         } }) : null),
-        h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, teacherCell(x.teachers)), h("td", {}, x.grade ? `${x.grade}학년` : "-"),
+        h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, x.grade ? `${x.grade}학년` : "-"),
         h("td", {}, x.class_no ? `${x.class_no}반` : "-"), h("td", {}, x.number ? `${x.number}번` : "-"),
         h("td", {}, h("button", { class: "link-btn name-btn", type: "button", title: "가입 정보 자세히 보기", onclick: () => open(x) }, x.name)),
         h("td", {}, kstDate(x.requested_at)),
@@ -1779,7 +1779,7 @@ async function renderSchoolSignups(box) {
         h("td", {}, x.status === "pending" ? h("div", { class: "row school-change-actions" },
           h("button", { class: "small primary", type: "button", onclick: () => decide("approve", x) }, "승인"),
           h("button", { class: "small", type: "button", onclick: () => decide("reject", x) }, "반려")) : "-")))
-        : h("tr", {}, h("td", { colspan: 11, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
+        : h("tr", {}, h("td", { colspan: 10, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
 }
 
 function renderSchoolWithdrawals(box) {
