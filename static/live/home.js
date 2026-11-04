@@ -1038,7 +1038,7 @@ function openStudentCourse(c) {
   $("#student-results").hidden = true;
   { const sec = $("#student-assignments"); sec.hidden = true; assess.prepend(sec); }
   const panels = { info, notice, learn, feedback, assess, satisfaction };
-  const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 활동"],
+  const tabs = [["info", "강좌 정보"], ["notice", "강좌 공지"], ["learn", "학습 내용"],
     ["feedback", "활동 피드백"], ["assess", "수행평가"], ["satisfaction", "만족도 조사"]];
   const nav = h("nav", { class: "tabs sub-tabs sc-tabs", "aria-label": "강좌 메뉴" });
   const show = (k) => {
