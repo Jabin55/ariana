@@ -995,13 +995,14 @@ async function learnSpeech(c, st, box) {
         spKind(e), h("span", { class: "sp-text" }, e.text))));
       return;
     }
-    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-classes learn-table" },
-      h("thead", {}, h("tr", {}, ["연번", "수업일", "시각", "수업 주제", "발언 수", "발언 학생"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, d.classes.length ? d.classes.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.id; again(); } },
-        h("td", { class: "num" }, i + 1), h("td", { class: "num" }, fmtDate(x.date)),
-        h("td", { class: "num" }, x.start ? `${x.start} ~ ${x.end || "진행 중"}` : ""),
-        h("td", {}, h("span", { class: "day-link" }, x.title || "(주제 없음)")),
-        h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.speakers}명`))) : empty(6, "기록이 없어요.")))));
+    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att log-table learn-table" },
+      h("thead", {}, h("tr", {}, ["연번", "날짜", "시각", "수업 주제", "발언 수", "발언 학생", ""].map((t) => h("th", {}, t)))),
+      h("tbody", {}, d.classes.length ? d.classes.map((x, i) => h("tr", {},
+        h("td", { class: "num" }, String(i + 1)), h("td", {}, fmtDate(x.date)),
+        h("td", {}, x.start ? `${x.start} ~ ${x.end || "진행 중"}` : "-"),
+        h("td", {}, x.title || "(주제 없음)"),
+        h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.speakers}명`),
+        h("td", {}, h("button", { type: "button", class: "small", onclick: () => { st.view = x.id; again(); } }, "스크립트 보기")))) : empty(7, "기록이 없어요.")))));
     return;
   }
   const who = d.students.find((x) => x.user_id === st.view);
