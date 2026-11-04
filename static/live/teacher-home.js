@@ -1553,14 +1553,14 @@ async function loadSchool() {
   if (selectedTab === "withdraw") { renderSchoolWithdrawals(box); return; }
   const all = schoolData.students.flatMap((x) => x.courses);
   const terms = koSort(new Set(all.map((c) => c.term).filter(Boolean)));
-  const schools = koSort(new Set(schoolData.students.map((x) => x.school).filter(Boolean)));
+  const hubs = koSort(new Set(all.map((c) => c.hub).filter(Boolean)));
   const f = {
     term: h("select", {}, h("option", { value: "" }, "전체"), terms.map((t) => h("option", { value: t }, t))),
     subject: h("input", { placeholder: "예: 법과 사회" }),
     status: h("select", {}, h("option", { value: "" }, "전체"), koSort(Object.entries(ENROLL_NAME), (x) => x[1]).map(([k, v]) => h("option", { value: k }, v)),
       h("option", { value: "none" }, "수강신청 없음")),
     teacher: h("input", { placeholder: "강의교사 이름" }),
-    school: h("select", {}, h("option", { value: "" }, "전체"), schools.map((x) => h("option", { value: x }, x))),
+    hub: h("select", {}, h("option", { value: "" }, "전체"), hubs.map((x) => h("option", { value: x }, x))),
     name: h("input", { placeholder: "학생 이름" }),
     from: h("input", { type: "date" }),
     to: h("input", { type: "date" }),
@@ -1585,10 +1585,10 @@ async function loadSchool() {
       : h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.9rem" },
         `${schoolData.schools.join(", ")} 학생만 보여요 (학생이 가입할 때 고른 소속 학교 기준).`),
     h("div", { class: "search-form" },
-      row(cell("학기", f.term), cell("과목", f.subject)),
-      row(cell("신청상태", f.status), cell("강의교사", f.teacher)),
-      row(cell("소속학교", f.school), cell("학생이름", f.name)),
-      row(cell("기간검색", h("div", { class: "row" }, f.from, "~", f.to,
+      row(cell("학기", f.term), cell("과목명", f.subject)),
+      row(cell("거점학교", f.hub), cell("강의 교사", f.teacher)),
+      row(cell("신청 상태", f.status), cell("학생 이름", f.name)),
+      row(cell("운영 기간", h("div", { class: "row" }, f.from, "~", f.to,
         ...[["오늘", 0], ["7일", 7], ["1개월", 30], ["6개월", 182]].map(([label, d]) => h("label", { class: "switch" },
           h("input", { type: "radio", name: "school-quick", onchange: () => quick(d) }), label))), true))),
     h("div", { class: "row", style: "justify-content:center;margin:12px 0 20px" },
@@ -1695,25 +1695,28 @@ async function renderStudentSchoolChanges(box) {
 
 /** 검색 조건에 맞는 강좌가 있는 학생 (강좌 조건이 없으면 모든 학생) */
 /** 검색 칸의 과목 조건 (조건이 없으면 null) */
-function schoolCourseFilter() {
+/** 과목 조건: 학기·과목명·거점학교·강의 교사·신청 상태·운영 기간(과목 시작~종료가 고른 기간과 겹치면) */
+function schoolCourseOk(c) {
   const q = schoolQ;
   const has = (v, w) => !w || (v || "").includes(w);
-  const courseCond = q.term || q.subject || (q.status && q.status !== "none") || q.teacher || q.from || q.to;
+  return (!q.term || c.term === q.term) && (has(c.subject, q.subject) || has(c.title, q.subject))
+    && (!q.hub || c.hub === q.hub) && (!q.status || q.status === "none" || c.status === q.status) && has(c.instructor, q.teacher)
+    && (!q.from || !c.end_date || c.end_date >= q.from) && (!q.to || !c.start_date || c.start_date <= q.to);
+}
+
+function schoolCourseFilter() {
+  const q = schoolQ;
+  const courseCond = q.term || q.subject || (q.status && q.status !== "none") || q.teacher || q.hub || q.from || q.to;
   if (!courseCond) return null;
-  return (c) => (!q.term || c.term === q.term) && (has(c.subject, q.subject) || has(c.title, q.subject))
-    && (!q.status || q.status === "none" || c.status === q.status) && has(c.instructor, q.teacher)
-    && (!q.from || kstDate(c.requested_at) >= q.from) && (!q.to || kstDate(c.requested_at) <= q.to);
+  return schoolCourseOk;
 }
 
 function filteredSchool() {
   const q = schoolQ;
   const has = (v, w) => !w || (v || "").includes(w);
-  const courseCond = q.term || q.subject || (q.status && q.status !== "none") || q.teacher || q.from || q.to;
-  const okCourse = (c) => (!q.term || c.term === q.term) && (has(c.subject, q.subject) || has(c.title, q.subject))
-    && (!q.status || q.status === "none" || c.status === q.status) && has(c.instructor, q.teacher)
-    && (!q.from || kstDate(c.requested_at) >= q.from) && (!q.to || kstDate(c.requested_at) <= q.to);
-  return schoolData.students.filter((x) => has(x.name, q.name) && (!q.school || x.school === q.school)
-    && (q.status !== "none" || !x.courses.length) && (!courseCond || x.courses.some(okCourse)));
+  const courseCond = q.term || q.subject || (q.status && q.status !== "none") || q.teacher || q.hub || q.from || q.to;
+  return schoolData.students.filter((x) => has(x.name, q.name)
+    && (q.status !== "none" || !x.courses.length) && (!courseCond || x.courses.some(schoolCourseOk)));
 }
 
 function drawSchoolResult(box) {

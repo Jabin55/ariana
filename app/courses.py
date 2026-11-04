@@ -1209,7 +1209,7 @@ def school_students(schools: set[str] | None) -> list[dict]:
         users = c.execute(q).all()
         e, co = db.enrollments.c, db.courses.c
         rows = c.execute(select(e.user_id, e.status, e.requested_at, co.id, co.title, co.subject, co.school_year, co.term,
-                                co.instructor, co.hub_school, co.archived)
+                                co.instructor, co.hub_school, co.archived, co.start_date, co.end_date)
                          .select_from(db.enrollments.join(db.courses, co.id == e.course_id))
                          .where(e.user_id.in_([x.id for x in users] or [-1]))).all()
     out = []
@@ -1221,7 +1221,8 @@ def school_students(schools: set[str] | None) -> list[dict]:
                     "courses": [{"id": r.id, "title": r.title, "subject": r.subject or r.title,
                                  "term": f"{r.school_year}학년도 {r.term}" if r.school_year and r.term else (r.term or ""),
                                  "instructor": r.instructor, "hub": r.hub_school, "status": r.status,
-                                 "requested_at": r.requested_at, "archived": bool(r.archived)} for r in mine]})
+                                 "requested_at": r.requested_at, "archived": bool(r.archived),
+                                 "start_date": r.start_date or "", "end_date": r.end_date or ""} for r in mine]})
     out.sort(key=lambda x: (x["school"] or "", x["student_no"] or "~", x["name"] or ""))
     return out
 
