@@ -988,12 +988,13 @@ async function learnSpeech(c, st, box) {
         spKind(e), h("span", { class: "sp-text" }, e.text))));
       return;
     }
-    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-classes" },
-      h("thead", {}, h("tr", {}, ["연번", "수업일", "수업 주제", "발언 수", "발언한 학생"].map((t) => h("th", {}, t)))),
+    fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-classes learn-table" },
+      h("thead", {}, h("tr", {}, ["연번", "수업일", "시각", "수업 주제", "발언 수", "발언 학생"].map((t) => h("th", {}, t)))),
       h("tbody", {}, d.classes.length ? d.classes.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.id; again(); } },
         h("td", { class: "num" }, i + 1), h("td", { class: "num" }, fmtDate(x.date)),
+        h("td", { class: "num" }, x.start ? `${x.start} ~ ${x.end || "진행 중"}` : ""),
         h("td", {}, h("span", { class: "day-link" }, x.title || "(주제 없음)")),
-        h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.speakers}명`))) : empty(5, "기록이 없어요.")))));
+        h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.speakers}명`))) : empty(6, "기록이 없어요.")))));
     return;
   }
   const who = d.students.find((x) => x.user_id === st.view);
@@ -1269,7 +1270,7 @@ function learnActivities(d, st, key, box) {
     const sub = h("div");
     fill(box,
       h("div", { class: "row", style: "margin:4px 0 8px" }, h("button", { class: "small", onclick: () => go(null) }, "← 수업 목록")),
-      h("div", { class: "hub-grid-summary" }, `${i + 1}번 · ${fmtDate(x.date)} ${x.start} · ${x.title} · ${label} ${x.acts[key].count}개 · 응답률 ${rate(x.acts[key])}`),
+      key === "quiz" ? null : h("div", { class: "hub-grid-summary" }, `${i + 1}번 · ${fmtDate(x.date)} ${x.start} · ${x.title} · ${label} ${x.acts[key].count}개 · 응답률 ${rate(x.acts[key])}`),
       sub);
     activitiesOf(x.id, key, sub);
     return;

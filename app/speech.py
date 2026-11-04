@@ -65,7 +65,7 @@ def _entries(course_id: int | None, class_id: int | None = None, user_id: int | 
     sl, u, cl = db.speech_logs.c, db.users.c, db.classes.c
     with db.engine.connect() as c:
         adm = admin_user_ids(c)
-        q = (select(db.speech_logs, db.users, cl.title.label("class_title"), cl.created_at.label("class_created"))
+        q = (select(db.speech_logs, db.users, cl.title.label("class_title"), cl.created_at.label("class_created"), cl.ended_at.label("class_ended"))
              .join(db.users, u.id == sl.user_id).join(db.classes, cl.id == sl.class_id))
         if course_id is not None:
             q = q.where(cl.course_id == course_id)
@@ -83,6 +83,8 @@ def _entries(course_id: int | None, class_id: int | None = None, user_id: int | 
             "class_id": m["class_id"], "class_title": m["class_title"] or "",
             "date": datetime.fromtimestamp(m["class_created"], KST).strftime("%Y-%m-%d"),
             "time": datetime.fromtimestamp(m["created_at"], KST).strftime("%H:%M:%S"),
+            "class_start": datetime.fromtimestamp(m["class_created"], KST).strftime("%H:%M"),
+            "class_end": datetime.fromtimestamp(m["class_ended"], KST).strftime("%H:%M") if m["class_ended"] else "",
             "user_id": m["user_id"], "role": m["role"], "name": m["name"] or m["google_name"] or "",
             "school": m["school"] or "", "student_no": student_no(dict(m)) if m["role"] == "student" else "",
             "text": m["text"], "ts": m["created_at"]})
@@ -121,6 +123,7 @@ async def speech_summary(course_id: int, request: Request):
                               "count": 0, "chars": 0, "classes": set(), "spontaneous": 0}
     for e in rows:
         x = classes.setdefault(e["class_id"], {"id": e["class_id"], "title": e["class_title"], "date": e["date"],
+                                                "start": e["class_start"], "end": e["class_end"],
                                                 "count": 0, "speakers": set()})
         x["count"] += 1
         if e["role"] == "student":
