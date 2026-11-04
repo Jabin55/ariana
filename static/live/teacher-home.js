@@ -905,16 +905,36 @@ const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
 const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "평가" };
 const ACT_KINDS = { survey: ["poll"], quiz: ["ox", "choice", "text"] }; // '평가'는 수행평가(과제) 제출
 
+/** 학습 관리 > 📁 수업자료: 수업마다 공유한 자료(PDF)·판서 (누르면 지난 수업 자료 화면에서 보기·내려받기·지우기) */
+function learnMaterials(list, box) {
+  const rows = [...list].reverse(); // 첫 수업부터
+  fill(box, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board learn-board" },
+    h("thead", {}, h("tr", {}, ["연번", "수업일", "수업 주제", "자료", "판서", ""].map((t) => h("th", {}, t)))),
+    h("tbody", {}, rows.length ? rows.map((x, i) => h("tr", {},
+      h("td", { class: "num" }, String(i + 1)), h("td", { class: "num" }, fmtDate(x.date)),
+      h("td", { style: "white-space:normal" }, x.title || "(주제 없음)", x.live ? h("span", { class: "tag", style: "margin-left:6px" }, "진행 중") : null),
+      h("td", { class: "num" }, x.files ? `📄 ${x.files}개` : x.removed ? h("span", { class: "muted", title: "과목이 끝나 파기된 자료" }, `파기 ${x.removed}개`) : "-"),
+      h("td", { class: "num" }, x.whiteboard ? "✏️ 있음" : "-"),
+      h("td", { class: "num" }, x.files || x.whiteboard ? h("a", { class: "button small", href: `/live/materials?class=${x.id}`, target: "_blank", rel: "noopener" }, "보기") : null)))
+      : h("tr", {}, h("td", { colspan: 6, class: "muted", style: "text-align:center;padding:18px" }, "아직 연 수업이 없어요."))))),
+    h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.82rem" }, "수업 화면에서 공유한 PDF와 판서예요. PDF는 과목이 끝나면 바로, 판서는 1년 뒤 자동으로 지워져요."));
+}
+
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
   if (["notice", "activity", "speech", "script"].includes(st.card)) st.card = "attend"; // 없앤 카드 (스크립트는 왼쪽 메뉴 [스크립트]로)
-  let d;
-  try { d = await api(`/api/courses/${c.id}/learning`); } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
+  let d, mats;
+  try {
+    [d, mats] = await Promise.all([api(`/api/courses/${c.id}/learning`),
+      api(`/api/materials?course_id=${c.id}&all=1`).catch(() => ({ classes: [] }))]);
+  } catch (err) { fill(box, h("p", { class: "error" }, err.message)); return; }
   d.classes.reverse(); // 첫 수업(연번 1)부터 차례로
+  const matFiles = mats.classes.reduce((n, x) => n + (x.files || 0), 0);
   const S = d.summary;
   const pct = (v) => (v == null ? "-" : `${v}%`);
   const cards = [
     ["attend", "🙋 수업참석률", pct(S.attendance), `수업 ${S.classes}회 · 수강생 ${S.enrolled}명`],
+    ["materials", "📁 수업자료", `${matFiles}개`, `자료 공유한 수업 ${mats.classes.filter((x) => x.files || x.whiteboard).length}회`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
     ["speakers", "🧑‍🎓 학생 맞춤형 피드백", `${S.speech?.students || 0}명`, `학생 발언 ${S.speech?.student_count || 0}건`],
@@ -938,6 +958,7 @@ async function renderLearning(c, box) {
   }
   if (st.card === "script" || st.card === "speakers") { st.speechTab = st.card === "script" ? "class" : "student"; learnSpeech(c, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
+  if (st.card === "materials") { learnMaterials(mats.classes, detail); return; }
   if (st.card === "attend") learnAttendance(d, st, detail);
   else if (st.card === "notice") learnNotices(d, detail);
   else learnActivities(d, st, st.card, detail);
