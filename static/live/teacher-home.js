@@ -1,4 +1,4 @@
-/* 선생님 교무실: [특강/회의] [수강생 관리] [과목 운영(+ 과목 개설)] [거점학교 운영] [참여학교 담당] (+ 전체 운영 관리) */
+/* 선생님 교무실: [특강/회의] [과목 운영(+ 과목 개설, 과목마다 수강생 관리)] [거점학교 운영] [참여학교 담당] (+ 전체 운영 관리) */
 
 let teacherCourses = null; // 아직 못 불러왔으면 null
 const editing = new Set(); // 정보 수정 중인 강좌
@@ -23,7 +23,7 @@ function today() {
 function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "")); }
 
 /* 권한: 관리교사는 [특강/회의]·[거점학교 운영]·[참여학교 담당],
-   강의교사는 [특강/회의]·[수강생 관리]·[과목 운영] (과목 개설은 [과목 운영]의 [+ 과목 개설] 버튼). */
+   강의교사는 [특강/회의]·[과목 운영] (과목 개설은 [+ 과목 개설] 버튼, 수강 승인은 과목 안 [수강생 관리] 탭). */
 function canHub() { return ME.is_admin || ME.coordinator_hubs.length > 0; }
 function canSchool() { return ME.is_admin || (ME.participant_schools || []).length > 0; }
 function canTeach() {
@@ -49,10 +49,11 @@ function showTeacher() {
   document.title = "외솔온닷 · 교무실";
   $("#lead").hidden = true;
   $("#admin-tab").hidden = false;
-  $("#home-tabs").style.setProperty("--sub-count", 6);
-  $("#home-tabs").style.setProperty("--sub-min-width", "672px");
+  $("#home-tabs").style.setProperty("--sub-count", 5);
+  $("#home-tabs").style.setProperty("--sub-min-width", "560px");
   if (params.get("tab") === "create") runCreating = true; // 예전 [과목 개설] 탭 주소
-  const want = ["courses", "history", "create"].includes(params.get("tab")) ? "run" : params.get("tab");
+  if (params.get("tab") === "students" && params.get("course")) runSub = "students";
+  const want = ["courses", "history", "create", "students"].includes(params.get("tab")) ? "run" : params.get("tab");
   if (params.get("course")) runCourseId = Number(params.get("course"));
   // 교무실에 들어오면 [특강/회의]부터 (볼 수 없는 역할이면 예전처럼)
   const first = allowed("meet") ? "meet" : canTeach() ? "run" : canHub() ? "hub" : "school";
@@ -70,7 +71,6 @@ function showHomeTab(name) {
   for (const p of document.querySelectorAll("#teacher-view [data-panel]")) p.hidden = !ok || p.dataset.panel !== name;
   if (!ok) return;
   if (name === "meet") { meetView = null; showMeetSub(meetSub); loadLive(); loadMeetings(); loadMeetHistory(); }
-  if (name === "students") renderStudents();
   if (name === "run") renderRun();
   if (name === "admin") loadAdmin();
   if (name === "hub") loadHub();
@@ -417,16 +417,18 @@ let enrollRows = null; // 내 강좌의 수강신청 전체
 const enrollPick = new Set(); // 체크한 신청 (강좌id:학생id)
 const enrollQ = {}; // 검색 조건
 
-async function renderStudents() {
-  const box = $("#students-list");
+let enrollCourse = null; // 수강생 관리를 보고 있는 과목 ({ box, c })
+
+/** 과목 운영 > 과목 > [👥 수강생 관리]: 그 과목의 수강신청 검색·승인·반려 */
+async function renderStudents(box, c) {
+  if (enrollCourse?.c.id !== c.id) for (const k of Object.keys(enrollQ)) delete enrollQ[k]; // 다른 과목이면 검색 조건 비움
+  enrollCourse = { box, c };
   if (!enrollRows) fill(box, h("p", { class: "muted" }, "불러오는 중…"));
   ({ enrollments: enrollRows } = await api("/api/my/enrollments"));
+  enrollRows = enrollRows.filter((x) => x.course_id === c.id);
   enrollPick.clear();
-  const terms = koSort(new Set(enrollRows.map((x) => x.term).filter(Boolean)));
   const schools = koSort(new Set(enrollRows.map((x) => x.school).filter(Boolean)));
   const f = {
-    term: h("select", {}, h("option", { value: "" }, "전체"), terms.map((t) => h("option", { value: t }, t))),
-    subject: h("input", { placeholder: "예: 법과 사회" }),
     status: h("select", {}, h("option", { value: "" }, "전체"), koSort(Object.entries(ENROLL_NAME), (x) => x[1]).map(([k, v]) => h("option", { value: k }, v))),
     school: h("select", {}, h("option", { value: "" }, "전체"), schools.map((x) => h("option", { value: x }, x))),
     name: h("input", { placeholder: "학생 이름" }),
@@ -449,16 +451,15 @@ async function renderStudents() {
   const row = (...cells) => h("div", { class: "sf-row" }, ...cells.flat());
   const cell = (label, el, wide) => [h("div", { class: "sf-label" }, label), h("div", { class: `sf-field ${wide ? "wide" : ""}` }, el)];
   fill(box,
-    h("h2", { style: "margin:0 0 10px" }, "수강생 관리"),
+    h("h3", { style: "margin:4px 0 10px" }, "👥 수강생 관리"),
     h("div", { class: "search-form" },
-      row(cell("학기", f.term), cell("과목명", f.subject)),
       row(cell("신청상태", f.status), cell("소속학교", f.school)),
       row(cell("학생이름", f.name)),
-      row(cell("기간검색", h("div", { class: "row" }, f.from, "~", f.to,
+      row(cell("신청일", h("div", { class: "row" }, f.from, "~", f.to,
         ...[["오늘", 0], ["7일", 7], ["1개월", 30], ["6개월", 182]].map(([label, d]) => h("label", { class: "switch" },
           h("input", { type: "radio", name: "enroll-quick", onchange: () => quick(d) }), label))), true))),
     h("div", { class: "row", style: "justify-content:center;margin:12px 0 20px" },
-      h("button", { type: "button", onclick: () => { for (const k of Object.keys(enrollQ)) delete enrollQ[k]; renderStudents(); } }, "초기화"),
+      h("button", { type: "button", onclick: () => { for (const k of Object.keys(enrollQ)) delete enrollQ[k]; renderStudents(box, c); } }, "초기화"),
       h("button", { class: "primary", type: "button", onclick: search }, "검색")),
     result);
   drawEnrollResult(result);
@@ -467,8 +468,7 @@ async function renderStudents() {
 function filteredEnrollments() {
   const q = enrollQ;
   const has = (v, w) => !w || (v || "").includes(w);
-  return enrollRows.filter((x) => (!q.term || x.term === q.term) && (has(x.subject, q.subject) || has(x.course_title, q.subject))
-    && (!q.status || x.status === q.status) && (!q.school || x.school === q.school)
+  return enrollRows.filter((x) => (!q.status || x.status === q.status) && (!q.school || x.school === q.school)
     && has(x.name, q.name) && (!q.from || kstDate(x.requested_at) >= q.from) && (!q.to || kstDate(x.requested_at) <= q.to));
 }
 
@@ -488,8 +488,7 @@ function drawEnrollResult(box) {
       try { await api(`/api/courses/${x.course_id}/enrollments/${x.user_id}`, { status, note }); ok++; } catch (err) { toast(err.message); }
     }
     toast(status === "approved" ? `${ok}명을 승인했어요.` : `${ok}명을 반려했어요.`);
-    loadTeacherCourses();
-    renderStudents();
+    loadTeacherCourses(); // 과목 화면을 다시 그리며 수강생 관리 탭도 새로 불러온다
   };
   const csv = () => {
     const head = ["연번", "거점학교", "과목명", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"];
@@ -515,18 +514,17 @@ function drawEnrollResult(box) {
       h("span", { class: "grow" }),
       h("button", { class: "small", onclick: csv, disabled: !list.length }, "📥 엑셀 다운로드")),
     h("div", { class: "table-wrap" }, h("table", { class: "att enroll-table enroll-students" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "거점학교", "과목명", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "학년", "반", "학생이름", "이메일", "연락처", "신청일", "신청상태"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, h("input", { type: "checkbox", checked: enrollPick.has(key(x)), onchange: (e) => {
           if (e.target.checked) enrollPick.add(key(x)); else enrollPick.delete(key(x));
         } })),
-        h("td", { class: "num" }, list.length - i), h("td", {}, x.hub_school),
-        h("td", {}, x.subject), h("td", {}, x.school || "-"),
+        h("td", { class: "num" }, list.length - i), h("td", {}, x.school || "-"),
         h("td", { class: "num" }, x.grade ? `${x.grade}학년` : "-"), h("td", { class: "num" }, x.class_no ? `${x.class_no}반` : "-"),
         h("td", {}, x.name), h("td", { class: "contact-cell" }, x.email || "-"), h("td", { class: "contact-cell" }, fmtPhone(x.phone) || "-"), h("td", {}, kstDate(x.requested_at)),
         h("td", {}, h("span", { class: `status ${x.status === "rejected" ? "rejected" : x.status}`, title: x.note ? `사유: ${x.note}` : "" },
           ENROLL_NAME[x.status] || x.status))))
-        : h("tr", {}, h("td", { colspan: 12, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 수강신청이 없어요."))))));
+        : h("tr", {}, h("td", { colspan: 10, class: "muted", style: "text-align:center;padding:24px" }, "조건에 맞는 수강신청이 없어요."))))));
 }
 
 /* ───────────────────────── 과목 운영 ───────────────────────── */
@@ -610,7 +608,7 @@ function courseBanner(c) {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["notice", "📢 과목 공지사항"], ["info", "📘 과목 정보"], ["sessions", "🗓 회차 정보"], ["open", "▶ 온라인 수업 열기"], ["learn", "📊 학습 관리"],
+  const subs = [["students", c.pending ? `👥 수강생 관리 (대기 ${c.pending})` : "👥 수강생 관리"], ["notice", "📢 과목 공지사항"], ["info", "📘 과목 정보"], ["sessions", "🗓 회차 정보"], ["open", "▶ 온라인 수업 열기"], ["learn", "📊 학습 관리"],
     ["assess", "📝 수행평가"], ["satisfaction", "📋 만족도 조사"], ["results", "🏅 성취도 및 특기 사항"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
@@ -641,6 +639,7 @@ function renderRunCourse(c) {
   else if (runSub === "sessions") renderSessionStandards(c, subBox); // 회차 정보 + 회차별 성취기준 (achievement.js)
   else if (runSub === "open") renderOpenClass(c, subBox);
   else if (runSub === "notice") renderCourseNotices(c, subBox);
+  else if (runSub === "students") renderStudents(subBox, c);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
   else if (runSub === "learn") renderLearning(c, subBox);
   else if (runSub === "results") renderResults(c, subBox); // 성취도·세특·학생 개별 성취 평가지 (achievement.js)

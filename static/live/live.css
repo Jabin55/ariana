@@ -1910,23 +1910,19 @@ table.att.std-links .std-pick { font-size: 0.8rem; gap: 3px; }
 /* 수강생 관리 표: 12칸이 가로 스크롤 없이 들어가게 (긴 칸은 줄바꿈) */
 table.att.enroll-students { table-layout: fixed; width: 100%; font-size: 0.86rem; }
 table.att.enroll-students th, table.att.enroll-students td { padding-left: 4px; padding-right: 4px; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; text-align: center; }
-table.att.enroll-students th:nth-child(1) { width: 3%; }
-table.att.enroll-students th:nth-child(2) { width: 4%; }
-table.att.enroll-students th:nth-child(3) { width: 11%; }
-table.att.enroll-students th:nth-child(4) { width: 12%; }
-table.att.enroll-students th:nth-child(5) { width: 11%; }
-table.att.enroll-students th:nth-child(6), table.att.enroll-students th:nth-child(7) { width: 5%; }
-table.att.enroll-students th:nth-child(8) { width: 7%; }
-table.att.enroll-students th:nth-child(9) { width: 17%; }
-table.att.enroll-students th:nth-child(10) { width: 11%; }
-table.att.enroll-students th:nth-child(11) { width: 8%; }
-table.att.enroll-students th:nth-child(12) { width: 6%; }
+/* 과목 안 [수강생 관리]: 선택·연번·소속학교·학년·반·이름·이메일·연락처·신청일·상태 */
+table.att.enroll-students th:nth-child(1) { width: 4%; }
+table.att.enroll-students th:nth-child(2) { width: 6%; }
+table.att.enroll-students th:nth-child(3) { width: 16%; }
+table.att.enroll-students th:nth-child(4) { width: 7%; }
+table.att.enroll-students th:nth-child(5) { width: 6%; }
+table.att.enroll-students th:nth-child(6) { width: 10%; }
+table.att.enroll-students th:nth-child(7) { width: 18%; }
+table.att.enroll-students th:nth-child(8) { width: 13%; }
+table.att.enroll-students th:nth-child(9) { width: 10%; }
+table.att.enroll-students th:nth-child(10) { width: 10%; }
 table.att.enroll-students td.contact-cell { white-space: normal; overflow-wrap: anywhere; font-size: 0.8rem; }
 table.att.enroll-students td:last-child { min-width: 0; }
-table.att.enroll-students th:nth-child(3), table.att.enroll-students th:nth-child(5) { width: 10%; }
-table.att.enroll-students th:nth-child(7) { width: 4%; }
-table.att.enroll-students th:nth-child(9) { width: 15%; }
-table.att.enroll-students th:nth-child(11), table.att.enroll-students th:nth-child(12) { width: 9%; }
 table.att.enroll-students td .status { white-space: nowrap; font-size: 0.75rem; padding: 2px 6px; }
 /* 성취기준 카드의 평가기준(상·중·하) 표: 상중하 칸은 좁게, 내용 칸은 넓게 */
 .std-levels table.info-table { table-layout: fixed; width: 100%; }
