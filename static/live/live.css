@@ -2139,7 +2139,8 @@ table.att.school-change-table td .status { white-space: normal; }
 .side-menu button.active .side-lbl { color: #1b6b4a; font-weight: 800; }
 .side-menu .side-count { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px;
   background: #e5484d; color: #fff; font-size: 0.68rem; font-weight: 800; line-height: 18px; text-align: center; }
-.side-main { min-width: 0; }
+.side-main { min-width: 0; display: flow-root; } /* 첫 제목의 위쪽 여백이 밖으로 새어 나가 메뉴 높이가 탭마다 달라지지 않게 */
+.side-main > :first-child, .side-main > :first-child > :first-child { margin-top: 0; }
 .side-main > #meet-past-box { margin-top: 0 !important; }
 @media (max-width: 760px) {
   .side-layout { grid-template-columns: 1fr; gap: 10px; }
@@ -2154,9 +2155,11 @@ html { scrollbar-gutter: stable; }
   .landing, .site-main, .home-wrap { padding-left: 16px; padding-right: 16px; }
 }
 
-/* 넓은 화면: 왼쪽 세로 메뉴를 화면 왼쪽 끝에 딱 붙인다 (내용은 그대로 가운데) */
-@media (min-width: 1290px) {
+/* 넓은 화면: 왼쪽 세로 메뉴를 내용 바로 왼쪽 여백에 (내용과 20px 띄우고, 화면 끝에는 붙지 않게) */
+@media (min-width: 1340px) {
   .side-layout { display: block; }
-  .side-menu { position: absolute; left: 0; top: auto; width: 96px; box-sizing: border-box; border-left: none; border-radius: 0 16px 16px 0; }
+  .side-menu { position: absolute; top: auto; width: 96px; box-sizing: border-box;
+    left: max(16px, calc((100% - 1120px) / 2 + 24px - 96px - 20px)); }
 }
 .meet-sub-title { margin: 0 0 12px; font-size: 1.25rem; }
+.side-main .staff-board > h2:first-child { margin-top: 0 !important; }
