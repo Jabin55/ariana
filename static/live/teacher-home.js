@@ -428,7 +428,9 @@ async function renderStudents(box, c) {
   enrollRows = enrollRows.filter((x) => x.course_id === c.id);
   enrollPick.clear();
   const schools = koSort(new Set(enrollRows.map((x) => x.school).filter(Boolean)));
+  const grades = [...new Set(enrollRows.map((x) => x.grade).filter(Boolean))].sort((a, b) => a - b);
   const f = {
+    grade: h("select", {}, h("option", { value: "" }, "전체"), grades.map((g) => h("option", { value: String(g) }, `${g}학년`))),
     status: h("select", {}, h("option", { value: "" }, "전체"), koSort(Object.entries(ENROLL_NAME), (x) => x[1]).map(([k, v]) => h("option", { value: k }, v))),
     school: h("select", {}, h("option", { value: "" }, "전체"), schools.map((x) => h("option", { value: x }, x))),
     name: h("input", { placeholder: "학생 이름" }),
@@ -453,8 +455,8 @@ async function renderStudents(box, c) {
   fill(box,
     h("h3", { style: "margin:4px 0 10px" }, "👥 수강생 관리"),
     h("div", { class: "search-form" },
-      row(cell("신청상태", f.status), cell("소속학교", f.school)),
-      row(cell("학생이름", f.name)),
+      row(cell("소속학교", f.school), cell("학년", f.grade)),
+      row(cell("학생 이름", f.name), cell("신청 상태", f.status)),
       row(cell("신청일", h("div", { class: "row" }, f.from, "~", f.to,
         ...[["오늘", 0], ["7일", 7], ["1개월", 30], ["6개월", 182]].map(([label, d]) => h("label", { class: "switch" },
           h("input", { type: "radio", name: "enroll-quick", onchange: () => quick(d) }), label))), true))),
@@ -468,7 +470,7 @@ async function renderStudents(box, c) {
 function filteredEnrollments() {
   const q = enrollQ;
   const has = (v, w) => !w || (v || "").includes(w);
-  return enrollRows.filter((x) => (!q.status || x.status === q.status) && (!q.school || x.school === q.school)
+  return enrollRows.filter((x) => (!q.status || x.status === q.status) && (!q.grade || String(x.grade) === q.grade) && (!q.school || x.school === q.school)
     && has(x.name, q.name) && (!q.from || kstDate(x.requested_at) >= q.from) && (!q.to || kstDate(x.requested_at) <= q.to));
 }
 
