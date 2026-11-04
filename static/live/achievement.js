@@ -104,11 +104,11 @@ function standardCard(c, s, i, again) {
         await achApi(`/api/courses/${c.id}/standards/${s.id}/delete`, {});
         again();
       } }, "삭제")),
-    h("details", { class: "std-levels" }, h("summary", { class: "muted" }, "평가기준 (상·중·하) 보기"),
+    h("details", { class: "std-levels" }, h("summary", { class: "muted" }, "성취 기준별 평가 기준"),
       h("table", { class: "info-table" }, h("tbody", {},
         [["상", s.level_high], ["중", s.level_mid], ["하", s.level_low]].map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { style: "white-space:pre-wrap" }, v || "-")))))),
     s.elements.length ? h("details", { class: "std-levels" },
-      h("summary", { class: "muted" }, `평가 요소 · 척도별 수행 수준 보기 (${s.elements.length}개)`),
+      h("summary", { class: "muted" }, "평가 요소에 따른 수준별 수행 진술문"),
       h("div", { class: "table-wrap" }, h("table", { class: "att std-elements" },
         h("colgroup", {}, Array.from({ length: 6 }, () => h("col"))),
         h("thead", {},
