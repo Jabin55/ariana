@@ -894,7 +894,7 @@ async function renderOpenClass(c, box) {
       h("a", { class: "button small primary", href: `/live/teacher/${x.code}` }, `▶ ${x.title} 들어가기`))) : null,
     notYet ? h("p", { class: "muted", style: "font-size:0.9rem" }, `⚠️ 승인 대기 ${notYet}명은 아직 못 들어와요.`) : null,
     c.archived ? h("p", { class: "muted" }, "종료한 강좌에는 수업을 열 수 없어요. '종료 해제'를 먼저 눌러 주세요.")
-      : sessions.length ? [h("h3", { class: "open-title" }, "📅 회차별 수업"), table(),
+      : sessions.length ? [h("h3", { class: "open-title" }, "📅 회차별 수업"), h("div", { class: "table-wrap" }, table()), // 표만 흰 틀 안에
         // 회차표에 없는 날(보강·추가 수업)도 주제만 적고 바로 열 수 있게
         h("h3", { class: "open-title", style: "margin-top:22px" }, "➕ 회차 외 보강·특강"),
         plain()] : plain()); // 회차표가 없는 과목은 제목 없이 주제만 적고 열기
