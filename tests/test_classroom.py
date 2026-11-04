@@ -4165,7 +4165,8 @@ def test_subject_competencies_follow_2022_curriculum():
     from types import SimpleNamespace as N
     import app.achievement as ach
     c = lambda area, group="", subject="": N(subject_area=area, subject_group=group, subject=subject)
-    assert ach.subject_competencies_of(c("역사", "사회(역사/도덕 포함)"))[0] == "역사 사실 이해"
+    assert ach.subject_competencies_of(c("역사", "사회(역사/도덕 포함)")) == ach.subject_competencies_of(c("사회"))
+    assert "역사" not in ach.SUBJECT_COMPETENCIES
     assert ach.subject_competencies_of(c("정보", "기술·가정/정보")) == ["컴퓨팅 사고력", "인공지능 문제 해결력", "디지털 문화 소양"]
     assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "창의적 사고력"
     assert ach.subject_competencies_of(c("제2외국어", "제2외국어/한문", "중국어"))[0] == "제2외국어 의사소통 역량"
