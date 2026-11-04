@@ -577,7 +577,7 @@ function renderRun() {
   const grid = (items) => h("div", { class: "run-tiles" }, items.map(tile));
   // 보관한 강좌도 따로 접지 않고 뒤에 이어서, 회색 카드로 보여 준다
   fill($("#run-list"),
-    h("div", { class: "row", style: "margin:0 0 12px" }, h("span", { class: "grow" }),
+    h("div", { class: "row", style: "margin:0 0 12px;align-items:center" }, h("h2", { class: "grow", style: "margin:0" }, "내가 개설한 강좌"),
       h("button", { class: "primary", type: "button", onclick: () => { runCreating = true; renderRun(); window.scrollTo(0, 0); } }, "+ 과목 개설")),
     active.length || archived.length ? grid([...active, ...archived])
       : h("p", { class: "muted" }, "아직 개설한 과목이 없어요. 위 [+ 과목 개설]을 눌러 먼저 강좌를 만들어 주세요."));
