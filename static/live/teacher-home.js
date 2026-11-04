@@ -644,6 +644,7 @@ function renderRunCourse(c) {
     else {
       const std = h("section", { class: "std-section" }, h("p", { class: "muted" }, "성취기준을 불러오는 중…"));
       fill(subBox, courseInformationPanel(c, false), std);
+      achEditing.delete(c.id); // 다른 메뉴에 갔다 오면 저장 안 한 수정 화면은 닫는다 (버튼이 다시 보이게)
       renderStandards(c, std); // 성취기준·성취수준·평가 요소 (achievement.js)
     }
   }
