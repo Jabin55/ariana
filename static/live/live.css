@@ -2157,9 +2157,9 @@ html { scrollbar-gutter: stable; }
 
 /* 넓은 화면: 왼쪽 세로 메뉴를 내용 바로 왼쪽 여백에 (내용과 20px 띄우고, 화면 끝에는 붙지 않게) */
 @media (min-width: 1340px) {
-  .side-layout { display: block; }
-  .side-menu { position: absolute; top: auto; width: 96px; box-sizing: border-box;
-    left: max(16px, calc((100% - 1120px) / 2 + 24px - 96px - 20px)); }
+  /* 폭 0인 첫 칸 오른쪽 끝에 메뉴를 붙여 왼쪽 여백으로 내보낸다. 높이는 차지하므로 아래 '이용약관…' 줄이 메뉴보다 아래에 온다 */
+  .side-layout { display: grid; grid-template-columns: 0 minmax(0, 1fr); gap: 0; }
+  .side-menu { position: static; width: 96px; box-sizing: border-box; justify-self: end; margin-right: 20px; }
 }
 .meet-sub-title { margin: 0 0 12px; font-size: 1.25rem; }
 .side-main .staff-board > h2:first-child { margin-top: 0 !important; }
