@@ -1546,7 +1546,7 @@ async function loadSchool() {
   const box = h("div");
   fill(outer,
     h("nav", { class: "tabs sub-tabs", "aria-label": "참여학교 담당 메뉴" },
-      [["signup", "학생 가입 승인"], ["students", "학생 관리"], ["transfer", "소속학교 변경 승인"], ["withdraw", "탈퇴 승인"], ["evidence", "탈퇴자 증빙"]].map(([key, label]) => h("button", {
+      [["signup", "학생 가입 승인"], ["transfer", "소속학교 변경 승인"], ["students", "학생 활동 관리"], ["withdraw", "탈퇴 승인"], ["evidence", "탈퇴자 증빙"]].map(([key, label]) => h("button", {
         type: "button", class: schoolSub === key ? "active" : "",
         onclick: () => { schoolSub = key; loadSchool(); }
       }, label))), box);
@@ -1591,7 +1591,7 @@ async function loadSchool() {
   const row = (...cells) => h("div", { class: "sf-row" }, ...cells.flat());
   const cell = (label, el, wide) => [h("div", { class: "sf-label" }, label), h("div", { class: `sf-field ${wide ? "wide" : ""}` }, el)];
   fill(box,
-    h("h2", { style: "margin:0 0 6px" }, "학생 관리"),
+    h("h2", { style: "margin:0 0 6px" }, "학생 활동 관리"),
     ME.is_admin && !schoolData.schools.length ? null
       : h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.9rem" },
         `${schoolData.schools.join(", ")} 학생만 보여요 (학생이 가입할 때 고른 소속 학교 기준).`),
@@ -1813,8 +1813,8 @@ function drawSchoolResult(box) {
     });
     const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const text = "\ufeff" + [HEAD, ...lines].map((r) => r.map(esc).join(",")).join("\r\n");
-    const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: `우리학교_학생관리_${today()}.csv` });
-    api("/api/access-log/export", { what: `우리 학교 학생 관리 엑셀 (${list.length}명)` }).catch(() => {});
+    const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: `우리학교_학생활동관리_${today()}.csv` });
+    api("/api/access-log/export", { what: `우리 학교 학생 활동 관리 엑셀 (${list.length}명)` }).catch(() => {});
     document.body.append(a);
     a.click();
     a.remove();
