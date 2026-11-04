@@ -1588,7 +1588,7 @@ async function loadSchool() {
       row(cell("학기", f.term), cell("과목명", f.subject)),
       row(cell("거점학교", f.hub), cell("강의 교사", f.teacher)),
       row(cell("신청 상태", f.status), cell("학생 이름", f.name)),
-      row(cell("운영 기간", h("div", { class: "row" }, f.from, "~", f.to,
+      row(cell("모집 시기", h("div", { class: "row" }, f.from, "~", f.to,
         ...[["오늘", 0], ["7일", 7], ["1개월", 30], ["6개월", 182]].map(([label, d]) => h("label", { class: "switch" },
           h("input", { type: "radio", name: "school-quick", onchange: () => quick(d) }), label))), true))),
     h("div", { class: "row", style: "justify-content:center;margin:12px 0 20px" },
@@ -1695,13 +1695,13 @@ async function renderStudentSchoolChanges(box) {
 
 /** 검색 조건에 맞는 강좌가 있는 학생 (강좌 조건이 없으면 모든 학생) */
 /** 검색 칸의 과목 조건 (조건이 없으면 null) */
-/** 과목 조건: 학기·과목명·거점학교·강의 교사·신청 상태·운영 기간(과목 시작~종료가 고른 기간과 겹치면) */
+/** 과목 조건: 학기·과목명·거점학교·강의 교사·신청 상태·모집 시기(과목 모집 기간이 고른 기간과 겹치면, 모집 기간이 없으면 늘 포함) */
 function schoolCourseOk(c) {
   const q = schoolQ;
   const has = (v, w) => !w || (v || "").includes(w);
   return (!q.term || c.term === q.term) && (has(c.subject, q.subject) || has(c.title, q.subject))
     && (!q.hub || c.hub === q.hub) && (!q.status || q.status === "none" || c.status === q.status) && has(c.instructor, q.teacher)
-    && (!q.from || !c.end_date || c.end_date >= q.from) && (!q.to || !c.start_date || c.start_date <= q.to);
+    && (!q.from || !c.recruit_end || c.recruit_end >= q.from) && (!q.to || !c.recruit_start || c.recruit_start <= q.to);
 }
 
 function schoolCourseFilter() {
