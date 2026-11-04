@@ -2169,3 +2169,4 @@ html { scrollbar-gutter: stable; }
   background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px 10px;
 }
 table.att.hub-approval-table th:nth-child(2), table.att.hub-approval-table td:nth-child(2) { text-align: center; } /* 연번 */
+table.att.hub-approval-table thead th { text-align: center; } /* 머리글 줄 가운데 정렬 */
