@@ -613,11 +613,11 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       obs.length ? obs.map((o) => h("div", { class: "speech-line student" }, h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
         h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`))))
         : h("p", { class: "muted", style: "margin:4px 0" }, "아직 이 학생에 대한 관찰 기록이 없어요.")),
-    v.analyzed_at ? achProgressTable(v) : null,
-    achTrackingTable(v),
     v.analyzed_at ? null : h("p", { class: "muted" }, v.ai ? "[AI 분석하기]를 누르면 이 학생의 발언(발문 응답·자발 구분)·교사 관찰 기록·퀴즈 답안을 성취기준의 상·중·하 수행 진술에 비추어 수업마다 판단해 도달 상태와 반복 관찰 지표의 변화를 추적하고, 성취기준별 다음 단계와 피드백 초안을 만들어요. (이름·학번은 가리고 보내요)" : "AI가 설정되지 않아 분석할 수 없어요."),
+    // 순서: 역량 밸런스 차트 → 성취기준별 도달 상태 → 수업별 판단 근거 → 반복 관찰 지표 → AI 종합 의견 → 학생에게 줄 피드백
     v.analyzed_at ? [
       (drawCharts(), charts),
+      achProgressTable(v),
       // 수업별 판단 근거 (성취기준 평가 요소의 상·중·하)
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🔎 수업별 판단 근거 (성취기준·평가 요소)"),
         // 판단 근거가 되는 기록이 없는 회차는 아예 보여 주지 않는다
@@ -630,9 +630,10 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
             h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
             h("span", { class: "muted" }, ` “${r.evidence}”`)))))
           : h("p", { class: "muted", style: "margin:4px 0" }, "판단 근거가 되는 수업 기록이 아직 없어요.")),
+      achTrackingTable(v),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
-    ] : null,
+    ] : achTrackingTable(v), // 분석 전에도 자동 집계 지표는 보여 준다
     h("div", { class: "ach-box" },
       h("div", { class: "ach-box-head" }, "💌 학생에게 줄 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 항목별로 고쳐서 쓰세요 · 학생 화면에도 이 순서로 보여요)")),
       fb.el,
