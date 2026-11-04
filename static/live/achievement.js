@@ -599,7 +599,10 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
   const saveFeedback = async (published, message) => {
     saveFb.disabled = publishFb.disabled = true;
     try {
-      await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { parts: fb.read(), published });
+      const parts = fb.read();
+      await achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/feedback`, { parts, published });
+      // [피드백 전송]에서 고른 회차의 피드백으로도 저장한다 (다음 수업 목표·달성 판정에 쓰임)
+      if (opts.classId) await achApi(`/api/courses/${courseId}/class-feedback/${opts.classId}/student/${who.user_id}`, { parts, published });
       toast(message, 4000);
       again();
     } catch (err) { toast(err.message); saveFb.disabled = publishFb.disabled = false; }
@@ -959,7 +962,7 @@ async function renderStudentFeedback(c, who, box, pick = null) {
       h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.85rem" }, "수업이 끝나면 그 회차의 피드백을 만들어 공개해요. 다음 회차 피드백을 만들 때 AI가 이번 '다음 수업에서 해 보기'를 해냈는지 판정해요."),
       per),
     total);
-  renderAnalysis(c.id, who, total, { obs: false, only: "feedback" });
+  renderAnalysis(c.id, who, total, { obs: false, only: "feedback", classId: pick });
   if (!pick) return;
   const k = list.find((x) => x.class_id === pick);
   let d;
@@ -970,17 +973,21 @@ async function renderStudentFeedback(c, who, box, pick = null) {
     s.parts ? "🤖 AI 초안 다시 만들기" : "🤖 AI 초안 만들기");
   gen.onclick = async () => {
     gen.disabled = true; gen.textContent = "🤖 만드는 중…";
-    try { await achApi(`/api/courses/${c.id}/class-feedback/${pick}/generate`, { user_ids: [who.user_id] }); toast("초안을 만들었어요. 고쳐서 공개해 주세요."); again(pick); }
-    catch (err) { toast(err.message, 6000); gen.disabled = false; }
+    try {
+      await achApi(`/api/courses/${c.id}/class-feedback/${pick}/generate`, { user_ids: [who.user_id] });
+      // 만든 초안을 아래 [학생에게 줄 종합 피드백]에 넣는다 (공개 전 초안으로)
+      const fresh = (await achApi(`/api/courses/${c.id}/class-feedback/${pick}`)).students.find((x) => x.user_id === who.user_id);
+      if (fresh?.parts) await achApi(`/api/courses/${c.id}/speech/student/${who.user_id}/feedback`, { parts: fresh.parts, published: false });
+      toast("AI 초안을 종합 피드백에 넣었어요. 고쳐서 공개해 주세요.", 5000); again(pick);
+    }
+    catch (err) { toast(err.message, 6000); gen.disabled = false; gen.textContent = s.parts ? "🤖 AI 초안 다시 만들기" : "🤖 AI 초안 만들기"; }
   };
-  const row = s.parts ? classFbStudent(c, k, s, () => again(pick)) : null;
-  if (row && row.tagName === "DETAILS") row.open = true;
   achFill(per,
     h("div", { class: "row", style: "justify-content:flex-end;margin-bottom:6px" }, s.has_record ? null : h("span", { class: "muted grow", style: "font-size:0.85rem" }, "이 회차에 이 학생의 발언·관찰·퀴즈 기록이 없어요."), gen),
     s.goal_checks?.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "🎯 지난 목표"),
       h("div", {}, s.goal_checks.map((g) => h("div", { class: `tl-goal ${g.status}` }, `${GOAL_MARK[g.status][0]} ${g.goal} `,
         h("span", { class: "muted" }, `· ${GOAL_MARK[g.status][1]}${g.evidence ? ` “${g.evidence}”` : ""}`))))) : null,
-    row || h("p", { class: "muted" }, "아직 이 회차 피드백이 없어요. [🤖 AI 초안 만들기]를 누르세요."));
+    s.parts ? null : h("p", { class: "muted", style: "margin:4px 0 0" }, "[🤖 AI 초안 만들기]를 누르면 아래 종합 피드백에 초안이 들어가요."));
 }
 
 /* ───────── 학생: 선생님이 공개한 피드백 ───────── */
@@ -1008,6 +1015,6 @@ async function renderMyFeedback(courseId, box) {
             x.goal_checks.map((g) => h("div", { class: `tl-goal ${g.status}`, style: "line-height:1.8" }, `${GOAL_MARK[g.status][0]} ${g.goal} `,
               h("strong", {}, `· ${GOAL_MARK[g.status][1]}`)))) : null,
           feedbackView(x.parts))))) : null,
-    v.published ? h("div", { class: "my-total-fb" }, items.length ? h("h3", { class: "section-title" }, "📚 종합 피드백") : null,
+    v.published && !items.some((x) => JSON.stringify(x.parts) === JSON.stringify(v.parts)) ? h("div", { class: "my-total-fb" }, items.length ? h("h3", { class: "section-title" }, "📚 종합 피드백") : null,
       h("div", { class: "my-feedback" }, feedbackView(v.parts || { message: v.feedback }, v.participation || []))) : null);
 }
