@@ -754,7 +754,7 @@ async function renderResults(c, box) {
     catch (err) { toast(err.message, 6000); draftAll.disabled = false; }
   };
   const gradeSel = (s) => {
-    const sel = h("select", { disabled: !v.ready, "aria-label": `${s.name} 성취도` }, h("option", { value: "" }, "미확정"),
+    const sel = h("select", { disabled: !v.ready, "aria-label": `${s.name} 성취도` }, h("option", { value: "" }, "미정"),
       v.grades.map((g) => h("option", { value: g, selected: s.achievement === g }, g)));
     sel.onchange = async () => {
       try { await achApi(`/api/courses/${c.id}/results/${s.user_id}`, { achievement: sel.value, setuk: s.setuk, growth: s.growth }); s.achievement = sel.value; toast("성취도를 저장했어요."); }
@@ -790,7 +790,7 @@ async function renderResultSheet(c, uid, box) {
   try { [v, list] = await Promise.all([achApi(`/api/courses/${c.id}/results/${uid}/sheet`), achApi(`/api/courses/${c.id}/results`)]); }
   catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
   const ready = list.ready;
-  const grade = h("select", { disabled: !ready }, h("option", { value: "" }, "미확정"), list.grades.map((g) => h("option", { value: g, selected: v.achievement === g }, g)));
+  const grade = h("select", { disabled: !ready }, h("option", { value: "" }, "미정"), list.grades.map((g) => h("option", { value: g, selected: v.achievement === g }, g)));
   const growth = h("textarea", { rows: 4, maxlength: 3000, disabled: !ready, placeholder: "학생에게 보여 줄 성장 과정 요약 (평가지에 실려요)" });
   growth.value = v.growth || "";
   const setuk = h("textarea", { rows: 8, maxlength: 3000, disabled: !ready, placeholder: "과목별 세부능력 및 특기사항 (나이스 1500바이트, 한글 약 500자)" });
