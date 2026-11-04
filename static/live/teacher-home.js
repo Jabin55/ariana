@@ -920,9 +920,16 @@ function learnMaterials(list, box, classes = []) {
         h("td", {}, x.title || "(주제 없음)", x.live ? h("span", { class: "tag", style: "margin-left:6px" }, "진행 중") : null),
         h("td", { class: "num" }, x.files ? `📄 ${x.files}개` : x.removed ? h("span", { class: "muted", title: "과목이 끝나 파기된 자료" }, `파기 ${x.removed}개`) : "-"),
         h("td", { class: "num" }, x.whiteboard ? "✏️ 있음" : "-"),
-        h("td", {}, x.files || x.whiteboard ? h("a", { class: "button small", href: `/live/materials?class=${x.id}`, target: "_blank", rel: "noopener" }, "자료 보기") : null));
+        h("td", {}, x.files || x.whiteboard ? h("button", { type: "button", class: "small", onclick: () => learnMaterialView(x, box, list, classes) }, "자료 보기") : null));
     }) : h("tr", {}, h("td", { colspan: 7, class: "muted", style: "text-align:center;padding:18px" }, "아직 연 수업이 없어요."))))),
     h("p", { class: "muted", style: "margin:6px 0 0;font-size:0.82rem" }, "수업 화면에서 공유한 PDF와 판서예요. PDF는 과목이 끝나면 바로, 판서는 1년 뒤 자동으로 지워져요."));
+}
+
+/** 수업자료 한 수업: 새 창 대신 이 화면 안에서 연다 */
+function learnMaterialView(x, box, list, classes) {
+  fill(box,
+    h("div", { class: "row", style: "margin:4px 0 8px" }, h("button", { class: "small", onclick: () => learnMaterials(list, box, classes) }, "← 수업 목록")),
+    h("iframe", { class: "learn-mat-frame", src: `/live/materials?class=${x.id}&embed=1`, title: "수업자료" }));
 }
 
 async function renderLearning(c, box) {

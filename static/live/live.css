@@ -2211,3 +2211,10 @@ table.att.learn-table th:nth-child(6) { width: 10%; }
 table.att.learn-table th:nth-child(7) { width: 14%; }
 table.att.learn-table td:nth-child(4) { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 table.att.learn-table td.num { width: auto; }
+
+/* 수업 관리 안에 띄운 수업자료 (iframe) */
+html.embed, html.embed body { background: transparent; }
+html.embed main.materials { max-width: none; padding: 0; margin: 0; }
+html.embed #m-back { display: none; }
+html.embed #m-title { font-size: 1.1rem !important; }
+iframe.learn-mat-frame { width: 100%; height: 78vh; min-height: 520px; border: 0; display: block; background: transparent; }
