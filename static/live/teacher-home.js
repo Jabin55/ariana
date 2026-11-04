@@ -1730,8 +1730,6 @@ async function renderStudentSchoolChanges(box) {
     const head = ["연번", "이름", "변경 전 소속학교", "학년", "반", "번호", "변경 후 소속학교", "학년", "반", "번호", "승인/반려"];
     fill(box, h("h2", {}, "소속학교 변경 승인"),
       ME.is_admin ? null : h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
-      h("p", { class: "muted" }, "변경 후 학교의 참여학교 담당 선생님이 승인해요. 담당 선생님이 없는 학교는 전체 관리자가 승인해요."),
-      h("p", { class: "muted" }, "변경 후 학년·반·번호는 학생이 신청한 값입니다. 학생이 입력하지 않은 항목은 기존 값이 유지됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
         // 머리글 두 줄: 변경 전·후 아래에 소속학교·학년·반·번호 (가로 폭을 줄인다)
         h("thead", {},
