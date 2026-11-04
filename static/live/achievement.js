@@ -429,7 +429,7 @@ const FB_SECTIONS = [
 
 /** 교사용 항목별 피드백 편집기: { el, read() } */
 function feedbackEditor(parts) {
-  const msg = h("textarea", { rows: 3, maxlength: 2000, placeholder: "학생에게 하고 싶은 말 (2~3문장)" });
+  const msg = h("textarea", { rows: 5, maxlength: 2000, placeholder: "학생에게 보여 줄 피드백" });
   msg.value = parts.message || "";
   const changeRows = h("div", { class: "fb-list" });
   const addChange = (c = {}) => {
