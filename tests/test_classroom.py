@@ -899,7 +899,8 @@ def test_hub_structure_and_course_approval(monkeypatch):
                                                "message": "무시됨"}).status_code == 200
     other_coord_view = teacher().get("/api/staff/applications", params={"role": "instructor"})
     assert other_coord_view.status_code == 403  # 관리교사가 아니면 못 봄
-    assert coord.get("/api/staff/applications", params={"role": "instructor"}).status_code == 403  # 교사 승인은 전체 관리자만
+    # 거점학교 관리교사는 '강의할 거점학교'로 자기 거점학교를 고른 강의교사 신청만 본다 (이 신청은 거점학교를 고르지 않음)
+    assert coord.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"] == []
     iapps = admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
     assert iapps[0]["name"] == "김교수" and iapps[0]["hub_id"] is None
     assert (iapps[0]["wish_from"], iapps[0]["wish_until"], iapps[0]["message"]) == ("2027-01-01", "2099-02-28", "")
@@ -1050,7 +1051,7 @@ def test_same_person_both_roles_at_same_hub(monkeypatch):
     # 1) 강사였던 B: 가나고 강사 (작년, 기간 끝남) → 올해 같은 학교 관리교사도 신청
     b = guest("b@gmail.com")
     staff_apply(b, {"role": "instructor", "name": "강사B", **form})
-    assert a.get("/api/staff/applications", params={"role": "instructor"}).status_code == 403  # 강의교사 가입은 전체 관리자만 승인
+    assert a.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"] == []  # 우리 거점학교를 고른 신청만
     bi = [x for x in apps(admin, "instructor") if x["name"] == "강사B"][0]
     approve(admin, "instructor", bi["id"], valid_from="2025-01-01", valid_until="2025-12-31")
     assert b.get("/api/me").json()["user"]["role"] == "guest"  # 기간 끝남
@@ -4411,3 +4412,31 @@ def test_instructor_apply_with_multiple_teach_hubs(monkeypatch):
     assert r.status_code == 200, r.text
     apps = boss.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
     assert apps[0]["teach_hubs"] == ["가나고등학교", "다라고등학교"] and apps[0]["gender"] == "남"
+
+
+def test_hub_coordinator_approves_instructor_who_chose_the_hub(monkeypatch):
+    """강의교사 가입: '강의할 거점학교'로 고른 거점학교의 관리교사도 승인할 수 있다 (다른 거점학교는 못 봄)"""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    coords = {}
+    for email, hub in (("c1@gmail.com", "가나고등학교"), ("c2@gmail.com", "마바고등학교")):
+        c = TestClient(app)
+        google_login(c, email)
+        assert staff_apply(c, {"role": "coordinator", "name": "관리", "hub_name": hub, "affiliation": hub, "contact": "010",
+                               "email": f"{email}", "pledge": True}).status_code == 200
+        app_id = next(x for x in boss.get("/api/staff/applications", params={"role": "coordinator"}).json()["applications"] if x["hub"] == hub)["id"]
+        assert boss.post(f"/api/staff/{app_id}", json={"action": "approve", "hub_name": hub}).status_code == 200
+        coords[hub] = c
+    ins = TestClient(app)
+    google_login(ins, "ins@gmail.com")
+    assert staff_apply(ins, {"role": "instructor", "name": "김강사", "affiliation": "울산대학교", "affil_type": "univ", "department": "정치",
+                             "contact": "010", "email": "ins@korea.kr", "pledge": True, "teach_hubs": ["가나고등학교"]}).status_code == 200
+    c1, c2 = coords["가나고등학교"], coords["마바고등학교"]
+    mine = c1.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"]
+    assert [x["name"] for x in mine] == ["김강사"]
+    assert c2.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"] == []
+    assert c1.get("/api/staff/applications", params={"role": "coordinator"}).status_code == 403  # 강의교사 신청만
+    mid = mine[0]["id"]
+    assert c2.post(f"/api/staff/{mid}", json={"action": "approve", "valid_from": "2026-03-01", "valid_until": "2099-02-28"}).status_code == 403
+    assert c1.post(f"/api/staff/{mid}", json={"action": "approve", "valid_from": "2026-03-01", "valid_until": "2099-02-28"}).status_code == 200
+    assert ins.get("/api/me").json()["user"]["teach_any"] or ins.get("/api/me").json()["user"]["lead_any"]

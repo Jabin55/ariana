@@ -5,7 +5,7 @@ const editing = new Set(); // 정보 수정 중인 강좌
 let runCourseId = null; // 과목 운영에서 연 과목
 let runSub = "info"; // 그 과목 안의 칸: info(과목 정보) open(수업 열기) notice(공지사항) assess(수행평가) learn(학습 관리) satisfaction(만족도 조사)
 const satisfactionSub = new Map(); // 강좌별 만족도 조사 내부 탭
-let hubSub = "courses"; // 거점학교 운영: courses(강좌 개설) days(수업일) attendance(출석부). 강의교사 가입은 전체 관리자가 승인
+let hubSub = "teachers"; // 거점학교 운영: teachers(강의교사 승인) courses(강좌 개설) days(수업일) attendance(출석부)
 let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강좌
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
 let hubClassId = null; // 수업일에서 눌러 본 그날의 수강생 출석부
@@ -1246,13 +1246,19 @@ async function activitiesOf(classId, key, box) {
 /* ───────────────────────── 거점학교 운영: 승인·수업일·출석부 ───────────────────────── */
 
 async function loadHub() {
-  const ov = await api("/api/hub/overview");
+  // 강의교사 승인: '강의할 거점학교'로 우리 거점학교를 고른 강의교사 신청 (전체 관리자는 모두)
+  const [ov, ins] = await Promise.all([api("/api/hub/overview"),
+    api("/api/staff/applications?role=instructor").catch(() => ({ applications: [], today: today() }))]);
+  ins.applications.forEach((x) => { x.role = "instructor"; });
+  const teachers = ins.applications.filter((x) => !x.change_only);
+  const waitTeachers = teachers.filter((x) => x.status === "pending").length;
   const waitCourses = ov.courses.filter((c) => c.approval === "pending");
-  const badge = waitCourses.length;
+  const badge = waitCourses.length + waitTeachers;
   $("#hub-badge").textContent = badge;
   $("#hub-badge").hidden = !badge;
   const box = h("div");
   const subs = [
+    ["teachers", `강의교사 승인${waitTeachers ? ` (${waitTeachers})` : ""}`],
     ["courses", `강좌 개설 승인${waitCourses.length ? ` (${waitCourses.length})` : ""}`],
     ["days", "강좌별 수업일"],
     ["attendance", "강좌별 출석부"],
@@ -1261,7 +1267,10 @@ async function loadHub() {
     h("nav", { class: "tabs sub-tabs", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
       onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); } }, label))),
     box);
-  if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
+  if (hubSub === "teachers") fill(box, h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.9rem" },
+    "가입 신청서의 '강의할 거점학교'로 우리 거점학교를 고른 강의교사예요. 승인하면 과목을 개설하고 강의할 수 있어요. (전체 관리자도 승인할 수 있어요)"),
+    staffBoard("hub", teachers, ins.today || today(), loadHub, "강의교사 승인"));
+  else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
     if (hubRecordCourseId && hubClassId) await hubClassAttendance(box, ov);
     else if (hubRecordCourseId) {

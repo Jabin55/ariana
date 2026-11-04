@@ -1270,6 +1270,7 @@ function applicantInfo(x) {
   if (x.office) bits.push(x.office);
   bits.push(`${x.affil_type === "univ" ? "소속 대학" : "소속"} ${x.affiliation || "없음"}`);
   if (x.department) bits.push(`학과 ${x.department}`);
+  if (x.teach_hubs?.length) bits.push(`강의할 거점학교 ${x.teach_hubs.join(", ")}`);
   if (x.birth) bits.push(`생년월일 ${x.birth.replaceAll("-", ".")}`);
   if (x.license) bits.push(`자격 ${x.license}`);
   bits.push(`이메일 ${x.contact_email || x.email}`);

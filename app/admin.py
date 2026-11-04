@@ -42,9 +42,21 @@ async def login_required(request: Request) -> dict:
     return u
 
 
+def my_hub_names(u: dict) -> set[str]:
+    """거점학교 관리교사가 지금 맡은 거점학교 이름"""
+    return {h["name"] for h in u.get("coordinator_hubs") or [] if h.get("name")}
+
+
+def teach_hubs_of(m) -> set[str]:
+    return {x for x in ((getattr(m, "teach_hubs", None) if not isinstance(m, dict) else m.get("teach_hubs")) or "").split("\n") if x}
+
+
 def can_manage(u: dict, m) -> bool:
-    """관리교사·참여학교 담당교사·강의교사 가입(교사 승인)은 전체 관리자만 처리한다."""
-    return bool(u["is_admin"])
+    """교사 승인: 전체 관리자는 모두, 거점학교 관리교사는 '강의할 거점학교'로 자기 거점학교를 고른 강의교사 신청만."""
+    if u["is_admin"]:
+        return True
+    role = m["role"] if isinstance(m, dict) else m.role
+    return role == "instructor" and bool(my_hub_names(u) & teach_hubs_of(m))
 
 
 @router.get("/api/hubs")
@@ -261,7 +273,8 @@ async def applications(role: str, request: Request):
     u = await login_required(request)
     if role not in ROLES:
         raise HTTPException(400)
-    if not u["is_admin"]:
+    mine = my_hub_names(u)
+    if not u["is_admin"] and not (role == "instructor" and mine):
         raise HTTPException(403, "교사 승인은 전체 관리자만 할 수 있어요.")
 
     def run():
@@ -271,6 +284,8 @@ async def applications(role: str, request: Request):
                         db.users.c.birth, db.users.c.gender, db.users.c.position)
                  .join(db.users, db.users.c.id == m.user_id).where(m.role == role))
             rows = c.execute(q.order_by(m.requested_at.desc())).all()
+            if not u["is_admin"]:  # 거점학교 관리교사: 우리 거점학교를 고른 강의교사 신청만
+                rows = [r for r in rows if mine & teach_hubs_of(r)]
             names = dict(c.execute(select(db.hubs.c.id, db.hubs.c.name)).all())
             replaced_ids = {r.replace_membership_id for r in rows if r.replace_membership_id}
             replaced = {r.id: r for r in c.execute(select(db.memberships).where(m.id.in_(replaced_ids))).all()} if replaced_ids else {}
