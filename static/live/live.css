@@ -2126,11 +2126,11 @@ table.att.school-change-table td .status { white-space: normal; }
 
 /* 왼쪽 세로 메뉴(사이드바) + 오른쪽 내용: 특강/회의 */
 .side-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 18px; align-items: start; }
-.side-menu { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 12px; background: #fff; border: 1px solid var(--border);
+.side-menu { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 12px; background: #f5f1ea; border: 1px solid #e6dfd3; /* 위 메뉴 바와 같은 미색: 탭이라는 걸 알 수 있게 */
   border-radius: 14px; padding: 10px; }
 .side-menu button { text-align: left; padding: 12px 14px; border: none; border-radius: 10px; background: transparent; font-size: 0.98rem;
   font-weight: 600; color: var(--text); cursor: pointer; }
-.side-menu button:hover { background: #f1f6f3; }
+.side-menu button:hover { background: rgba(120, 100, 70, 0.08); }
 .side-menu button.active { background: #1b6b4a; color: #fff; }
 .side-main { min-width: 0; }
 .side-main > #meet-past-box { margin-top: 0 !important; }
