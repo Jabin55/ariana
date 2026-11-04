@@ -653,15 +653,11 @@ function renderRunCourse(c) {
   else if (runSub === "students") renderStudents(subBox, c);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
   else if (runSub === "learn") renderLearning(c, subBox);
-  else if (runSub === "feedback" || runSub === "script") { // 학생 맞춤형 피드백: [학생별 피드백] · [스크립트(수업별)]
+  else if (runSub === "feedback" || runSub === "script") { // 학생 맞춤형 피드백 (학생 목록 → 학생별 5개 탭)
     const st = learnState[c.id] ||= { card: "attend", open: new Set() };
-    if (runSub === "script") { runSub = "feedback"; st.fbPane = "script"; }
-    st.fbPane ||= "student";
-    const inner = h("div");
-    fill(subBox, h("nav", { class: "tabs sub-tabs fb-mode" }, [["student", "🧑‍🎓 학생별 피드백"], ["script", "🗒️ 스크립트"]].map(([k, label]) =>
-      h("button", { type: "button", class: st.fbPane === k ? "active" : "", onclick: () => { st.fbPane = k; st.view = null; renderRunCourse(c); } }, label))), inner);
-    st.speechTab = st.fbPane === "script" ? "class" : "student";
-    learnSpeech(c, st, inner);
+    if (runSub === "script") { runSub = "learn"; st.card = "script"; return renderRunCourse(c); } // 예전 주소: 학습 관리 > 스크립트
+    st.speechTab = "student";
+    learnSpeech(c, st, subBox);
   }
   else if (runSub === "results") renderResults(c, subBox); // 성취도·세특·학생 개별 성취 평가지 (achievement.js)
   else renderCourseSatisfaction(c, subBox);
@@ -927,7 +923,7 @@ function learnMaterials(list, box) {
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
-  if (["notice", "activity", "speech", "script", "speakers", "classfb"].includes(st.card)) st.card = "attend"; // 없앤 카드 (학생 맞춤형 피드백·스크립트는 왼쪽 메뉴로)
+  if (["notice", "activity", "speech", "speakers", "classfb"].includes(st.card)) st.card = "attend"; // 없앤 카드 (학생 맞춤형 피드백은 왼쪽 메뉴로)
   let d, mats;
   try {
     [d, mats] = await Promise.all([api(`/api/courses/${c.id}/learning`),
@@ -942,6 +938,7 @@ async function renderLearning(c, box) {
     ["materials", "📁 수업자료", `${matFiles}개`, `자료 공유한 수업 ${mats.classes.filter((x) => x.files || x.whiteboard).length}회`],
     ["survey", "📊 설문", `${S.survey.count}회`, `응답률 ${pct(S.survey.rate)} · ${S.survey.classes}개 수업`],
     ["quiz", "✅ 퀴즈", `${S.quiz.count}회`, `응답률 ${pct(S.quiz.rate)} · ${S.quiz.classes}개 수업`],
+    ["script", "🗒 스크립트", `${S.speech?.classes || 0}회`, `기록한 수업 · 발언 ${S.speech?.count || 0}건`],
   ];
   const detail = h("div", { class: "learn-detail" });
   fill(box,
@@ -951,6 +948,7 @@ async function renderLearning(c, box) {
     detail);
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "materials") { learnMaterials(mats.classes, detail); return; }
+  if (st.card === "script") { st.speechTab = "class"; learnSpeech(c, st, detail); return; } // 수업별 스크립트
   if (st.card === "attend") learnAttendance(d, st, detail);
   else if (st.card === "notice") learnNotices(d, detail);
   else learnActivities(d, st, st.card, detail);
