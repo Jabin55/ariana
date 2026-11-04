@@ -1319,6 +1319,7 @@ const staffBoards = {}; // 보드마다 검색 조건·체크·펼침
 
 function staffBoard(id, list, today, reload, title) {
   const st = staffBoards[id] ||= { q: {}, pick: new Set(), open: new Set() };
+  const hubBoard = id === "hub"; // 거점학교 운영의 강사 승인은 예전처럼 줄을 펼쳐서
   const box = h("div", { class: "staff-board" });
   const roles = [...new Set(list.map((x) => x.role))];
   const schools = koSort(new Set(list.map((x) => x.hub).filter(Boolean)));
@@ -1334,6 +1335,7 @@ function staffBoard(id, list, today, reload, title) {
   };
   for (const [k, el] of Object.entries(f)) el.value = st.q[k] || "";
   const result = h("div");
+  const searchBox = h("div");
   const search = () => {
     for (const [k, el] of Object.entries(f)) st.q[k] = el.value.trim();
     st.pick.clear();
@@ -1357,8 +1359,40 @@ function staffBoard(id, list, today, reload, title) {
       .sort((a, b) => (a.status === "pending") - (b.status === "pending") || a.requested_at - b.requested_at).reverse();
   }
 
+  /** [관리]: 게시판처럼 신청 한 건을 별도 화면으로 (상세 정보 + 승인·거절) */
+  function drawDetail(x) {
+    const [cls, label] = MEMBER_STATUS[x.status] || ["pending", x.status];
+    const back = () => { st.view = null; draw(); };
+    const info = [
+      ["회원 구분", STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (팀티칭 보조교사)" : "")], ["상태", h("span", { class: `status ${cls}` }, label)],
+      ["이름", x.name], ["성별", x.gender || "-"], ["생년월일", x.birth ? x.birth.replaceAll("-", ".") : "-"],
+      [x.role === "coordinator" ? "거점학교" : x.role === "participant" ? "담당 학교" : "강의 학교", x.hub || "-"],
+      ["소속 구분", AFFIL_NAME[x.affil_type] || "-"], ["교육청", x.office || "-"],
+      [x.affil_type === "univ" ? "소속 대학" : "소속", x.affiliation || "-"], ["학과", x.department || "-"], ["직위", x.position || "-"],
+      ["자격", x.license || "-"], ["이메일", x.contact_email || x.email || "-"], ["로그인 계정", x.email || "-"], ["연락처", x.contact || "-"],
+      ["신청일", day(x.requested_at)], ["희망 기간", wishPeriod(x) || "-"], ["활동 기간", period(x) || "-"],
+      ["개인정보 서약", x.pledged ? "동의함" : "없음"], ["자기 소개", x.message || "-"]];
+    searchBox.hidden = true; // 게시판 글처럼: 상세 화면에서는 검색 칸을 숨긴다
+    fill(result,
+      h("div", { class: "row", style: "margin:0 0 10px" }, h("button", { class: "small", type: "button", onclick: back }, "← 목록")),
+      h("h3", { style: "margin:0 0 8px" }, `${x.name} · ${STAFF_ROLE[x.role] || x.role} 신청`),
+      h("table", { class: "staff-detail" }, h("tbody", {}, info.reduce((rowsAcc, cur, i) => {
+        if (i % 2 === 0) rowsAcc.push([cur]); else rowsAcc[rowsAcc.length - 1].push(cur);
+        return rowsAcc;
+      }, []).map((pair) => h("tr", {}, pair.flatMap(([k, v]) => [h("th", {}, k), h("td", { colspan: pair.length === 1 ? 3 : 1 }, v)]))))),
+      (x.changes || []).length ? h("div", { class: "banner warn", style: "margin-top:8px" }, (x.changes || []).map((c) =>
+        h("div", {}, `${{ name: "이름", gender: "성별", school: "소속" }[c.field] || c.field} 변경 신청: ${c.old || "(없음)"} → ${c.new}`))) : null,
+      h("div", { style: "margin-top:12px" }, staffCard(x, today, reload)));
+  }
+
   function draw() {
     const rows = filtered();
+    searchBox.hidden = false;
+    if (!hubBoard && st.view) {
+      const x = list.find((y) => y.id === st.view);
+      if (x) return drawDetail(x);
+      st.view = null;
+    }
     const decide = async (action) => {
       const picked = rows.filter((x) => st.pick.has(x.id) && (x.status === "pending" || x.change_only));
       if (!picked.length) { toast("승인 대기인 신청을 먼저 체크해 주세요."); return; }
@@ -1393,7 +1427,7 @@ function staffBoard(id, list, today, reload, title) {
     const FIELD = { name: "이름", gender: "성별", school: "소속" };
     const changeNote = (x) => (x.changes || []).map((c) => h("div", { class: "change-note" },
       `${FIELD[c.field] || c.field} 변경: ${c.old || "(없음)"} → ${c.new}`));
-    const COLS = hubApproval ? 7 : 12;
+    const COLS = hubApproval ? 7 : 8;
     const trs = rows.flatMap((x, i) => {
       const open = st.open.has(x.id);
       const [cls, label] = MEMBER_STATUS[x.status] || ["pending", x.status];
@@ -1410,19 +1444,15 @@ function staffBoard(id, list, today, reload, title) {
         h("td", {}, x.contact || x.contact_email || x.email || "-"),
         h("td", {}, h("span", { class: `status ${cls}` }, label), " ",
           h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")))
-        : h("tr", { class: open ? "open-row" : "" },
-        h("td", { "data-label": "선택" }, pick),
-        h("td", { class: "num", "data-label": "번호" }, rows.length - i),
+        : h("tr", {},
+        h("td", { class: "num", "data-label": "연번" }, pick, ` ${rows.length - i}`),
         h("td", { "data-label": "회원 구분" }, STAFF_ROLE[x.role] + (x.kind === "assistant" ? " (보조)" : "")),
-        h("td", { "data-label": "이름" }, h("button", { class: "link-btn name-btn", onclick: toggle },
-          `${open ? "▾" : "▸"} ${x.name}`), changeNote(x)),
-        h("td", { "data-label": "학교" }, x.hub || "-"), h("td", { "data-label": "소속" }, x.affiliation || "-"),
-        h("td", { "data-label": "생년월일" }, x.birth ? x.birth.replaceAll("-", ".") : "-"),
-        h("td", { class: "contact-cell", "data-label": "이메일" }, x.contact_email || x.email || "-"),
-        h("td", { class: "contact-cell", "data-label": "연락처" }, x.contact || "-"),
+        h("td", { "data-label": "소속" }, x.affiliation || "-"),
+        h("td", { "data-label": "성별" }, x.gender || "-"),
+        h("td", { "data-label": "이름" }, h("button", { class: "link-btn name-btn", onclick: () => { st.view = x.id; draw(); window.scrollTo(0, 0); } }, x.name), changeNote(x)),
         h("td", { "data-label": "신청일" }, day(x.requested_at)),
         h("td", { "data-label": "상태" }, h("span", { class: `status ${cls}` }, label)),
-        h("td", { "data-label": "관리" }, h("button", { class: "small", onclick: toggle }, open ? "닫기" : "관리")));
+        h("td", { "data-label": "관리" }, h("button", { class: "small", onclick: () => { st.view = x.id; draw(); window.scrollTo(0, 0); } }, "관리")));
       return open ? [main, h("tr", { class: "detail-row" }, h("td", { colspan: COLS }, staffCard(x, today, reload)))] : [main];
     });
     result.replaceChildren(
@@ -1435,7 +1465,7 @@ function staffBoard(id, list, today, reload, title) {
       h("div", { class: "table-wrap" }, h("table", { class: `att enroll-table ${hubApproval ? "instructor-approval-table" : "staff-approval-table"}` },
         h("thead", {}, h("tr", {}, hubApproval
           ? ["연번", "신청일", "소속", "직위", "이름", "연락처", "상태"].map((t) => h("th", {}, t))
-          : [h("th", {}, all), ...["번호", "회원 구분", "이름", "학교", "소속", "생년월일", "이메일", "연락처", "신청일", "상태", ""].map((t) => h("th", {}, t))])),
+          : [h("th", {}, all, " 연번"), ...["회원 구분", "소속", "성별", "이름", "신청일", "상태", "관리"].map((t) => h("th", {}, t))])),
         h("tbody", {}, trs.length ? trs
           : h("tr", {}, h("td", { colspan: COLS, class: "muted", style: "text-align:center;padding:24px" }, list.length ? "조건에 맞는 신청이 없어요." : "아직 신청이 없어요."))))));
   }
@@ -1443,6 +1473,9 @@ function staffBoard(id, list, today, reload, title) {
   const pending = list.filter((x) => x.status === "pending" || x.change_only).length;
   box.append(
     h("h2", { style: "margin:8px 0 6px" }, title, pending ? h("span", { class: "status pending", style: "margin-left:8px;font-size:0.85rem" }, `승인 대기 ${pending}`) : null),
+    searchBox,
+    result);
+  searchBox.append(
     h("div", { class: "search-form" },
       row(cell("회원 구분", f.role), cell("상태", f.status)),
       row(cell("학교", f.school), cell("이름", f.name)),
@@ -1452,8 +1485,7 @@ function staffBoard(id, list, today, reload, title) {
           h("input", { type: "radio", name: `${id}-quick`, onchange: () => quick(d) }), label))), true))),
     h("div", { class: "row", style: "justify-content:center;margin:12px 0 20px" },
       h("button", { type: "button", onclick: () => { st.q = {}; for (const el of Object.values(f)) el.value = ""; st.pick.clear(); draw(); } }, "초기화"),
-      h("button", { class: "primary", type: "button", onclick: search }, "검색")),
-    result);
+      h("button", { class: "primary", type: "button", onclick: search }, "검색")));
   draw();
   return box;
 }
