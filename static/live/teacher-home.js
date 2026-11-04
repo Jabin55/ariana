@@ -1565,7 +1565,8 @@ async function loadSchool() {
   const f = {
     term: h("select", {}, h("option", { value: "" }, "전체"), terms.map((t) => h("option", { value: t }, t))),
     subject: h("input", { placeholder: "예: 법과 사회" }),
-    status: h("select", {}, h("option", { value: "" }, "전체"), koSort(Object.entries(ENROLL_NAME), (x) => x[1]).map(([k, v]) => h("option", { value: k }, v)),
+    // 순서: 승인 대기 → 수강 확정 → 반려 (수강신청 없음 = 아직 어떤 과목도 신청하지 않은 학생)
+    status: h("select", {}, h("option", { value: "" }, "전체"), Object.entries(ENROLL_NAME).map(([k, v]) => h("option", { value: k }, v)),
       h("option", { value: "none" }, "수강신청 없음")),
     teacher: h("input", { placeholder: "강의교사 이름" }),
     hub: h("select", {}, h("option", { value: "" }, "전체"), hubs.map((x) => h("option", { value: x }, x))),
