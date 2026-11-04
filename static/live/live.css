@@ -927,8 +927,9 @@ body.site { background: var(--bg); }
 /* ───── 노트북·태블릿 화면에 맞게 가로로 넓게 (세로로 길게 늘어지지 않게) ───── */
 .landing { max-width: 1120px; padding: 24px 24px 48px; }
 .site-header-in { max-width: 1160px; }
-.site-main { max-width: 1080px; }
+.site-main { max-width: 1120px; padding-left: 24px; padding-right: 24px; } /* 교무실·강의실(.landing)과 같은 폭·여백: 메뉴를 옮겨 다녀도 내용이 좌우로 움직이지 않게 */
 .home-wrap, .bb-in, .g-hero-in { max-width: 1120px; }
+.home-wrap { padding-left: 24px; padding-right: 24px; }
 .materials { max-width: 1120px; }
 .landing .card.narrow { max-width: none; }
 #profile-view, #role-view { max-width: 720px !important; margin-left: auto; margin-right: auto; }
@@ -2148,3 +2149,7 @@ table.att.school-change-table td .status { white-space: normal; }
 }
 /* 스크롤바가 생겼다 없어졌다 해도 화면이 좌우로 움직이지 않게 자리를 늘 비워 둔다 */
 html { scrollbar-gutter: stable; }
+/* 휴대폰: 모든 화면 같은 16px 여백 */
+@media (max-width: 640px) {
+  .landing, .site-main, .home-wrap { padding-left: 16px; padding-right: 16px; }
+}
