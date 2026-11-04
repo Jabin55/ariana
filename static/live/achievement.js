@@ -611,13 +611,13 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
     fb.el,
     h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, saveFb, publishFb),
     v.published ? h("p", { class: "ok-text", style: "margin:6px 0 0;font-size:0.85rem" }, "✅ 지금 학생에게 공개 중이에요.") : null);
-  if (opts.only === "feedback") { // [💌 피드백] 탭: 종합 피드백만 (초안은 [🎯 성취 분석]의 AI 분석에서 만들어진다)
-    achFill(box, v.analyzed_at ? null : h("p", { class: "muted", style: "margin:0 0 8px" }, "종합 피드백 초안은 [🎯 성취 분석]에서 [AI 분석하기]를 누르면 만들어져요. 직접 써도 돼요."), fbBox);
+  if (opts.only === "feedback") { // [💌 피드백 전송] 탭: 종합 피드백만 (초안은 [🎯 성취 분석]의 AI 분석에서 만들어진다)
+    achFill(box, v.analyzed_at ? null : h("p", { class: "muted", style: "margin:0 0 8px" }, "종합 피드백 초안은 [🎯 역량 분석]에서 [AI 분석하기]를 누르면 만들어져요. 직접 써도 돼요."), fbBox);
     return;
   }
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
-      h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run,
+      h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 역량 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run,
       v.analyzed_at && (v.competencies?.length || v.subject_competencies?.length) ? editBtn : null),
     opts.obs === false ? null : h("details", { class: "ach-box", open: obs.length > 0 && !v.analyzed_at },
       h("summary", { class: "ach-box-head" }, `👀 교사 관찰 기록 ${obs.length}건 `, h("span", { class: "muted", style: "font-weight:400" }, "(수업 중 [관찰기록] 탭에서 적은 것 · AI 분석에 함께 써요)")),

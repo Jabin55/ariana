@@ -1007,10 +1007,10 @@ async function learnSpeech(c, st, box) {
   const who = d.students.find((x) => x.user_id === st.view);
   if (who) {
     // 학생 한 명: 성취 분석 / 교사 관찰 기록 / 학생 발언 기록을 각각 보여 준다
-    st.studentTab ||= "growth";
-    if (!["growth", "analysis", "observations", "speech", "feedback"].includes(st.studentTab)) st.studentTab = "growth";
+    st.studentTab ||= "speech";
+    if (!["growth", "analysis", "observations", "speech", "feedback"].includes(st.studentTab)) st.studentTab = "speech";
     const tabs = h("nav", { class: "tabs sub-tabs", style: "margin:4px 0 10px" },
-      [["growth", "📈 성장 흐름"], ["analysis", "🎯 성취 분석"], ["observations", "👀 교사 관찰 기록"], ["speech", "🗣️ 학생 발언 기록"], ["feedback", "💌 피드백"]].map(([k, label]) =>
+      [["speech", "🗣️ 학생 발언 기록"], ["observations", "👀 교사 관찰 기록"], ["analysis", "🎯 역량 분석"], ["growth", "📈 성장 흐름"], ["feedback", "💌 피드백 전송"]].map(([k, label]) =>
         h("button", { type: "button", class: st.studentTab === k ? "active" : "", onclick: () => { st.studentTab = k; st.fbClass = null; again(); } }, label)));
     const pane = h("div");
     fill(box, head,
@@ -1026,7 +1026,7 @@ async function learnSpeech(c, st, box) {
     if (st.studentTab === "analysis") {
       const anal = h("div", { class: "ach-wrap" }, h("p", { class: "muted" }, "AI 분석을 불러오는 중…"));
       fill(pane, anal);
-      renderAnalysis(c.id, who, anal, { obs: false, feedback: false }); // AI 성취 분석·그래프 (피드백은 [💌 피드백] 탭)
+      renderAnalysis(c.id, who, anal, { obs: false, feedback: false }); // AI 성취 분석·그래프 (피드백은 [💌 피드백 전송] 탭)
       return;
     }
     if (st.studentTab === "feedback") {
@@ -1096,7 +1096,7 @@ async function learnSpeech(c, st, box) {
   }
   fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students speech-feedback-students" },
     h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "자발 비율", "발언한 수업", "관찰 기록", "최근 목표 달성", "공개한 피드백"].map((t) => h("th", {}, t)))),
-    h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; st.studentTab = "growth"; again(); } },
+    h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; st.studentTab = "speech"; again(); } },
       h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
       h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
       h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, x.spontaneous_rate === null || x.spontaneous_rate === undefined ? "-" : `${x.spontaneous_rate}%`),
