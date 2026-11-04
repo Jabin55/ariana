@@ -1728,6 +1728,8 @@ async function renderStudentSchoolChanges(box) {
     fill(box,
       ME.is_admin ? null : h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
+        // 열 너비: 연번·이름·(전)학교·학년·반·번호·(후)학교·학년·반·번호·승인 담당·승인/반려
+        h("colgroup", {}, [5, 8, 15, 6, 5, 6, 15, 6, 5, 6, 10, 13].map((w) => h("col", { style: `width:${w}%` }))),
         // 머리글 두 줄: 변경 전·후 아래에 소속학교·학년·반·번호 (가로 폭을 줄인다)
         h("thead", {},
           h("tr", {}, h("th", { rowspan: 2 }, "연번"), h("th", { rowspan: 2 }, "이름"), h("th", { colspan: 4 }, "변경 전"),
