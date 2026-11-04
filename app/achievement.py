@@ -521,7 +521,7 @@ class CourseObservationReq(BaseModel):
 
 @router.post("/api/courses/{course_id}/speech/student/{user_id}/observations")
 async def add_course_observation(course_id: int, user_id: int, req: CourseObservationReq, request: Request):
-    """수업이 끝난 뒤에도 [학생 맞춤형 피드백]에서 관찰 기록을 더한다 (그 과목의 수업·수강생만)"""
+    """수업이 끝난 뒤에도 [학생 맞춤 피드백]에서 관찰 기록을 더한다 (그 과목의 수업·수강생만)"""
     course, t = await _course(course_id, request)
     from app.courses import course_roster
 

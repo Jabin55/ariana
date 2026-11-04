@@ -497,7 +497,7 @@ class_feedback = Table(
 )
 
 course_results = Table(
-    "course_results", metadata,  # [성취도 및 특기 사항]: 모든 수행평가 채점 뒤 교사가 확정한 성취도·세특·성장 요약
+    "course_results", metadata,  # [특기사항]: 모든 수행평가 채점 뒤 교사가 확정한 성취도·세특·성장 요약
     Column("id", Integer, primary_key=True),
     Column("course_id", Integer, nullable=False, index=True),
     Column("user_id", Integer, nullable=False, index=True),

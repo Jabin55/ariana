@@ -4328,7 +4328,7 @@ def test_class_feedback_per_class_draft_edit_publish(monkeypatch):
 
 
 def test_results_achievement_and_setuk_after_grading(monkeypatch):
-    """[성취도 및 특기 사항]: 모든 수행평가 채점 뒤에만 성취도 확정·세특 작성, 성취기준별 최종 도달은 수행평가 득점률"""
+    """[특기사항]: 모든 수행평가 채점 뒤에만 성취도 확정·세특 작성, 성취기준별 최종 도달은 수행평가 득점률"""
     import app.results as rs
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
     calls = []
