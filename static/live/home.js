@@ -1291,10 +1291,7 @@ function staffCard(x, today, reload) {
     } catch (err) { toast(err.message); }
   };
   const hubName = h("input", { value: x.hub, maxlength: 60, style: "width:12em" });
-  // 승인 대기면 강사가 적은 희망 기간을 미리 채운다 (관리교사가 고쳐서 승인할 수 있음)
-  const usesWish = x.status === "pending" && x.wish_until;
-  const from = h("input", { type: "date", value: (usesWish ? x.wish_from : x.valid_from) || today });
-  const until = h("input", { type: "date", value: (usesWish ? x.wish_until : x.valid_until) || "" });
+  // 활동 기간 없이 승인하면 영구 승인 (기간 칸 없음)
   const note = h("input", { class: "grow", maxlength: 300, placeholder: "메모 (거절·해제 사유 등, 신청자에게 보여요)", value: x.admin_note || "" });
   const active = ["approved", "expired", "scheduled"].includes(x.status);
   const mine = x.user_id === ME.id && !ME.is_admin; // 본인 신청은 다른 관리교사나 전체 관리자가 처리
@@ -1314,11 +1311,10 @@ function staffCard(x, today, reload) {
     h("div", { class: "approve-form" },
       h("div", { class: "row" },
         named ? h("span", {}, isCoord ? "거점학교명" : "소속 학교") : null, named ? hubName : null,
-        "활동 기간", from, "~", until, h("span", { class: "muted", style: "font-size:0.8rem" },
-          named ? "(끝나는 날을 비우면 제한 없음)" : "(끝나는 날이 지나면 강사 권한이 저절로 꺼져요)")),
+        h("span", { class: "muted", style: "font-size:0.85rem" }, "승인하면 기간 제한 없이 계속 활동할 수 있어요.")),
       h("div", { class: "row" }, note,
-        h("button", { class: "primary", onclick: () => decide({ action: "approve", hub_name: hubName.value, valid_from: from.value, valid_until: until.value, note: note.value }) },
-          x.status === "pending" ? "승인" : active ? "고치기" : "다시 승인"),
+        h("button", { class: "primary", onclick: () => decide({ action: "approve", hub_name: hubName.value, valid_from: "", valid_until: "", note: note.value }) },
+          x.status === "pending" ? "승인" : active ? "저장" : "다시 승인"),
         x.status === "pending" ? h("button", { class: "danger", onclick: () => decide({ action: "reject", note: note.value }) }, "거절") : null,
         active ? h("button", { class: "danger", onclick: async () => {
           if (await appConfirm(`${x.name}의 권한을 해제할까요? 수업 기록은 남아요.`)) decide({ action: "revoke", note: note.value });
@@ -1430,10 +1426,9 @@ function staffBoard(id, list, today, reload, title) {
     const decide = async (action) => {
       const picked = rows.filter((x) => st.pick.has(x.id) && (x.status === "pending" || x.change_only));
       if (!picked.length) { toast("승인 대기인 신청을 먼저 체크해 주세요."); return; }
-      // 강의교사는 끝나는 날이 꼭 있어야 한다 → 신청서의 희망 기간으로 승인 (다르게 정하려면 '관리'에서 한 명씩)
-      const noEnd = action === "approve" ? picked.filter((x) => x.role === "instructor" && !x.wish_until) : [];
+      const noEnd = []; // 활동 기간 없이 영구 승인
       if (!await appConfirm(`${picked.length}건을 ${action === "approve" ? "승인" : "거절"}할까요?` +
-        (action === "approve" ? "\n학교 변경 요청은 기존 활동 기간을 유지합니다." : ""))) return;
+        (action === "approve" ? "\n승인하면 기간 제한 없이 계속 활동할 수 있어요." : ""))) return;
       let ok = 0;
       for (const x of picked) {
         if (x.change_only) { // 권한은 그대로, 함께 신청한 이름·성별·소속만
@@ -1442,9 +1437,7 @@ function staffBoard(id, list, today, reload, title) {
         }
         if (noEnd.includes(x)) continue;
         const body = action === "approve"
-          ? { action, hub_name: x.hub,
-              valid_from: x.transfer_from ? x.valid_from || today : x.wish_from || today,
-              valid_until: x.transfer_from ? x.valid_until || "" : x.wish_until || "" }
+          ? { action, hub_name: x.hub, valid_from: "", valid_until: "" }
           : { action, note: "" };
         try { await api(`/api/staff/${x.id}`, body); ok++; } catch (err) { toast(err.message); }
       }

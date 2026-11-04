@@ -905,8 +905,9 @@ def test_hub_structure_and_course_approval(monkeypatch):
     assert iapps[0]["name"] == "김교수" and iapps[0]["hub_id"] is None
     assert (iapps[0]["wish_from"], iapps[0]["wish_until"], iapps[0]["message"]) == ("2027-01-01", "2099-02-28", "")
     assert coord.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 403
-    assert admin.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve"}).status_code == 400  # 끝나는 날 필수
-    assert admin.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve", "valid_until": "2099-02-28"}).status_code == 200
+    assert admin.post(f"/api/staff/{iapps[0]['id']}", json={"action": "approve"}).status_code == 200  # 기간 없이 영구 승인
+    approved = admin.get("/api/staff/applications", params={"role": "instructor"}).json()["applications"][0]
+    assert (approved["status"], approved["valid_from"], approved["valid_until"]) == ("approved", "", "")
     pme = prof.get("/api/me").json()["user"]
     assert pme["role"] == "teacher" and pme["teach_hubs"] == [] and pme["lead_any"] and not pme["coordinator_hubs"]
     # 강사는 관리교사 권한 없음

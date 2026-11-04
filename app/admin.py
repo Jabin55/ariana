@@ -377,8 +377,7 @@ async def decide(membership_id: int, req: DecideReq, request: Request):
                         raise HTTPException(400, "소속 학교는 학교 목록에서 골라 주세요.")
                     values["hub_id"] = hub_for_school(c, values["hub_name"])
                 elif row.role == "instructor":
-                    if not req.valid_until:  # 기간이 끝나면 저절로 권한이 꺼지도록 강사는 끝나는 날이 꼭 있어야 한다
-                        raise HTTPException(400, "강사는 활동 기간이 끝나는 날을 정해 주세요.")
+                    pass  # 활동 기간 없이 승인하면 영구 승인
                 else:  # 관리교사: 거점학교를 찾거나 새로 만든다
                     name = (req.hub_name or row.hub_name).strip()
                     if not name:
