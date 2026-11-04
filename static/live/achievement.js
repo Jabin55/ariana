@@ -400,7 +400,8 @@ function achTrackingTable(v) {
   if (!t.length) return null;
   const num = [
     ["talk", "발언 수", ""], ["spontaneous", "└ 자발 발언", "스스로 한 발언"], ["response", "└ 발문 응답", "선생님 질문 뒤 20초 안의 대답"],
-    ["avg_len", "평균 발언 길이(자)", ""], ["quiz_rate", "퀴즈 정답률(%)", "정답이 있는 퀴즈만"]];
+    ["avg_len", "평균 발언 길이(자)", ""], ["quiz_rate", "퀴즈 정답률(%)", "정답이 있는 퀴즈만"],
+    ["quiz_score", "퀴즈 점수율(%)", "채점한 퀴즈의 점수 ÷ 배점 (선생님이 고친 점수 포함)"]];
   const numRows = num.map(([k, label, tip]) => {
     const vals = t.map((x) => x.counts[k]);
     return h("tr", {}, h("th", { title: tip }, label), vals.map((x) => h("td", { class: "ach-cell" }, x === null || x === undefined ? "–" : String(x))),
@@ -901,6 +902,7 @@ async function renderGrowth(courseId, who, box, openFeedback) {
     h("div", { class: "tl-head" }, h("strong", {}, `${x.no}회 · ${fmtDate(x.date)}`), h("span", { class: "muted" }, ` ${x.title || ""}`),
       h("span", { class: "grow" }),
       h("span", { class: "tl-chip" }, `발언 ${x.counts.talk} (자발 ${x.counts.spontaneous} · 응답 ${x.counts.response})`),
+      x.counts.quiz_score !== null && x.counts.quiz_score !== undefined ? h("span", { class: "tl-chip" }, `퀴즈 ${x.counts.quiz_score}%`) : null,
       x.feedback ? h("span", { class: `fb-badge${x.published ? " pub" : ""}` }, x.published ? "피드백 공개" : "피드백 초안") : null),
     x.goal_checks.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "🎯 지난 목표"),
       h("div", {}, x.goal_checks.map((g) => h("div", { class: `tl-goal ${g.status}` }, `${GOAL_MARK[g.status][0]} ${g.goal} `,

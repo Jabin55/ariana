@@ -26,6 +26,7 @@ CLASS_FB_SYSTEM = (
     "규칙:\n"
     "- standards: 이 수업에서 다룬 성취기준(S번호)마다 level 상=3, 중=2, 하=1, 근거가 없으면 0. 근거 없이 추측하지 않습니다. "
     "evidence 에는 근거를 짧게 인용하고 출처를 '(응답)', '(자발)', '(관찰)', '(퀴즈)'로 표시합니다.\n"
+    "- 퀴즈 기록의 '점수'와 '교사 채점 의견'은 선생님이 확인한 것입니다. 지난 수업보다 퀴즈 점수가 오르거나 내렸으면 changes 의 근거로 쓸 수 있습니다. '(미응답)'만으로 이해 부족을 단정하지 않습니다.\n"
     "- 지난 피드백의 '다음 수업에서 해 보기'(번호 붙은 목표)가 주어지면 goal_checks 에 목표마다 이번 수업에서 했는지 판정합니다. "
     "status 는 done(분명히 해냄)·partial(시도했지만 일부)·none(근거 없음 또는 시도 안 함)이고, evidence 에는 근거 발언·관찰을 짧게 인용합니다(none 이면 빈 문자열). "
     "해낸 목표는 잘한 점이나 선생님의 피드백에서 칭찬하고 다음 목표를 한 단계 높이며, 하지 못한 목표는 더 쉬운 방법으로 다시 제안합니다.\n"
@@ -360,7 +361,7 @@ def student_timeline(course_id: int, user_id: int) -> dict:
         checks = j["goal_checks"] if j else []
         score = round(100 * sum({"done": 1, "partial": 0.5}.get(g["status"], 0) for g in checks) / len(checks)) if checks else None
         out.append({"class_id": k.id, "no": n, "title": k.title or "", "date": datetime.fromtimestamp(k.created_at, KST).strftime("%Y-%m-%d"),
-                    "counts": m["counts"] if m else {"talk": 0, "spontaneous": 0, "response": 0, "avg_len": 0, "quiz_rate": None},
+                    "counts": m["counts"] if m else {"talk": 0, "spontaneous": 0, "response": 0, "avg_len": 0, "quiz_rate": None, "quiz_score": None},
                     "notes": m["notes"] if m else [],
                     "turns": [{"kind": t["kind"], "text": t["text"]} for t in (m.get("turns", []) if m else [])][:3],
                     "levels": j["levels"] if j else [], "feedback": j["parts"] if j else None, "published": bool(j and j["published"]),

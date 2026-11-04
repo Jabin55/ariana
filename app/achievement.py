@@ -585,7 +585,8 @@ def turn_counts(x: dict) -> dict:
     return {"talk": len(turns), "spontaneous": sum(t["kind"] == "자발" for t in turns),
             "response": sum(t["kind"] == "응답" for t in turns),
             "avg_len": round(sum(len(t["text"]) for t in turns) / len(turns)) if turns else 0,
-            "quiz_rate": round(100 * x.get("quiz_correct", 0) / total) if total else None}
+            "quiz_rate": round(100 * x.get("quiz_correct", 0) / total) if total else None,
+            "quiz_score": x.get("quiz_score_rate")}
 
 
 def _student_material(course_id: int, user_id: int):
@@ -608,44 +609,23 @@ def _student_material(course_id: int, user_id: int):
         x = classes.setdefault(o["class_id"], {"class_id": o["class_id"], "date": o["date"], "title": o["class_title"],
                                                 "texts": [], "notes": [], "quizzes": []})
         x["notes"].append(o["text"])
-    a, cl = db.activities.c, db.classes.c
-    with db.engine.connect() as c:
-        quiz_rows = c.execute(select(a.kind, a.prompt, a.options, a.correct, a.responses,
-                                     cl.id.label("class_id"), cl.title, cl.created_at.label("class_created"))
-                              .join(db.classes, cl.id == a.class_id)
-                              .where(cl.course_id == course_id, a.kind.in_(("ox", "choice", "text")))
-                              .order_by(a.created_at, a.id)).all()
-    for q in quiz_rows:
-        try:
-            answers = json.loads(q.responses)
-            if not isinstance(answers, dict) or str(user_id) not in answers:
-                continue
-            answer = answers[str(user_id)]
-            options = json.loads(q.options)
-        except (ValueError, TypeError):
-            continue
-        if q.kind == "text":
-            if not isinstance(answer, str) or not answer.strip():
-                continue
-            shown = answer.strip()
-        else:
-            if not isinstance(options, list) or type(answer) is not int or not 0 <= answer < len(options):
-                continue
-            shown = str(options[answer])
-        kind = {"ox": "OX", "choice": "객관식", "text": "주관식"}[q.kind]
-        record = f"[{kind}] 문항: {q.prompt} / 학생 답: {shown}"
-        if q.kind != "text" and type(q.correct) is int and 0 <= q.correct < len(options):
-            record += f" / 정답: {options[q.correct]} ({'정답' if answer == q.correct else '오답'})"
-            graded = (answer == q.correct)
-        else:
-            graded = None
-        x = classes.setdefault(q.class_id, {"class_id": q.class_id,
-                                             "date": datetime.fromtimestamp(q.class_created, KST).strftime("%Y-%m-%d"),
-                                             "title": q.title or "", "texts": [], "notes": [], "quizzes": []})
-        x["quizzes"].append(record)
-        if graded is not None:
-            x["quiz_total"] = x.get("quiz_total", 0) + 1
-            x["quiz_correct"] = x.get("quiz_correct", 0) + int(graded)
+    from app.grading import student_quiz
+    for q in student_quiz(course_id, user_id):  # 수업 중 퀴즈: 답안·정답 여부·교사가 매긴 점수·피드백
+        x = classes.setdefault(q["class_id"], {"class_id": q["class_id"], "date": q["date"], "title": q["title"],
+                                                "texts": [], "notes": [], "quizzes": []})
+        for it in q["items"]:
+            record = f"[{it['kind_name']}] 문항: {it['prompt']} / 학생 답: {it['answer'] if it['answered'] else '(미응답)'}"
+            if it["correct_answer"]:
+                record += f" / 정답: {it['correct_answer']}" + (f" ({'정답' if it['correct'] else '오답'})" if it["answered"] else "")
+            if it["score"] is not None:
+                record += f" / 점수: {it['score']:g}/{it['points']:g}점"
+            if it["feedback"]:
+                record += f" / 교사 채점 의견: {it['feedback']}"
+            x["quizzes"].append(record)
+            if it["correct"] is not None:
+                x["quiz_total"] = x.get("quiz_total", 0) + 1
+                x["quiz_correct"] = x.get("quiz_correct", 0) + int(it["correct"])
+        x["quiz_score_rate"] = q["rate"]
     every = [s["id"] for s in standards]
     direct = class_links_of(course_id)
     for x in classes.values():
@@ -694,6 +674,7 @@ ANALYSIS_SYSTEM = (
     "- indicators: 반복 관찰 지표 4가지를 수업마다 같은 잣대로 상=3, 중=2, 하=1, 그 수업에서 드러나지 않았으면 0 으로 판단합니다.\n"
     "- evidence 에는 판단 근거를 짧게 인용하고 출처를 '(발언)', '(응답)', '(자발)', '(관찰)', '(퀴즈)'로 표시합니다.\n"
     "- 퀴즈의 정오 여부 한 번만으로 학생의 전체 성취수준이나 발표·협력 역량을 단정하지 않습니다. 정답이 없는 문항은 답안 내용만 봅니다.\n"
+    "- 퀴즈 기록의 '점수'는 선생님이 확인한 점수이고 '교사 채점 의견'은 선생님의 판단입니다. 여러 회차의 퀴즈 점수 변화는 개념 이해의 성장 근거로 함께 봅니다. '(미응답)'은 참여 여부만 보여 줄 뿐 이해 부족으로 단정하지 않습니다.\n"
     "- 가치·태도는 학생의 말이 적거나 정답을 틀렸다는 이유로 추정하지 않습니다. 관련 행동의 관찰 근거가 있을 때만 판단합니다.\n"
     "- standard_feedback: 판단한 성취기준마다, 지금 수준에서 다음 수준(이미 상이면 상 수준을 더 단단히)으로 가기 위해 "
     "학생이 다음 수업에서 해 볼 구체적인 행동을 한두 문장(존댓말)으로 씁니다. 상 수행 진술을 기준으로 삼습니다.\n"

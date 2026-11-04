@@ -1010,9 +1010,9 @@ async function learnSpeech(c, st, box) {
   if (who) {
     // 학생 한 명: 성취 분석 / 교사 관찰 기록 / 학생 발언 기록을 각각 보여 준다
     st.studentTab ||= "speech";
-    if (!["growth", "analysis", "observations", "speech", "feedback"].includes(st.studentTab)) st.studentTab = "speech";
+    if (!["growth", "analysis", "observations", "quiz", "speech", "feedback"].includes(st.studentTab)) st.studentTab = "speech";
     const tabs = h("nav", { class: "tabs sub-tabs", style: "margin:4px 0 10px" },
-      [["speech", "🗣️ 학생 발언 기록"], ["observations", "👀 교사 관찰 기록"], ["analysis", "🎯 역량 분석"], ["growth", "📈 성장 흐름"], ["feedback", "💌 피드백 전송"]].map(([k, label]) =>
+      [["speech", "🗣️ 학생 발언 기록"], ["observations", "👀 교사 관찰 기록"], ["quiz", "✅ 퀴즈 점수"], ["analysis", "🎯 역량 분석"], ["growth", "📈 성장 흐름"], ["feedback", "💌 피드백 전송"]].map(([k, label]) =>
         h("button", { type: "button", class: st.studentTab === k ? "active" : "", onclick: () => { st.studentTab = k; st.fbClass = null; again(); } }, label)));
     const pane = h("div");
     fill(box, head,
@@ -1035,6 +1035,30 @@ async function learnSpeech(c, st, box) {
       const f = h("div", { class: "ach-wrap" });
       fill(pane, f);
       renderStudentFeedback(c, who, f, st.fbClass || null); // 회차별 + 종합 피드백 (achievement.js)
+      return;
+    }
+    if (st.studentTab === "quiz") { // 수업 중 퀴즈 답안·점수 (수업별 흰 프레임)
+      let qs;
+      try { ({ classes: qs } = await api(`/api/courses/${c.id}/students/${who.user_id}/quiz`)); }
+      catch (err) { fill(pane, h("p", { class: "error" }, err.message)); return; }
+      const n = (v) => (Math.round(v * 100) / 100).toString();
+      const all = qs.flatMap((g) => g.items);
+      const tot = qs.reduce((a, g) => a + g.score, 0), max = qs.reduce((a, g) => a + g.max, 0);
+      fill(pane,
+        h("h4", { class: "speech-h", style: "margin-top:4px" }, `✅ 수업 중 퀴즈 ${all.length}문항`,
+          max ? h("span", { class: "muted", style: "font-weight:400" }, ` · 총 ${n(tot)} / ${n(max)}점`) : null),
+        qs.length ? qs.map((g) => h("div", { class: "speech-day" },
+          h("div", { class: "speech-day-head" }, `${fmtDate(g.date)} · ${g.title || "(주제 없음)"}`,
+            h("span", { class: "muted" }, ` ${n(g.score)} / ${n(g.max)}점${g.ungraded ? ` · 미채점 ${g.ungraded}` : ""}`)),
+          h("table", { class: "att quiz-score-table" },
+            h("thead", {}, h("tr", {}, ["번호", "유형", "문항", "답안", "정답", "점수", "채점 의견"].map((t) => h("th", {}, t)))),
+            h("tbody", {}, g.items.map((it) => h("tr", {},
+              h("td", {}, String(it.no)), h("td", {}, it.kind_name), h("td", { class: "qs-text" }, it.prompt),
+              h("td", { class: "qs-text" }, it.answered ? [it.answer, it.correct === true ? " ⭕" : it.correct === false ? " ❌" : ""] : h("span", { class: "muted" }, "미응답")),
+              h("td", { class: "qs-text" }, it.correct_answer || "-"),
+              h("td", {}, it.score === null ? h("span", { class: "muted" }, "미채점") : `${n(it.score)} / ${n(it.points)}`),
+              h("td", { class: "qs-text" }, it.feedback || "-")))))))
+          : h("p", { class: "muted" }, "이 학생이 참여한 수업 중 퀴즈가 없어요."));
       return;
     }
     if (st.studentTab === "observations") {

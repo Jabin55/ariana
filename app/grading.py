@@ -247,3 +247,59 @@ async def my_results(request: Request):
     """학생: 선생님이 공개한 수업의 내 답·점수·피드백"""
     u = await require_user(request, "student")
     return {"classes": await db.run(_my_results, u["id"])}
+
+
+def student_quiz(course_id: int, user_id: int) -> list[dict]:
+    """한 학생의 이 과목 수업 중 퀴즈(투표 제외): 수업별 문항·답안·정답·점수·교사 피드백.
+    그 수업에 들어왔거나 답을 낸 수업만 (들어왔는데 답을 안 냈으면 미응답 0점)."""
+    a, cl = db.activities.c, db.classes.c
+    with db.engine.connect() as c:
+        rows = c.execute(select(db.activities, cl.title.label("class_title"), cl.created_at.label("class_created"))
+                         .join(db.classes, cl.id == a.class_id)
+                         .where(cl.course_id == course_id, a.kind.in_(("ox", "choice", "text")))
+                         .order_by(cl.created_at, a.created_at, a.id)).all()
+        ids = [r.id for r in rows]
+        grades = {g.activity_id: dict(g._mapping) for g in c.execute(
+            select(db.grades).where(db.grades.c.activity_id.in_(ids or [-1]), db.grades.c.user_id == user_id))}
+        attended = set(c.execute(select(db.attendance.c.class_id).where(
+            db.attendance.c.user_id == user_id, db.attendance.c.class_id.in_({r.class_id for r in rows} or {-1}))).scalars())
+    classes: dict[int, dict] = {}
+    for r in rows:
+        act = dict(r._mapping)
+        try:
+            act["options"] = json.loads(act["options"])
+            responses = json.loads(act["responses"])
+        except (ValueError, TypeError):
+            continue
+        v = responses.get(str(user_id)) if isinstance(responses, dict) else None
+        if v is None and r.class_id not in attended:
+            continue
+        g = grades.get(r.id)
+        sc = score_of(act, v, g)
+        x = classes.setdefault(r.class_id, {"class_id": r.class_id, "title": r.class_title or "",
+                                            "date": datetime.fromtimestamp(r.class_created, KST).strftime("%Y-%m-%d"),
+                                            "items": [], "score": 0.0, "max": 0.0, "ungraded": 0})
+        x["items"].append({"no": len(x["items"]) + 1, "kind": act["kind"], "kind_name": KINDS.get(act["kind"], act["kind"]),
+                           "prompt": act["prompt"], "answered": v is not None, "answer": shown(act, v),
+                           "correct_answer": shown(act, act["correct"]) if act["correct"] is not None else "",
+                           "correct": None if act["correct"] is None or v is None else v == act["correct"],
+                           "score": sc, "points": act["points"], "feedback": (g or {}).get("feedback", "")})
+        x["max"] += act["points"]
+        if sc is None:
+            x["ungraded"] += 1
+        else:
+            x["score"] += sc
+    out = sorted(classes.values(), key=lambda x: (x["date"], x["class_id"]))
+    for x in out:
+        x["score"], x["max"] = round(x["score"], 2), round(x["max"], 2)
+        graded_max = sum(i["points"] for i in x["items"] if i["score"] is not None)
+        x["rate"] = round(100 * x["score"] / graded_max) if graded_max else None
+    return out
+
+
+@router.get("/api/courses/{course_id}/students/{user_id}/quiz")
+async def get_student_quiz(course_id: int, user_id: int, request: Request):
+    """활동 피드백 > 퀴즈 점수: 학생 한 명의 수업 중 퀴즈 답안과 점수"""
+    from app.achievement import _course
+    await _course(course_id, request)
+    return {"classes": await db.run(student_quiz, course_id, user_id)}

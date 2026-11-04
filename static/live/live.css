@@ -2218,3 +2218,12 @@ html.embed main.materials { max-width: none; padding: 0; margin: 0; }
 html.embed #m-back { display: none; }
 html.embed #m-title { font-size: 1.1rem !important; }
 iframe.learn-mat-frame { width: 100%; height: 78vh; min-height: 520px; border: 0; display: block; background: transparent; }
+
+/* 활동 피드백 > 퀴즈 점수 */
+table.att.quiz-score-table { width: 100%; table-layout: fixed; font-size: 0.88rem; margin-top: 4px; }
+table.att.quiz-score-table th, table.att.quiz-score-table td { text-align: center; vertical-align: middle; }
+table.att.quiz-score-table td.qs-text { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+table.att.quiz-score-table th:nth-child(1) { width: 6%; } table.att.quiz-score-table th:nth-child(2) { width: 8%; }
+table.att.quiz-score-table th:nth-child(3) { width: 28%; } table.att.quiz-score-table th:nth-child(4) { width: 18%; }
+table.att.quiz-score-table th:nth-child(5) { width: 14%; } table.att.quiz-score-table th:nth-child(6) { width: 10%; }
+table.att.quiz-score-table th:nth-child(7) { width: 16%; }

@@ -4143,6 +4143,50 @@ def test_quiz_answers_used_in_student_analysis_without_other_students_or_polls(m
     assert "퀴즈" in system and "정오 여부 한 번만으로" in system
 
 
+def test_student_quiz_scores_tab_and_analysis(monkeypatch):
+    """활동 피드백 > 퀴즈 점수: 학생별 답안·점수(교사 채점 포함), 분석·성장 지표에도 반영"""
+    import app.achievement as ach
+    from sqlalchemy import insert
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    prompts = []
+
+    async def fake_ai(system, prompt, schema, max_tokens=8000):
+        prompts.append(prompt)
+        return {"classes": [], "summary": "", "feedback": ""}
+
+    monkeypatch.setattr(ach, "ai_json", fake_ai)
+    t, a, b = teacher(), student(1), student(2)
+    aid, bid = (s.get("/api/me").json()["user"]["id"] for s in (a, b))
+    cid = t.post("/api/courses", json=COURSE).json()["id"]
+    for s in (a, b):
+        s.post(f"/api/courses/{cid}/enroll")
+    t.post(f"/api/courses/{cid}/approve-all")
+    t.post(f"/api/courses/{cid}/standards", json={"code": "[S1]", "text": "근거", "elements": [{"name": "근거 제시"}]})
+    class_id = create(t, title="퀴즈 수업", course_id=cid)["class_id"]
+    now = time.time()
+    with db.engine.begin() as c:
+        ids = [c.execute(insert(db.activities).values(class_id=class_id, kind=kind, prompt=q, options=json.dumps(o, ensure_ascii=False),
+                                                      correct=cor, responses=json.dumps(r, ensure_ascii=False), points=2, created_at=now + i)).inserted_primary_key[0]
+               for i, (kind, q, o, cor, r) in enumerate([
+                   ("choice", "대통령제 국가는?", ["영국", "미국"], 1, {str(aid): 1, str(bid): 0}),
+                   ("text", "이유를 쓰세요", [], None, {str(aid): "권력 분립 때문", str(bid): "남의 답"}),
+                   ("poll", "선호 조사", ["예", "아니오"], None, {str(aid): 0})])]
+    assert t.post(f"/api/live/history/{class_id}/activities/{ids[1]}/grade",
+                  json={"user_id": aid, "score": 1, "feedback": "근거가 하나뿐"}).status_code == 200
+    d = t.get(f"/api/courses/{cid}/students/{aid}/quiz").json()["classes"]
+    assert len(d) == 1 and [i["prompt"] for i in d[0]["items"]] == ["대통령제 국가는?", "이유를 쓰세요"]
+    first, second = d[0]["items"]
+    assert first["answer"] == "미국" and first["correct"] is True and first["score"] == 2
+    assert second["score"] == 1 and second["feedback"] == "근거가 하나뿐" and "남의 답" not in json.dumps(d, ensure_ascii=False)
+    assert d[0]["score"] == 3 and d[0]["max"] == 4 and d[0]["rate"] == 75
+    assert student(3).get(f"/api/courses/{cid}/students/{aid}/quiz").status_code in (401, 403)
+    assert t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze").status_code == 200
+    assert "점수: 2/2점" in prompts[-1] and "점수: 1/2점" in prompts[-1] and "교사 채점 의견: 근거가 하나뿐" in prompts[-1]
+    tl = t.get(f"/api/courses/{cid}/students/{aid}/timeline").json()["classes"]
+    assert tl[0]["counts"]["quiz_score"] == 75
+
+
 def test_student_phone_saved_and_shown_to_teacher():
     """학생 가입 때 연락처를 받고, 수강생 관리 목록에 보인다"""
     t, s = teacher(), student(1)
