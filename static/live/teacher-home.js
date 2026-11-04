@@ -460,7 +460,6 @@ async function renderStudents(box, c) {
   const row = (...cells) => h("div", { class: "sf-row" }, ...cells.flat());
   const cell = (label, el, wide) => [h("div", { class: "sf-label" }, label), h("div", { class: `sf-field ${wide ? "wide" : ""}` }, el)];
   fill(box,
-    h("h3", { style: "margin:4px 0 10px" }, "👥 수강생 관리"),
     h("div", { class: "search-form" },
       row(cell("소속학교", f.school), cell("학년", f.grade)),
       row(cell("학생 이름", f.name), cell("신청 상태", f.status)),
@@ -618,8 +617,9 @@ function courseBanner(c, chips = null) {
 function renderRunCourse(c) {
   const update = async (values) => { await api(`/api/courses/${c.id}`, values); loadTeacherCourses(); };
   const subBox = h("div", { class: "run-sub" });
-  const subs = [["students", c.pending ? `👥 수강생 관리 (대기 ${c.pending})` : "👥 수강생 관리"], ["notice", "📢 과목 공지사항"], ["info", "📘 과목 정보"], ["sessions", "🗓 회차 정보"], ["open", "▶ 온라인 수업 열기"], ["learn", "📊 학습 관리"],
-    ["assess", "📝 수행평가"], ["satisfaction", "📋 만족도 조사"], ["results", "🏅 성취도 및 특기 사항"]];
+  // 왼쪽 세로 메뉴: [키, 그림, 이름, 대기 수]
+  const subs = [["students", "👥", "수강생 관리", c.pending], ["notice", "📢", "과목 공지사항"], ["info", "📘", "과목 정보"], ["sessions", "🗓️", "회차 정보"],
+    ["open", "▶️", "온라인 수업 열기"], ["learn", "📊", "학습 관리"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "성취도 및 특기 사항"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -634,9 +634,10 @@ function renderRunCourse(c) {
     approvalNote(c),
     c.lead ? null : h("p", { style: "margin:4px 0" }, h("span", { class: "status pending" }, "팀티칭"), ` 보조교사로 참여 중 · 주강사 ${c.owner_name}`),
     c.locked ? h("p", { class: "error" }, `${c.hub_school} 강사 활동 기간이 아니라서 이 강좌를 관리하거나 수업을 열 수 없어요. 계속 강의하려면 '내 정보'에서 가입 유형·거점학교 변경을 신청하세요.`) : null,
-    c.locked ? null : h("nav", { class: "tabs sub-tabs" }, subs.map(([k, label]) => h("button", { class: runSub === k ? "active" : "",
-      onclick: () => { runSub = k; renderRunCourse(c); } }, label))),
-    c.locked ? h("div", { class: "run-sub" }, courseInformationPanel(c)) : subBox);
+    c.locked ? h("div", { class: "run-sub" }, courseInformationPanel(c)) : h("div", { class: "side-layout run-layout" },
+      h("nav", { class: "side-menu", "aria-label": "과목 운영 메뉴" }, subs.map(([k, icon, label, n]) => sideBtn(icon, label, runSub === k,
+        () => { runSub = k; renderRunCourse(c); }, n))),
+      h("div", { class: "side-main" }, h("h2", { class: "meet-sub-title" }, (subs.find((x) => x[0] === runSub) || subs[0])[2]), subBox)));
   if (c.locked) return;
   if (runSub === "info") {
     if (editing.has(c.id)) fill(subBox, courseEditForm(c));
