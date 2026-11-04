@@ -4246,9 +4246,12 @@ def test_class_feedback_per_class_draft_edit_publish(monkeypatch):
 
     async def fake_ai(system, prompt, schema, max_tokens=8000):
         calls.append((prompt, schema))
-        return {"standards": [{"key": "S1", "level": 3, "evidence": "이유 두 가지(응답)"}, {"key": "S9", "level": 1, "evidence": "x"}],
-                "feedback": {"message": "근거를 잘 들었어요.", "changes": [], "strengths": ["이유를 두 가지 들었어요"],
-                             "next_actions": ["친구 의견에 덧붙이기"], "sentence_starters": ["~의 의견에 덧붙이면 ~"]}}
+        out = {"standards": [{"key": "S1", "level": 3, "evidence": "이유 두 가지(응답)"}, {"key": "S9", "level": 1, "evidence": "x"}],
+               "feedback": {"message": "근거를 잘 들었어요.", "changes": [], "strengths": ["이유를 두 가지 들었어요"],
+                            "next_actions": ["친구 의견에 덧붙이기"], "sentence_starters": ["~의 의견에 덧붙이면 ~"]}}
+        if "goal_checks" in schema["properties"]:
+            out["goal_checks"] = [{"no": 1, "status": "done", "evidence": "민수 의견에 덧붙이면(자발)"}, {"no": 9, "status": "done", "evidence": "x"}]
+        return out
     monkeypatch.setattr(cf, "ai_json", fake_ai)
     t, other = teacher(), teacher("other@gmail.com")
     from datetime import datetime
@@ -4296,6 +4299,32 @@ def test_class_feedback_per_class_draft_edit_publish(monkeypatch):
     # 공개한 학생은 다시 만들어도 그대로
     assert t.post(f"{base}/class-feedback/{k}/generate", json={}).json()["made"] == 0
     assert b.get(f"/api/my/courses/{cid}/class-feedback").json()["items"] == []
+    # 다음 수업: '오늘의 내 목표'가 보이고, 끝난 뒤 AI가 지난 목표를 해냈는지 판정한다
+    import time as _t
+    _t.sleep(0.01)
+    code2 = create(t, title="사형제 토론 2", course_id=cid)["code"]
+    assert a.get(f"/api/live/classes/{code2}/my-goals").json()["goals"] == ["친구 의견에 덧붙이기"]
+    assert t.get(f"/api/live/classes/{code2}/goals").json()["goals"] == {str(uid): ["친구 의견에 덧붙이기"]}
+    assert a.get(f"/api/live/classes/{code2}/goals").status_code == 403
+    with t.websocket_connect(f"/ws/live/{code2}") as tw, a.websocket_connect(f"/ws/live/{code2}") as sa:
+        state(tw, lambda m: sum(x["online"] for x in m["students"]) == 1)
+        t.post(f"/api/live/classes/{code2}/transcript/state", json={"enabled": True})
+        state(sa, lambda m: m["transcript_on"])
+        a.post(f"/api/live/classes/{code2}/speech", json={"text": "민수 의견에 덧붙이면 비용도 문제예요", "final": True})
+    k2 = t.get(f"{base}/class-feedback").json()["classes"][1]["class_id"]
+    assert t.post(f"{base}/class-feedback/{k2}/generate", json={}).json()["made"] == 1
+    assert "1. 친구 의견에 덧붙이기" in calls[-1][0] and calls[-1][1]["properties"]["goal_checks"]["items"]["properties"]["no"]["enum"] == [1]
+    tl = t.get(f"{base}/students/{uid}/timeline").json()["classes"]
+    assert [x["no"] for x in tl] == [1, 2] and tl[1]["goal_checks"] == [{"goal": "친구 의견에 덧붙이기", "status": "done", "evidence": "민수 의견에 덧붙이면(자발)"}]
+    assert tl[1]["goal_rate"] == 100 and tl[0]["goal_rate"] is None and tl[1]["counts"]["spontaneous"] == 1
+    assert other.get(f"{base}/students/{uid}/timeline").status_code == 404
+    # 관찰 기록: 수업이 끝난 뒤에도 이 화면에서 더하고·고치고·지운다
+    obs = t.post(f"{base}/speech/student/{uid}/observations", json={"class_id": k2, "text": "모둠 토의를 이끎"}).json()["observations"]
+    oid = obs[-1]["id"]
+    assert t.post(f"{base}/speech/student/{uid}/observations", json={"class_id": 999999, "text": "x"}).status_code == 404
+    assert t.post(f"{base}/observations/{oid}", json={"text": "모둠 토의를 이끌며 의견을 정리함"}).json()["observations"][-1]["text"] == "모둠 토의를 이끌며 의견을 정리함"
+    assert other.post(f"{base}/observations/{oid}/delete").status_code == 404
+    assert t.post(f"{base}/observations/{oid}/delete").json()["observations"] == []
 
 
 def test_results_achievement_and_setuk_after_grading(monkeypatch):

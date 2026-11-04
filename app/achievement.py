@@ -503,7 +503,7 @@ def student_observations(course_id: int, user_id: int) -> list[dict]:
         rows = c.execute(select(db.observations, cl.title, cl.created_at.label("class_created"))
                          .join(db.classes, cl.id == o.class_id)
                          .where(cl.course_id == course_id, o.user_id == user_id).order_by(o.created_at)).all()
-    return [{"class_id": r.class_id, "class_title": r.title or "", "text": r.text,
+    return [{"id": r.id, "class_id": r.class_id, "class_title": r.title or "", "text": r.text,
              "date": datetime.fromtimestamp(r.class_created, KST).strftime("%Y-%m-%d"),
              "time": datetime.fromtimestamp(r.created_at, KST).strftime("%H:%M")} for r in rows]
 
@@ -512,6 +512,68 @@ def student_observations(course_id: int, user_id: int) -> list[dict]:
 async def get_student_observations(course_id: int, user_id: int, request: Request):
     await _course(course_id, request)
     return {"observations": await db.run(student_observations, course_id, user_id)}
+
+
+class CourseObservationReq(BaseModel):
+    class_id: int
+    text: str = Field(min_length=1, max_length=1000)
+
+
+@router.post("/api/courses/{course_id}/speech/student/{user_id}/observations")
+async def add_course_observation(course_id: int, user_id: int, req: CourseObservationReq, request: Request):
+    """수업이 끝난 뒤에도 [학생 맞춤형 피드백]에서 관찰 기록을 더한다 (그 과목의 수업·수강생만)"""
+    course, t = await _course(course_id, request)
+    from app.courses import course_roster
+
+    def run():
+        if user_id not in {u.id for u in course_roster(course_id)}:
+            raise HTTPException(404, "이 과목 수강생이 아니에요.")
+        with db.engine.begin() as c:
+            k = c.execute(select(db.classes.c.id).where(db.classes.c.id == req.class_id, db.classes.c.course_id == course_id)).first()
+            if not k:
+                raise HTTPException(404, "이 과목의 수업을 골라 주세요.")
+            c.execute(insert(db.observations).values(class_id=req.class_id, course_id=course_id, user_id=user_id,
+                                                     teacher_id=t["id"], text=req.text.strip(), created_at=time.time()))
+    await db.run(run)
+    return {"observations": await db.run(student_observations, course_id, user_id)}
+
+
+class ObservationEditReq(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+def _course_observation(course_id: int, oid: int):
+    o, cl = db.observations.c, db.classes.c
+    with db.engine.connect() as c:
+        row = c.execute(select(db.observations).join(db.classes, cl.id == o.class_id)
+                        .where(o.id == oid, cl.course_id == course_id)).first()
+    if not row:
+        raise HTTPException(404, "관찰 기록을 찾을 수 없어요.")
+    return row
+
+
+@router.post("/api/courses/{course_id}/observations/{oid}")
+async def edit_course_observation(course_id: int, oid: int, req: ObservationEditReq, request: Request):
+    await _course(course_id, request)
+    row = await db.run(_course_observation, course_id, oid)
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(update(db.observations).where(db.observations.c.id == oid).values(text=req.text.strip()))
+    await db.run(run)
+    return {"observations": await db.run(student_observations, course_id, row.user_id)}
+
+
+@router.post("/api/courses/{course_id}/observations/{oid}/delete")
+async def delete_course_observation(course_id: int, oid: int, request: Request):
+    await _course(course_id, request)
+    row = await db.run(_course_observation, course_id, oid)
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(delete(db.observations).where(db.observations.c.id == oid))
+    await db.run(run)
+    return {"observations": await db.run(student_observations, course_id, row.user_id)}
 
 
 # ───────── 학생 발언 AI 분석 ─────────

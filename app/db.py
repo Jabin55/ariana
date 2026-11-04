@@ -489,6 +489,7 @@ class_feedback = Table(
     Column("user_id", Integer, nullable=False, index=True),
     Column("levels", Text, nullable=False, default=""),  # 그 수업에 연결된 성취기준별 상·중·하 JSON
     Column("parts", Text, nullable=False, default=""),  # 항목별 피드백 JSON
+    Column("goal_checks", Text, nullable=False, default=""),  # 지난 피드백의 '다음 수업에서 해 보기'를 이 수업에서 했는지 JSON
     Column("published", Integer, nullable=False, default=0),
     Column("created_at", Float, nullable=False),
     Column("updated_at", Float, nullable=False),
@@ -660,6 +661,7 @@ def init() -> None:
              ("enrollments", "instructor_by", "INTEGER"),
              ("enrollments", "coordinator_by", "INTEGER"),
              ("enrollments", "note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("class_feedback", "goal_checks", "TEXT NOT NULL DEFAULT ''"),
              ("memberships", "teach_hubs", "TEXT NOT NULL DEFAULT ''"),
              ("memberships", "wish_from", "VARCHAR(10) NOT NULL DEFAULT ''"),
              ("memberships", "wish_until", "VARCHAR(10) NOT NULL DEFAULT ''"),
