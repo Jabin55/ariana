@@ -826,7 +826,7 @@ async function renderResultSheet(c, uid, box) {
 function resultSheet(v) {
   const L = ACH_LEVEL;
   const info = [["학년도·학기", [v.course.school_year, v.course.term].filter(Boolean).join(" ")], ["과목", v.course.course_title], ["거점학교", v.course.hub_school],
-    ["담당 교사", v.course.instructor], ["학교", v.student.school], ["학번", v.student.student_no], ["이름", v.student.name]];
+    ["담당 교사", v.course.instructor], ["소속학교", v.student.school], ["학번", v.student.student_no], ["이름", v.student.name]];
   return h("div", { class: "print-sheet result-sheet" },
     h("h2", { class: "rs-title" }, "학생 개별 성취 평가지"),
     h("table", { class: "rs-info" }, h("tbody", {}, h("tr", {}, info.slice(0, 4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")])),
