@@ -931,7 +931,7 @@ async function renderStudentFeedback(c, who, box, pick = null) {
   achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
   let list;
   try { ({ classes: list } = await achApi(`/api/courses/${c.id}/class-feedback`)); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
-  const sel = h("select", { "aria-label": "회차" }, [...list].reverse().map((k) => h("option", { value: k.class_id, selected: k.class_id === pick }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
+  const sel = h("select", { "aria-label": "회차" }, [...list].sort((a, b) => (a.no || 0) - (b.no || 0)).map((k) => h("option", { value: k.class_id, selected: k.class_id === pick }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
   if (!pick && list.length) pick = list[list.length - 1].class_id;
   sel.value = String(pick || "");
   sel.onchange = () => again(Number(sel.value));
