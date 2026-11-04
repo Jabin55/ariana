@@ -771,8 +771,8 @@ async function renderResults(c, box) {
         h("th", {}, "환산 점수"), h("th", {}, "제안"), h("th", {}, "성취도 확정"), h("th", {}, "세특"), h("th", {}, ""))),
       h("tbody", {}, v.students.map((s, i) => h("tr", {},
         h("td", { class: "ach-cell" }, String(i + 1)), h("td", { class: "ach-cell" }, s.student_no), h("td", {}, s.name),
-        s.scores.map((x) => h("td", { class: "ach-cell" }, rsNum(x))),
-        h("td", { class: "ach-cell" }, h("strong", {}, rsNum(s.rate))), h("td", { class: "ach-cell" }, s.suggested || "-"),
+        s.scores.map((x) => h("td", { class: "ach-cell" }, x === null || x === undefined ? "-" : `${rsNum(x)}점`)),
+        h("td", { class: "ach-cell" }, h("strong", {}, s.rate === null || s.rate === undefined ? "-" : `${rsNum(s.rate)}점`)), h("td", { class: "ach-cell" }, s.suggested || "-"),
         h("td", { class: "ach-cell" }, gradeSel(s)),
         h("td", { class: "ach-cell" }, s.setuk ? h("span", { class: s.bytes > v.max_bytes ? "error" : "ok-text" }, `${s.bytes}B`) : h("span", { class: "muted" }, "미작성")),
         h("td", { class: "ach-cell" }, h("button", { class: "small primary", type: "button", onclick: () => { resultsView.set(c.id, s.user_id); renderResults(c, box); } }, "평가지·세특"))))))) 
