@@ -1215,7 +1215,7 @@ table.att.hub-attendance-table td:last-child { min-width: 0; }
 .hub-attendance-marks .status { white-space: normal; }
 
 /* 학습 관리 */
-.learn-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.learn-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
 .learn-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border-radius: 14px; text-align: left;
   border: 1px solid var(--border); background: var(--card, #fff); cursor: pointer; white-space: normal; }
 .learn-card:hover { border-color: var(--accent); }
