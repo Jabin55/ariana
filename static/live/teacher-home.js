@@ -1614,7 +1614,8 @@ async function loadSchool() {
 }
 
 const signupPick = new Set();
-let signupNoTeacher = false; // 전체 관리자: 담당 선생님 없는 학교만 보기
+let signupNoTeacher = false;
+let signupView = null; // [학생 가입 승인]에서 열어 본 학생 (상세 화면) // 전체 관리자: 담당 선생님 없는 학교만 보기
 const teacherCell = (names) => (names?.length ? names.filter(Boolean).join(", ") || "담당 선생님"
   : h("span", { class: "status rejected", title: "이 학교에는 참여학교 담당 선생님이 없어 전체 관리자가 승인해요" }, "담당 선생님 없음"));
 
@@ -1648,6 +1649,30 @@ async function renderSchoolSignups(box) {
     for (const x of pending) { if (e.target.checked) signupPick.add(x.user_id); else signupPick.delete(x.user_id); }
     box.querySelectorAll(".signup-check").forEach((c) => { c.checked = e.target.checked; });
   } });
+  // 학생 이름을 누르면: 그 학생의 가입 정보 상세 화면 (게시판 글처럼)
+  const open = (x) => { signupView = x.user_id; renderSchoolSignups(box); window.scrollTo(0, 0); };
+  const viewing = signupView && list.find((x) => x.user_id === signupView);
+  if (viewing) {
+    const x = viewing;
+    const info = [["학생 이름", x.name], ["상태", x.status === "pending" ? h("span", { class: "status pending" }, "승인 대기")
+        : h("span", { class: "status rejected" }, "반려 (학생 수정 대기)")],
+      ["소속학교", x.school || "-"], ["승인 담당", teacherCell(x.teachers)],
+      ["학년·반·번호", [x.grade && `${x.grade}학년`, x.class_no && `${x.class_no}반`, x.number && `${x.number}번`].filter(Boolean).join(" ") || "-"],
+      ["학번", x.student_no || "-"], ["생년월일", x.birth ? x.birth.replaceAll("-", ".") : "-"], ["성별", x.gender || "-"],
+      ["이메일 (로그인 계정)", x.email || "-"], ["연락처", fmtPhone(x.phone) || "-"], ["신청일", kstDate(x.requested_at)],
+      ["반려 사유", x.note || "-"]];
+    const rows = [];
+    for (let i = 0; i < info.length; i += 2) rows.push(info.slice(i, i + 2));
+    fill(box,
+      h("div", { class: "row", style: "margin:0 0 10px" }, h("button", { class: "small", type: "button", onclick: () => { signupView = null; renderSchoolSignups(box); } }, "← 목록")),
+      h("h3", { style: "margin:0 0 8px" }, `${x.name} 학생 가입 정보`),
+      h("table", { class: "staff-detail" }, h("tbody", {}, rows.map((pair) => h("tr", {}, pair.flatMap(([k, v]) => [h("th", {}, k), h("td", {}, v)]))))),
+      x.status === "pending" ? h("div", { class: "row", style: "margin-top:12px;gap:6px;justify-content:flex-end" },
+        h("button", { class: "primary", type: "button", onclick: () => { signupView = null; decide("approve", x); } }, "승인"),
+        h("button", { type: "button", onclick: () => { signupView = null; decide("reject", x); } }, "반려")) : null);
+    return;
+  }
+  signupView = null;
   fill(box,
     h("div", { class: "row", style: "margin-bottom:8px" },
       h("strong", {}, "승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
@@ -1658,21 +1683,21 @@ async function renderSchoolSignups(box) {
         onchange: (e) => { signupNoTeacher = e.target.checked; renderSchoolSignups(box); } }),
         `담당 선생님 없는 학교만 보기 (${orphan.filter((x) => x.status === "pending").length}명 대기)`) : null),
     h("div", { class: "table-wrap" }, h("table", { class: "att signup-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "승인 담당", "학년", "반", "번호", "이름", "생년월일", "성별", "이메일", "연락처", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "승인 담당", "학년", "반", "번호", "학생 이름", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
         h("td", {}, x.status === "pending" ? h("input", { type: "checkbox", class: "signup-check", "aria-label": `${x.name} 선택`, onchange: (e) => {
           if (e.target.checked) signupPick.add(x.user_id); else signupPick.delete(x.user_id);
         } }) : null),
         h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, teacherCell(x.teachers)), h("td", {}, x.grade ? `${x.grade}학년` : "-"),
-        h("td", {}, x.class_no ? `${x.class_no}반` : "-"), h("td", {}, x.number ? `${x.number}번` : "-"), h("td", {}, h("strong", {}, x.name)),
-        h("td", {}, x.birth || "-"), h("td", {}, x.gender || "-"), h("td", { class: "contact-cell" }, x.email || "-"),
-        h("td", { class: "contact-cell" }, fmtPhone(x.phone) || "-"), h("td", {}, kstDate(x.requested_at)),
+        h("td", {}, x.class_no ? `${x.class_no}반` : "-"), h("td", {}, x.number ? `${x.number}번` : "-"),
+        h("td", {}, h("button", { class: "link-btn name-btn", type: "button", title: "가입 정보 자세히 보기", onclick: () => open(x) }, x.name)),
+        h("td", {}, kstDate(x.requested_at)),
         h("td", {}, x.status === "pending" ? h("span", { class: "status pending" }, "승인 대기")
           : h("span", { class: "status rejected", title: x.note ? `사유: ${x.note}` : "" }, "반려 (학생 수정 대기)")),
         h("td", {}, x.status === "pending" ? h("div", { class: "row school-change-actions" },
           h("button", { class: "small primary", type: "button", onclick: () => decide("approve", x) }, "승인"),
           h("button", { class: "small", type: "button", onclick: () => decide("reject", x) }, "반려")) : "-")))
-        : h("tr", {}, h("td", { colspan: 15, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
+        : h("tr", {}, h("td", { colspan: 11, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
 }
 
 function renderSchoolWithdrawals(box) {
