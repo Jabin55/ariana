@@ -925,12 +925,19 @@ async function renderGrowth(courseId, who, box, openFeedback) {
 
 /** 항상 아래로 펼쳐지는 드롭다운 (기본 select 는 고른 항목이 아래쪽이면 위로 펼쳐진다) */
 function achDropdown(options, value, onChange, label = "") {
-  const cur = options.find(([v]) => v === value) || options[0] || [null, "-"];
-  const menu = h("div", { class: "ach-dd-menu", role: "listbox", hidden: true },
-    options.map(([v, text]) => h("button", { type: "button", role: "option", class: `ach-dd-item${v === cur[0] ? " on" : ""}`,
-      onclick: () => { close(); if (v !== cur[0]) onChange(v); } }, text)));
+  let cur = options.find(([v]) => v === value) || options[0] || [null, "-"];
+  const text = h("span", { class: "grow" }, cur[1]);
+  const items = options.map((o) => h("button", { type: "button", role: "option", class: `ach-dd-item${o[0] === cur[0] ? " on" : ""}`,
+    onclick: () => {
+      close();
+      if (o[0] === cur[0]) return;
+      cur = o; text.textContent = o[1];
+      items.forEach((b, i) => b.classList.toggle("on", options[i][0] === o[0]));
+      onChange(o[0]);
+    } }, o[1]));
+  const menu = h("div", { class: "ach-dd-menu", role: "listbox", hidden: true }, items);
   const btn = h("button", { type: "button", class: "ach-dd-btn", "aria-label": label, "aria-haspopup": "listbox",
-    onclick: (e) => { e.stopPropagation(); menu.hidden ? open() : close(); } }, h("span", { class: "grow" }, cur[1]), h("span", { "aria-hidden": "true" }, "▾"));
+    onclick: (e) => { e.stopPropagation(); menu.hidden ? open() : close(); } }, text, h("span", { "aria-hidden": "true" }, "▾"));
   const outside = (e) => { if (!wrap.contains(e.target)) close(); };
   function open() { menu.hidden = false; document.addEventListener("click", outside); menu.querySelector(".on")?.scrollIntoView({ block: "nearest" }); }
   function close() { menu.hidden = true; document.removeEventListener("click", outside); }

@@ -1066,12 +1066,14 @@ async function learnSpeech(c, st, box) {
         const [{ observations: obs }, { classes }] = await Promise.all([api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`),
           api(`/api/courses/${c.id}/class-feedback`)]);
         // 새 관찰 기록: 회차를 고르고 적는다 (수업이 끝난 뒤에도)
-        const pick = h("select", { "aria-label": "회차" }, [...classes].sort((a, b) => (a.no || 0) - (b.no || 0) || a.date.localeCompare(b.date)).map((k) => h("option", { value: k.class_id }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
+        const ordered = [...classes].sort((a, b) => (a.no || 0) - (b.no || 0) || a.date.localeCompare(b.date));
+        let pickId = ordered[0]?.class_id ?? null;
+        const pick = achDropdown(ordered.map((k) => [k.class_id, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`]), pickId, (v) => { pickId = v; }, "회차");
         const text = h("textarea", { rows: 2, maxlength: 1000, placeholder: "관찰한 내용 (예: 반대 측 근거를 정리해 모둠 토의를 이끎)" });
         const add = h("button", { class: "small primary", type: "button", disabled: !classes.length }, "+ 관찰 기록 추가");
         add.onclick = async () => {
           if (!text.value.trim()) { text.focus(); return; }
-          try { await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`, { class_id: Number(pick.value), text: text.value.trim() }); toast("관찰 기록을 더했어요."); again(); }
+          try { await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`, { class_id: Number(pickId), text: text.value.trim() }); toast("관찰 기록을 더했어요."); again(); }
           catch (err) { toast(err.message); }
         };
         const row = (o) => {
