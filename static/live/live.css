@@ -2227,3 +2227,11 @@ table.att.quiz-score-table th:nth-child(1) { width: 6%; } table.att.quiz-score-t
 table.att.quiz-score-table th:nth-child(3) { width: 28%; } table.att.quiz-score-table th:nth-child(4) { width: 18%; }
 table.att.quiz-score-table th:nth-child(5) { width: 14%; } table.att.quiz-score-table th:nth-child(6) { width: 10%; }
 table.att.quiz-score-table th:nth-child(7) { width: 16%; }
+
+/* 아래로만 펼쳐지는 드롭다운 (회차 고르기) */
+.ach-dd { position: relative; min-width: 260px; max-width: 100%; }
+.ach-dd-btn { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer; }
+.ach-dd-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.12); max-height: 280px; overflow-y: auto; padding: 4px; }
+.ach-dd-item { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; cursor: pointer; }
+.ach-dd-item:hover { background: var(--surface-2); }
+.ach-dd-item.on { background: var(--accent-soft); font-weight: 700; }

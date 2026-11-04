@@ -925,16 +925,30 @@ async function renderGrowth(courseId, who, box, openFeedback) {
       list.length ? [...list].sort((a, b) => a.no - b.no).map(card) : h("p", { class: "muted", style: "margin:0" }, "아직 이 학생의 수업 기록이 없어요.")));
 }
 
+/** 항상 아래로 펼쳐지는 드롭다운 (기본 select 는 고른 항목이 아래쪽이면 위로 펼쳐진다) */
+function achDropdown(options, value, onChange, label = "") {
+  const cur = options.find(([v]) => v === value) || options[0] || [null, "-"];
+  const menu = h("div", { class: "ach-dd-menu", role: "listbox", hidden: true },
+    options.map(([v, text]) => h("button", { type: "button", role: "option", class: `ach-dd-item${v === cur[0] ? " on" : ""}`,
+      onclick: () => { close(); if (v !== cur[0]) onChange(v); } }, text)));
+  const btn = h("button", { type: "button", class: "ach-dd-btn", "aria-label": label, "aria-haspopup": "listbox",
+    onclick: (e) => { e.stopPropagation(); menu.hidden ? open() : close(); } }, h("span", { class: "grow" }, cur[1]), h("span", { "aria-hidden": "true" }, "▾"));
+  const outside = (e) => { if (!wrap.contains(e.target)) close(); };
+  function open() { menu.hidden = false; document.addEventListener("click", outside); menu.querySelector(".on")?.scrollIntoView({ block: "nearest" }); }
+  function close() { menu.hidden = true; document.removeEventListener("click", outside); }
+  const wrap = h("div", { class: "ach-dd" }, btn, menu);
+  return wrap;
+}
+
 /** 활동 피드백 > 💌 피드백: 회차별 피드백(고르고 만들고 공개) + 종합 피드백 */
 async function renderStudentFeedback(c, who, box, pick = null) {
   const again = (k) => renderStudentFeedback(c, who, box, k ?? pick);
   achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
   let list;
   try { ({ classes: list } = await achApi(`/api/courses/${c.id}/class-feedback`)); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
-  const sel = h("select", { "aria-label": "회차" }, [...list].sort((a, b) => (a.no || 0) - (b.no || 0)).map((k) => h("option", { value: k.class_id, selected: k.class_id === pick }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
   if (!pick && list.length) pick = list[list.length - 1].class_id;
-  sel.value = String(pick || "");
-  sel.onchange = () => again(Number(sel.value));
+  const ordered = [...list].sort((a, b) => (a.no || 0) - (b.no || 0));
+  const sel = achDropdown(ordered.map((k) => [k.class_id, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`]), pick, (v) => again(Number(v)), "회차");
   const per = h("div", {}, h("p", { class: "muted" }, list.length ? "불러오는 중…" : "아직 연 수업이 없어요."));
   const total = h("div", { class: "ach-wrap" });
   achFill(box,
