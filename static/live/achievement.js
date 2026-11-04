@@ -642,10 +642,9 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
             h("span", { class: `ach-lv lv${r.level}` }, ACH_LEVEL[r.level]), h("strong", {}, `${r.code} ${r.element}`),
             h("span", { class: "muted" }, ` “${r.evidence}”`)))))
           : h("p", { class: "muted", style: "margin:4px 0" }, "판단 근거가 되는 수업 기록이 아직 없어요.")),
-      achTrackingTable(v),
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
-    ] : achTrackingTable(v), // 분석 전에도 자동 집계 지표는 보여 준다
+    ] : null,
     opts.feedback === false ? null : fbBox);
 }
 
