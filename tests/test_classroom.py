@@ -4141,6 +4141,12 @@ def test_quiz_answers_used_in_student_analysis_without_other_students_or_polls(m
     assert "선호 조사" not in prompt and "다른 학생의 비밀 답" not in prompt
     assert "학생1" not in prompt and "20301" not in prompt
     assert "퀴즈" in system and "정오 여부 한 번만으로" in system
+    # 다른 학생 이름이 답안에 나와도 가린다
+    with db.engine.begin() as c:
+        c.execute(insert(db.activities).values(class_id=class_id, kind="text", prompt="누구 의견에 동의하나요?", options="[]", correct=None,
+                                               responses=json.dumps({str(aid): "학생2 의견에 동의"}, ensure_ascii=False), created_at=now + 9))
+    assert t.post(f"/api/courses/{cid}/speech/student/{aid}/analyze").status_code == 200
+    assert "학생2" not in prompts[-1][1] and "[이름 삭제] 의견에 동의" in prompts[-1][1]
 
 
 def test_student_quiz_scores_tab_and_analysis(monkeypatch):

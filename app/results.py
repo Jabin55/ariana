@@ -239,7 +239,8 @@ async def _draft_one(course, user_id: int, keep_existing: bool) -> str:
     sheet = await db.run(sheet_view, course.id, user_id)
     if keep_existing and sheet["setuk"]:
         return "skip"
-    names = [n for n in (sheet["student"]["name"],) if n]
+    from app.privacy_filter import known_member_names
+    names = sorted({n for n in (sheet["student"]["name"],) if n} | set(await db.run(known_member_names)), key=len, reverse=True)
     with db.engine.connect() as c:
         fb = c.execute(select(db.speech_feedback.c.summary).where(db.speech_feedback.c.course_id == course.id,
                                                                   db.speech_feedback.c.user_id == user_id)).scalar() or ""

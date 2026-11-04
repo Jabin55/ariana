@@ -636,7 +636,9 @@ def _student_material(course_id: int, user_id: int):
         x["standard_ids"] = linked or every
     with db.engine.connect() as c:
         u = c.execute(select(db.users.c.name, db.users.c.google_name).where(db.users.c.id == user_id)).first()
-    names = [n for n in ((u.name, u.google_name) if u else ()) if n]
+    from app.privacy_filter import known_member_names
+    # 이 학생 이름 + 발언·관찰에 나올 수 있는 다른 회원(친구·선생님) 이름까지 AI로 보내기 전에 가린다
+    names = sorted({n for n in ((u.name, u.google_name) if u else ()) if n} | set(known_member_names()), key=len, reverse=True)
     return sorted(classes.values(), key=lambda x: (x["date"], x["class_id"])), standards, names
 
 
