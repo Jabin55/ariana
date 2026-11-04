@@ -555,6 +555,39 @@ COMPETENCIES = [("self_management", "자기관리 역량"), ("knowledge_info", "
                 ("creative_thinking", "창의적 사고 역량"), ("aesthetic", "심미적 감성 역량"),
                 ("communication", "협력적 소통 역량"), ("community", "공동체 역량")]
 
+# 핵심역량의 뜻 (총론 정의, 해설): 화면 ⓘ·'6대 핵심역량이란?' 상자와 AI 판단 기준에 함께 쓴다
+COMPETENCY_INFO = {
+    "self_management": (
+        "자아정체성과 자신감을 가지고 자신의 삶과 진로를 스스로 설계하며 이에 필요한 기초 능력과 자질을 갖추어 자기주도적으로 살아갈 수 있는 역량",
+        "급변하는 미래 사회에서 학습자가 주체성을 갖고 삶을 개척해 나갈 수 있도록 하는 '자기주도성(Agency)'이 핵심이다. 학습자가 자신의 신체적·정신적 건강을 돌보고 긍정적인 자아정체성을 형성하며, 자신의 적성과 흥미에 맞추어 생애 학습자로서의 진로를 능동적으로 탐색하고 설계·실천하는 능력을 포함한다."),
+    "knowledge_info": (
+        "문제를 합리적으로 해결하기 위하여 다양한 영역의 지식과 정보를 깊이 있게 이해하고 비판적으로 탐색·활용하여 자기주도적으로 새로운 지식을 창출할 수 있는 역량",
+        "디지털 전환에 따른 정보량 폭증과 인공지능(AI) 기술 발달에 대응하여 지식을 단순 수용하는 것이 아니라 '깊이 있는 이해'와 '비판적 탐색'을 거쳐 '새로운 지식을 창출'하는 능력이 핵심이다. 분과적 지식의 단순 암기를 지양하고, 교과 간 연계와 융합을 통해 실생활의 복잡한 문제를 해결하는 과정에서 지식과 정보를 비판적·윤리적으로 선별·조작·생산하는 고차적 사고 과정을 포괄한다."),
+    "creative_thinking": (
+        "폭넓은 기초 지식을 바탕으로 다양한 전문 분야의 지식, 기술, 경험을 융합적으로 활용하여 새로운 것을 창출하는 역량",
+        "기초 지식의 탄탄한 토대 위에서 여러 학문 및 전문 영역의 지식과 방법론을 넘나드는 '융합적 활용' 능력이 핵심이다. 기존의 답습에서 벗어나 새로운 가능성과 대안을 모색하는 확산적 사고뿐 아니라, 도출된 아이디어를 현실에 구현하고 실행하는 수렴적·실천적 문제해결력을 포함한다."),
+    "aesthetic": (
+        "인간에 대한 공감적 이해와 문화적 감수성을 바탕으로 삶의 의미와 가치를 발견하고 향유하는 역량",
+        "예술적 기량이나 표현력에 한정되지 않고, 인간에 대한 깊은 '공감적 이해'와 다양한 문화적 현상에 대한 열린 태도를 바탕으로 한다. 일상생활과 자연, 문화예술 활동 속에서 아름다움과 조화를 지각하며, 타인과의 정서적 교감을 통해 삶의 질을 높이고 의미를 발견하는 삶의 태도를 강조한다."),
+    "communication": (
+        "다른 사람의 관점을 존중하고 경청하며, 갈등을 조정하고 타인과 원활하게 상호작용하면서 공동의 목적을 달성할 수 있는 역량",
+        "단순히 개인 간의 메시지 전달이나 언어적 표현에 치우치지 않도록, 현대 사회의 핵심 가치인 '협력(Collaboration)'의 의미를 전면에 부각하였다. 단순한 의견 교환을 넘어 서로 다른 관점과 배경을 가진 구성원 간의 '경청과 공감', '갈등 관리와 조정', 그리고 집단지성을 바탕으로 '공동의 과업이나 목적을 함께 완수하는 상호작용 능력'을 의미한다."),
+    "community": (
+        "지역·국가·세계 공동체의 구성원에게 요구되는 가치와 태도를 수용하고, 생태전환과 민주주의 등 지속가능한 사회 발전에 적극적으로 참여하는 역량",
+        "기후위기 등 전 지구적 생태 위기에 대응하는 '생태전환'과 지속가능발전목표(SDGs)를 실천적 가치로 명시하였다. 로컬(지역), 국가, 글로벌(세계) 공동체의 다층적 층위에서 책임감 있는 시민으로서 민주주의 가치를 지키고, 연대와 포용을 통해 지속가능한 사회를 능동적으로 만들어가는 실천력을 지향한다."),
+}
+ANALYSIS_SYSTEM += ("\n\n# 핵심역량의 뜻 (competencies 판단 기준)\n"
+                    + "\n".join(f"- {label}: {COMPETENCY_INFO[k][0]}. {COMPETENCY_INFO[k][1]}" for k, label in COMPETENCIES))
+
+# 교과 역량의 뜻 (있는 교과만): 화면 ⓘ와 AI 판단 기준
+SUBJECT_COMPETENCY_INFO = {
+    "역사 기억과 계승 역량": "인류와 우리 민족이 과거로부터 축적해 온 경험, 지혜, 문화유산의 가치를 이해하고 기억하며, 이를 현재와 미래의 삶 속으로 계승·발전시키는 역량",
+    "역사적 비판적 사고 역량": "역사적 사실과 사료(문헌, 유물, 구술, 디지털 매체 등)에 대한 신뢰성을 검토하고, 다양한 시각과 해석의 타당성을 비판적으로 검증·분석하는 역량",
+    "역사적 판단력과 문제 해결 역량": "과거의 인물과 사건이 직면했던 맥락과 딜레마를 고려하여 역사적 결정을 평가하고, 과거의 경험을 바탕으로 현대 사회가 직면한 갈등과 문제를 합리적으로 판단하여 대안을 모색하는 역량",
+    "역사적 공감과 소통 역량": "서로 다른 시대와 공간을 살아간 과거 사람들의 처지와 감정, 동기를 맥락 속에서 공감적으로 이해하고, 자신의 역사적 이해와 관점을 다양한 매체를 통해 타인과 타협·소통하는 역량",
+    "역사적 주체성과 참여 역량": "자신이 살아가는 시대를 역사적 관점에서 성찰하고, 역사 발전의 주체로서 민주적이고 평화로운 공동체 형성을 위해 능동적으로 사회에 참여하고 실천하는 역량",
+}
+
 
 def analysis_schema(keys: list[str], n_classes: int) -> dict:
     return {
@@ -640,7 +673,7 @@ async def analyze_student(course_id: int, user_id: int, request: Request):
     subject_comps = subject_competencies_of(course)
     if subject_comps:
         prompt += ("\n\n# 이 과목의 교과 역량 (subject_competencies 에 각각 1~5점, 3=보통, 근거 한 문장. 근거가 거의 없으면 1점·'근거 부족')\n"
-                   + "\n".join(f"- {x}" for x in subject_comps))
+                   + "\n".join(f"- {x}: {SUBJECT_COMPETENCY_INFO[x]}" if x in SUBJECT_COMPETENCY_INFO else f"- {x}" for x in subject_comps))
     data = await ai_json(ANALYSIS_SYSTEM, prompt, with_subject_comps(analysis_schema(keys, len(classes)), subject_comps), 12000)
     now = time.time()
 
@@ -709,7 +742,8 @@ def analysis_view(course_id: int, user_id: int) -> dict:
         comp = json.loads(fb.competencies) if fb and fb.competencies else {}
     except ValueError:
         comp = {}
-    competencies = [{"key": k, "label": label, **comp[k]} for k, label in COMPETENCIES if k in comp]
+    competencies = [{"key": k, "label": label, "desc": COMPETENCY_INFO[k][0], "detail": COMPETENCY_INFO[k][1], **comp[k]}
+                    for k, label in COMPETENCIES if k in comp]
     try:
         subj = json.loads(fb.subject_competencies) if fb and fb.subject_competencies else {}
     except ValueError:
@@ -717,7 +751,7 @@ def analysis_view(course_id: int, user_id: int) -> dict:
     with db.engine.connect() as c:
         course = c.execute(select(db.courses).where(db.courses.c.id == course_id)).first()
     names = subject_competencies_of(course) if course else []
-    subject = [{"key": n, "label": n, **subj[n]} for n in names if n in subj]
+    subject = [{"key": n, "label": n, "desc": SUBJECT_COMPETENCY_INFO.get(n, ""), **subj[n]} for n in names if n in subj]
     return {"classes": classes, "summary": fb.summary if fb else "", "feedback": fb.feedback if fb else "",
             "competencies": competencies, "subject_competencies": subject, "subject_competency_names": names,
             "published": bool(fb and fb.published), "analyzed_at": fb.analyzed_at if fb else None, "ai": ai_ready()}

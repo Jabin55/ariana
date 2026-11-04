@@ -3878,12 +3878,13 @@ def test_achievement_standards_analysis_and_feedback(monkeypatch):
     assert got["subject_competencies"] == social and got["subject_competency_area"] == "사회"
     assert t.post(f"{base}/subject-competencies", json={"items": ["x", "y", "z"]}).status_code in (404, 405)
     view = t.post(f"{base}/speech/student/{uid}/analyze").json()
-    assert {"key": "비판적 사고력", "label": "비판적 사고력", "score": 4, "reason": "반론을 검토함"} in view["subject_competencies"]
+    assert {"key": "비판적 사고력", "label": "비판적 사고력", "desc": "", "score": 4, "reason": "반론을 검토함"} in view["subject_competencies"]
+    assert "자기주도성" in ach.ANALYSIS_SYSTEM and view["competencies"][0]["desc"].startswith("자아정체성과 자신감")
     assert view["subject_competency_names"] == social
     edited = t.post(f"{base}/speech/student/{uid}/competencies", json={
         "competencies": [{"key": "community", "score": 5, "reason": " 모둠을 이끎 "}, {"key": "없는역량", "score": 1}],
         "subject_competencies": [{"key": "비판적 사고력", "score": 2, "reason": "교사 수정"}]}).json()
-    assert {c["key"]: c for c in edited["competencies"]}["community"] == {"key": "community", "label": "공동체 역량", "score": 5, "reason": "모둠을 이끎"}
+    assert {c["key"]: c for c in edited["competencies"]}["community"] | {"desc": "", "detail": ""} == {"key": "community", "label": "공동체 역량", "desc": "", "detail": "", "score": 5, "reason": "모둠을 이끎"}
     assert {c["key"]: c for c in edited["subject_competencies"]}["비판적 사고력"]["score"] == 2
     assert t.post(f"{base}/speech/student/{uid}/competencies", json={"competencies": [{"key": "community", "score": 9}]}).status_code == 422
     assert other.post(f"{base}/speech/student/{uid}/competencies", json={}).status_code == 404

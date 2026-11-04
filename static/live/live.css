@@ -1991,3 +1991,13 @@ table.att.ach-reason-table th { background: #f4f6fa; text-align: center; color: 
 table.att.ach-reason-table td.c-score { text-align: center; white-space: nowrap; }
 table.att.ach-reason-table select { width: 100%; padding: 2px; }
 table.att.ach-reason-table textarea { width: 100%; box-sizing: border-box; margin: 0; font-size: 0.85rem; resize: vertical; }
+
+/* 핵심역량 뜻: ⓘ 말풍선, [6대 핵심역량이란?] 펼침 상자 */
+.ach-info { position: relative; display: inline-block; margin-left: 3px; color: #2f6fb3; cursor: help; font-size: 0.85em; outline: none; }
+.ach-info:hover::after, .ach-info:focus::after { content: attr(data-tip); position: absolute; left: 50%; top: 1.6em; transform: translateX(-30%); z-index: 20;
+  width: 17em; padding: 7px 9px; border-radius: 8px; background: #1d2330; color: #fff; font-size: 0.8rem; font-weight: 400; line-height: 1.5; text-align: left; white-space: normal; box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+table.att.ach-reason-table td:first-child { overflow: visible; }
+.ach-comp-info { margin: 6px 0 10px; padding: 8px 12px; border-radius: 8px; background: #f4f6fa; font-size: 0.86rem; }
+.ach-comp-info-item + .ach-comp-info-item { border-top: 1px dashed var(--border); }
+.ach-comp-info-item { padding: 6px 0; }
+.ach-comp-info-item p { margin: 3px 0 0; line-height: 1.6; }
