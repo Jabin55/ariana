@@ -1642,9 +1642,6 @@ async function renderSchoolSignups(box) {
     box.querySelectorAll(".signup-check").forEach((c) => { c.checked = e.target.checked; });
   } });
   fill(box,
-    h("h2", { style: "margin:0 0 6px" }, "학생 가입 승인"),
-    h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.9rem" },
-      "우리 학교를 소속 학교로 골라 가입한 학생이에요. 우리 학교 학생이 맞는지 확인하고 승인하면 학생이 수강신청과 수업에 참여할 수 있어요."),
     h("div", { class: "row", style: "margin-bottom:8px" },
       h("strong", {}, "승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
       h("button", { class: "small primary", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 승인"),
