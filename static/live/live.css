@@ -2165,8 +2165,10 @@ html { scrollbar-gutter: stable; }
 .side-main .staff-board > h2:first-child { margin-top: 0 !important; }
 
 /* 표로 된 게시판에는 정보마당 공지사항처럼 흰 바탕 틀을 씌운다 (이미 흰 상자 안에 있는 표는 그대로) */
-:where(.side-main, .run-sub) .table-wrap:not(.card .table-wrap):not(.ach-box .table-wrap):not(.box .table-wrap):not(.info-block .table-wrap):not(.fb-card .table-wrap):not(.result-sheet .table-wrap) {
+:where(.side-main, .run-sub, .student-course-plain) .table-wrap:not(.card .table-wrap):not(.ach-box .table-wrap):not(.box .table-wrap):not(.info-block .table-wrap):not(.fb-card .table-wrap):not(.result-sheet .table-wrap) {
   background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px 10px;
 }
 table.att.hub-approval-table th:nth-child(2), table.att.hub-approval-table td:nth-child(2) { text-align: center; } /* 연번 */
 table.att.hub-approval-table thead th { text-align: center; } /* 머리글 줄 가운데 정렬 */
+/* 강의실 > 내 강좌 > 과목: 제목·과목 카드는 바탕에, 표만 흰 틀 (위의 흰 틀 규칙) */
+.student-course-plain { max-width: none; }
