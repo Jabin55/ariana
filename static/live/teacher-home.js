@@ -350,7 +350,7 @@ let meetView = null; // 지금 열어 본 특강/회의 id
 async function loadMeetHistory() {
   const panel = $('[data-panel="meet"]');
   const showBoard = (on) => {
-    $("#meet-tabs").hidden = !on;
+    // 왼쪽 세로 메뉴는 기록을 열어 볼 때도 그대로 둔다
     $("#meet-history").hidden = !on;
     $("#meet-history-title").hidden = !on; // 기록 화면에서는 제목 띠가 대신한다
   };
