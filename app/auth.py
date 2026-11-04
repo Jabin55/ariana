@@ -113,6 +113,7 @@ def public_user(u) -> dict:
         "role_choice": d["role"] == "student" and not d.get("self_role"),
         "can_be_student": school_account(d["email"]) and d["role"] != "teacher",
         "withdraw_requested": bool(d.get("withdraw_at")), "withdraw_note": d.get("withdraw_note") or "",
+        "school_approval": d.get("school_approval") or "", "school_approval_note": d.get("school_approval_note") or "",
         "evidence_reader": bool(d.get("is_admin")) or (
             d["role"] == "teacher" and bool(d.get("participant_schools"))),
     }
@@ -182,6 +183,11 @@ def display_name(u: dict) -> str:
 def needs_terms(u: dict) -> bool:
     """이용약관·개인정보 처리방침을 아직 확인하지 않았거나, 그 뒤에 내용이 바뀌었다."""
     return u.get("terms_version") != POLICY_VERSION
+
+
+def school_pending(u: dict) -> bool:
+    """학생 가입이 소속 학교 담당교사의 승인을 기다리거나 반려됐다 (전체 관리자는 해당 없음)"""
+    return u.get("role") == "student" and not u.get("is_admin") and u.get("school_approval") in ("pending", "rejected")
 
 
 def needs_profile(u: dict) -> bool:
@@ -272,6 +278,9 @@ async def require_user(request: Request, role: str | None = None, profile: bool 
         raise HTTPException(403, "강사만 할 수 있어요." if role == "teacher" else "학생 계정으로 로그인해 주세요.")
     if profile and needs_profile(u):
         raise HTTPException(409, "먼저 내 정보를 입력해 주세요.")
+    if profile and school_pending(u):
+        raise HTTPException(403, "소속 학교 선생님이 가입을 승인하면 이용할 수 있어요." if u["school_approval"] == "pending"
+                            else "가입이 반려됐어요. 내 정보에서 소속 학교를 확인해 다시 신청해 주세요.")
     return u
 
 
@@ -402,7 +411,9 @@ async def save_profile(p: Profile, request: Request):
     schools = await db.run(get_schools)
     if u["role"] == "student" and schools and school not in schools:
         raise HTTPException(400, "목록에 있는 학교를 골라 주세요. 학교가 목록에 없으면 선생님께 알려 주세요.")
-    if u["name"] and school != (u["school"] or ""):
+    # 가입 승인 전(대기·반려)에는 학교를 잘못 골랐을 수 있어 바로 고칠 수 있다
+    first_signup = u["role"] == "student" and not u["school"]
+    if u["name"] and school != (u["school"] or "") and not school_pending(u):
         approver = "새 학교의 참여학교 담당교사" if u["role"] == "student" else "전체 관리자"
         raise HTTPException(400, f"소속 변경은 내 정보에서 신청한 뒤 {approver}의 승인을 받아야 해요.")
     values = {"name": name, "school": school}
@@ -425,6 +436,8 @@ async def save_profile(p: Profile, request: Request):
         if not (school and p.grade and p.class_no and p.number):
             raise HTTPException(400, "학교, 학년, 반, 번호를 모두 입력해 주세요.")
         values.update(grade=p.grade, class_no=p.class_no, number=p.number)
+        if (first_signup or school_pending(u)) and not u["is_admin"]:
+            values.update(school_approval="pending", school_approval_note="", school_approval_at=None)  # (다시) 승인 대기
         if p.phone is not None:  # 학생 연락처 (휴대전화)
             phone = p.phone.strip()
             if not re.fullmatch(r"[0-9][0-9\- ]{7,18}[0-9]", phone):

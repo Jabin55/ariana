@@ -78,7 +78,7 @@
   }
   let user = null;
   try { user = (await api("/api/me")).user; } catch { /* 공개 게시판은 로그인 없이 읽는다 */ }
-  const canApply = user && !user.needs_profile && (user.role === "student" || user.is_admin);
+  const canApply = user && !user.needs_profile && (user.is_admin || (user.role === "student" && !["pending", "rejected"].includes(user.school_approval)));
   await Promise.all([board(), ...(canApply ? [mine()] : [])]);
   $("wish-page-own").hidden = !canApply;
   if (!canApply) return;

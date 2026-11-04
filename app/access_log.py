@@ -32,6 +32,8 @@ _RULES = [
     ("GET", r"/api/hub/courses/(?P<course>\d+)/attendance\.xlsx", "다운로드", "출석부 엑셀"),
     ("GET", r"/api/hub/classes/(?P<class>\d+)/attendance", "조회", "수강생 출석부(수업일)"),
     ("GET", r"/api/school/overview", "조회", "우리 학교 학생 현황"),
+    ("GET", r"/api/school/signups", "조회", "학생 가입 승인 목록"),
+    ("POST", r"/api/school/signups/(?P<user>\d+)", "수정", "학생 가입 승인·반려"),
     ("POST", r"/api/school/withdrawals/(?P<user>\d+)", "삭제", "학생 탈퇴 처리"),
     ("GET", r"/api/school/change-requests", "조회", "정보 변경 요청 목록"),
     ("POST", r"/api/school/change-requests/\d+", "수정", "정보 변경 요청 처리"),

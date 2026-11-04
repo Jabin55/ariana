@@ -10,7 +10,7 @@ let hubCourseId = null; // 강좌 개설 승인 목록에서 보고 있는 강�
 let hubRecordCourseId = null; // 수업일·출석부에서 보고 있는 강좌
 let hubClassId = null; // 수업일에서 눌러 본 그날의 수강생 출석부
 let adminSub = "approve";
-let schoolSub = "students";
+let schoolSub = "signup";
 let detailTarget = null; // 수업 기록(출결·채점)을 그릴 자리
 function detailEl() { return detailTarget || $("#run-detail"); }
 
@@ -1531,13 +1531,13 @@ let schoolData = null; // 참여학교 담당: 우리 학교 학생
 const withdrawPick = new Set(); // 탈퇴 승인 탭에서 체크한 학생 id
 const schoolQ = {};
 
-/** 참여학교 담당: 학생 명단, 전입 승인, 탈퇴 승인, 탈퇴자 증빙 */
+/** 참여학교 담당: 학생 가입 승인, 학생 명단, 전입 승인, 탈퇴 승인, 탈퇴자 증빙 */
 async function loadSchool() {
   const outer = $("#school-list");
   const box = h("div");
   fill(outer,
     h("nav", { class: "tabs sub-tabs", "aria-label": "참여학교 담당 메뉴" },
-      [["students", "학생 관리"], ["transfer", "소속학교 변경 승인"], ["withdraw", "탈퇴 승인"], ["evidence", "탈퇴자 증빙"]].map(([key, label]) => h("button", {
+      [["signup", "학생 가입 승인"], ["students", "학생 관리"], ["transfer", "소속학교 변경 승인"], ["withdraw", "탈퇴 승인"], ["evidence", "탈퇴자 증빙"]].map(([key, label]) => h("button", {
         type: "button", class: schoolSub === key ? "active" : "",
         onclick: () => { schoolSub = key; loadSchool(); }
       }, label))), box);
@@ -1548,10 +1548,11 @@ async function loadSchool() {
   try { schoolData = await api("/api/school/overview"); }
   catch (e) { fill(box, h("p", { class: "error" }, e.message)); return; }
   if (schoolSub !== selectedTab) return;
-  const quits = schoolData.withdrawals.length;
+  const quits = schoolData.withdrawals.length + (schoolData.signups || 0); // 탈퇴 + 가입 승인 대기
   $("#school-badge").textContent = quits;
   $("#school-badge").hidden = !quits;
   if (selectedTab === "withdraw") { renderSchoolWithdrawals(box); return; }
+  if (selectedTab === "signup") { await renderSchoolSignups(box); return; }
   const all = schoolData.students.flatMap((x) => x.courses);
   const terms = koSort(new Set(all.map((c) => c.term).filter(Boolean)));
   const hubs = koSort(new Set(all.map((c) => c.hub).filter(Boolean)));
@@ -1597,6 +1598,62 @@ async function loadSchool() {
       h("button", { class: "primary", type: "button", onclick: search }, "검색")),
     result);
   drawSchoolResult(result);
+}
+
+const signupPick = new Set();
+
+/** [학생 가입 승인]: 우리 학교로 가입한 학생을 확인해 승인·반려 (승인해야 학생이 이용할 수 있다) */
+async function renderSchoolSignups(box) {
+  let list;
+  try { ({ signups: list } = await api("/api/school/signups")); } catch (e) { fill(box, h("p", { class: "error" }, e.message)); return; }
+  signupPick.clear();
+  const decide = async (action, only = null) => {
+    const picked = only ? [only] : list.filter((x) => signupPick.has(x.user_id));
+    if (!picked.length) { toast("학생을 선택해 주세요."); return; }
+    let note = "";
+    if (action === "approve") {
+      if (!await appConfirm(`${picked.length}명의 가입을 승인할까요?\n승인하면 학생이 수강신청과 수업에 참여할 수 있어요.`)) return;
+    } else {
+      note = await appPrompt(`${picked.length}명의 가입을 반려해요. 사유 (학생에게 보여요, 예: 우리 학교 학생이 아니에요)`, "");
+      if (note === null) return;
+    }
+    let done = 0;
+    for (const x of picked) {
+      try { await api(`/api/school/signups/${x.user_id}`, { action, note }); done++; } catch (err) { toast(`${x.name}: ${err.message}`); }
+    }
+    toast(action === "approve" ? `${done}명의 가입을 승인했어요.` : `${done}명의 가입을 반려했어요.`);
+    schoolData = null;
+    loadSchool();
+  };
+  const pending = list.filter((x) => x.status === "pending");
+  const all = h("input", { type: "checkbox", "aria-label": "승인 대기 전체 선택", onchange: (e) => {
+    for (const x of pending) { if (e.target.checked) signupPick.add(x.user_id); else signupPick.delete(x.user_id); }
+    box.querySelectorAll(".signup-check").forEach((c) => { c.checked = e.target.checked; });
+  } });
+  fill(box,
+    h("h2", { style: "margin:0 0 6px" }, "학생 가입 승인"),
+    h("p", { class: "muted", style: "margin:0 0 10px;font-size:0.9rem" },
+      "우리 학교를 소속 학교로 골라 가입한 학생이에요. 우리 학교 학생이 맞는지 확인하고 승인하면 학생이 수강신청과 수업에 참여할 수 있어요."),
+    h("div", { class: "row", style: "margin-bottom:8px" },
+      h("strong", {}, "승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
+      h("button", { class: "small primary", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 승인"),
+      h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 반려")),
+    h("div", { class: "table-wrap" }, h("table", { class: "att signup-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "학년", "반", "번호", "이름", "생년월일", "성별", "이메일", "연락처", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
+        h("td", {}, x.status === "pending" ? h("input", { type: "checkbox", class: "signup-check", "aria-label": `${x.name} 선택`, onchange: (e) => {
+          if (e.target.checked) signupPick.add(x.user_id); else signupPick.delete(x.user_id);
+        } }) : null),
+        h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, x.grade ? `${x.grade}학년` : "-"),
+        h("td", {}, x.class_no ? `${x.class_no}반` : "-"), h("td", {}, x.number ? `${x.number}번` : "-"), h("td", {}, h("strong", {}, x.name)),
+        h("td", {}, x.birth || "-"), h("td", {}, x.gender || "-"), h("td", { class: "contact-cell" }, x.email || "-"),
+        h("td", { class: "contact-cell" }, fmtPhone(x.phone) || "-"), h("td", {}, kstDate(x.requested_at)),
+        h("td", {}, x.status === "pending" ? h("span", { class: "status pending" }, "승인 대기")
+          : h("span", { class: "status rejected", title: x.note ? `사유: ${x.note}` : "" }, "반려 (학생 수정 대기)")),
+        h("td", {}, x.status === "pending" ? h("div", { class: "row school-change-actions" },
+          h("button", { class: "small primary", type: "button", onclick: () => decide("approve", x) }, "승인"),
+          h("button", { class: "small", type: "button", onclick: () => decide("reject", x) }, "반려")) : "-")))
+        : h("tr", {}, h("td", { colspan: 14, class: "muted", style: "text-align:center;padding:24px" }, "가입 승인을 기다리는 학생이 없어요."))))));
 }
 
 function renderSchoolWithdrawals(box) {

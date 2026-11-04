@@ -56,6 +56,7 @@ async function boot() {
   if (ME.role === "guest") return showGuest();
   if (params.get("apply")) return showGuest(true);
   if (ME.needs_profile) return showProfile();
+  if (schoolWaiting()) return showSchoolWait();
   if (params.has("classroom") && ME.is_admin) return showStudent();
   // [교무실]은 선생님 화면: 학생에게는 권한 없음
   if (params.get("office") && ME.role === "student") {
@@ -71,12 +72,42 @@ async function boot() {
   return showStudent();
 }
 
+/* ───── 학생 가입 승인 대기·반려: 소속 학교 참여학교 담당 선생님이 승인해야 이용할 수 있다 ───── */
+
+function schoolWaiting() {
+  return ME.role === "student" && !ME.is_admin && ["pending", "rejected"].includes(ME.school_approval);
+}
+
+function showSchoolWait() {
+  show("done-view");
+  $("#lead").hidden = true;
+  const rejected = ME.school_approval === "rejected";
+  $("#done-ico").textContent = rejected ? "↩️" : "⏳";
+  $("#done-title").textContent = rejected ? "가입이 반려되었어요" : "가입 신청이 완료되었어요";
+  $("#done-body").replaceChildren(
+    rejected
+      ? h("p", {}, `${ME.name} 학생의 가입 신청이 반려되었어요.`, ME.school_approval_note ? h("br") : null,
+        ME.school_approval_note ? h("strong", {}, `사유: ${ME.school_approval_note}`) : null)
+      : h("p", {}, `${ME.name} 학생, 가입 신청을 받았어요.`),
+    h("ul", { class: "done-list" },
+      rejected
+        ? [h("li", {}, "소속 학교·학년·반·번호를 잘못 골랐다면 [내 정보 고치기]에서 고쳐 다시 신청하세요."),
+          h("li", {}, "고쳐서 저장하면 그 학교 선생님께 다시 승인을 요청해요.")]
+        : [h("li", {}, h("strong", {}, ME.school || "소속 학교"), " 참여학교 담당 선생님이 확인하고 승인하면 이용할 수 있어요."),
+          h("li", {}, "승인되면 수강신청을 하고 수업에 들어갈 수 있어요. 이 화면을 새로고침하면 승인 상황을 볼 수 있어요."),
+          h("li", {}, "학교·학년·반·번호를 잘못 적었다면 승인 전에 [내 정보 고치기]에서 고칠 수 있어요.")]));
+  $("#done-actions").replaceChildren(
+    h("button", { class: "primary", onclick: () => boot() }, "승인 상황 새로 보기"),
+    h("button", { onclick: () => showProfile() }, "내 정보 고치기"));
+}
+
 /* ───── 회원가입 4단계: 가입완료 안내 ───── */
 
 function showDone(kind, role, place) {
   show("done-view");
   $("#lead").hidden = true;
   const go = (label, fn, primary) => h("button", { class: primary ? "primary" : "", onclick: fn }, label);
+  if (kind === "student" && schoolWaiting()) return showSchoolWait();
   if (kind === "student") {
     $("#done-ico").textContent = "🎉";
     $("#done-title").textContent = "가입이 완료되었어요!";
@@ -462,9 +493,10 @@ function showProfile() {
   } else {
     $("#p-school").value = ME.school || "";
   }
-  sel.disabled = !!ME.name;
-  $("#p-school").readOnly = !!ME.name;
-  $("#p-school-request").hidden = !ME.name;
+  const schoolLocked = !!ME.name && !schoolWaiting(); // 가입 승인 전(대기·반려)에는 학교를 바로 고칠 수 있다
+  sel.disabled = schoolLocked;
+  $("#p-school").readOnly = schoolLocked;
+  $("#p-school-request").hidden = !schoolLocked;
   $("#profile-change-box").hidden = true;
   $("#profile-change-status").textContent = "";
   if (ME.name) api("/api/me/change-requests").then(({ requests }) => {
@@ -540,7 +572,7 @@ $("#profile").addEventListener("submit", async (e) => {
   } else {
     Object.assign(body, { birth: $("#p-birth").value, gender: $("#p-gender").value, email: $("#p-email").value.trim(), phone: $("#p-phone").value.trim() });
   }
-  const first = !ME.name; // 처음 가입이면 '가입완료' 안내로
+  const first = !ME.name || schoolWaiting(); // 처음 가입(또는 승인 전 다시 신청)이면 '가입 신청 완료' 안내로
   withConsent("profile-view", async () => {
     try {
       ME = await api("/api/me/profile", body);

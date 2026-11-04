@@ -14,7 +14,7 @@
 
   let user = null;
   try { user = (await (await fetch("/api/me")).json()).user; } catch { /* 로그인 안 해도 볼 수 있다 */ }
-  const student = !!user && !user.needs_profile && (user.role === "student" || user.is_admin);
+  const student = !!user && !user.needs_profile && (user.is_admin || (user.role === "student" && !["pending", "rejected"].includes(user.school_approval)));
 
   async function load() {
     let c;

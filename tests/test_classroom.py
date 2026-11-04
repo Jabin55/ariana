@@ -56,7 +56,7 @@ def google_login(client, email):
     return client.post("/api/auth/google", json={"credential": f"test-token:{email}", "birth": "2008-04-03"})
 
 
-def login(email, **profile):
+def login(email, approve_school=True, **profile):
     c = TestClient(app)
     r = google_login(c, email)
     assert r.status_code == 200, r.text
@@ -66,6 +66,10 @@ def login(email, **profile):
             profile.setdefault("gender", "남")
         r = c.post("/api/me/profile", json={"agree": True, **profile})
         assert r.status_code == 200, r.text
+        if approve_school and email.endswith("@s.school.kr"):  # 학생 가입 승인 (참여학교 담당교사가 하는 일을 대신)
+            with db.engine.begin() as conn:
+                conn.execute(db.users.update().where(db.users.c.email == email, db.users.c.school_approval == "pending")
+                             .values(school_approval="approved"))
     return c
 
 
@@ -322,6 +326,11 @@ def test_login_rules():
     finally:
         auth_mod.POLICY_VERSION = old
     s.post("/api/me/profile", json={**prof, "agree": True})
+    # 처음 가입한 학생은 소속 학교 담당교사가 승인해야 수업에 들어갈 수 있다
+    assert s.get("/api/me").json()["user"]["school_approval"] == "pending"
+    assert s.post(f"/api/live/classes/{code}/join").status_code == 403
+    with db.engine.begin() as conn:
+        conn.execute(db.users.update().where(db.users.c.email == "kid@s.school.kr").values(school_approval="approved"))
     assert s.post(f"/api/live/classes/{code}/join").status_code == 200
 
 
@@ -1463,6 +1472,8 @@ def test_signup_choice_schools_and_grades(monkeypatch):
     assert s.post("/api/me/profile", json={**prof, "school": "신정고"}).status_code == 400
     me = s.post("/api/me/profile", json={**prof, "school": "신정고등학교"}).json()
     assert me["role"] == "student" and not me["needs_profile"]
+    assert me["school_approval"] == "pending"  # 소속 학교 담당교사 승인 대기
+    assert admin.post(f"/api/school/signups/{me['id']}", json={"action": "approve"}).status_code == 200
     # 대상 학년: 1학년 강좌는 2학년에게 안 보이고 신청도 안 된다
     t = teacher()
     assert t.post("/api/courses", json={**COURSE, "hub_school": ""}).status_code == 400  # 거점학교 없이는 못 연다
@@ -4336,3 +4347,48 @@ def test_results_achievement_and_setuk_after_grading(monkeypatch):
     assert "판례를 정확히 분석함" in calls[-1] and again["setuk"].startswith("기본권 제한의")
     x = t.get(f"{base}/results.xlsx")
     assert x.status_code == 200 and x.content[:2] == b"PK"
+
+
+def test_student_signup_needs_school_approval(monkeypatch):
+    """학생 가입: 고른 소속 학교의 참여학교 담당교사(또는 전체 관리자)가 승인해야 이용할 수 있다. 반려되면 학교를 고쳐 다시 신청"""
+    monkeypatch.setattr(auth, "ADMIN_EMAILS", {"boss@gmail.com"})
+    boss = login("boss@gmail.com", name="관리자")
+    ps = {}
+    for email, school in (("p1@gmail.com", SCHOOL), ("p2@gmail.com", "마바중학교")):
+        c = TestClient(app)
+        google_login(c, email)
+        staff_apply(c, {"role": "participant", "name": "담당", "hub_name": school, "affiliation": school, "contact": "010", "pledge": True})
+        app_id = boss.get("/api/staff/applications", params={"role": "participant"}).json()["applications"][0]["id"]
+        boss.post(f"/api/staff/{app_id}", json={"action": "approve"})
+        ps[school] = c
+    p1, p2 = ps[SCHOOL], ps["마바중학교"]
+    kid = login("kid@s.school.kr", approve_school=False, name="김민준", school=SCHOOL, grade=2, class_no=3, number=15)
+    me = kid.get("/api/me").json()["user"]
+    assert me["school_approval"] == "pending" and not me["needs_profile"]
+    assert kid.get("/api/courses/available").status_code == 403  # 승인 전에는 수강신청 등 이용 불가
+    assert [x["name"] for x in p1.get("/api/school/signups").json()["signups"]] == ["김민준"]
+    assert p2.get("/api/school/signups").json()["signups"] == []  # 다른 학교 담당교사에게는 안 보임
+    assert all(x["name"] != "김민준" for x in p1.get("/api/school/overview").json()["students"])  # 학생 관리 명단엔 승인 뒤에
+    assert p1.get("/api/school/overview").json()["signups"] == 1
+    uid = me["id"]
+    assert p2.post(f"/api/school/signups/{uid}", json={"action": "approve"}).status_code == 404
+    assert p1.post(f"/api/school/signups/{uid}", json={"action": "reject", "note": "우리 학교 학생이 아니에요"}).status_code == 200
+    me = kid.get("/api/me").json()["user"]
+    assert me["school_approval"] == "rejected" and me["school_approval_note"] == "우리 학교 학생이 아니에요"
+    # 반려되면 소속 학교를 고쳐 다시 신청 → 새 학교 담당교사에게 간다
+    r = kid.post("/api/me/profile", json={"agree": True, "name": "김민준", "school": "마바중학교", "grade": 2, "class_no": 3, "number": 15,
+                                          "birth": "2008-04-03", "gender": "남"})
+    assert r.status_code == 200, r.text
+    assert kid.get("/api/me").json()["user"]["school_approval"] == "pending"
+    assert p1.get("/api/school/signups").json()["signups"] == []
+    assert p2.post(f"/api/school/signups/{uid}", json={"action": "approve"}).status_code == 200
+    assert kid.get("/api/me").json()["user"]["school_approval"] == "approved"
+    assert kid.get("/api/courses/available").status_code == 200
+    assert any(x["name"] == "김민준" for x in p2.get("/api/school/overview").json()["students"])
+    # 승인 뒤 학교를 바꾸려면 예전처럼 변경 신청
+    r = kid.post("/api/me/profile", json={"agree": True, "name": "김민준", "school": SCHOOL, "grade": 2, "class_no": 3, "number": 15,
+                                          "birth": "2008-04-03", "gender": "남"})
+    assert r.status_code == 400
+    # 전체 관리자는 모든 학교의 가입 신청을 볼 수 있다
+    login("kid2@s.school.kr", approve_school=False, name="이서연", school=SCHOOL, grade=1, class_no=1, number=1, gender="여")
+    assert [x["name"] for x in boss.get("/api/school/signups").json()["signups"]] == ["이서연"]

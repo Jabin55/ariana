@@ -1203,6 +1203,7 @@ def school_students(schools: set[str] | None) -> list[dict]:
     with db.engine.connect() as c:
         u = db.users.c
         q = select(db.users).where(u.role == "student", u.account_state == "active",
+                                   u.school_approval.in_(("", "approved")),  # 가입 승인 전 학생은 [학생 가입 승인]에서
                                    u.id.not_in(auth.admin_user_ids(c)))
         if schools is not None:
             q = q.where(u.school.in_(schools))
@@ -1238,6 +1239,50 @@ def withdrawn_rows(schools: set[str] | None) -> list[dict]:
                  "approved_by": r.approved_by} for r in c.execute(q.order_by(db.withdrawn.c.approved_at.desc()))]
 
 
+def school_signups(schools: set[str] | None) -> list[dict]:
+    """가입 승인을 기다리거나 반려된 우리 학교 학생"""
+    u = db.users.c
+    with db.engine.connect() as c:
+        q = select(db.users).where(u.role == "student", u.account_state == "active", u.school_approval.in_(("pending", "rejected")),
+                                   u.id.not_in(auth.admin_user_ids(c)))
+        if schools is not None:
+            q = q.where(u.school.in_(schools))
+        rows = c.execute(q.order_by(u.created_at)).all()
+    return [{"user_id": x.id, "name": x.name or x.google_name or "", "school": x.school or "", "grade": x.grade, "class_no": x.class_no,
+             "number": x.number, "student_no": student_no(dict(x._mapping)), "birth": x.birth or "", "gender": x.gender or "",
+             "email": x.email or "", "phone": x.phone or "", "requested_at": x.created_at, "status": x.school_approval,
+             "note": x.school_approval_note or ""} for x in rows]
+
+
+@router.get("/api/school/signups")
+async def list_school_signups(request: Request):
+    """참여학교 담당교사: 우리 학교로 가입한 학생 승인 대기 목록 (전체 관리자는 모든 학교)"""
+    u = await require_user(request)
+    return {"signups": await db.run(school_signups, my_schools(u))}
+
+
+class SignupDecide(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = Field(default="", max_length=300)
+
+
+@router.post("/api/school/signups/{uid}")
+async def decide_school_signup(uid: int, req: SignupDecide, request: Request):
+    """가입 승인·반려 (반려 사유는 학생에게 보인다. 학생은 소속 학교를 고쳐 다시 신청할 수 있다)"""
+    u = await require_user(request)
+    schools = my_schools(u)
+    if uid not in {x["user_id"] for x in await db.run(school_signups, schools)}:
+        raise HTTPException(404, "가입 신청을 찾을 수 없어요.")
+
+    def run():
+        with db.engine.begin() as c:
+            c.execute(update(db.users).where(db.users.c.id == uid).values(
+                school_approval="approved" if req.action == "approve" else "rejected",
+                school_approval_note="" if req.action == "approve" else req.note.strip(), school_approval_at=time.time()))
+    await db.run(run)
+    return {"ok": True}
+
+
 @router.get("/api/school/overview")
 async def school_overview(request: Request):
     """참여학교 담당교사: 우리 학교 학생의 수강 현황과 탈퇴 신청"""
@@ -1246,6 +1291,7 @@ async def school_overview(request: Request):
     return {"schools": sorted(schools) if schools is not None else [],
             "students": await db.run(school_students, schools),
             "withdrawals": await db.run(withdraw_requests, schools),
+            "signups": sum(x["status"] == "pending" for x in await db.run(school_signups, schools)),
             "withdrawn": [],
             "evidence_url": "/live/evidence" if auth.public_user(u).get("evidence_reader") else None}
 

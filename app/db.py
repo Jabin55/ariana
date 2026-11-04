@@ -58,6 +58,11 @@ users = Table(
     Column("withdraw_reason", String(300), nullable=False, default=""),
     Column("withdraw_note", String(300), nullable=False, default=""),  # 반려 사유 (학생에게 보임)
     Column("account_state", String(20), nullable=False, default="active"),
+    # 학생 가입 승인: 가입 때 고른 소속 학교의 참여학교 담당교사(또는 전체 관리자)가 승인해야 이용할 수 있다.
+    # '' = 예전 가입(승인된 것으로 봄) · pending = 승인 대기 · approved = 승인 · rejected = 반려
+    Column("school_approval", String(10), nullable=False, default=""),
+    Column("school_approval_note", String(300), nullable=False, default=""),  # 반려 사유 (학생에게 보임)
+    Column("school_approval_at", Float),
     Column("session_key", String(32), nullable=False, default=lambda: uuid.uuid4().hex),
 )
 
@@ -667,6 +672,9 @@ def init() -> None:
              ("users", "withdraw_reason", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("users", "withdraw_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
              ("users", "account_state", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
+             ("users", "school_approval", "VARCHAR(10) NOT NULL DEFAULT ''"),
+             ("users", "school_approval_note", "VARCHAR(300) NOT NULL DEFAULT ''"),
+             ("users", "school_approval_at", "FLOAT"),
              ("users", "session_key", "VARCHAR(32) NOT NULL DEFAULT ''"),
              ("courses", "subject_group", "VARCHAR(40) NOT NULL DEFAULT ''"),
              ("courses", "subject_area", "VARCHAR(20) NOT NULL DEFAULT ''"),

@@ -37,7 +37,7 @@ from sqlalchemy import delete, insert, select, update
 from livekit import api as lk
 
 from app import db
-from app.auth import KST, current_user, display_name, needs_profile, require_user
+from app.auth import KST, current_user, display_name, needs_profile, require_user, school_pending
 from app.courses import course_roster, is_enrolled, owned_course, session_window
 
 log = logging.getLogger("live-class")
@@ -1671,7 +1671,7 @@ async def connection_allowed(k: Klass, conn: Conn) -> bool:
         return False
     if conn.role == "teacher":
         return await is_class_teacher(k, u)
-    if needs_profile(u) or (k.course_id and u["role"] != "student" and not u["is_admin"]):
+    if needs_profile(u) or school_pending(u) or (k.course_id and u["role"] != "student" and not u["is_admin"]):
         return False
     return not k.course_id or await db.run(is_enrolled, k.course_id, u["id"])
 
@@ -1782,7 +1782,7 @@ async def live_socket(ws: WebSocket, code: str):
             await db.run(_mark_teacher_opened, k.db_id)
             k.preopened = False
         k.roster = await db.run(load_roster, k.course_id)  # 선생님이 들어올 때마다 수강생 명단을 새로 읽는다
-    elif not needs_profile(u) and (u["role"] == "student" or u["is_admin"] or not k.course_id):
+    elif not needs_profile(u) and not school_pending(u) and (u["role"] == "student" or u["is_admin"] or not k.course_id):
         try:
             await ensure_enrolled(k, u)
             s = add_student(k, u)

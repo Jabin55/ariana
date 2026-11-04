@@ -7,7 +7,7 @@
   const box = $("catalog"), access = $("courses-access");
   let user = null, list = [], values = {};
   try { user = (await (await fetch("/api/me")).json()).user; } catch { /* 공개 목록은 계속 표시 */ }
-  const student = !!user && !user.needs_profile && (user.role === "student" || user.is_admin);
+  const student = !!user && !user.needs_profile && (user.is_admin || (user.role === "student" && !["pending", "rejected"].includes(user.school_approval)));
   if (!user) access.innerHTML = '<p><a class="button primary" href="/live?start=student">학생 로그인 후 신청</a></p>';
   async function read(url, method = "GET") {
     const response = await fetch(url, { method });
