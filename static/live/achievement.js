@@ -396,14 +396,14 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
           toast("역량 점수와 판단 근거를 저장했어요."); editing = false; again();
         } catch (err) { toast(err.message, 5000); e.target.disabled = false; }
       } }, "저장")) : null);
-  // 핵심역량 밸런스 차트 제목 + 오른쪽 [📖 6대 핵심역량이란?] (누르면 6가지 뜻을 펼친다)
+  // 핵심역량 밸런스 차트 제목 + 오른쪽 [📖 핵심역량이란?] (누르면 6가지 뜻을 펼친다)
   const coreHead = () => {
     const comps = v.competencies || [];
     if (!comps.some((c) => c.desc)) return h("div", { class: "ach-box-head" }, "🧭 핵심역량 밸런스 차트");
     const panel = h("div", { class: "ach-comp-info", hidden: true },
       comps.map((c) => h("div", { class: "ach-comp-info-item" }, h("strong", {}, c.label), h("p", {}, h("b", {}, c.desc, "."), " ", c.detail || ""))));
-    const btn = h("button", { class: "small", type: "button", "aria-expanded": "false" }, "📖 6대 핵심역량이란?");
-    btn.onclick = () => { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); btn.textContent = panel.hidden ? "📖 6대 핵심역량이란?" : "📖 접기"; };
+    const btn = h("button", { class: "small", type: "button", "aria-expanded": "false" }, "📖 핵심역량이란?");
+    btn.onclick = () => { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); btn.textContent = panel.hidden ? "📖 핵심역량이란?" : "📖 접기"; };
     // 머리글과 펼침 상자를 한 칸으로 묶어 두 차트 상자의 줄 맞춤(subgrid)을 지킨다
     return h("div", {}, h("div", { class: "ach-box-head row", style: "align-items:center" }, h("span", { class: "grow" }, "🧭 핵심역량 밸런스 차트"), btn), panel);
   };
