@@ -1267,9 +1267,7 @@ async function loadHub() {
     h("nav", { class: "tabs sub-tabs", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
       onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); } }, label))),
     box);
-  if (hubSub === "teachers") fill(box, h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.9rem" },
-    "가입 신청서의 '강의할 거점학교'로 우리 거점학교를 고른 강의교사예요. 승인하면 과목을 개설하고 강의할 수 있어요. (전체 관리자도 승인할 수 있어요)"),
-    staffBoard("hub", teachers, ins.today || today(), loadHub, "강의교사 승인"));
+  if (hubSub === "teachers") fill(box, staffBoard("hub", teachers, ins.today || today(), loadHub, "강의교사 승인"));
   else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
     if (hubRecordCourseId && hubClassId) await hubClassAttendance(box, ov);
