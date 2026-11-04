@@ -1263,10 +1263,10 @@ async function loadHub() {
     ["days", "강좌별 수업일"],
     ["attendance", "강좌별 출석부"],
   ];
-  fill($("#hub-list"),
-    h("nav", { class: "tabs sub-tabs", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
+  fill($("#hub-list"), h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
+    h("nav", { class: "side-menu", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
       onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); } }, label))),
-    box);
+    h("div", { class: "side-main" }, box)));
   if (hubSub === "teachers") fill(box, staffBoard("hub", teachers, ins.today || today(), loadHub, ""));
   else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
   else if (hubSub === "days") {
@@ -1541,12 +1541,12 @@ const schoolQ = {};
 async function loadSchool() {
   const outer = $("#school-list");
   const box = h("div");
-  fill(outer,
-    h("nav", { class: "tabs sub-tabs", "aria-label": "참여학교 담당 메뉴" },
+  fill(outer, h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
+    h("nav", { class: "side-menu", "aria-label": "참여학교 담당 메뉴" },
       [["signup", "학생 가입 승인"], ["transfer", "소속학교 변경 승인"], ["students", "학생 수강 관리"], ["withdraw", "탈퇴 승인"], ["evidence", "탈퇴자 증빙"]].map(([key, label]) => h("button", {
         type: "button", class: schoolSub === key ? "active" : "",
         onclick: () => { schoolSub = key; loadSchool(); }
-      }, label))), box);
+      }, label))), h("div", { class: "side-main" }, box)));
   if (schoolSub === "evidence") { window.renderEvidence(box); return; }
   if (schoolSub === "transfer") { await renderStudentSchoolChanges(box); return; }
   const selectedTab = schoolSub;
