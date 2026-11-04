@@ -619,7 +619,7 @@ function renderRunCourse(c) {
   const subBox = h("div", { class: "run-sub" });
   // 왼쪽 세로 메뉴: [키, 그림, 이름, 대기 수]
   const subs = [["students", "👥", "수강생 관리", c.pending], ["info", "📘", "과목 정보"], ["sessions", "🗓️", "회차 정보"], ["notice", "📢", "과목 공지사항"],
-    ["open", "▶️", "온라인 수업"], ["learn", "📊", "수업 관리"], ["feedback", "🧑‍🎓", "개별 피드백"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "특기사항"]];
+    ["open", "▶️", "온라인 수업"], ["learn", "📊", "수업 관리"], ["feedback", "🧑‍🎓", "활동 피드백"], ["assess", "📝", "수행평가"], ["satisfaction", "📋", "만족도 조사"], ["results", "🏅", "특기사항"]];
   fill($("#run-course"), 
     h("div", { class: "row" },
       h("button", { class: "small", onclick: () => { runCourseId = null; renderRun(); } }, "← 과목 목록"),
@@ -653,7 +653,7 @@ function renderRunCourse(c) {
   else if (runSub === "students") renderStudents(subBox, c);
   else if (runSub === "assess") renderCourseAssignments(c, subBox);
   else if (runSub === "learn") renderLearning(c, subBox);
-  else if (runSub === "feedback" || runSub === "script") { // 개별 피드백 (학생 목록 → 학생별 5개 탭)
+  else if (runSub === "feedback" || runSub === "script") { // 활동 피드백 (학생 목록 → 학생별 5개 탭)
     const st = learnState[c.id] ||= { card: "attend", open: new Set() };
     if (runSub === "script") { runSub = "learn"; st.card = "script"; return renderRunCourse(c); } // 예전 주소: 학습 관리 > 스크립트
     st.speechTab = "student";
@@ -900,7 +900,7 @@ async function renderOpenClass(c, box) {
         plain()] : plain()); // 회차표가 없는 과목은 제목 없이 주제만 적고 열기
 }
 
-/* ───── 학습 관리: 위에 [수업참석률][설문][퀴즈][스크립트][개별 피드백] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
+/* ───── 학습 관리: 위에 [수업참석률][설문][퀴즈][스크립트][활동 피드백] 요약, 누르면 수업별 목록 → 수업을 누르면 학생별 내역 ───── */
 
 const learnState = {}; // 과목별: { card, open: Set(펼친 수업) }
 const ACT_LABEL = { survey: "설문", quiz: "퀴즈", activity: "평가" };
@@ -934,7 +934,7 @@ function learnMaterialView(x, box, list, classes) {
 
 async function renderLearning(c, box) {
   const st = learnState[c.id] ||= { card: "attend", open: new Set() };
-  if (["notice", "activity", "speech", "speakers", "classfb"].includes(st.card)) st.card = "attend"; // 없앤 카드 (개별 피드백은 왼쪽 메뉴로)
+  if (["notice", "activity", "speech", "speakers", "classfb"].includes(st.card)) st.card = "attend"; // 없앤 카드 (활동 피드백은 왼쪽 메뉴로)
   let d, mats;
   try {
     [d, mats] = await Promise.all([api(`/api/courses/${c.id}/learning`),

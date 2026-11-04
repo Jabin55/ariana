@@ -1,6 +1,6 @@
 /* 성취기준 기반 발언 분석 화면
    - 교사 [과목 정보]: 성취기준·평가기준(상중하)·평가 요소, 과목 성취수준(A~E·A~C·P)(AI 초안 → 수정) 입력, 회차마다 성취기준 연결
-   - 교사 [학습 관리 > 개별 피드백 > 학생 > 성취 분석]: AI 분석, 역량·성취 변화 그래프, 종합 의견, 학생 피드백 공개
+   - 교사 [학습 관리 > 활동 피드백 > 학생 > 성취 분석]: AI 분석, 역량·성취 변화 그래프, 종합 의견, 학생 피드백 공개
    - 학생 [내 강좌 > 활동 피드백]: 선생님이 공개한 피드백과 성취 변화 그래프 */
 
 const ACH_COLORS = ["#1b6b4a", "#e8663d", "#2f7fb5", "#8a5cc2", "#c79a1e", "#d0485f", "#3c9a6e", "#5c6bc0"];
@@ -862,7 +862,7 @@ function resultSheet(v) {
     h("h3", { class: "rs-head" }, `${no()}. 과목별 세부능력 및 특기사항`), h("p", { class: "rs-text" }, v.setuk || "-"));
 }
 
-/* ───────── 개별 피드백 > 📈 성장 흐름: 회차마다 발언·관찰·판단·피드백 목표와 그 목표를 해냈는지 ───────── */
+/* ───────── 활동 피드백 > 📈 성장 흐름: 회차마다 발언·관찰·판단·피드백 목표와 그 목표를 해냈는지 ───────── */
 const GOAL_MARK = { done: ["✅", "해냄"], partial: ["🔸", "일부 시도"], none: ["⬜", "아직"] };
 
 /** 회차별 목표 달성률 막대 (지난 피드백 목표를 그 수업에서 해낸 비율) */
@@ -924,7 +924,7 @@ async function renderGrowth(courseId, who, box, openFeedback) {
       list.length ? [...list].reverse().map(card) : h("p", { class: "muted", style: "margin:0" }, "아직 이 학생의 수업 기록이 없어요.")));
 }
 
-/** 개별 피드백 > 💌 피드백: 회차별 피드백(고르고 만들고 공개) + 종합 피드백 */
+/** 활동 피드백 > 💌 피드백: 회차별 피드백(고르고 만들고 공개) + 종합 피드백 */
 async function renderStudentFeedback(c, who, box, pick = null) {
   const again = (k) => renderStudentFeedback(c, who, box, k ?? pick);
   achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
