@@ -332,6 +332,13 @@ async function meetPolls(id, box) {
     }));
 }
 
+/** 왼쪽 세로 메뉴 버튼: 큰 그림(이모지) 위, 작은 이름 아래 · 대기 수는 빨간 동그라미 */
+function sideBtn(icon, label, active, onclick, count = 0) {
+  return h("button", { type: "button", class: active ? "active" : "", onclick, "aria-label": count ? `${label} (${count}건 대기)` : label },
+    h("span", { class: "side-ico", "aria-hidden": "true" }, icon, count ? h("b", { class: "side-count" }, count > 99 ? "99+" : String(count)) : null),
+    h("span", { class: "side-lbl" }, label));
+}
+
 /* 특강/회의 안의 칸: [특강/회의 참여](참가·열기·예약·진행 중) / [지난 특강/회의](기록 게시판) */
 let meetSub = "join";
 function showMeetSub(k) {
@@ -1258,14 +1265,14 @@ async function loadHub() {
   $("#hub-badge").hidden = !badge;
   const box = h("div");
   const subs = [
-    ["teachers", `강의교사 승인${waitTeachers ? ` (${waitTeachers})` : ""}`],
-    ["courses", `강좌 개설 승인${waitCourses.length ? ` (${waitCourses.length})` : ""}`],
-    ["days", "강좌별 수업일"],
-    ["attendance", "강좌별 출석부"],
+    ["teachers", "🧑‍🏫", "강의교사 승인", waitTeachers],
+    ["courses", "🏫", "강좌 개설 승인", waitCourses.length],
+    ["days", "🗓️", "강좌별 수업일"],
+    ["attendance", "✅", "강좌별 출석부"],
   ];
   fill($("#hub-list"), h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
-    h("nav", { class: "side-menu", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, label]) => h("button", { type: "button", class: hubSub === k ? "active" : "",
-      onclick: () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); } }, label))),
+    h("nav", { class: "side-menu", "aria-label": "거점학교 운영 메뉴" }, subs.map(([k, icon, label, n]) => sideBtn(icon, label, hubSub === k,
+      () => { hubSub = k; hubCourseId = null; hubRecordCourseId = null; hubClassId = null; loadHub(); }, n))),
     h("div", { class: "side-main" }, box)));
   if (hubSub === "teachers") fill(box, staffBoard("hub", teachers, ins.today || today(), loadHub, ""));
   else if (hubSub === "courses") fill(box, ...hubCourseApprove(ov));
@@ -1543,10 +1550,9 @@ async function loadSchool() {
   const box = h("div");
   fill(outer, h("div", { class: "side-layout" }, // 왼쪽 세로 메뉴 + 오른쪽 내용
     h("nav", { class: "side-menu", "aria-label": "참여학교 담당 메뉴" },
-      [["signup", "학생 가입 승인"], ["transfer", "소속학교 변경 승인"], ["students", "학생 수강 관리"], ["withdraw", "탈퇴 승인"], ["evidence", "탈퇴자 증빙"]].map(([key, label]) => h("button", {
-        type: "button", class: schoolSub === key ? "active" : "",
-        onclick: () => { schoolSub = key; loadSchool(); }
-      }, label))), h("div", { class: "side-main" }, box)));
+      [["signup", "🙋", "학생 가입 승인"], ["transfer", "🔁", "소속학교 변경 승인"], ["students", "📚", "학생 수강 관리"], ["withdraw", "🚪", "탈퇴 승인"],
+        ["evidence", "🗄️", "탈퇴자 증빙"]].map(([key, icon, label]) => sideBtn(icon, label, schoolSub === key, () => { schoolSub = key; loadSchool(); }))),
+    h("div", { class: "side-main" }, box)));
   if (schoolSub === "evidence") { window.renderEvidence(box); return; }
   if (schoolSub === "transfer") { await renderStudentSchoolChanges(box); return; }
   const selectedTab = schoolSub;

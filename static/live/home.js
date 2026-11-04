@@ -1602,10 +1602,8 @@ async function bannersEditor(reload) {
 
 async function loadAdmin() {
   const selected = adminSub;
-  const tabs = [["approve", "교사 승인"], ["banner", "메인 전광판 배너"], ["logs", "접속 기록"], ["storage", "서버 용량"]];
-  $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, label]) => h("button", {
-    type: "button", class: adminSub === key ? "active" : "", onclick: () => { adminSub = key; loadAdmin(); }
-  }, label)));
+  const tabs = [["approve", "👩‍🏫", "교사 승인"], ["banner", "🖼️", "메인 전광판 배너"], ["logs", "📜", "접속 기록"], ["storage", "💾", "서버 용량"]];
+  $("#admin-sub-tabs").replaceChildren(...tabs.map(([key, icon, label]) => sideBtn(icon, label, adminSub === key, () => { adminSub = key; loadAdmin(); })));
   const box = $("#admin-list");
   fill(box, h("p", { class: "muted" }, "불러오는 중…"));
   if (selected === "storage") {

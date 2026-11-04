@@ -2124,18 +2124,25 @@ table.staff-detail td { white-space: pre-wrap; overflow-wrap: anywhere; }
 .a-hub-chip button { border: none; background: transparent; color: #1b4d36; cursor: pointer; padding: 0 6px; font-size: 0.8rem; }
 table.att.school-change-table td .status { white-space: normal; }
 
-/* 왼쪽 세로 메뉴(사이드바) + 오른쪽 내용: 특강/회의 */
-.side-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 18px; align-items: start; }
-.side-menu { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 12px; background: #f5f1ea; border: 1px solid #e6dfd3; /* 위 메뉴 바와 같은 미색: 탭이라는 걸 알 수 있게 */
-  border-radius: 14px; padding: 10px; }
-.side-menu button { text-align: left; padding: 12px 14px; border: none; border-radius: 10px; background: transparent; font-size: 0.98rem;
-  font-weight: 600; color: var(--text); cursor: pointer; }
-.side-menu button:hover { background: rgba(120, 100, 70, 0.08); }
-.side-menu button.active { background: #1b6b4a; color: #fff; }
+/* 왼쪽 세로 메뉴(사이드바): 큰 그림 타일 + 작은 이름 (좁은 폭) */
+.side-layout { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; align-items: start; }
+.side-menu { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 12px; background: #f5f1ea; border: 1px solid #e6dfd3; /* 위 메뉴 바와 같은 미색 */
+  border-radius: 16px; padding: 8px 4px; }
+.side-menu button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 2px; border: none; border-radius: 12px;
+  background: transparent; color: var(--text); cursor: pointer; font-weight: 600; }
+.side-menu .side-ico { position: relative; display: flex; align-items: center; justify-content: center; width: 50px; height: 50px; border-radius: 14px;
+  background: #fff; font-size: 1.65rem; line-height: 1; box-shadow: 0 1px 2px rgba(0,0,0,0.06); transition: box-shadow 0.15s, transform 0.15s; }
+.side-menu .side-lbl { font-size: 0.74rem; line-height: 1.25; text-align: center; word-break: keep-all; max-width: 82px; }
+.side-menu button:hover .side-ico { box-shadow: 0 3px 10px rgba(0,0,0,0.12); transform: translateY(-1px); }
+.side-menu button.active .side-ico { background: #1b6b4a; box-shadow: 0 3px 10px rgba(27,107,74,0.35); }
+.side-menu button.active .side-lbl { color: #1b6b4a; font-weight: 800; }
+.side-menu .side-count { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px;
+  background: #e5484d; color: #fff; font-size: 0.68rem; font-weight: 800; line-height: 18px; text-align: center; }
 .side-main { min-width: 0; }
 .side-main > #meet-past-box { margin-top: 0 !important; }
 @media (max-width: 760px) {
   .side-layout { grid-template-columns: 1fr; gap: 10px; }
-  .side-menu { flex-direction: row; position: static; overflow-x: auto; }
-  .side-menu button { flex: 1; text-align: center; white-space: nowrap; }
+  .side-menu { flex-direction: row; position: static; overflow-x: auto; padding: 6px; }
+  .side-menu button { flex: 1 0 72px; }
+  .side-menu .side-ico { width: 42px; height: 42px; font-size: 1.35rem; }
 }
