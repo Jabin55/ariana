@@ -1490,6 +1490,7 @@ function staffBoard(id, list, today, reload, title) {
     result.replaceChildren(
       h("div", { class: "row", style: "margin-bottom:8px" },
         h("strong", {}, "총 ", h("span", { class: "accent-text" }, rows.length), "건"),
+        h("span", { class: "grow" }), // 한꺼번에 승인·거절은 오른쪽
         h("span", { class: "muted", style: "font-size:0.85rem" }, "체크한 신청 한꺼번에:"),
 
         h("button", { class: "small primary", onclick: () => decide("approve") }, "승인"),
