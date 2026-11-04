@@ -733,7 +733,7 @@ function classFbStudent(c, k, s, again) {
         h("button", { class: s.published ? "small" : "primary small", type: "button", onclick: () => save(!s.published) }, s.published ? "공개 취소" : "학생에게 공개"))));
 }
 
-/* ───────── 교사 [🏅 특기사항]: 모든 수행평가 채점 뒤 성취도 확정·세특·학생 개별 성취 평가지 ───────── */
+/* ───────── 교사 [🏅 특기사항]: 모든 수행평가 채점 뒤 성취도 확정·세특·학생 개별 성취도 평가서 ───────── */
 const resultsView = new Map(); // 과목별로 열어 본 학생
 
 const neisBytes = (t) => [...(t || "")].reduce((n, ch) => n + (ch === "\n" ? 2 : ch.charCodeAt(0) < 128 ? 1 : 3), 0);
@@ -783,7 +783,7 @@ async function renderResults(c, box) {
 
 async function renderResultSheet(c, uid, box) {
   const back = () => { resultsView.delete(c.id); renderResults(c, box); };
-  achFill(box, h("p", { class: "muted" }, "평가지를 불러오는 중…"));
+  achFill(box, h("p", { class: "muted" }, "평가서를 불러오는 중…"));
   let v, list;
   try { [v, list] = await Promise.all([achApi(`/api/courses/${c.id}/results/${uid}/sheet`), achApi(`/api/courses/${c.id}/results`)]); }
   catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
@@ -809,7 +809,7 @@ async function renderResultSheet(c, uid, box) {
   const print = () => { document.body.classList.add("print-sheet-only"); window.print(); setTimeout(() => document.body.classList.remove("print-sheet-only"), 500); };
   achFill(box,
     h("div", { class: "row", style: "margin:0 0 10px;gap:6px" }, h("button", { class: "small", type: "button", onclick: back }, "← 학생 목록"),
-      h("span", { class: "grow" }), h("button", { class: "small", type: "button", onclick: print }, "🖨 평가지 인쇄·PDF")),
+      h("span", { class: "grow" }), h("button", { class: "small", type: "button", onclick: print }, "🖨 평가서 인쇄·PDF")),
     ready ? null : h("div", { class: "warn-box" }, `⏳ 아직 채점하지 않은 수행평가가 있어 성취도·세특은 채점을 모두 마친 뒤 작성할 수 있어요 (채점 ${list.graded}/${list.total}).`),
     resultSheet(v),
     h("div", { class: "ach-box", style: "margin-top:12px" },
@@ -821,7 +821,7 @@ async function renderResultSheet(c, uid, box) {
       h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, save)));
 }
 
-/** 학생 개별 성취 평가지 (인쇄용) */
+/** 학생 개별 성취도 평가서 (인쇄용) */
 function resultSheet(v) {
   const L = ACH_LEVEL;
   let n = 0;
@@ -829,7 +829,7 @@ function resultSheet(v) {
   const info = [["학년도·학기", [v.course.school_year, v.course.term].filter(Boolean).join(" ")], ["과목", v.course.course_title], ["거점학교", v.course.hub_school],
     ["담당 교사", v.course.instructor], ["소속학교", v.student.school], ["학번", v.student.student_no], ["이름", v.student.name]];
   return h("div", { class: "print-sheet result-sheet" },
-    h("h2", { class: "rs-title" }, "학생 개별 성취 평가지"),
+    h("h2", { class: "rs-title" }, "학생 개별 성취도 평가서"),
     h("table", { class: "rs-info" }, h("tbody", {}, h("tr", {}, info.slice(0, 4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")])),
       h("tr", {}, info.slice(4).flatMap(([k, x]) => [h("th", {}, k), h("td", {}, x || "-")]), h("th", {}, "성취도"), h("td", {}, h("strong", {}, v.achievement || "미정"))))),
     h("h3", { class: "rs-head" }, `${no()}. 수행평가 결과`),

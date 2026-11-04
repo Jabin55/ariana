@@ -660,7 +660,7 @@ function renderRunCourse(c) {
     st.speechTab = "student";
     learnSpeech(c, st, subBox);
   }
-  else if (runSub === "results") renderResults(c, subBox); // 성취도·세특·학생 개별 성취 평가지 (achievement.js)
+  else if (runSub === "results") renderResults(c, subBox); // 성취도·세특·학생 개별 성취도 평가서 (achievement.js)
   else renderCourseSatisfaction(c, subBox);
 }
 
