@@ -1096,16 +1096,16 @@ async function learnSpeech(c, st, box) {
     return;
   }
   fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students speech-feedback-students" },
-    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "자발 비율", "발언한 수업", "관찰 기록", "최근 목표 달성", "공개한 피드백"].map((t) => h("th", {}, t)))),
+    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "발언한 수업", "관찰 기록", "최근 목표 달성", "공개한 피드백"].map((t) => h("th", {}, t)))),
     h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; st.studentTab = "speech"; again(); } },
       h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
       h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
-      h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, x.spontaneous_rate === null || x.spontaneous_rate === undefined ? "-" : `${x.spontaneous_rate}%`),
+      h("td", { class: "num" }, `${x.count}건`),
       h("td", { class: "num" }, `${x.classes}회`), h("td", { class: "num" }, `${x.observations || 0}건`),
       h("td", { class: "num" }, x.goal_rate === null || x.goal_rate === undefined ? "-" : [`${x.goal_rate}%`,
         x.goal_trend ? h("span", { class: `goal-trend ${x.goal_trend}` }, { up: " ↗", down: " ↘", flat: " →" }[x.goal_trend]) : null]),
       h("td", { class: "num" }, x.published ? `${x.published}회` : "-")))
-      : empty(10, "수강 확정 학생이 없어요.")))));
+      : empty(9, "수강 확정 학생이 없어요.")))));
 }
 
 /* 워드클라우드: 조사·어미를 대강 떼어 낸 낱말의 빈도로 글자 크기를 정한다 */
