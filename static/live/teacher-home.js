@@ -1841,12 +1841,12 @@ async function renderStudentSchoolChanges(box) {
     fill(box,
       ME.is_admin ? null : h("p", { class: "muted" }, "우리 학교로 옮기려는 학생의 신청입니다. 승인하면 학생이 우리 학교 명단에 표시됩니다."),
       h("div", { class: "table-wrap" }, h("table", { class: "att school-change-table" },
-        // 열 너비: 연번·이름·(전)학교·학년·반·번호·(후)학교·학년·반·번호·승인 담당·승인/반려
-        h("colgroup", {}, [5, 8, 15, 6, 5, 6, 15, 6, 5, 6, 10, 13].map((w) => h("col", { style: `width:${w}%` }))),
+        // 열 너비: 연번·이름·(전)학교·학년·반·번호·(후)학교·학년·반·번호·승인/반려
+        h("colgroup", {}, [5, 9, 18, 6, 5, 6, 18, 6, 5, 6, 16].map((w) => h("col", { style: `width:${w}%` }))),
         // 머리글 두 줄: 변경 전·후 아래에 소속학교·학년·반·번호 (가로 폭을 줄인다)
         h("thead", {},
           h("tr", {}, h("th", { rowspan: 2 }, "연번"), h("th", { rowspan: 2 }, "학생 이름"), h("th", { colspan: 4 }, "변경 전"),
-            h("th", { colspan: 4 }, "변경 후"), h("th", { rowspan: 2, title: "변경 후 학교의 참여학교 담당 선생님이 승인해요" }, "승인 담당"), h("th", { rowspan: 2 }, "승인/반려")),
+            h("th", { colspan: 4 }, "변경 후"), h("th", { rowspan: 2 }, "승인/반려")),
           h("tr", {}, [0, 1].flatMap(() => ["소속학교", "학년", "반", "번호"].map((label) => h("th", {}, label))))),
         h("tbody", {}, requests.length ? requests.map((r, i) => {
           return h("tr", {},
@@ -1860,7 +1860,6 @@ async function renderStudentSchoolChanges(box) {
           h("td", {}, (r.new_grade ?? r.grade) ? `${r.new_grade ?? r.grade}학년` : "-"),
           h("td", {}, (r.new_class_no ?? r.class_no) ? `${r.new_class_no ?? r.class_no}반` : "-"),
           h("td", {}, (r.new_number ?? r.number) ? `${r.new_number ?? r.number}번` : "-"),
-          h("td", {}, teacherCell(r.teachers)),
           h("td", {}, (ME.is_admin || (ME.participant_schools || []).includes(r.new_value))
             ? h("div", { class: "row school-change-actions" }, ["approve", "reject"].map((action) => h("button", {
             type: "button", class: action === "approve" ? "small primary" : "small", onclick: async () => {
