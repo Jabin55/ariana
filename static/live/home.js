@@ -1816,12 +1816,6 @@ async function renderGrades(id, box) {
       h("span", { class: "muted" }, ungraded ? `미채점 ${ungraded}건` : "모두 채점됨")) : null,
     !acts.length ? h("p", { class: "muted" }, "이 수업에서 보낸 퀴즈·활동이 없어요.") : null,
     ...acts.map((a) => gradeActivity(id, a, box)),
-    acts.length ? h("details", { open: true }, h("summary", {}, h("strong", {}, "학생별 총점")),
-      h("div", { class: "table-wrap" }, h("table", { class: "att" },
-        h("thead", {}, h("tr", {}, ["학번", "이름", "총점", "만점", "미채점"].map((t) => h("th", {}, t)))),
-        h("tbody", {}, book.summary.map((p) => h("tr", {},
-          h("td", {}, p.student_no || "-"), nameTd(p, mixedSchools(book.summary)), h("td", { class: "num" }, h("strong", {}, fmtScore(p.score))),
-          h("td", { class: "num" }, fmtScore(p.max)), h("td", { class: "num" }, p.ungraded || "-"))))))) : null,
   ].filter(Boolean));
 }
 

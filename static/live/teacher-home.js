@@ -1270,7 +1270,6 @@ function learnActivities(d, st, key, box) {
     const sub = h("div");
     fill(box,
       h("div", { class: "row", style: "margin:4px 0 8px" }, h("button", { class: "small", onclick: () => go(null) }, "← 수업 목록")),
-      key === "quiz" ? null : h("div", { class: "hub-grid-summary" }, `${i + 1}번 · ${fmtDate(x.date)} ${x.start} · ${x.title} · ${label} ${x.acts[key].count}개 · 응답률 ${rate(x.acts[key])}`),
       sub);
     activitiesOf(x.id, key, sub);
     return;
@@ -1287,7 +1286,7 @@ function learnActivities(d, st, key, box) {
       : h("p", { class: "muted" }, `아직 ${label}${key === "quiz" ? "를" : "을"} 한 수업이 없어요. 수업 화면의 '📊 설문/퀴즈'에서 낼 수 있어요.`));
 }
 
-/** 한 수업에서 낸 설문·퀴즈·활동: 문제와 학생별 답 (채점은 '채점·피드백'에서) */
+/** 한 수업에서 낸 설문·퀴즈·활동: 문제와 학생별 답 (채점은 '채점'에서) */
 async function activitiesOf(classId, key, box) {
   fill(box, h("span", { class: "muted" }, "불러오는 중…"));
   const book = await api(`/api/live/history/${classId}/grades`);
@@ -1319,7 +1318,7 @@ async function activitiesOf(classId, key, box) {
       if (key === "quiz") grades.dataset.only = "quiz";
       fill(full, grades);
       renderGrades(classId, grades);
-    } }, "✏️ 채점·피드백 (점수 고치기·학생에게 공개)")),
+    } }, "✏️ 채점")),
     full);
 }
 
