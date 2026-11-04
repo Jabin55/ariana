@@ -4169,8 +4169,8 @@ def test_subject_competencies_follow_2022_curriculum():
     assert ach.subject_competencies_of(c("도덕", "사회(역사/도덕 포함)")) == ach.subject_competencies_of(c("사회"))
     assert "역사" not in ach.SUBJECT_COMPETENCIES and "도덕" not in ach.SUBJECT_COMPETENCIES
     assert ach.subject_competencies_of(c("정보", "기술·가정/정보")) == []  # 정보는 교과 역량 없음
-    assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "비판적 사고력"
-    assert ach.subject_competencies_of(c("사회"))[-1] == "공동체 역량"
+    assert ach.subject_competencies_of(c("", "사회(역사/도덕 포함)"))[0] == "창의적 사고력"
+    assert ach.subject_competencies_of(c("사회"))[-1] == "정보 활용 능력"
     for area, group, subject in [("체육", "체육", ""), ("제2외국어", "제2외국어/한문", "중국어"), ("교양", "교양", "보건"), ("교양", "교양", "인간과 철학")]:
         assert ach.subject_competencies_of(c(area, group, subject)) == []
     assert ach.subject_competencies_of(c("한문", "제2외국어/한문"))[0] == "한문 지식 및 정보 활용 역량"
