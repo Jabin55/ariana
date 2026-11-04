@@ -4424,6 +4424,9 @@ def test_results_achievement_and_setuk_after_grading(monkeypatch):
     assert "- 판례 분석: 25/50점 (반영 60%)" in calls[0]
     got = t.get(f"{base}/results/{ub}/sheet").json()
     assert rs.neis_bytes(got["setuk"]) <= 1500 and got["growth"].startswith("근거를")
+    # 성장 과정 요약은 AI 결과 그대로: 선생님이 성취도·세특을 저장해도 바뀌지 않는다
+    assert t.post(f"{base}/results/{ub}", json={"achievement": "B", "setuk": "고친 세특임.", "growth": "선생님 글"}).status_code == 200
+    assert t.get(f"{base}/results/{ub}/sheet").json()["growth"].startswith("근거를")
     again = t.post(f"{base}/results/{ua}/draft").json()  # 한 명 다시 만들기는 지금 글을 바꾼다
     assert "판례를 정확히 분석함" in calls[-1] and again["setuk"].startswith("기본권 제한의")
     x = t.get(f"{base}/results.xlsx")

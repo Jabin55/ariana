@@ -757,7 +757,7 @@ async function renderResults(c, box) {
     const sel = h("select", { disabled: !v.ready, "aria-label": `${s.name} 성취도` }, h("option", { value: "" }, "미정"),
       v.grades.map((g) => h("option", { value: g, selected: s.achievement === g }, g)));
     sel.onchange = async () => {
-      try { await achApi(`/api/courses/${c.id}/results/${s.user_id}`, { achievement: sel.value, setuk: s.setuk, growth: s.growth }); s.achievement = sel.value; toast("성취도를 저장했어요."); }
+      try { await achApi(`/api/courses/${c.id}/results/${s.user_id}`, { achievement: sel.value, setuk: s.setuk }); s.achievement = sel.value; toast("성취도를 저장했어요."); }
       catch (err) { toast(err.message); sel.value = s.achievement; }
     };
     return sel;
@@ -789,8 +789,6 @@ async function renderResultSheet(c, uid, box) {
   catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
   const ready = list.ready;
   const grade = h("select", { disabled: !ready }, h("option", { value: "" }, "미정"), list.grades.map((g) => h("option", { value: g, selected: v.achievement === g }, g)));
-  const growth = h("textarea", { rows: 4, maxlength: 3000, disabled: !ready, placeholder: "학생에게 보여 줄 성장 과정 요약 (평가지에 실려요)" });
-  growth.value = v.growth || "";
   const setuk = h("textarea", { rows: 8, maxlength: 3000, disabled: !ready, placeholder: "과목별 세부능력 및 특기사항 (나이스 1500바이트, 한글 약 500자)" });
   setuk.value = v.setuk || "";
   const counter = h("span", { class: "muted" });
@@ -798,15 +796,15 @@ async function renderResultSheet(c, uid, box) {
   setuk.oninput = count; count();
   const save = h("button", { class: "primary small", type: "button", disabled: !ready }, "저장");
   save.onclick = async () => {
-    try { await achApi(`/api/courses/${c.id}/results/${uid}`, { achievement: grade.value, setuk: setuk.value, growth: growth.value }); toast("저장했어요."); renderResultSheet(c, uid, box); }
+    try { await achApi(`/api/courses/${c.id}/results/${uid}`, { achievement: grade.value, setuk: setuk.value }); toast("저장했어요."); renderResultSheet(c, uid, box); }
     catch (err) { toast(err.message, 5000); }
   };
-  const draft = h("button", { class: "small", type: "button", disabled: !ready || !list.ai, title: list.ai ? "" : "AI가 설정되지 않았어요" }, "🤖 세특·성장 요약 AI 초안");
+  const draft = h("button", { class: "small", type: "button", disabled: !ready || !list.ai, title: list.ai ? "" : "AI가 설정되지 않았어요" }, "🤖 AI 초안 (세특·성장 요약)");
   draft.onclick = async () => {
-    if ((setuk.value.trim() || growth.value.trim()) && !confirm("지금 쓴 세특과 성장 요약을 AI 초안으로 바꿀까요?")) return;
+    if (setuk.value.trim() && !confirm("지금 쓴 세특을 AI 초안으로 바꿀까요?")) return;
     draft.disabled = true; draft.textContent = "🤖 만드는 중…";
     try { await achApi(`/api/courses/${c.id}/results/${uid}/draft`, {}); toast("AI 초안이에요. 사실과 다른 곳이 없는지 꼭 확인하고 고쳐 주세요.", 5000); renderResultSheet(c, uid, box); }
-    catch (err) { toast(err.message, 6000); draft.disabled = false; draft.textContent = "🤖 세특·성장 요약 AI 초안"; }
+    catch (err) { toast(err.message, 6000); draft.disabled = false; draft.textContent = "🤖 AI 초안 (세특·성장 요약)"; }
   };
   const print = () => { document.body.classList.add("print-sheet-only"); window.print(); setTimeout(() => document.body.classList.remove("print-sheet-only"), 500); };
   achFill(box,
@@ -818,7 +816,6 @@ async function renderResultSheet(c, uid, box) {
       h("div", { class: "row", style: "align-items:center;margin-bottom:8px" }, h("div", { class: "ach-box-head grow", style: "margin:0" }, "✍️ 성취도·세특 작성 (선생님)"), draft),
       h("label", { class: "row", style: "gap:8px;align-items:center;margin-bottom:8px" }, h("strong", {}, "성취도 확정"), grade,
         h("span", { class: "muted", style: "font-size:0.85rem" }, `제안: ${v.suggested || "-"} (환산 ${rsNum(v.rate)}점)`)),
-      h("div", { class: "fb-sec-head" }, "📈 성장 과정 요약 (평가지에 실림)"), growth,
       h("div", { class: "row", style: "margin-top:10px" }, h("div", { class: "fb-sec-head grow", style: "margin:0" }, "📝 과목별 세부능력 및 특기사항"), counter), setuk,
       h("p", { class: "muted", style: "margin:4px 0 0;font-size:0.8rem" }, "학생 이름·교외 수상·사교육·부모 정보·특정 대학이나 기관명 등 기재 금지 사항이 없는지 확인해 주세요."),
       h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, save)));
@@ -856,7 +853,7 @@ function resultSheet(v) {
         h("td", { class: "left rs-speech" }, s.speech?.length ? s.speech.map((q) => h("div", {}, `“${q}”`)) : "-")))))
       : h("p", { class: "muted" }, "성취기준이 없어요."),
     v.participation.length ? [h("h3", { class: "rs-head" }, `${no()}. 발언 참여 변화`), participationChart(v.participation)] : null,
-    h("h3", { class: "rs-head" }, `${no()}. 성장 과정 요약`), h("p", { class: "rs-text" }, v.growth || "-"),
+    h("h3", { class: "rs-head" }, `${no()}. 성장 과정 요약 (AI 분석)`), h("p", { class: "rs-text" }, v.growth || "-"),
     h("h3", { class: "rs-head" }, `${no()}. 과목별 세부능력 및 특기사항`), h("p", { class: "rs-text" }, v.setuk || "-"));
 }
 

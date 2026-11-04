@@ -199,7 +199,7 @@ def _save(course_id: int, user_id: int, values: dict) -> None:
 
 @router.post("/api/courses/{course_id}/results/{user_id}")
 async def save_result(course_id: int, user_id: int, req: ResultReq, request: Request):
-    """성취도 확정·세특·성장 요약 저장 (모든 수행평가 채점이 끝난 뒤에만)"""
+    """성취도·세특 저장 (모든 수행평가 채점이 끝난 뒤에만)"""
     course, view = await _ready_course(course_id, request)
     if not view["ready"]:
         raise HTTPException(409, "모든 수행평가 채점이 끝나야 성취도와 세특을 작성할 수 있어요.")
@@ -210,7 +210,7 @@ async def save_result(course_id: int, user_id: int, req: ResultReq, request: Req
     if neis_bytes(req.setuk.strip()) > SETUK_MAX_BYTES:
         raise HTTPException(422, f"세특은 나이스 기준 {SETUK_MAX_BYTES}바이트(한글 약 500자)까지 쓸 수 있어요.")
     await db.run(_save, course_id, user_id, {"achievement": req.achievement, "setuk": req.setuk.strip(),
-                                             "growth": req.growth.strip(), "updated_at": time.time()})
+                                             "updated_at": time.time()})
     return {"ok": True, "bytes": neis_bytes(req.setuk.strip())}
 
 
@@ -223,7 +223,7 @@ SETUK_SYSTEM = (
     "문장은 '~함', '~임', '~보임'처럼 명사형으로 끝내고, 학생 이름·학교명·학번을 쓰지 않습니다. "
     "교외 수상, 사교육, 부모의 사회·경제적 지위, 특정 대학·기관·상호명, 논문·도서 출간 등 학교생활기록부 기재 금지 사항을 쓰지 않습니다. "
     "근거 없는 칭찬이나 과장, 다른 학생과의 비교를 하지 않습니다. 한글 기준 400~480자(나이스 1500바이트 이내)로 씁니다.\n"
-    "- growth: 학생 개별 성취 평가지에 실을 성장 과정 요약입니다. 학기 초와 비교해 무엇이 달라졌는지, 강점과 앞으로의 과제를 학생에게 직접 말하듯 존댓말 3~5문장으로 씁니다.\n"
+    "- growth: 학생 개별 성취 평가지에 그대로 실릴 AI 성장 과정 분석입니다. 학기 초와 비교해 무엇이 달라졌는지, 강점과 앞으로의 과제를 학생에게 직접 말하듯 존댓말 3~5문장으로 씁니다.\n"
     "- 제공된 기록에 없는 사실을 지어내지 않습니다. 기록이 적으면 있는 근거 안에서만 씁니다."
 )
 SETUK_SCHEMA = {"type": "object", "properties": {"setuk": {"type": "string"}, "growth": {"type": "string"}},
@@ -266,6 +266,7 @@ async def _draft_one(course, user_id: int, keep_existing: bool) -> str:
     while neis_bytes(setuk) > SETUK_MAX_BYTES:  # 길면 마지막 문장부터 줄인다
         cut = setuk.rstrip("。. ").rfind(".")
         setuk = setuk[:cut + 1] if cut > 0 else setuk[:480]
+    # 성장 과정 요약은 AI 결과 그대로 평가지에 싣는다 (선생님이 고치지 않음)
     values = {"setuk": setuk, "growth": str(data.get("growth", "")).strip()[:3000], "updated_at": time.time()}
     await db.run(_save, course.id, user_id, values)
     return "ok"
@@ -273,7 +274,7 @@ async def _draft_one(course, user_id: int, keep_existing: bool) -> str:
 
 @router.post("/api/courses/{course_id}/results/{user_id}/draft")
 async def draft_result(course_id: int, user_id: int, request: Request):
-    """학생 한 명의 세특·성장 요약 AI 초안 (지금 쓴 글을 바꾼다)"""
+    """학생 한 명의 세특 AI 초안·성장 과정 요약 (지금 쓴 글을 바꾼다)"""
     course, view = await _ready_course(course_id, request)
     if not view["ready"]:
         raise HTTPException(409, "모든 수행평가 채점이 끝나야 세특 초안을 만들 수 있어요.")
