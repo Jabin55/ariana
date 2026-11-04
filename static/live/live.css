@@ -2146,3 +2146,5 @@ table.att.school-change-table td .status { white-space: normal; }
   .side-menu button { flex: 1 0 72px; }
   .side-menu .side-ico { width: 42px; height: 42px; font-size: 1.35rem; }
 }
+/* 스크롤바가 생겼다 없어졌다 해도 화면이 좌우로 움직이지 않게 자리를 늘 비워 둔다 */
+html { scrollbar-gutter: stable; }
