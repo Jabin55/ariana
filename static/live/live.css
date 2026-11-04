@@ -1814,13 +1814,12 @@ table.att.speech-students th:nth-child(2) { width: 24%; }
 table.att.speech-students th:nth-child(3) { width: 12%; }
 table.att.speech-students th:nth-child(4) { width: 14%; }
 table.att.speech-students th:nth-child(5), table.att.speech-students th:nth-child(6), table.att.speech-students th:nth-child(7) { width: 14%; }
+/* 학생 맞춤형 피드백 학생 목록: 연번·학교·학번·이름·발언 수·자발 비율·발언한 수업·관찰·최근 목표 달성·공개한 피드백 */
 table.att.speech-feedback-students th:nth-child(1) { width: 6%; }
-table.att.speech-feedback-students th:nth-child(2) { width: 22%; }
-table.att.speech-feedback-students th:nth-child(3) { width: 10%; }
-table.att.speech-feedback-students th:nth-child(4) { width: 12%; }
-table.att.speech-feedback-students th:nth-child(5), table.att.speech-feedback-students th:nth-child(6) { width: 10%; }
-table.att.speech-feedback-students th:nth-child(7) { width: 14%; }
-table.att.speech-feedback-students th:nth-child(8) { width: 16%; }
+table.att.speech-feedback-students th:nth-child(2) { width: 18%; }
+table.att.speech-feedback-students th:nth-child(3) { width: 8%; }
+table.att.speech-feedback-students th:nth-child(4) { width: 10%; }
+table.att.speech-feedback-students th:nth-child(n+5) { width: 9.66%; }
 table.att.speech-students td, table.att.speech-classes td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 학생 화면 맨 위: 발언 기록 중 표시 (예전 안내 띠와 같은 색) */
 .transcript-badge { padding: 3px 10px; border-radius: 999px; background: #fde8e7; color: #8a1c13; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
@@ -2175,3 +2174,27 @@ table.att.hub-approval-table thead th { text-align: center; } /* 머리글 줄 �
 .run-layout { margin-top: 14px; }
 .rs-speech { font-size: 0.8rem; line-height: 1.5; color: #374151; }
 .rs-speech > div + div { margin-top: 4px; }
+
+/* 학생 맞춤형 피드백: 성장 흐름 타임라인 */
+.tl-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+.tl-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.tl-chip { font-size: 0.78rem; background: #f4f6fa; border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+.tl-row { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 8px; padding: 4px 0; border-top: 1px dashed var(--border); font-size: 0.88rem; line-height: 1.55; }
+.tl-label { font-weight: 700; color: #374151; }
+.tl-goal.done { color: #1b4d36; } .tl-goal.partial { color: #8a6100; } .tl-goal.none { color: var(--muted); }
+.tl-lv { display: inline-flex; align-items: center; gap: 2px; margin-right: 10px; }
+.goal-chart { max-width: 600px; display: block; margin: 0 auto; }
+.obs-line { align-items: center; }
+.obs-line .obs-actions { display: inline-flex; gap: 4px; margin-left: auto; flex: none; }
+.ach-box textarea + button { flex: none; }
+.goal-trend.up { color: #1b6b4a; font-weight: 800; } .goal-trend.down { color: #b42318; font-weight: 800; } .goal-trend.flat { color: var(--muted); }
+
+/* 학생 수업 화면: 오늘의 내 목표 */
+.goal-pop { position: relative; }
+.goal-pop > summary { list-style: none; cursor: pointer; padding: 3px 10px; border-radius: 999px; background: #eaf6ef; color: #1b4d36; font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
+.goal-pop > summary::-webkit-details-marker { display: none; }
+.goal-pop-body { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; width: min(320px, 80vw); background: #fff; border: 1px solid var(--border);
+  border-radius: 12px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); font-size: 0.9rem; color: var(--text); }
+.goal-pop-body ol { margin: 0 0 6px; padding-left: 18px; line-height: 1.7; }
+.goal-pop-body p { margin: 0; font-size: 0.8rem; }
+.goal-ico { cursor: help; }

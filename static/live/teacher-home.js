@@ -945,17 +945,8 @@ async function renderLearning(c, box) {
       onclick: () => { st.card = k; st.open.clear(); st.view = null; renderLearning(c, box); } },
       h("span", { class: "lc-label" }, label), h("strong", { class: "lc-big" }, big), h("span", { class: "lc-small" }, small)))),
     detail);
-  if (st.card === "classfb") { st.card = "speakers"; st.fbMode = "class"; } // 예전 [수업별 피드백] 카드 → 학생 맞춤형 피드백 안으로
-  if (st.card === "speakers") {
-    // 학생 맞춤형 피드백 = 학생별(누적 분석·피드백) + 수업별(수업 1회마다 피드백)
-    st.fbMode ||= "student";
-    const inner = h("div");
-    fill(detail, h("nav", { class: "tabs sub-tabs fb-mode" }, [["student", "🧑‍🎓 학생별 피드백"], ["class", "📝 수업별 피드백"]].map(([k, label]) =>
-      h("button", { type: "button", class: st.fbMode === k ? "active" : "", onclick: () => { st.fbMode = k; st.view = null; renderLearning(c, box); } }, label))), inner);
-    if (st.fbMode === "class") renderClassFeedback(c, inner);
-    else { st.speechTab = "student"; learnSpeech(c, st, inner); }
-    return;
-  }
+  if (st.card === "classfb") st.card = "speakers"; // 예전 [수업별 피드백] → 학생마다 [💌 피드백] 탭의 회차별 피드백으로 옮김
+  if (st.card === "speakers") { st.speechTab = "student"; learnSpeech(c, st, detail); return; }
   if (st.card === "script" || st.card === "speakers") { st.speechTab = st.card === "script" ? "class" : "student"; learnSpeech(c, st, detail); return; }
   if (!d.classes.length && st.card !== "notice") { fill(detail, h("p", { class: "muted" }, "아직 연 수업이 없어요. '수업 열기'에서 수업을 열면 여기에 쌓여요.")); return; }
   if (st.card === "materials") { learnMaterials(mats.classes, detail); return; }
@@ -1006,30 +997,69 @@ async function learnSpeech(c, st, box) {
   const who = d.students.find((x) => x.user_id === st.view);
   if (who) {
     // 학생 한 명: 성취 분석 / 교사 관찰 기록 / 학생 발언 기록을 각각 보여 준다
-    st.studentTab ||= "analysis";
+    st.studentTab ||= "growth";
+    if (!["growth", "analysis", "observations", "speech", "feedback"].includes(st.studentTab)) st.studentTab = "growth";
     const tabs = h("nav", { class: "tabs sub-tabs", style: "margin:4px 0 10px" },
-      [["analysis", "📊 성취 분석"], ["observations", "👀 교사 관찰 기록"], ["speech", "🗒 학생 발언 기록"]].map(([k, label]) =>
-        h("button", { type: "button", class: st.studentTab === k ? "active" : "", onclick: () => { st.studentTab = k; again(); } }, label)));
+      [["growth", "📈 성장 흐름"], ["analysis", "🎯 성취 분석"], ["observations", "👀 교사 관찰 기록"], ["speech", "🗣️ 학생 발언 기록"], ["feedback", "💌 피드백"]].map(([k, label]) =>
+        h("button", { type: "button", class: st.studentTab === k ? "active" : "", onclick: () => { st.studentTab = k; st.fbClass = null; again(); } }, label)));
     const pane = h("div");
     fill(box, head,
       h("div", { class: "row", style: "margin:0 0 8px" }, h("button", { class: "small", onclick: () => { st.view = null; again(); } }, "← 학생 목록")),
       h("div", { class: "hub-grid-summary" }, `${[who.school, who.student_no, who.name].filter(Boolean).join(" ")} · 발언 ${who.count}건 · ${who.chars.toLocaleString()}자 · ${who.classes}개 수업`),
       tabs, pane);
+    if (st.studentTab === "growth") { // 회차 흐름: 목표 달성·판단·관찰·발언 (achievement.js)
+      const g = h("div", { class: "ach-wrap" });
+      fill(pane, g);
+      renderGrowth(c.id, who, g, (classId) => { st.studentTab = "feedback"; st.fbClass = classId; again(); });
+      return;
+    }
     if (st.studentTab === "analysis") {
       const anal = h("div", { class: "ach-wrap" }, h("p", { class: "muted" }, "AI 분석을 불러오는 중…"));
       fill(pane, anal);
-      renderAnalysis(c.id, who, anal, { obs: false }); // AI 성취 분석·그래프·피드백 (achievement.js)
+      renderAnalysis(c.id, who, anal, { obs: false, feedback: false }); // AI 성취 분석·그래프 (피드백은 [💌 피드백] 탭)
+      return;
+    }
+    if (st.studentTab === "feedback") {
+      const f = h("div", { class: "ach-wrap" });
+      fill(pane, f);
+      renderStudentFeedback(c, who, f, st.fbClass || null); // 회차별 + 종합 피드백 (achievement.js)
       return;
     }
     if (st.studentTab === "observations") {
       try {
-        const { observations: obs } = await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`);
-        fill(pane,
-          h("h4", { class: "speech-h" }, `👀 교사 관찰 기록 ${obs.length}건`),
-          obs.length ? h("div", { class: "speech-day" }, ...obs.map((o) => h("div", { class: "speech-line student" },
+        const [{ observations: obs }, { classes }] = await Promise.all([api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`),
+          api(`/api/courses/${c.id}/class-feedback`)]);
+        // 새 관찰 기록: 회차를 고르고 적는다 (수업이 끝난 뒤에도)
+        const pick = h("select", { "aria-label": "회차" }, [...classes].reverse().map((k) => h("option", { value: k.class_id }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
+        const text = h("textarea", { rows: 2, maxlength: 1000, placeholder: "관찰한 내용 (예: 반대 측 근거를 정리해 모둠 토의를 이끎)" });
+        const add = h("button", { class: "small primary", type: "button", disabled: !classes.length }, "+ 관찰 기록 추가");
+        add.onclick = async () => {
+          if (!text.value.trim()) { text.focus(); return; }
+          try { await api(`/api/courses/${c.id}/speech/student/${who.user_id}/observations`, { class_id: Number(pick.value), text: text.value.trim() }); toast("관찰 기록을 더했어요."); again(); }
+          catch (err) { toast(err.message); }
+        };
+        const row = (o) => {
+          const tr = h("div", { class: "speech-line student obs-line" },
             h("span", { class: "sp-time" }, `${fmtDate(o.date).slice(5)} ${o.time}`),
-            h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)))))
-            : h("p", { class: "muted" }, "아직 관찰 기록이 없어요. 수업 화면 오른쪽 [관찰기록] 탭에서 남길 수 있어요."));
+            h("span", { class: "sp-text" }, o.text, h("span", { class: "muted" }, ` · ${o.class_title}`)),
+            h("span", { class: "obs-actions" },
+              h("button", { class: "small", type: "button", onclick: async () => {
+                const t = await appPrompt("관찰 기록 고치기", o.text);
+                if (t === null || !t.trim()) return;
+                try { await api(`/api/courses/${c.id}/observations/${o.id}`, { text: t.trim() }); again(); } catch (err) { toast(err.message); }
+              } }, "수정"),
+              h("button", { class: "small danger", type: "button", onclick: async () => {
+                if (!await appConfirm("이 관찰 기록을 지울까요?")) return;
+                try { await api(`/api/courses/${c.id}/observations/${o.id}/delete`, {}); again(); } catch (err) { toast(err.message); }
+              } }, "삭제")));
+          return tr;
+        };
+        fill(pane,
+          h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "✍️ 관찰 기록 더하기"),
+            h("div", { class: "row", style: "gap:6px;align-items:flex-start" }, pick, text, add)),
+          h("h4", { class: "speech-h" }, `👀 교사 관찰 기록 ${obs.length}건`),
+          obs.length ? h("div", { class: "speech-day" }, ...obs.map(row))
+            : h("p", { class: "muted" }, "아직 관찰 기록이 없어요. 수업 화면 오른쪽 [관찰기록] 탭이나 위에서 남길 수 있어요."));
       } catch (err) { fill(pane, h("p", { class: "error" }, err.message)); }
       return;
     }
@@ -1055,13 +1085,16 @@ async function learnSpeech(c, st, box) {
     return;
   }
   fill(box, head, h("div", { class: "table-wrap" }, h("table", { class: "att assign-board speech-board speech-students speech-feedback-students" },
-    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "글자 수", "발언한 수업", "교사 관찰 기록"].map((t) => h("th", {}, t)))),
-    h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; st.studentTab = "analysis"; again(); } },
+    h("thead", {}, h("tr", {}, ["연번", "소속학교", "학번", "이름", "발언 수", "자발 비율", "발언한 수업", "관찰 기록", "최근 목표 달성", "공개한 피드백"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, d.students.length ? d.students.map((x, i) => h("tr", { class: "assign-row", onclick: () => { st.view = x.user_id; st.studentTab = "growth"; again(); } },
       h("td", { class: "num" }, i + 1), h("td", { class: "num" }, x.school || "-"), h("td", { class: "num" }, x.student_no || "-"),
       h("td", { class: "num" }, h("span", { class: "day-link" }, x.name || "-")),
-      h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, `${x.chars.toLocaleString()}자`), h("td", { class: "num" }, `${x.classes}회`),
-      h("td", { class: "num" }, x.observations || 0)))
-      : empty(8, "수강 확정 학생이 없어요.")))));
+      h("td", { class: "num" }, `${x.count}건`), h("td", { class: "num" }, x.spontaneous_rate === null || x.spontaneous_rate === undefined ? "-" : `${x.spontaneous_rate}%`),
+      h("td", { class: "num" }, `${x.classes}회`), h("td", { class: "num" }, `${x.observations || 0}건`),
+      h("td", { class: "num" }, x.goal_rate === null || x.goal_rate === undefined ? "-" : [`${x.goal_rate}%`,
+        x.goal_trend ? h("span", { class: `goal-trend ${x.goal_trend}` }, { up: " ↗", down: " ↘", flat: " →" }[x.goal_trend]) : null]),
+      h("td", { class: "num" }, x.published ? `${x.published}회` : "-")))
+      : empty(10, "수강 확정 학생이 없어요.")))));
 }
 
 /* 워드클라우드: 조사·어미를 대강 떼어 낸 낱말의 빈도로 글자 크기를 정한다 */

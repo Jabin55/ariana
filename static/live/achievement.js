@@ -519,7 +519,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/analysis`),
       achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/observations`).catch(() => ({ observations: [] }))]);
   } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
-  const again = () => renderAnalysis(courseId, who, box);
+  const again = () => renderAnalysis(courseId, who, box, opts);
   const run = h("button", { class: "primary small", type: "button", disabled: !v.ai, title: v.ai ? "" : "AI가 설정되지 않았어요" },
     v.analyzed_at ? "🤖 다시 분석하기" : "🤖 AI 분석하기");
   run.onclick = async () => {
@@ -606,6 +606,15 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
   saveFb.onclick = () => saveFeedback(v.published, v.published ? "피드백을 저장했어요. 학생에게 공개 중이에요." : "피드백을 저장했어요. 공개하기 전에는 학생에게 보이지 않아요.");
   publishFb.onclick = () => saveFeedback(!v.published, v.published ? "공개를 취소했어요. 이제 학생에게 보이지 않아요." : "학생의 [내 강좌 > 활동 피드백]에 공개했어요.");
   const when = v.analyzed_at ? new Date(v.analyzed_at * 1000).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" }) : "";
+  const fbBox = h("div", { class: "ach-box" },
+    h("div", { class: "ach-box-head" }, "💌 학생에게 줄 종합 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 항목별로 고쳐서 쓰세요 · 학생 화면에도 이 순서로 보여요)")),
+    fb.el,
+    h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, saveFb, publishFb),
+    v.published ? h("p", { class: "ok-text", style: "margin:6px 0 0;font-size:0.85rem" }, "✅ 지금 학생에게 공개 중이에요.") : null);
+  if (opts.only === "feedback") { // [💌 피드백] 탭: 종합 피드백만 (초안은 [🎯 성취 분석]의 AI 분석에서 만들어진다)
+    achFill(box, v.analyzed_at ? null : h("p", { class: "muted", style: "margin:0 0 8px" }, "종합 피드백 초안은 [🎯 성취 분석]에서 [AI 분석하기]를 누르면 만들어져요. 직접 써도 돼요."), fbBox);
+    return;
+  }
   achFill(box,
     h("div", { class: "row", style: "margin:4px 0 8px" },
       h("h4", { class: "grow", style: "margin:0" }, "🤖 AI 성취 분석", when ? h("span", { class: "muted", style: "font-weight:400;font-size:0.82rem" }, ` · ${when} 분석`) : null), run,
@@ -636,11 +645,7 @@ async function renderAnalysis(courseId, who, box, opts = {}) { // opts.obs === f
       h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "📝 AI 종합 의견 ", h("span", { class: "muted", style: "font-weight:400" }, "(선생님만 봐요)")),
         h("p", { style: "white-space:pre-wrap;margin:0;line-height:1.6" }, v.summary || "-")),
     ] : achTrackingTable(v), // 분석 전에도 자동 집계 지표는 보여 준다
-    h("div", { class: "ach-box" },
-      h("div", { class: "ach-box-head" }, "💌 학생에게 줄 피드백 ", h("span", { class: "muted", style: "font-weight:400" }, "(AI 초안을 항목별로 고쳐서 쓰세요 · 학생 화면에도 이 순서로 보여요)")),
-      fb.el,
-      h("div", { class: "row", style: "margin-top:8px;justify-content:flex-end" }, saveFb, publishFb),
-      v.published ? h("p", { class: "ok-text", style: "margin:6px 0 0;font-size:0.85rem" }, "✅ 지금 학생에게 공개 중이에요.") : null));
+    opts.feedback === false ? null : fbBox);
 }
 
 /* ───────── 교사 [학습 관리 > 📝 수업별 피드백]: 수업 1회마다 학생별 형성평가 피드백 ───────── */
@@ -857,6 +862,110 @@ function resultSheet(v) {
     h("h3", { class: "rs-head" }, `${no()}. 과목별 세부능력 및 특기사항`), h("p", { class: "rs-text" }, v.setuk || "-"));
 }
 
+/* ───────── 학생 맞춤형 피드백 > 📈 성장 흐름: 회차마다 발언·관찰·판단·피드백 목표와 그 목표를 해냈는지 ───────── */
+const GOAL_MARK = { done: ["✅", "해냄"], partial: ["🔸", "일부 시도"], none: ["⬜", "아직"] };
+
+/** 회차별 목표 달성률 막대 (지난 피드백 목표를 그 수업에서 해낸 비율) */
+function goalChart(list) {
+  const pts = list.filter((x) => x.goal_rate !== null && x.goal_rate !== undefined);
+  if (!pts.length) return h("p", { class: "muted", style: "margin:0" }, "아직 판정한 목표가 없어요. 회차별 피드백을 공개하고, 다음 수업이 끝난 뒤 그 수업의 피드백을 만들면 지난 목표를 해냈는지 판정돼요.");
+  const W = 640, H = 180, L = 36, R = 12, T = 16, B = 34, step = (W - L - R) / pts.length, bw = Math.min(40, step * 0.55);
+  const Y = (v) => T + (H - T - B) * (1 - v / 100);
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; return e; };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "ach-chart goal-chart", role: "img", "aria-label": "회차별 목표 달성률" });
+  for (const v of [0, 50, 100]) {
+    svg.append(el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "#e3e6e8" }));
+    svg.append(el("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "#59636b" }, `${v}%`));
+  }
+  pts.forEach((x, i) => {
+    const cx = L + step * i + step / 2;
+    svg.append(el("rect", { x: cx - bw / 2, y: Y(x.goal_rate), width: bw, height: Y(0) - Y(x.goal_rate), rx: 3, fill: x.goal_rate >= 75 ? "#1b6b4a" : x.goal_rate >= 40 ? "#d4a017" : "#e5847a" }));
+    svg.append(el("text", { x: cx, y: Y(x.goal_rate) - 5, "text-anchor": "middle", "font-size": 12, "font-weight": 700, fill: "#1d2330" }, `${x.goal_rate}%`));
+    svg.append(el("text", { x: cx, y: H - B + 16, "text-anchor": "middle", "font-size": 11, fill: "#59636b" }, `${x.no}회 ${achMD(x.date)}`));
+  });
+  return svg;
+}
+
+async function renderGrowth(courseId, who, box, openFeedback) {
+  achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
+  let tl, v;
+  try {
+    [tl, v] = await Promise.all([achApi(`/api/courses/${courseId}/students/${who.user_id}/timeline`),
+      achApi(`/api/courses/${courseId}/speech/student/${who.user_id}/analysis`).catch(() => null)]);
+  } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const list = tl.classes;
+  const checks = list.flatMap((x) => x.goal_checks);
+  const done = checks.filter((g) => g.status === "done").length, part = checks.filter((g) => g.status === "partial").length;
+  const card = (x) => h("div", { class: "tl-card" },
+    h("div", { class: "tl-head" }, h("strong", {}, `${x.no}회 · ${fmtDate(x.date)}`), h("span", { class: "muted" }, ` ${x.title || ""}`),
+      h("span", { class: "grow" }),
+      h("span", { class: "tl-chip" }, `발언 ${x.counts.talk} (자발 ${x.counts.spontaneous} · 응답 ${x.counts.response})`),
+      x.feedback ? h("span", { class: `fb-badge${x.published ? " pub" : ""}` }, x.published ? "피드백 공개" : "피드백 초안") : null),
+    x.goal_checks.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "🎯 지난 목표"),
+      h("div", {}, x.goal_checks.map((g) => h("div", { class: `tl-goal ${g.status}` }, `${GOAL_MARK[g.status][0]} ${g.goal} `,
+        h("span", { class: "muted" }, `· ${GOAL_MARK[g.status][1]}${g.evidence ? ` “${g.evidence}”` : ""}`))))) : null,
+    x.levels.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "📏 판단"),
+      h("div", {}, x.levels.map((l) => h("span", { class: "tl-lv" }, l.level ? h("span", { class: `ach-lv lv${l.level}` }, ACH_LEVEL[l.level]) : h("span", { class: "ach-lv lv0" }, "–"), ` ${l.code}`)))) : null,
+    x.notes.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "👀 관찰"), h("div", {}, x.notes.map((t) => h("div", {}, t)))) : null,
+    x.turns.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "🗣️ 발언"),
+      h("div", {}, x.turns.map((t) => h("div", {}, h("span", { class: `sp-kind ${t.kind === "응답" ? "resp" : "spon"}` }, t.kind), t.text)))) : null,
+    x.feedback?.next_actions?.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "➡️ 다음 목표"),
+      h("div", {}, x.feedback.next_actions.map((g) => h("div", {}, `☐ ${g}`)))) : null,
+    h("div", { class: "row", style: "justify-content:flex-end;margin-top:6px" },
+      h("button", { class: "small", type: "button", onclick: () => openFeedback(x.class_id) }, x.feedback ? "이 회차 피드백 보기·고치기" : "이 회차 피드백 만들기")));
+  achFill(box,
+    h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🎯 목표 달성 흐름 ",
+      h("span", { class: "muted", style: "font-weight:400;font-size:0.85rem" }, checks.length ? `(지금까지 목표 ${checks.length}개 중 해냄 ${done} · 일부 ${part})` : "")),
+      goalChart(list)),
+    v && v.analyzed_at ? achProgressTable(v) : null,
+    v ? achTrackingTable(v) : null,
+    h("div", { class: "ach-box" }, h("div", { class: "ach-box-head" }, "🗓️ 회차 타임라인"),
+      list.length ? [...list].reverse().map(card) : h("p", { class: "muted", style: "margin:0" }, "아직 이 학생의 수업 기록이 없어요.")));
+}
+
+/** 학생 맞춤형 피드백 > 💌 피드백: 회차별 피드백(고르고 만들고 공개) + 종합 피드백 */
+async function renderStudentFeedback(c, who, box, pick = null) {
+  const again = (k) => renderStudentFeedback(c, who, box, k ?? pick);
+  achFill(box, h("p", { class: "muted" }, "불러오는 중…"));
+  let list;
+  try { ({ classes: list } = await achApi(`/api/courses/${c.id}/class-feedback`)); } catch (err) { achFill(box, h("p", { class: "error" }, err.message)); return; }
+  const sel = h("select", { "aria-label": "회차" }, [...list].reverse().map((k) => h("option", { value: k.class_id, selected: k.class_id === pick }, `${k.no}회 · ${fmtDate(k.date)} ${k.title || ""}`)));
+  if (!pick && list.length) pick = list[list.length - 1].class_id;
+  sel.value = String(pick || "");
+  sel.onchange = () => again(Number(sel.value));
+  const per = h("div", {}, h("p", { class: "muted" }, list.length ? "불러오는 중…" : "아직 연 수업이 없어요."));
+  const total = h("div", { class: "ach-wrap" });
+  achFill(box,
+    h("div", { class: "ach-box" },
+      h("div", { class: "row", style: "align-items:center;margin-bottom:8px" }, h("div", { class: "ach-box-head grow", style: "margin:0" }, "📝 회차별 피드백"), list.length ? sel : null),
+      h("p", { class: "muted", style: "margin:0 0 8px;font-size:0.85rem" }, "수업이 끝나면 그 회차의 피드백을 만들어 공개해요. 다음 회차 피드백을 만들 때 AI가 이번 '다음 수업에서 해 보기'를 해냈는지 판정해요."),
+      per),
+    total);
+  renderAnalysis(c.id, who, total, { obs: false, only: "feedback" });
+  if (!pick) return;
+  const k = list.find((x) => x.class_id === pick);
+  let d;
+  try { d = await achApi(`/api/courses/${c.id}/class-feedback/${pick}`); } catch (err) { achFill(per, h("p", { class: "error" }, err.message)); return; }
+  const s = d.students.find((x) => x.user_id === who.user_id);
+  if (!s) { achFill(per, h("p", { class: "muted" }, "이 학생은 수강생 명단에 없어요.")); return; }
+  const gen = h("button", { class: "small primary", type: "button", disabled: !d.ai || !s.has_record || s.published, title: s.published ? "공개 중인 피드백은 다시 만들지 않아요" : "" },
+    s.parts ? "🤖 AI 초안 다시 만들기" : "🤖 AI 초안 만들기");
+  gen.onclick = async () => {
+    gen.disabled = true; gen.textContent = "🤖 만드는 중…";
+    try { await achApi(`/api/courses/${c.id}/class-feedback/${pick}/generate`, { user_ids: [who.user_id] }); toast("초안을 만들었어요. 고쳐서 공개해 주세요."); again(pick); }
+    catch (err) { toast(err.message, 6000); gen.disabled = false; }
+  };
+  const row = s.parts ? classFbStudent(c, k, s, () => again(pick)) : null;
+  if (row && row.tagName === "DETAILS") row.open = true;
+  achFill(per,
+    h("div", { class: "row", style: "justify-content:flex-end;margin-bottom:6px" }, s.has_record ? null : h("span", { class: "muted grow", style: "font-size:0.85rem" }, "이 회차에 이 학생의 발언·관찰·퀴즈 기록이 없어요."), gen),
+    s.goal_checks?.length ? h("div", { class: "tl-row" }, h("span", { class: "tl-label" }, "🎯 지난 목표"),
+      h("div", {}, s.goal_checks.map((g) => h("div", { class: `tl-goal ${g.status}` }, `${GOAL_MARK[g.status][0]} ${g.goal} `,
+        h("span", { class: "muted" }, `· ${GOAL_MARK[g.status][1]}${g.evidence ? ` “${g.evidence}”` : ""}`))))) : null,
+    row || h("p", { class: "muted" }, "아직 이 회차 피드백이 없어요. [🤖 AI 초안 만들기]를 누르세요."));
+}
+
 /* ───────── 학생: 선생님이 공개한 피드백 ───────── */
 
 async function renderMyFeedback(courseId, box) {
@@ -878,6 +987,9 @@ async function renderMyFeedback(courseId, box) {
             x.standards.map((s) => h("div", { class: "ach-rate" },
               s.level ? h("span", { class: `ach-lv lv${s.level}` }, ACH_LEVEL[s.level]) : h("span", { class: "ach-lv lv0" }, "–"),
               h("strong", {}, ` ${s.code} `), h("span", { class: "muted" }, s.text)))) : null,
+          x.goal_checks?.length ? h("div", { class: "fb-card" }, h("div", { class: "fb-card-head" }, "🎯 지난 목표, 이번 수업에서 해냈나요?"),
+            x.goal_checks.map((g) => h("div", { class: `tl-goal ${g.status}`, style: "line-height:1.8" }, `${GOAL_MARK[g.status][0]} ${g.goal} `,
+              h("strong", {}, `· ${GOAL_MARK[g.status][1]}`)))) : null,
           feedbackView(x.parts))))) : null,
     v.published ? h("div", { class: "my-total-fb" }, items.length ? h("h3", { class: "section-title" }, "📚 종합 피드백") : null,
       h("div", { class: "my-feedback" }, feedbackView(v.parts || { message: v.feedback }, v.participation || []))) : null);

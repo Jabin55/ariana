@@ -1359,6 +1359,10 @@ function deviceButtons(s) {
   return [btn(camOn, "🎥", "🎥", "카메라", "cam"), btn(micOn, "🎤", "🎤", "마이크", "mic")];
 }
 
+/* 학생마다 '오늘의 목표' (지난 피드백의 '다음 수업에서 해 보기'): 이름 옆 🎯 에 마우스를 올리면 보인다 → 그 목표에 맞춰 발문 */
+let liveGoals = {};
+api(`/api/live/classes/${CODE}/goals`).then((r) => { liveGoals = r.goals || {}; if (S) renderPeople(); }).catch(() => {});
+
 function renderPeople() {
   // 마이크 요청(🎙️)·손 든 학생(✋)을 위로
   // 강좌 수업은 수강생 명단이 모두 보이고, 들어온 학생은 초록불 (손 든 학생은 위로)
@@ -1378,6 +1382,7 @@ function renderPeople() {
     h("span", { class: `dot ${s.online ? "on" : ""}`, title: s.online ? "접속 중" : "나감" }),
     h("span", {}, s.mic_req ? h("span", { title: "마이크를 켜 달라고 요청했어요 — 옆의 마이크 버튼을 누르면 켜져요" }, "🎙️ ") : null,
       s.hand ? h("span", { title: "할 말이 있어요" }, "✋ ") : null, `${s.name} `,
+      liveGoals[String(s.id)] ? h("span", { class: "goal-ico", title: `오늘의 목표\n${liveGoals[String(s.id)].map((g, i) => `${i + 1}. ${g}`).join("\n")}` }, "🎯 ") : null,
       s.stickers ? h("span", { class: "sticker-count", title: "받은 칭찬 스티커" }, `⭐${s.stickers} `) : null, h("span", { class: "muted", style: "font-size:0.8rem" },
       mixed && s.school ? `${s.school} · ` : "", roomLabel(s), s.sessions > 1 ? ` 재입장 ${s.sessions - 1}회` : "")),
     h("span", { class: "acts" },

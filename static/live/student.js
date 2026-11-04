@@ -50,7 +50,15 @@ api("/api/me").then(({ user }) => {
   // 다른 선생님도 특강·회의에는 참가자로 들어온다 (강좌 수업이면 서버가 막는다)
   if (!user || (user.role !== "student" && user.role !== "teacher" && !user.is_admin) || user.needs_profile
     || (user.role === "student" && !user.is_admin && ["pending", "rejected"].includes(user.school_approval))) location.replace(`/live?c=${CODE}`);
-  else $("#prejoin-name").textContent = `${user.display} 이름으로 들어가요.`;
+  else {
+    $("#prejoin-name").textContent = `${user.display} 이름으로 들어가요.`;
+    // 지난 피드백의 '다음 수업에서 해 보기' → 오늘의 내 목표 (맨 위에 작게, 누르면 펼침)
+    api(`/api/live/classes/${CODE}/my-goals`).then(({ goals }) => {
+      if (!goals?.length) return;
+      $("#goal-list").replaceChildren(...goals.map((g) => Object.assign(document.createElement("li"), { textContent: g })));
+      $("#goal-pop").hidden = false;
+    }).catch(() => {});
+  }
 }).catch(() => {});
 
 /* ───── 입장 ───── */

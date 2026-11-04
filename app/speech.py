@@ -118,7 +118,7 @@ async def speech_summary(course_id: int, request: Request):
         u = dict(row._mapping)
         students[u["id"]] = {"user_id": u["id"], "name": u["name"] or u["google_name"] or "",
                               "school": u["school"] or "", "student_no": student_no(u),
-                              "count": 0, "chars": 0, "classes": set()}
+                              "count": 0, "chars": 0, "classes": set(), "spontaneous": 0}
     for e in rows:
         x = classes.setdefault(e["class_id"], {"id": e["class_id"], "title": e["class_title"], "date": e["date"],
                                                 "count": 0, "speakers": set()})
@@ -126,18 +126,46 @@ async def speech_summary(course_id: int, request: Request):
         if e["role"] == "student":
             x["speakers"].add(e["user_id"])
             st = students.setdefault(e["user_id"], {"user_id": e["user_id"], "name": e["name"], "school": e["school"],
-                                                    "student_no": e["student_no"], "count": 0, "chars": 0, "classes": set()})
+                                                    "student_no": e["student_no"], "count": 0, "chars": 0, "classes": set(), "spontaneous": 0})
             st["count"] += 1
+            st["spontaneous"] += e.get("kind") == "자발"
             st["chars"] += len(e["text"])
             st["classes"].add(e["class_id"])
     cls = sorted(classes.values(), key=lambda x: (x["date"], x["id"]))
     for x in cls:
         x["speakers"] = len(x["speakers"])
     sts = sorted(students.values(), key=lambda x: (x["school"], x["student_no"], x["name"]))
+    status = await db.run(_feedback_status, course_id)
     for x in sts:
         x["classes"] = len(x["classes"])
         x["observations"] = observation_counts.get(x["user_id"], 0)
+        x["spontaneous_rate"] = round(100 * x["spontaneous"] / x["count"]) if x["count"] else None
+        x.update(status.get(x["user_id"], {"published": 0, "goal_rate": None, "goal_trend": None}))
     return {"classes": cls, "students": sts, "total": len(rows)}
+
+
+def _feedback_status(course_id: int) -> dict[int, dict]:
+    """학생마다: 공개한 회차별 피드백 수, 가장 최근 목표 달성률과 그 앞과 비교한 추세"""
+    import json as _json
+    f, cl = db.class_feedback.c, db.classes.c
+    with db.engine.connect() as c:
+        rows = c.execute(select(f.user_id, f.published, f.goal_checks).join(db.classes, cl.id == f.class_id)
+                         .where(f.course_id == course_id).order_by(cl.created_at)).all()
+    out: dict[int, dict] = {}
+    for r in rows:
+        x = out.setdefault(r.user_id, {"published": 0, "rates": []})
+        x["published"] += r.published
+        try:
+            checks = _json.loads(r.goal_checks) if r.goal_checks else []
+        except ValueError:
+            checks = []
+        if checks:
+            x["rates"].append(round(100 * sum({"done": 1, "partial": 0.5}.get(g.get("status"), 0) for g in checks) / len(checks)))
+    for x in out.values():
+        rates = x.pop("rates")
+        x["goal_rate"] = rates[-1] if rates else None
+        x["goal_trend"] = None if len(rates) < 2 else "up" if rates[-1] > rates[-2] else "down" if rates[-1] < rates[-2] else "flat"
+    return out
 
 
 @router.get("/api/courses/{course_id}/speech/class/{class_id}")
