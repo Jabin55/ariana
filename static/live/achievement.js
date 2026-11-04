@@ -779,7 +779,7 @@ async function renderResults(c, box) {
         h("td", { class: "ach-cell" }, h("strong", {}, s.rate === null || s.rate === undefined ? "-" : `${rsNum(s.rate)}점`)),
         h("td", { class: "ach-cell" }, gradeSel(s)),
         h("td", { class: "ach-cell" }, s.setuk ? h("span", { class: s.bytes > v.max_bytes ? "error" : "ok-text" }, `${s.bytes}B`) : h("span", { class: "muted" }, "미작성")),
-        h("td", { class: "ach-cell" }, h("button", { class: "small primary", type: "button", onclick: () => { resultsView.set(c.id, s.user_id); renderResults(c, box); } }, "평가지·세특"))))))) 
+        h("td", { class: "ach-cell" }, h("button", { class: "small primary", type: "button", onclick: () => { resultsView.set(c.id, s.user_id); renderResults(c, box); } }, "개인 평가서"))))))) 
       : h("p", { class: "muted" }, "수강생이 없어요."));
 }
 
