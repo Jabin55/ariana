@@ -1675,14 +1675,15 @@ async function renderSchoolSignups(box) {
   }
   signupView = null;
   fill(box,
+    // 왼쪽: 담당 선생님 없는 학교만 보기 · 오른쪽: 승인 대기 수와 [선택 승인] [선택 반려]
     h("div", { class: "row", style: "margin-bottom:8px" },
-      h("strong", {}, "승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
-      h("button", { class: "small primary", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 승인"),
-      h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 반려"),
-      h("span", { class: "grow" }),
       ME.is_admin ? h("label", { class: "switch" }, h("input", { type: "checkbox", checked: signupNoTeacher,
         onchange: (e) => { signupNoTeacher = e.target.checked; renderSchoolSignups(box); } }),
-        `담당 선생님 없는 학교만 보기 (${orphan.filter((x) => x.status === "pending").length}명 대기)`) : null),
+        `담당 선생님 없는 학교만 보기 (${orphan.filter((x) => x.status === "pending").length}명 대기)`) : null,
+      h("span", { class: "grow" }),
+      h("strong", {}, "승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
+      h("button", { class: "small primary", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 승인"),
+      h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 반려")),
     h("div", { class: "table-wrap" }, h("table", { class: "att signup-table" },
       h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "승인 담당", "학년", "반", "번호", "학생 이름", "신청일", "상태", "승인/반려"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.length ? list.map((x, i) => h("tr", {},
