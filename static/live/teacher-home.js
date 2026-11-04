@@ -1313,7 +1313,7 @@ async function activitiesOf(classId, key, box) {
           h("span", { class: "tally-label" }, o), h("span", { class: "tally-bar" }, h("i", { style: `width:${answered.length ? Math.round((n / answered.length) * 100) : 0}%` })),
           h("span", { class: "tally-n" }, `${n}명`)))) : null,
         h("table", { class: "att inner-table", style: "margin-top:6px" },
-          h("thead", {}, h("tr", {}, ["소속학교", "학번", "이름", "답", ...(a.gradable ? ["정오", "점수"] : [])].map((t) => h("th", {}, t)))),
+          h("thead", {}, h("tr", {}, ["소속학교", "학번", "이름", a.gradable ? "답" : "응답", ...(a.gradable ? ["정오", "점수"] : [])].map((t) => h("th", {}, t)))),
           h("tbody", {}, a.rows.map((r) => h("tr", { class: r.answered ? "" : "absent" },
             h("td", {}, r.school || "-"), h("td", {}, r.student_no || "-"), h("td", {}, r.name),
             h("td", { style: "white-space:normal;text-align:left" }, r.answered ? r.answer : "(미응답)"),
