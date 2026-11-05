@@ -1850,25 +1850,26 @@ function renderSchoolWithdrawals(box) {
     box.querySelectorAll(".withdraw-student-check").forEach((input) => { input.checked = e.target.checked; });
   } });
   fill(box,
-    h("p", { class: "muted" }, `탈퇴 승인 대기 ${pending.length}명`),
-    pending.length ? h("div", { class: "row", style: "margin-bottom:12px" },
-      h("label", { class: "switch" }, all, "전체 선택"),
-      h("button", { class: "small danger", onclick: () => decide("approve") }, "선택 탈퇴 승인"),
-      h("button", { class: "small", onclick: () => decide("reject") }, "선택 탈퇴 반려"))
-      : h("p", { class: "muted" }, "탈퇴 승인 대기 중인 학생이 없어요."),
-    pending.map((x) => h("div", { class: "card", style: "margin:10px 0" },
-      h("div", { class: "row" },
-        h("input", { type: "checkbox", class: "withdraw-student-check", "aria-label": `${x.name} 학생 선택`, onchange: (e) => {
+    h("div", { class: "row", style: "margin-bottom:8px" },
+      h("span", { class: "grow" }),
+      h("strong", {}, "탈퇴 승인 대기 ", h("span", { class: "accent-text" }, pending.length), "명"),
+      h("button", { class: "small danger", type: "button", disabled: !pending.length, onclick: () => decide("approve") }, "선택 탈퇴 승인"),
+      h("button", { class: "small", type: "button", disabled: !pending.length, onclick: () => decide("reject") }, "선택 탈퇴 반려")),
+    h("div", { class: "table-wrap" }, h("table", { class: "att signup-table withdraw-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, all), ["연번", "소속학교", "학번", "학생 이름", "신청일", "탈퇴 사유", "수강 중인 강좌", "승인/반려"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, pending.length ? pending.map((x, i) => h("tr", {},
+        h("td", {}, h("input", { type: "checkbox", class: "withdraw-student-check", "aria-label": `${x.name} 학생 선택`, onchange: (e) => {
           if (e.target.checked) withdrawPick.add(x.user_id); else withdrawPick.delete(x.user_id);
           all.checked = withdrawPick.size === pending.length;
-        } }),
-        h("strong", {}, `${x.school} · ${x.student_no || "학번 없음"} · ${x.name}`)),
-      h("p", { class: "muted" }, `신청일: ${kstDate(x.requested_at)}${x.reason ? ` · 사유: ${x.reason}` : ""}`),
-      x.courses.length ? h("p", {}, `신청 강좌: ${x.courses.join(", ")}`) : null,
-      x.studying.length ? h("p", { class: "banner warn" }, `현재 수강 중: ${x.studying.join(", ")}`) : null,
-      h("div", { class: "row" },
-        h("button", { class: "small danger", onclick: () => decide("approve", x) }, "탈퇴 승인"),
-        h("button", { class: "small", onclick: () => decide("reject", x) }, "반려")))));
+        } })),
+        h("td", {}, i + 1), h("td", {}, x.school || "-"), h("td", {}, x.student_no || "-"), h("td", {}, x.name || "-"),
+        h("td", {}, kstDate(x.requested_at)),
+        h("td", { class: "contact-cell" }, x.reason || "-"),
+        h("td", { class: "contact-cell" }, x.studying.length ? h("span", { style: "color:#b45309", title: "아직 수강 중이에요" }, `⚠️ ${x.studying.join(", ")}`) : "-"),
+        h("td", {}, h("div", { class: "row school-change-actions" },
+          h("button", { class: "small danger", type: "button", onclick: () => decide("approve", x) }, "승인"),
+          h("button", { class: "small", type: "button", onclick: () => decide("reject", x) }, "반려")))))
+        : h("tr", {}, h("td", { colspan: 10, class: "muted", style: "text-align:center;padding:24px" }, "탈퇴 승인을 기다리는 학생이 없어요."))))));
 }
 
 async function renderStudentSchoolChanges(box) {
