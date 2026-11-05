@@ -1636,7 +1636,7 @@ async function hubCourseAttendance(box, ov) {
   const counts = cls.map((_, j) => sheet.students.filter((st) => st.attendance[j]).length);
   const fixed = ["연번", "소속학교", "학번", "이름"];
   fill(box, hubRecordHeading(course),
-    h("div", { class: "hub-grid-summary" }, `수강 확정 ${sheet.students.length}명 · 수업 ${cls.length}회 · 한 번이라도 들어오면 O`),
+    h("div", { class: "hub-grid-summary" }, `수강 확정 ${sheet.students.length}명 · 수업 ${cls.length}회 · 한 번이라도 들어오면 O라고 표기됩니다.`),
     h("div", { class: "row hub-export-actions" },
       h("a", { class: "button", href: `/api/hub/courses/${course.id}/attendance.xlsx` }, "📥 엑셀 받기")),
     h("div", { class: "table-wrap" }, h("table", { class: "att hub-grid-table" },
