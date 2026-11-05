@@ -3799,6 +3799,8 @@ def test_speech_transcript_saved_viewed_exported_and_purged():
         assert a.post(f"{base}/speech", json={"text": "끈 뒤", "final": True}).status_code == 403
     summary = t.get(f"/api/courses/{cid}/speech").json()
     assert summary["total"] == 3 and summary["classes"][0]["count"] == 3 and summary["classes"][0]["speakers"] == 2
+    sc, tc = len("사형제는 폐지해야 한다고 생각합니다") + len("인권 보호가 더 중요합니다"), len("좋은 근거네요")
+    assert summary["classes"][0]["student_share"] == round(100 * sc / (sc + tc))  # 학생/교사 발언 비율 (글자 수)
     assert {x["count"] for x in summary["students"]} == {1}
     class_id = summary["classes"][0]["id"]
     script = t.get(f"/api/courses/{cid}/speech/class/{class_id}").json()["entries"]

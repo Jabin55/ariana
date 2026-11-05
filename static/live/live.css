@@ -2235,3 +2235,9 @@ table.att.quiz-score-table th:nth-child(7) { width: 16%; }
 .ach-dd-item { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; cursor: pointer; }
 .ach-dd-item:hover { background: var(--surface-2); }
 .ach-dd-item.on { background: var(--accent-soft); font-weight: 700; }
+
+/* 스크립트 표: 학생/교사 발언 비율 열이 하나 더 있다 */
+table.att.learn-table.script-table th:nth-child(1) { width: 6%; } table.att.learn-table.script-table th:nth-child(2) { width: 11%; }
+table.att.learn-table.script-table th:nth-child(3) { width: 13%; } table.att.learn-table.script-table th:nth-child(4) { width: 22%; }
+table.att.learn-table.script-table th:nth-child(5) { width: 9%; } table.att.learn-table.script-table th:nth-child(6) { width: 9%; }
+table.att.learn-table.script-table th:nth-child(7) { width: 16%; } table.att.learn-table.script-table th:nth-child(8) { width: 14%; }

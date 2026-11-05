@@ -126,6 +126,7 @@ async def speech_summary(course_id: int, request: Request):
                                                 "start": e["class_start"], "end": e["class_end"],
                                                 "count": 0, "speakers": set()})
         x["count"] += 1
+        x["chars_" + ("student" if e["role"] == "student" else "teacher")] = x.get("chars_" + ("student" if e["role"] == "student" else "teacher"), 0) + len(e["text"])
         if e["role"] == "student":
             x["speakers"].add(e["user_id"])
             st = students.setdefault(e["user_id"], {"user_id": e["user_id"], "name": e["name"], "school": e["school"],
@@ -137,6 +138,9 @@ async def speech_summary(course_id: int, request: Request):
     cls = sorted(classes.values(), key=lambda x: (x["date"], x["id"]))
     for x in cls:
         x["speakers"] = len(x["speakers"])
+        # 학생/교사 발언 비율: 그 수업에서 말한 글자 수 기준 학생 몫(%)
+        sc, tc = x.pop("chars_student", 0), x.pop("chars_teacher", 0)
+        x["student_share"] = round(100 * sc / (sc + tc)) if sc + tc else None
     sts = sorted(students.values(), key=lambda x: (x["school"], x["student_no"], x["name"]))
     status = await db.run(_feedback_status, course_id)
     for x in sts:
